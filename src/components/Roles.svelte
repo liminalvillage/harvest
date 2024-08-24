@@ -10,16 +10,20 @@
 	let store = {};
 
 	$: roles = Object.entries(store);
-	$: holonID = '-1002029098719';
+	$: holonID = '235114395';
 	let holosphere;
+	
 
 	onMount(() => {
 		holosphere = new Holosphere('WeQuest');
+		holonID = localStorage.getItem('holonID');
 		subscribeToroles();
 	});
 
 	// Suscribe to changes in the specified holon
 	async function subscribeToroles() {
+		store = {};
+		localStorage.setItem('holonID', holonID);
 		if (holosphere)
 			holosphere.subscribe(holonID, 'roles', (newrole, key) => {
 				if (newrole) {
@@ -216,7 +220,7 @@
 	<div class="w-full mt-8 lg:mt-0 lg:w-4/12 lg:pl-4">
 		<div class="bg-gray-800 rounded-3xl px-6 pt-6">
 			<div class="flex text-white text-2xl pb-6 font-bold">
-				<p>Client Messages</p>
+				<p>Announcements</p>
 			</div>
 			<div>
 				<div

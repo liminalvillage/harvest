@@ -406,7 +406,7 @@
 	<div class="w-full mt-8 lg:mt-0 lg:w-4/12 lg:pl-4">
 		<div class="bg-gray-800 rounded-3xl px-6 pt-6">
 			<div class="flex text-white text-2xl pb-6 font-bold">
-				<p>Client Messages</p>
+				<p>Announcements</p>
 			</div>
 			<div>
 				<div

@@ -1,8 +1,8 @@
 {
-	"name": "salvia-kit-dashboard-v4-svelte",
+	"name": "dashboard",
 	"version": "1.0.0",
 	"author": {
-		"name": "Enoch Ndika"
+		"name": "Roberto Valenti"
 	},
 	"license": "MIT",
 	"keywords": [

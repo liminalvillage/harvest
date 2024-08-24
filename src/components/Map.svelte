@@ -2,7 +2,7 @@
 	// @ts-nocheck
 	import { onMount, onDestroy } from "svelte";
 	import { Map, GeolocateControl, Popup } from "mapbox-gl";
-	// import { MapboxSearchBox } from "@mapbox/search-js-web";
+	import { MapboxSearchBox } from "@mapbox/search-js-web";
 	import * as h3 from "h3-js";
 	import "../../node_modules/mapbox-gl/dist/mapbox-gl.css";
 
@@ -13,7 +13,7 @@
 	import { getContext } from "svelte";
 	import HoloSphere from "holosphere";
 
-	let holosphere = getContext("holosphere") || new HoloSphere("WeQuest");
+	let holosphere = getContext("holosphere") || new HoloSphere("WeQuestDebug");
 
 	let schema = {
 		type: "object",
@@ -57,65 +57,6 @@
 	// more convenient variables for use in markup
 	$: entries = Object.entries(store);
 	$: done = entries.filter(([key, entries]) => entries.done).length;
-
-	// const getAll = async (table) => {
-	// 	console.log("getAllGunDB:", table);
-	// 	return new Promise((resolve) => {
-	// 		this.gun
-	// 			.get(this.dbName)
-	// 			.get(table)
-	// 			.once((data, key) => {
-	// 				if (!data) {
-	// 					resolve([]);
-	// 				} else {
-	// 					//console.log(data)
-	// 					const result = [];
-	// 					for (const key in data) {
-	// 						if (
-	// 							data.hasOwnProperty(key) &&
-	// 							key !== "_" &&
-	// 							key !== "#" &&
-	// 							key !== ">" &&
-	// 							key !== "<"
-	// 						) {
-	// 							result.push(JSON.parse(data[key]));
-	// 						}
-	// 					}
-	// 					console.log(result);
-	// 					resolve(result);
-
-	// 					//resolve( JSON.parse(data));
-	// 				}
-	// 			});
-	// 	});
-	// };
-	// const get = (hex, lense) => {
-	// 	if (!hex) return;
-	// 	if (!lense) return;
-	// 	store = {};
-	// 	gun.get(hex)
-	// 		.get(lense)
-	// 		.map()
-	// 		.once((data, key) => {
-	// 			if (data) {
-	// 				var parsed = {}
-	// 				try {
-	// 					parsed = JSON.parse(data);
-	// 				} catch (e) {
-	// 					console.log('Invalid JSON:', data);
-	// 				}
-	// 				console.log(parsed, key);
-	// 				if (parsed.content) {
-	// 					store[key] = parsed;
-	// 				}
-	// 			} else {
-	// 				// A key may contain a null value (if data has been deleted/set to null)
-	// 				// if so, we remove the item from the store
-	// 				delete store[key];
-	// 				store = store;
-	// 			}
-	// 		});
-	// };
 
 	const create = (key) => {
 		holosphere.put(holonID,lense,{ content: key, done: false });
@@ -517,9 +458,22 @@
 			projection: "globe",
 		});
 
-		// const search = new MapboxSearchBox();
-		// search.accessToken = accessToken;
-		// map.addControl(search);
+		const search = new MapboxSearchBox();
+		search.accessToken = accessToken;
+		map.addControl(search);
+
+		map.addControl(
+			new GeolocateControl({
+				positionOptions: {
+					enableHighAccuracy: true,
+				},
+				// When active the map will receive updates to the device's location as it changes.
+				trackUserLocation: true,
+				// Draw an arrow next to the location dot to indicate which direction the device is heading.
+				showUserHeading: true,
+			}),
+		);
+
 
 		map.on("style.load", () => {
 			map.setFog({
@@ -609,18 +563,7 @@
 			renderHexes(map, lense);
 		});
 
-		map.addControl(
-			new GeolocateControl({
-				positionOptions: {
-					enableHighAccuracy: true,
-				},
-				// When active the map will receive updates to the device's location as it changes.
-				trackUserLocation: true,
-				// Draw an arrow next to the location dot to indicate which direction the device is heading.
-				showUserHeading: true,
-			}),
-		);
-
+		
 		map.on("click", async (e) => {
 			holonID = h3.latLngToCell(
 				e.lngLat.lat,
