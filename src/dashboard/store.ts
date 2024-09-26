@@ -10,4 +10,4 @@ const closeSidebar = () => {
 	sidebarOpen.update(() => false);
 };
 
-export { sidebarOpen, openSidebar, closeSidebar };
+export { sidebarOpen, openSidebar, closeSidebar};

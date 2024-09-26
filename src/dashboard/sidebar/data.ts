@@ -1,20 +1,19 @@
 import HomeIcon from './icons/HomeIcon.svelte';
 import StatusIcon from './icons/StatusIcon.svelte';
+import GlobeIcon from './icons/GlobeIcon.svelte';
 import CreditsIcon from './icons/CreditsIcon.svelte';
 import ArchivesIcon from './icons/ArchivesIcon.svelte';
 import SettingsIcon from './icons/SettingsIcon.svelte';
 import DocumentationIcon from './icons/DocumentationIcon.svelte';
+import RolesIcon from './icons/RolesIcon.svelte';
+
+
 
 export const data = [
 	{
 		title: 'Home',
 		icon: HomeIcon,
 		link: '/'
-	},
-	{
-		title: 'Map',
-		icon: StatusIcon,
-		link: '/admin/map'
 	},
 	{
 		title: 'Kanban',
@@ -28,12 +27,17 @@ export const data = [
 	},
 	{
 		title: 'Roles',
-		icon: SettingsIcon,
+		icon: RolesIcon,
 		link: '/admin/roles'
 	},
 	{
-		title: 'Documentation',
-		icon: DocumentationIcon,
-		link: '/admin/documentation'
+		title: 'Map',
+		icon: GlobeIcon,
+		link: '/admin/map'
 	}
+	// {
+	// 	title: 'Documentation',
+	// 	icon: DocumentationIcon,
+	// 	link: '/admin/documentation'
+	// }
 ];

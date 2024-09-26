@@ -27,7 +27,7 @@
 <div class={style.container}>
 	<div class="flex items-start">
 		<Overlay />
-		<Sidebar mobileOrientation="end" />
+		<Sidebar mobileOrientation="start" />
 		<div class={style.mainContainer}>
 			<TopBar />
 			<main class={style.main}>

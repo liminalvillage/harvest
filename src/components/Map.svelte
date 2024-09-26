@@ -13,7 +13,7 @@
 	import { getContext } from "svelte";
 	import HoloSphere from "holosphere";
 
-	let holosphere = getContext("holosphere") || new HoloSphere("WeQuestDebug");
+	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
 
 	let schema = {
 		type: "object",
@@ -29,7 +29,7 @@
 
 	let map;
 	let mapContainer;
-	let holonID;
+	let ID;
 	let lense = "hubs";
 
 	let lng, lat, zoom, shapes;
@@ -59,11 +59,11 @@
 	$: done = entries.filter(([key, entries]) => entries.done).length;
 
 	const create = (key) => {
-		holosphere.put(holonID,lense,{ content: key, done: false });
+		holosphere.put(ID,lense,{ content: key, done: false });
 	};
 	const update = (key, value) =>
-		holosphere.gun.get(holonID).get(lense).get(key).get("done").put(value);
-	const remove = (key) => holosphere.delete(holonID,lense);
+		holosphere.gun.get(ID).get(lense).get(key).get("done").put(value);
+	const remove = (key) => holosphere.delete(ID,lense);
 
 	function goToHex(hex, scale) {
 		map.flyTo({
@@ -565,18 +565,19 @@
 
 		
 		map.on("click", async (e) => {
-			holonID = h3.latLngToCell(
+			ID = h3.latLngToCell(
 				e.lngLat.lat,
 				e.lngLat.lng,
 				getResolution(map.getZoom()),
 			);
 
-			store = await holosphere.get(holonID, lense);
+			store = await holosphere.get(ID, lense);
 			console.log(store)
 			
 			//highlightNearbyHexagons(map,clickedHex)
 
-			highlightHexagon(map, holonID);
+			highlightHexagon(map, ID);
+			//localStorage.put("ID",ID)
 			// new Popup().setLngLat(e.lngLat).setHTML(clickedHex).addTo(map);
 		});
 
@@ -621,29 +622,22 @@
 	<div class="sidebar">
 		Longitude: {lng.toFixed(4)} | Latitude: {lat.toFixed(4)} | Zoom: {zoom.toFixed(
 			2,
-		)} | Hex: {holonID}
+		)} | Hex: {ID}
 	</div>
 </div>
 
 <div class="content">
 	<h1>Holonic map</h1>
-	<p>
-		This is a visualization app that uses a decentralized database to
-		retrieve stored data. It is a proof-of-concept for a distributed,
-		holonic, protocol for planetary communication of information, needs and
-		resources.
-		<br />
-	</p>
 	<input
 		bind:value={lense}
 		placeholder="lense"
 		on:keyup={async (e) => {
 			lense = e.target.value;
-			store = await holosphere.get(holonID, lense);
+			store = await holosphere.get(ID, lense);
 			renderHexes(map, lense);
 		}}
 		on:change={async (e) => {
-			store = await holosphere.get(holonID, lense);
+			store = await holosphere.get(ID, lense);
 			renderHexes(map, lense);
 		}}
 	/>

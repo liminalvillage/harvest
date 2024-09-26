@@ -6,16 +6,16 @@
 
 	import HoloSphere from 'holosphere';
 
-	let holosphere = getContext('holosphere') || new HoloSphere('WeQuest');
+	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
-	export let holonID = '-1002029098719';
-	let store = {}
-	$: quests = Object.entries(store)
+	export let holonID ;
+	let store = {};
+	$: quests = Object.entries(store);
 
 	onMount(async () => {
 		//const data = await holosphere.get(holonID, 'quests');
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
-		
+
 		holosphere.subscribe(holonID, 'quests', (newquest, key) => {
 			if (newquest) {
 				// Updates the store with the new value
@@ -74,11 +74,9 @@
 		</div>
 	</div>
 
-
-
 	{#each quests as [key, quest]}
-		{#if (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest') }
-			<div id = {key} class="w-full md:w-4/12">
+		{#if (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest')}
+			<div id={key} class="w-full md:w-4/12">
 				<div class="p-2">
 					<div class="p-4 rounded-3xl bg-gray-300">
 						<div class="flex items-center justify-b">
@@ -124,6 +122,13 @@
 							<div class="flex items-center">
 								🙋‍♂️ {quest.participants.length}: <br />
 								{#each quest.participants as participant}
+									{#if participant.picture}
+										<img
+											class="w-5 h-5 rounded-full overflow-hidden object-cover"
+											src={participant.picture}
+											alt="participant"
+										/>
+									{/if}
 									{@html `@${participant.username}`}<br />
 								{/each}
 								<!-- <img

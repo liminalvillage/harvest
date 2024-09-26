@@ -1,5 +1,15 @@
 <script>
 	import { openSidebar } from './store.ts';
+	$: ID = ''
+  // Update localStorage when the input changes
+  function handleInput(event) {
+    ID = event.target.value;
+    localStorage.setItem('ID', ID);
+   // dispatchEvent(new CustomEvent('localStorageUpdated')); // Notify other components
+  }
+
+ 
+	
 </script>
 
 <header class="h-20 items-center relative z-10">
@@ -46,8 +56,11 @@
 					</svg>
 					<input
 						type="text"
+						
 						class="bg-gray-800 block leading-normal pl-10 py-1.5 pr-4 ring-opacity-90 rounded-2xl text-gray-400 w-full focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-						placeholder="Search"
+						placeholder="Holon ID"
+						on:input={handleInput}
+						bind:value={ID}
 					/>
 				</div>
 			</div>

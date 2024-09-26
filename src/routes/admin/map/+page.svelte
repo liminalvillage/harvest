@@ -6,4 +6,4 @@
 	<title>Map</title>
 </svelte:head>
 
-<Map/>
+<Map holonID={typeof window !== 'undefined'?localStorage.getItem('ID'):''}/>

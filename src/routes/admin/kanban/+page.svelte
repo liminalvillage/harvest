@@ -6,4 +6,4 @@
 	<title>Kanban</title>
 </svelte:head>
 
-<Kanban/>
+<Kanban holonID={localStorage.getItem('ID')}/>
