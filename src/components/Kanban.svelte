@@ -5,17 +5,16 @@
 	import { formatDate, formatTime } from '../utils/date';
 
 	import HoloSphere from 'holosphere';
+	import Announcements from './Announcements.svelte';
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
-	export let holonID ;
+	export let holonID;
 	let store = {};
 	$: quests = Object.entries(store);
 
 	onMount(async () => {
-		//const data = await holosphere.get(holonID, 'quests');
-		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
-
+		// Fetch all quests from holon
 		holosphere.subscribe(holonID, 'quests', (newquest, key) => {
 			if (newquest) {
 				// Updates the store with the new value
@@ -27,6 +26,24 @@
 				store = store;
 			}
 		});
+
+		//fetch all chats from federation
+		let chats = await holosphere.get(holonID, 'chats');
+		chats.forEach((chat) => {
+			holosphere.subscribe(chat.id, 'quests', (newquest, key) => {
+				if (newquest) {
+					// Updates the store with the new value
+					store[key] = JSON.parse(newquest);
+				} else {
+					// A key may contain a null value (if data has been deleted/set to null)
+					// if so, we remove the item from the store
+					delete store[key];
+					store = store;
+				}
+			});
+		});
+
+		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
 	});
 
 	$: update(holonID);
@@ -72,66 +89,65 @@
 				</div>
 			</div>
 		</div>
-	</div>
-
-	{#each quests as [key, quest]}
-		{#if (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest')}
-			<div id={key} class="w-full md:w-4/12">
-				<div class="p-2">
-					<div class="p-4 rounded-3xl bg-gray-300">
-						<div class="flex items-center justify-b">
-							{#if quest.when}<span class="text-sm"
-									>{formatDate(quest.when) + ' @ ' + formatTime(quest.when)}
-									{#if quest.ends}- {formatTime(quest.ends)} {/if}</span
-								>
-							{/if}
-						</div>
-						<div class="text-center mb-4 mt-5">
-							<p class="text-base font-bold opacity-70">{quest.title}</p>
-							<!-- <p class="text-sm opacity-70 mt-2">{role}</p> -->
-						</div>
-						{#if quest.description}
-							<div class="text-sm opacity-70 mb-4">
-								{quest.description}
-							</div>
-						{/if}
-						{#if quest.location}
-							<div class="text-sm opacity-70 mb-4">
-								📍 {quest.location
-									.split(',')
-									.map((loc, i) => {
-										if (i === 0) {
-											return loc;
-										} else {
-											return loc.trim();
-										}
-									})
-									.join(', ')}
-							</div>
-						{/if}
-						{#if false}
-							<div>
-								<p class="text-sm font-bold m-0">Progress</p>
-								<div class="w-full h-1 rounded-md overflow-hidden bg-white my-2 mx-0">
-									<span class="block h-1 rounded-md bg-yellow-700 w-6/12" />
-								</div>
-								<p class="text-right m-0 text-sm font-bold">60%</p>
-							</div>
-						{/if}
-						<div class="flex justify-between pt-4 relative">
-							<div class="flex items-center">
-								🙋‍♂️ {quest.participants.length}: <br />
-								{#each quest.participants as participant}
-									{#if participant.picture}
-										<img
-											class="w-5 h-5 rounded-full overflow-hidden object-cover"
-											src={participant.picture}
-											alt="participant"
-										/>
+		<div class="flex flex-wrap">
+			{#each quests as [key, quest]}
+				{#if (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest')}
+					<div id={key} class="w-full md:w-4/12">
+						<div class="p-2">
+							<div class="p-4 rounded-3xl bg-gray-300">
+								<div class="flex items-center justify-b">
+									{#if quest.when}<span class="text-sm"
+											>{formatDate(quest.when) + ' @ ' + formatTime(quest.when)}
+											{#if quest.ends}- {formatTime(quest.ends)} {/if}</span
+										>
 									{/if}
-									{@html `@${participant.username}`}<br />
-								{/each}
-								<!-- <img
+								</div>
+								<div class="text-center mb-4 mt-5">
+									<p class="text-base font-bold opacity-70">{quest.title}</p>
+									<!-- <p class="text-sm opacity-70 mt-2">{role}</p> -->
+								</div>
+								{#if quest.description}
+									<div class="text-sm opacity-70 mb-4">
+										{quest.description}
+									</div>
+								{/if}
+								{#if quest.location}
+									<div class="text-sm opacity-70 mb-4">
+										📍 {quest.location
+											.split(',')
+											.map((loc, i) => {
+												if (i === 0) {
+													return loc;
+												} else {
+													return loc.trim();
+												}
+											})
+											.join(', ')}
+									</div>
+								{/if}
+								{#if false}
+									<div>
+										<p class="text-sm font-bold m-0">Progress</p>
+										<div class="w-full h-1 rounded-md overflow-hidden bg-white my-2 mx-0">
+											<span class="block h-1 rounded-md bg-yellow-700 w-6/12" />
+										</div>
+										<p class="text-right m-0 text-sm font-bold">60%</p>
+									</div>
+								{/if}
+								<div class="flex justify-between pt-4 relative">
+									<div class="flex items-center">
+										🙋‍♂️ {quest.participants.length}: <br />
+										{#each quest.participants as participant}
+											{#if participant.picture}
+												<img
+													class="w-5 h-5 rounded-full overflow-hidden object-cover"
+													src={participant.picture}
+													alt="participant"
+												/>
+											{/if}
+											{@html `@${participant.username}`}<br />
+										{/each}
+										<!-- <img
                             class="w-5 h-5 rounded-full overflow-hidden object-cover"
                             src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=2550&q=80"
                             alt="participant"
@@ -154,16 +170,18 @@
                                 <path d="M12 5v14M5 12h14" />
                             </svg>
                         </button> -->
-							</div>
-							<div
-								class="text-sm rounded-lg flex flex-shrink-0 py-2 px-4 font-bold text-yellow-600"
-							>
-								👍 {quest.appreciation.length}
+									</div>
+									<div
+										class="text-sm rounded-lg flex flex-shrink-0 py-2 px-4 font-bold text-yellow-600"
+									>
+										👍 {quest.appreciation.length}
+									</div>
+								</div>
 							</div>
 						</div>
 					</div>
-				</div>
-			</div>
-		{/if}
-	{/each}
+				{/if}
+			{/each}
+		</div>
+	</div>
 </div>

@@ -6,6 +6,7 @@
 
 	
 	import HoloSphere from 'holosphere';
+	import Announcements from './Announcements.svelte';
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
@@ -163,4 +164,5 @@
 			</div>
 		{/if}
 	{/each}
+	<Announcements/>
 </div>

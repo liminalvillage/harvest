@@ -2,6 +2,7 @@
 	// @ts-nocheck
 
 	import HoloSphere from 'holosphere';
+	import Announcements from './Announcements.svelte';
 	import { onMount } from 'svelte';
 
 	/**
@@ -214,5 +215,5 @@
 			{/each}
 		</div>
 	</div>
-	
+	<Announcements/>
 </div>

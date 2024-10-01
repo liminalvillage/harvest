@@ -2,7 +2,6 @@
 	import 'tailwindcss/tailwind.css';
 	import { page } from '$app/stores';
 	import { browser } from '$app/environment';
-
 	import TopBar from './TopBar.svelte';
 	import Overlay from './Overlay.svelte';
 	import Sidebar from './sidebar/Sidebar.svelte';

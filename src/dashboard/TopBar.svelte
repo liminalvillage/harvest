@@ -1,16 +1,26 @@
 <script>
 	import { openSidebar } from './store.ts';
-	$: ID = ''
-  // Update localStorage when the input changes
-  function handleInput(event) {
-    ID = event.target.value;
-    localStorage.setItem('ID', ID);
-   // dispatchEvent(new CustomEvent('localStorageUpdated')); // Notify other components
-  }
+    import { ID } from './store.ts'; // Import the shared ID store
+    import { onDestroy } from 'svelte';
 
- 
-	
+    // Subscribe to the store to automatically save the value in localStorage
+    let idValue;
+    const unsubscribe = ID.subscribe(value => {
+        idValue = value;
+        ID.set(value) // Update localStorage when the value changes
+    });
+
+    // Clean up the subscription when the component is destroyed
+    onDestroy(() => {
+        unsubscribe();
+    });
+
+    // Handle input changes
+    function handleInput(event) {
+        ID.set(event.target.value); // Update the store, re-rendering all dependent components
+    }
 </script>
+
 
 <header class="h-20 items-center relative z-10">
 	<div
@@ -60,7 +70,7 @@
 						class="bg-gray-800 block leading-normal pl-10 py-1.5 pr-4 ring-opacity-90 rounded-2xl text-gray-400 w-full focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
 						placeholder="Holon ID"
 						on:input={handleInput}
-						bind:value={ID}
+						value = {idValue}
 					/>
 				</div>
 			</div>

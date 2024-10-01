@@ -13,7 +13,7 @@
 	import { getContext } from "svelte";
 	import HoloSphere from "holosphere";
 
-	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
+	let holosphere =  getContext('holosphere') || new HoloSphere('Holons');
 
 	let schema = {
 		type: "object",
@@ -478,9 +478,9 @@
 		map.on("style.load", () => {
 			map.setFog({
 				color: "rgb(186, 210, 235)", // Lower atmosphere
-				"high-color": "rgb(36, 92, 223)", // Upper atmosphere
+				"high-color": "rgb(36, 92, 92)", // Upper atmosphere
 				"horizon-blend": 0.02, // Atmosphere thickness (default 0.2 at low zooms)
-				"space-color": "rgb(11, 11, 25)", // Background color
+				"space-color": "rgb(17, 24, 39)", // Background color
 				"star-intensity": 0.6, // Background star brightness (default 0.35 at low zoooms )
 			});
 		});

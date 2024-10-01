@@ -10,4 +10,5 @@ const closeSidebar = () => {
 	sidebarOpen.update(() => false);
 };
 
+export const ID = writable('');
 export { sidebarOpen, openSidebar, closeSidebar};
