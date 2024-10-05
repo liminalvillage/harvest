@@ -3,19 +3,26 @@
 
 	import HoloSphere from 'holosphere';
 	import Announcements from './Announcements.svelte';
+	import { ID } from '../dashboard/store.ts';
 	import { onMount } from 'svelte';
 
 	/**
 	 * @type {string | any[]}
 	 */
 	let store = {};
+	$: holonID = $ID;
+	
 
 	$: roles = Object.entries(store);
-	export let holonID ;
 	let holosphere;
 
 	onMount(() => {
 		holosphere = new HoloSphere('Holons');
+		subscribeToroles();
+	});
+
+	ID.subscribe((value) => {
+		holonID = value;
 		subscribeToroles();
 	});
 

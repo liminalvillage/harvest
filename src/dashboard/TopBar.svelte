@@ -1,24 +1,35 @@
-<script>
-	import { openSidebar } from './store.ts';
-    import { ID } from './store.ts'; // Import the shared ID store
-    import { onDestroy } from 'svelte';
+<script lang="ts">
+	import { openSidebar , ID} from './store.ts';
+	import { onMount, onDestroy } from 'svelte';
 
-    // Subscribe to the store to automatically save the value in localStorage
-    let idValue;
-    const unsubscribe = ID.subscribe(value => {
-        idValue = value;
-        ID.set(value) // Update localStorage when the value changes
-    });
+	// Subscribe to the store to automatically save the value in localStorage
+	
+	$: holonID = $ID;
 
-    // Clean up the subscription when the component is destroyed
-    onDestroy(() => {
-        unsubscribe();
-    });
+	const unsubscribe = ID.subscribe(value => {
+		holonID = value;
+		ID.set(value); // Update localStorage when the value changes
+	});
 
-    // Handle input changes
-    function handleInput(event) {
-        ID.set(event.target.value); // Update the store, re-rendering all dependent components
-    }
+	// Clean up the subscription when the component is destroyed
+	onDestroy(() => {
+		unsubscribe();
+	});
+
+	onMount(() => {
+		const storedHolonID = localStorage.getItem('holonID');
+		if (storedHolonID) {
+			ID.set(storedHolonID);
+		}
+	});
+
+	// Handle input changes
+	function handleInput(event: Event) {
+		const target = event.target as HTMLInputElement;
+		ID.set(target.value); // Update the store, re-rendering all dependent components
+		localStorage.setItem('holonID', target.value);
+		
+	}
 </script>
 
 
@@ -70,67 +81,11 @@
 						class="bg-gray-800 block leading-normal pl-10 py-1.5 pr-4 ring-opacity-90 rounded-2xl text-gray-400 w-full focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
 						placeholder="Holon ID"
 						on:input={handleInput}
-						value = {idValue}
+						value = {holonID}
 					/>
 				</div>
 			</div>
-			<div class="flex items-center justify-end ml-5 p-1 relative w-full sm:mr-0 sm:right-auto">
-				<span class="block pr-5">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-6 w-6"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke="currentColor"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width={2}
-							d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-						/>
-					</svg>
-				</span>
-				<span class="block pr-5">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-6 w-6"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke="currentColor"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width={2}
-							d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"
-						/>
-					</svg>
-				</span>
-				<span class="block pr-5 relative">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-6 w-6"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke="currentColor"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width={2}
-							d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-						/>
-					</svg>
-				</span>
-				<span class="block relative">
-					<img
-						alt="Maurice Lokumba"
-						src="/images/1.jpg"
-						class="h-10 mx-auto object-cover rounded-full w-10"
-					/>
-				</span>
-			</div>
+			
 		</div>
 	</div>
 </header>

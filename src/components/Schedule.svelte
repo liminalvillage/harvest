@@ -6,17 +6,31 @@
 
 	import HoloSphere from 'holosphere';
 	import { get_all_dirty_from_scope, get_slot_changes } from 'svelte/internal';
+	import { ID } from '../dashboard/store';
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
-	export let holonID;
+	$: holonID = $ID;
 	let store = {};
 	$: quests = Object.entries(store);
+
+	
 
 	onMount(async () => {
 		//const data = await holosphere.get(holonID, 'quests');
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
+		subscribe();
+	});
+	
+	ID.subscribe((value) => {
+		holonID = value;
+		subscribe();
+	});
 
+	$: update(holonID);
+
+	function subscribe(){
+		store = {};
 		holosphere.subscribe(holonID, 'quests', (newquest, key) => {
 			if (newquest) {
 				// Updates the store with the new value
@@ -28,9 +42,7 @@
 				store = store;
 			}
 		});
-	});
-
-	$: update(holonID);
+	}
 
 	function getStartTime(quest) {
 		const date = new Date(quest.when);

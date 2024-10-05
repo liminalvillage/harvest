@@ -6,4 +6,4 @@
 	<title>Schedule</title>
 </svelte:head>
 
-<Schedule holonID={localStorage.getItem('ID')}/>
+<Schedule />

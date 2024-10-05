@@ -1,9 +1,8 @@
 <script>
-	import Content from '../components/Content.svelte';
+	//import Tags from '../components/Tags.svelte';
 </script>
 
 <svelte:head>
   <title>Dashboard</title>
 </svelte:head>
-
 

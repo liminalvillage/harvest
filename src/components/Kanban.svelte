@@ -1,7 +1,7 @@
 <script>
 	// @ts-nocheck
 	import { onMount, getContext } from 'svelte';
-
+	import {ID } from '../dashboard/store.ts'; 
 	import { formatDate, formatTime } from '../utils/date';
 
 	import HoloSphere from 'holosphere';
@@ -9,28 +9,30 @@
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
-	export let holonID;
+	$: holonID = $ID;
 	let store = {};
 	$: quests = Object.entries(store);
 
+
+
 	onMount(async () => {
 		// Fetch all quests from holon
-		holosphere.subscribe(holonID, 'quests', (newquest, key) => {
-			if (newquest) {
-				// Updates the store with the new value
-				store[key] = JSON.parse(newquest);
-			} else {
-				// A key may contain a null value (if data has been deleted/set to null)
-				// if so, we remove the item from the store
-				delete store[key];
-				store = store;
-			}
-		});
+		subscribeToquests();
 
-		//fetch all chats from federation
-		let chats = await holosphere.get(holonID, 'chats');
-		chats.forEach((chat) => {
-			holosphere.subscribe(chat.id, 'quests', (newquest, key) => {
+		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
+	});
+
+	ID.subscribe((value) => {
+		holonID = value;
+		subscribeToquests();
+	});
+
+	$: update(holonID);
+
+	function subscribeToquests() {
+		store = {};
+		if (holosphere) {
+			holosphere.subscribe(holonID, 'quests', (newquest, key) => {
 				if (newquest) {
 					// Updates the store with the new value
 					store[key] = JSON.parse(newquest);
@@ -41,12 +43,8 @@
 					store = store;
 				}
 			});
-		});
-
-		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
-	});
-
-	$: update(holonID);
+		}
+	}
 
 	function update(hex) {
 		// Filter ongoing and scheduled quests

@@ -34,6 +34,11 @@ export const data = [
 		title: 'Map',
 		icon: GlobeIcon,
 		link: '/admin/map'
+	},
+	{
+		title: 'Tags',
+		icon: SettingsIcon,
+		link: '/admin/tags'
 	}
 	// {
 	// 	title: 'Documentation',
