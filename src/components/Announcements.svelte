@@ -57,7 +57,7 @@
             {#each announcements.reverse() as [key, announcement]}
                 <div class="border-t solid border-gray-700 p-4 flex 2xl:items-start w-full hover:bg-gray-700">
                     <img
-                        src={announcement.avatar}
+                        src={announcement.image}
                         alt="profile"
                         class="object-cover w-10 h-10 rounded-full"
                     />
