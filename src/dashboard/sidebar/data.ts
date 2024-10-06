@@ -3,6 +3,7 @@ import StatusIcon from './icons/StatusIcon.svelte';
 import GlobeIcon from './icons/GlobeIcon.svelte';
 import CreditsIcon from './icons/CreditsIcon.svelte';
 import ArchivesIcon from './icons/ArchivesIcon.svelte';
+import TagsIcon from './icons/TagsIcon.svelte';
 import SettingsIcon from './icons/SettingsIcon.svelte';
 import DocumentationIcon from './icons/DocumentationIcon.svelte';
 import RolesIcon from './icons/RolesIcon.svelte';
@@ -37,7 +38,7 @@ export const data = [
 	},
 	{
 		title: 'Tags',
-		icon: SettingsIcon,
+		icon: TagsIcon,
 		link: '/admin/tags'
 	}
 	// {

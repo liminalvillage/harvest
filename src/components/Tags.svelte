@@ -1,14 +1,3 @@
-<script context="module" lang="ts">
-	export interface TreeItem {
-		name: string;
-		children?: TreeItem[];
-
-		// To allow custom keys
-		[key: string]: any;
-	}
-
-	export type TreeData = TreeItem[];
-</script>
 
 <script>
 	// @ts-nocheck

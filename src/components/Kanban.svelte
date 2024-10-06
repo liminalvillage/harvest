@@ -3,6 +3,7 @@
 	import { onMount, getContext } from 'svelte';
 	import {ID } from '../dashboard/store.ts'; 
 	import { formatDate, formatTime } from '../utils/date';
+	
 
 	import HoloSphere from 'holosphere';
 	import Announcements from './Announcements.svelte';
@@ -182,4 +183,5 @@
 			{/each}
 		</div>
 	</div>
+	<Announcements />
 </div>

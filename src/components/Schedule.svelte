@@ -2,6 +2,8 @@
 	// @ts-nocheck
 	import { onMount, getContext } from 'svelte';
 
+	import Announcements from './Announcements.svelte';
+
 	import { formatDate, formatTime } from '../utils/date';
 
 	import HoloSphere from 'holosphere';
@@ -14,14 +16,12 @@
 	let store = {};
 	$: quests = Object.entries(store);
 
-	
-
 	onMount(async () => {
 		//const data = await holosphere.get(holonID, 'quests');
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
 		subscribe();
 	});
-	
+
 	ID.subscribe((value) => {
 		holonID = value;
 		subscribe();
@@ -29,7 +29,7 @@
 
 	$: update(holonID);
 
-	function subscribe(){
+	function subscribe() {
 		store = {};
 		holosphere.subscribe(holonID, 'quests', (newquest, key) => {
 			if (newquest) {
@@ -67,12 +67,11 @@
 			return `${hours}${minutes}`;
 		}
 	}
-	
+
 	function isToday(quest) {
 		const today = new Date();
 		const date = new Date(quest.when);
 		return date.getDate() === today.getDate();
-		
 	}
 
 	function isTomorrow(quest) {
@@ -81,13 +80,13 @@
 		return date.getDate() === today.getDate() + 1;
 	}
 
-	function getDay(quest){
+	function getDay(quest) {
 		const today = new Date();
 		const date = new Date(quest.when);
-		if ( date.getDate() < today.getDate()) return 'past';
-		if ( date.getDate() === today.getDate()) return 'today';
-		if ( date.getDate() === today.getDate() +1 ) return 'tomorrow';
-		if ( date.getDate() > today.getDate() +1 ) return 'future';
+		if (date.getDate() < today.getDate()) return 'past';
+		if (date.getDate() === today.getDate()) return 'today';
+		if (date.getDate() === today.getDate() + 1) return 'tomorrow';
+		if (date.getDate() > today.getDate() + 1) return 'future';
 	}
 
 	function getLength(quest) {
@@ -114,58 +113,64 @@
 	}
 </script>
 
-<div class="scheduleContainer">
-	<!-- TIMES -->
-	<div class="time start-800">8:00</div>
-	<div class="time start-830">8:30</div>
-	<div class="time start-900">9:00</div>
-	<div class="time start-930">9:30</div>
-	<div class="time start-1000">10:00</div>
-	<div class="time start-1030">10:30</div>
-	<div class="time start-1100">11:00</div>
-	<div class="time start-1130">11:30</div>
-	<div class="time start-1200">12:00</div>
-	<div class="time start-1230">12:30</div>
-	<div class="time start-1300">13:00</div>
-	<div class="time start-1330">13:30</div>
-	<div class="time start-1400">14:00</div>
-	<div class="time start-1430">14:30</div>
-	<div class="time start-1500">15:00</div>
-	<div class="time start-1530">15:30</div>
-	<div class="time start-1600">16:00</div>
-	<div class="time start-1630">16:30</div>
-	<div class="time start-1700">17:00</div>
-	<div class="time start-1730">17:30</div>
-	<div class="time start-1800">18:00</div>
-	<div class="time start-1830">18:30</div>
-	<div class="time start-1900">19:00</div>
-	<div class="time start-1930">19:30</div>
-	<div class="time start-2000">20:00</div>
-	<div class="time start-2030">20:30</div>
-	<div class="time start-2100">21:00</div>
-	<div class="time start-2130">21:30</div>
+<div class="flex flex-wrap">
+	<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
+		<div class="flex justify-between text-white items-center mb-8">
+			<p class="text-2xl font-bold">Schedule Today</p>
+			<p class="">{new Date().toDateString()}</p>
+		</div>
+		<div class="scheduleContainer">
+			<!-- TIMES -->
+			<div class="time start-800">8:00</div>
+			<div class="time start-830">8:30</div>
+			<div class="time start-900">9:00</div>
+			<div class="time start-930">9:30</div>
+			<div class="time start-1000">10:00</div>
+			<div class="time start-1030">10:30</div>
+			<div class="time start-1100">11:00</div>
+			<div class="time start-1130">11:30</div>
+			<div class="time start-1200">12:00</div>
+			<div class="time start-1230">12:30</div>
+			<div class="time start-1300">13:00</div>
+			<div class="time start-1330">13:30</div>
+			<div class="time start-1400">14:00</div>
+			<div class="time start-1430">14:30</div>
+			<div class="time start-1500">15:00</div>
+			<div class="time start-1530">15:30</div>
+			<div class="time start-1600">16:00</div>
+			<div class="time start-1630">16:30</div>
+			<div class="time start-1700">17:00</div>
+			<div class="time start-1730">17:30</div>
+			<div class="time start-1800">18:00</div>
+			<div class="time start-1830">18:30</div>
+			<div class="time start-1900">19:00</div>
+			<div class="time start-1930">19:30</div>
+			<div class="time start-2000">20:00</div>
+			<div class="time start-2030">20:30</div>
+			<div class="time start-2100">21:00</div>
+			<div class="time start-2130">21:30</div>
 
-	{#each quests as [key, quest]}
-		{#if quest && quest.status === 'scheduled' && isToday(quest)}
-			<div
-				id={key}
-				class="event stage-{getDay(quest)} start-{getStartTime(quest)} end-{getEndTime(
-					quest
-				)} length-4"
-			>
-				{quest.title} <span>{quest.location?quest.location:''}</span>
-				<span>
-					<p class="mb-0 text-muted">🙋‍♂️ {quest.participants.length}</p>
-					{#each quest.participants as participant}
-						<p>{@html `@${participant.username}`}</p>
-					{/each}
-				</span>
-			</div>
-		{/if}
-	{/each}
+			{#each quests as [key, quest]}
+				{#if quest && quest.status === 'scheduled' && isToday(quest)}
+					<div
+						id={key}
+						class="event stage-{getDay(quest)} start-{getStartTime(quest)} end-{getEndTime(
+							quest
+						)} length-4"
+					>
+						{quest.title} <span>{quest.location ? quest.location : ''}</span>
+						<span>
+							<p class="mb-0 text-muted">🙋‍♂️ {quest.participants.length}</p>
+							{#each quest.participants as participant}
+								<p>{@html `@${participant.username}`}</p>
+							{/each}
+						</span>
+					</div>
+				{/if}
+			{/each}
 
-	<!-- EVENTS -->
-	<!-- <div class="event stage-saturn start-800 end-930 length-4">Arrival and registration <span>Registration Area</span></div>
+			<!-- EVENTS -->
+			<!-- <div class="event stage-saturn start-800 end-930 length-4">Arrival and registration <span>Registration Area</span></div>
 	<div class="event stage-earth start-1000 end-1000 length-4">Welcome <span>Earth Stage</span></div>
 	<div class="event stage-earth start-1030 end-1030 length-4">Speaker One <span>Earth Stage</span></div>
 	<div class="event stage-earth start-1100 end-1100 length-4">Speaker Two <span>Earth Stage</span></div>
@@ -187,9 +192,10 @@
 	
 	<div class="event stage-venus start-1930 end-2130 length-2">Speaker Thirteen <span>Venus Stage</span></div>
 	<div class="event stage-saturn start-1930 end-2130 length-2">Drinks <span>Saturn Stage</span></div> -->
-	
+		</div>
+	</div>
+	<Announcements />
 </div>
-
 
 <style lang="scss">
 	$blockTimes: 800, 830, 900, 930, 1000, 1030, 1100, 1130, 1200, 1230, 1300, 1330, 1400, 1430, 1500,
@@ -259,7 +265,7 @@
 			}
 		}
 
-		color: #ccc ;
+		color: #ccc;
 
 		&[class*='30']:not(.start-1300) {
 			font-size: 0.8rem;
@@ -305,8 +311,6 @@
 				grid-column-end: span #{$length};
 			}
 		}
-
-
 
 		&.stage-past {
 			background-color: #9ccc65;
