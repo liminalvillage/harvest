@@ -1,6 +1,6 @@
 <script>
 	// @ts-nocheck
-	import { onMount, onDestroy } from "svelte";
+	import { onMount, getContext, onDestroy } from "svelte";
 	import { Map, GeolocateControl, Popup } from "mapbox-gl";
 	import { MapboxSearchBox } from "@mapbox/search-js-web";
 	import * as h3 from "h3-js";
@@ -10,10 +10,9 @@
 	// import "@restspace/svelte-schema-form/css/layout.scss";
 	// import "@restspace/svelte-schema-form/css/basic-skin.scss";
 
-	import { getContext } from "svelte";
 	import HoloSphere from "holosphere";
 
-	let holosphere =  getContext('holosphere') || new HoloSphere('Holons');
+	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
 	let schema = {
 		type: "object",

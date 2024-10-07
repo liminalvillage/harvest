@@ -2,15 +2,15 @@
 
 <script>
 	// @ts-nocheck
+    import { onMount, getContext } from 'svelte';
+    import { ID } from '../dashboard/store';
 	import HoloSphere from 'holosphere';
 	import Announcements from './Announcements.svelte';
-	import { ID } from '../dashboard/store';
-	import { onMount } from 'svelte';
 
-	let holosphere;
+ 
+	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
 	onMount(() => {
-		holosphere = getContext('holosphere') ||  new HoloSphere('Holons');
 		subscribeToAnnouncements();
 	});
 

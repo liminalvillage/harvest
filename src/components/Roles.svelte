@@ -1,10 +1,13 @@
 <script>
 	// @ts-nocheck
 
+	import { onMount, getContext } from 'svelte';
+	import { ID } from '../dashboard/store.ts';
+	
 	import HoloSphere from 'holosphere';
 	import Announcements from './Announcements.svelte';
-	import { ID } from '../dashboard/store.ts';
-	import { onMount } from 'svelte';
+
+
 
 	/**
 	 * @type {string | any[]}
@@ -14,10 +17,9 @@
 	
 
 	$: roles = Object.entries(store);
-	let holosphere;
+	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
 	onMount(() => {
-		holosphere = new HoloSphere('Holons');
 		subscribeToroles();
 	});
 

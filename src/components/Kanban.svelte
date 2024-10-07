@@ -1,7 +1,7 @@
 <script>
 	// @ts-nocheck
 	import { onMount, getContext } from 'svelte';
-	import {ID } from '../dashboard/store.ts'; 
+	import { ID } from '../dashboard/store.ts'; 
 	import { formatDate, formatTime } from '../utils/date';
 	
 

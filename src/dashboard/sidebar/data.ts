@@ -11,35 +11,35 @@ import RolesIcon from './icons/RolesIcon.svelte';
 
 
 export const data = [
-	{
-		title: 'Home',
-		icon: HomeIcon,
-		link: '/'
-	},
+	// {
+	// 	title: 'Home',
+	// 	icon: HomeIcon,
+	// 	link: '/'
+	// },
 	{
 		title: 'Kanban',
 		icon: ArchivesIcon,
-		link: '/admin/kanban'
+		link: '/holon/kanban'
 	},
 	{
 		title: 'Schedule',
 		icon: CreditsIcon,
-		link: '/admin/schedule'
+		link: '/holon/schedule'
 	},
 	{
 		title: 'Roles',
 		icon: RolesIcon,
-		link: '/admin/roles'
+		link: '/holon/roles'
 	},
 	{
 		title: 'Map',
 		icon: GlobeIcon,
-		link: '/admin/map'
+		link: '/holon/map'
 	},
 	{
 		title: 'Tags',
 		icon: TagsIcon,
-		link: '/admin/tags'
+		link: '/holon/tags'
 	}
 	// {
 	// 	title: 'Documentation',
