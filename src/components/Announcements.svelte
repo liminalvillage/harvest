@@ -10,7 +10,7 @@
 	let holosphere;
 
 	onMount(() => {
-		holosphere = new HoloSphere('HolonsDebug');
+		holosphere = getContext('holosphere') ||  new HoloSphere('Holons');
 		subscribeToAnnouncements();
 	});
 
