@@ -150,6 +150,10 @@
 			<div class="time start-2030">20:30</div>
 			<div class="time start-2100">21:00</div>
 			<div class="time start-2130">21:30</div>
+			<div class="time start-2200">22:00</div>
+			<div class="time start-2230">22:30</div>
+			<div class="time start-2300">23:00</div>
+			<div class="time start-2330">23:30</div>
 
 			{#each quests as [key, quest]}
 				{#if quest && quest.status === 'scheduled' && isToday(quest)}
@@ -200,7 +204,7 @@
 
 <style lang="scss">
 	$blockTimes: 800, 830, 900, 930, 1000, 1030, 1100, 1130, 1200, 1230, 1300, 1330, 1400, 1430, 1500,
-		1530, 1600, 1630, 1700, 1730, 1800, 1830, 1900, 1930, 2000, 2030, 2100, 2130;
+		1530, 1600, 1630, 1700, 1730, 1800, 1830, 1900, 1930, 2000, 2030, 2100, 2130, 2200, 2230, 2300, 2330;
 	$blockLengths: 1, 2, 3, 4;
 
 	body {
@@ -246,7 +250,11 @@
 			'time2000 stage stage stage stage'
 			'time2030 stage stage stage stage'
 			'time2100 stage stage stage stage'
-			'time2130 stage stage stage stage';
+			'time2130 stage stage stage stage'
+			'time2200 stage stage stage stage'
+			'time2230 stage stage stage stage'
+			'time2300 stage stage stage stage'
+			'time2330 stage stage stage stage';
 	}
 
 	/**

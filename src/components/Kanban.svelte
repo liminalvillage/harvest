@@ -15,7 +15,6 @@
 	$: quests = Object.entries(store);
 
 
-
 	onMount(async () => {
 		// Fetch all quests from holon
 		subscribeToquests();

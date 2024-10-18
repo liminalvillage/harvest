@@ -2292,6 +2292,11 @@ svelte-check@^3.0.1:
     svelte-preprocess "^5.0.3"
     typescript "^5.0.3"
 
+svelte-dnd-action@^0.9.51:
+  version "0.9.51"
+  resolved "https://registry.yarnpkg.com/svelte-dnd-action/-/svelte-dnd-action-0.9.51.tgz#cc194b1e0e2a8aaf281c27caaf56c7526ed3bc29"
+  integrity sha512-/0DEK+QqWf6QYtJgbQPJE/LSzo6JAE00oWVtBWZrBDAMXeN4cYVd0Z7sSpbu00Sm/h03t/RF4UGUMwosmrseQw==
+
 svelte-eslint-parser@^0.30.0:
   version "0.30.0"
   resolved "https://registry.npmjs.org/svelte-eslint-parser/-/svelte-eslint-parser-0.30.0.tgz"
