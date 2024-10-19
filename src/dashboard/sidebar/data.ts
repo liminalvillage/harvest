@@ -11,46 +11,47 @@ import OffersIcon from './icons/OffersIcon.svelte'; // Add this import
 import DashboardIcon from './icons/DashboardIcon.svelte';
 import ShoppingListIcon from './icons/ShoppingListIcon.svelte';
 
+
 export const data = [
 	{
 		title: 'Dashboard',
 		icon: DashboardIcon,
-		link: '/holon/dashboard'
+		link: '/dashboard'
 	},
 	{
-		title: 'Kanban',
+		title: 'Tasks',
 		icon: ArchivesIcon,
-		link: '/holon/kanban'
+		link: '/kanban'
 	},
 	{
 		title: 'Schedule',
 		icon: CreditsIcon,
-		link: '/holon/schedule'
+		link: '/schedule'
 	},
 	{
 		title: 'Roles',
 		icon: RolesIcon,
-		link: '/holon/roles'
+		link: '/roles'
 	},
 	{
 		title: 'Map',
 		icon: GlobeIcon,
-		link: '/holon/map'
+		link: '/map'
 	},
 	{
 		title: 'Tags',
 		icon: TagsIcon,
-		link: '/holon/tags'
+		link: '/tags'
 	},
 	{
-		title: 'Offers',
+		title: 'Offers & Requests',
 		icon: OffersIcon,
-		link: '/holon/offers'
+		link: '/offers'
 	},
 	{
-	title: 'Shopping List',
-	icon: ShoppingListIcon,
-	link: '/holon/shopping'
+		title: 'Shopping List',
+		icon: ShoppingListIcon,
+		link: '/shopping'
 	}
 	// {
 	// 	title: 'Documentation',

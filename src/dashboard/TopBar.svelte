@@ -1,6 +1,8 @@
 <script lang="ts">
-	import { openSidebar , ID} from './store.ts';
+	import { openSidebar, ID } from './store';
 	import { onMount, onDestroy } from 'svelte';
+	import { page } from '$app/stores';
+	import {goto} from '$app/navigation';
 
 	// Subscribe to the store to automatically save the value in localStorage
 	
@@ -17,7 +19,7 @@
 	});
 
 	onMount(() => {
-		const storedHolonID = localStorage.getItem('holonID');
+		const storedHolonID =  $page.params.id;
 		if (storedHolonID) {
 			ID.set(storedHolonID);
 		}
@@ -28,7 +30,15 @@
 		const target = event.target as HTMLInputElement;
 		ID.set(target.value); // Update the store, re-rendering all dependent components
 		localStorage.setItem('holonID', target.value);
-		
+		//get current path
+		let	currentPath = $page.url.pathname.split('/').pop();
+		goto(`/${target.value}/${currentPath}`);
+	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			handleInput(event);
+		}
 	}
 </script>
 
@@ -77,11 +87,11 @@
 					</svg>
 					<input
 						type="text"
-						
 						class="bg-gray-800 block leading-normal pl-10 py-1.5 pr-4 ring-opacity-90 rounded-2xl text-gray-400 w-full focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
 						placeholder="Holon ID"
-						on:input={handleInput}
-						value = {holonID}
+						on:keydown={handleKeydown}
+						on:blur={handleInput}
+						value={holonID}
 					/>
 				</div>
 			</div>
