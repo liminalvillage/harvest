@@ -2,9 +2,16 @@
     import { onMount, getContext } from 'svelte';
     import { ID } from '../dashboard/store';
     import HoloSphere from 'holosphere';
+    import type HoloSphere from './holosphere.d.ts';
     import Announcements from './Announcements.svelte';
 
-    let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+    // Define the type for holosphere
+    interface HoloSphereInterface {
+        get: (id: string, collection: string) => Promise<any>;
+    }
+
+    // Use the defined interface for holosphere
+    let holosphere: HoloSphereInterface = getContext('holosphere') || new HoloSphere('Holons');
     $: holonID = $ID;
 
     let chatCount = 0;

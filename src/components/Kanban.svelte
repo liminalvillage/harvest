@@ -10,7 +10,9 @@
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
-	$: holonID = $ID;
+	export let id;
+
+	$: holonID = $ID ;
 	let store = {};
 	$: quests = Object.entries(store);
 
@@ -32,7 +34,7 @@
 	function subscribeToquests() {
 		store = {};
 		if (holosphere) {
-			holosphere.subscribe(holonID, 'quests', (newquest, key) => {
+			holosphere.subscribe(id||holonID, 'quests', (newquest, key) => {
 				if (newquest) {
 					// Updates the store with the new value
 					store[key] = JSON.parse(newquest);
