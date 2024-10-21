@@ -2,10 +2,9 @@
 	import { openSidebar, ID } from './store';
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
-	import {goto} from '$app/navigation';
+	import { goto } from '$app/navigation';
 
 	// Subscribe to the store to automatically save the value in localStorage
-	
 	$: holonID = $ID;
 
 	const unsubscribe = ID.subscribe(value => {
@@ -18,21 +17,32 @@
 		unsubscribe();
 	});
 
+	let showToast = false;
+
 	onMount(() => {
-		const storedHolonID =  $page.params.id;
+		const storedHolonID = $page.params.id;
 		if (storedHolonID) {
 			ID.set(storedHolonID);
+		} else {
+			showToast = true;
 		}
 	});
+
+	// Add this reactive statement
+	$: if ($ID) {
+		showToast = false;
+	}
 
 	// Handle input changes
 	function handleInput(event: Event) {
 		const target = event.target as HTMLInputElement;
 		ID.set(target.value); // Update the store, re-rendering all dependent components
 		localStorage.setItem('holonID', target.value);
-		//get current path
-		let	currentPath = $page.url.pathname.split('/').pop();
-		goto(`/${target.value}/${currentPath}`);
+		// Get current path
+		let currentPath = $page.url.pathname.split('/').pop();
+	
+		goto(`/${target.value?target.value:'holonid'}/${currentPath}`);
+		
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -42,6 +52,22 @@
 	}
 </script>
 
+<style>
+	.toast {
+		position: fixed;
+		bottom: 20px;
+		right: 20px;
+		background-color: rgba(0, 0, 0, 0.7);
+		color: white;
+		padding: 10px 20px;
+		border-radius: 5px;
+		transition: opacity 0.5s ease;
+		opacity: 0;
+	}
+	.toast.show {
+		opacity: 1;
+	}
+</style>
 
 <header class="h-20 items-center relative z-10">
 	<div
@@ -99,3 +125,13 @@
 		</div>
 	</div>
 </header>
+
+{#if showToast}
+	<button
+		class="toast show"
+		on:click={() => showToast = false}
+		on:keydown={(e) => e.key === 'Enter' && (showToast = false)}
+	>
+		To begin using the dashboard, please type the Holon ID in the search bar. You can get the Holon ID using the command /id on any chat containing the Telegram bot @HolonsBot.
+	</button>
+{/if}

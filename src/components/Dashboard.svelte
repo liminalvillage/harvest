@@ -1,8 +1,8 @@
 <script lang="ts">
     import { onMount, getContext } from 'svelte';
     import { ID } from '../dashboard/store';
+    import { page } from '$app/stores'; // Import the $page store
     import HoloSphere from 'holosphere';
-    import type HoloSphere from './holosphere.d.ts';
     import Announcements from './Announcements.svelte';
 
     // Define the type for holosphere
@@ -12,7 +12,10 @@
 
     // Use the defined interface for holosphere
     let holosphere: HoloSphereInterface = getContext('holosphere') || new HoloSphere('Holons');
-    $: holonID = $ID;
+    let holonID: string; // Declare holonID without initialization
+
+    // Subscribe to the $page store to get the current page ID
+    $: holonID = $page.params.id; // Use the page ID from the $page store
 
     let chatCount = 0;
     let userCount = 0;
@@ -62,28 +65,28 @@
         </div>
 
         <div class="grid grid-cols-2 md:grid-cols-3 gap-6">
-            <div class="bg-blue-500 p-6 rounded-lg text-white">
+            <a href={``} class="bg-blue-500 p-6 rounded-lg text-white">
                 <h3 class="text-xl font-semibold mb-2">Chats</h3>
                 <p class="text-3xl font-bold">{chatCount}</p>
-            </div>
-            <div class="bg-green-500 p-6 rounded-lg text-white">
+            </a>
+            <a href={``} class="bg-green-500 p-6 rounded-lg text-white">
                 <h3 class="text-xl font-semibold mb-2">Users</h3>
                 <p class="text-3xl font-bold">{userCount}</p>
-            </div>
-            <div class="bg-yellow-500 p-6 rounded-lg text-white">
+            </a>
+            <a href={`/${holonID}/kanban`} class="bg-yellow-500 p-6 rounded-lg text-white">
                 <h3 class="text-xl font-semibold mb-2">Tasks</h3>
                 <p class="text-3xl font-bold">{completedTaskCount} / {openTaskCount + completedTaskCount}</p>
                 <p class="text-sm">Completed / Total</p>
-            </div>
-            <div class="bg-purple-500 p-6 rounded-lg text-white">
+            </a>
+            <a href={`/${holonID}/schedule`} class="bg-purple-500 p-6 rounded-lg text-white">
                 <h3 class="text-xl font-semibold mb-2">Recent Events</h3>
                 <p class="text-3xl font-bold">{recentEventCount}</p>
                 <p class="text-sm">Last 7 days</p>
-            </div>
-            <div class="bg-red-500 p-6 rounded-lg text-white">
+            </a>
+            <a href={`/${holonID}/shopping`} class="bg-red-500 p-6 rounded-lg text-white">
                 <h3 class="text-xl font-semibold mb-2">Shopping Items</h3>
                 <p class="text-3xl font-bold">{shoppingItemCount}</p>
-            </div>
+            </a>
         </div>
     </div>
     <Announcements />

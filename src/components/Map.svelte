@@ -2,7 +2,6 @@
 	// @ts-nocheck
 	import { onMount, onDestroy } from 'svelte';
 	import { Map, GeolocateControl, Popup } from 'mapbox-gl';
-	import { MapboxSearchBox } from '@mapbox/search-js-web';
 	import * as h3 from 'h3-js';
 	import '../../node_modules/mapbox-gl/dist/mapbox-gl.css';
 
@@ -11,9 +10,9 @@
 	// import "@restspace/svelte-schema-form/css/basic-skin.scss";
 
 	import { getContext } from 'svelte';
-	import HoloSphere from '../../../HoloSphere/holosphere.js';
+	import HoloSphere from 'holosphere';
 
-	let holosphere = getContext('holosphere') || new HoloSphere('HolonsDebug');
+	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
 	let schema = {
 		type: 'object',
@@ -270,7 +269,7 @@
 	}
 
 	function renderHexes(map, lense) {
-		const latitudeMax = 90;
+		const latitudeMax = 180;
 		const latitudeMin = -latitudeMax;
 		const longitudeMax = 180;
 		const longitudeMin = -longitudeMax;
@@ -446,7 +445,14 @@
 		}
 	}
 
-	onMount(() => {
+	// Declare the MapboxSearchBox variable
+	let MapboxSearchBox;
+
+	onMount(async () => {
+		// Import MapboxSearchBox only in the browser
+		const { MapboxSearchBox: SearchBox } = await import('@mapbox/search-js-web');
+		MapboxSearchBox = SearchBox;
+
 		const initialState = { lng: lng, lat: lat, zoom: zoom, shapes: shapes };
 
 		let hexagonData = {};
@@ -600,8 +606,8 @@
 
 	onDestroy(() => {
 		// Remove event listeners and clean up resources
-		map.off('click');
-		map.off('contextmenu');
+		// map.off('click');
+		// map.off('contextmenu');
 		// ... other cleanup ...
 	});
 </script>
@@ -704,3 +710,4 @@
 		border-radius: 4px;
 	}
 </style>
+

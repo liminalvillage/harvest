@@ -1566,10 +1566,10 @@ hasown@^2.0.2:
   dependencies:
     function-bind "^1.1.2"
 
-holosphere@^1.0.5:
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/holosphere/-/holosphere-1.0.5.tgz#ee7749cbb8b801fb00d24bd1667fa6f016c0b526"
-  integrity sha512-9WRLynzpBy+L8J4kuRPf7N1a+DXImcbCvofAXBxXGSu/AS2TB+43YhfFNGlgksU+I7c0uts7geg2SMBbV4bGaQ==
+holosphere@^1.0.6:
+  version "1.0.6"
+  resolved "https://registry.yarnpkg.com/holosphere/-/holosphere-1.0.6.tgz#e15cdcfcc105c0409bb59bc8725d542d1ae50c71"
+  integrity sha512-c+JFgoojIq8IYAfY7Rry54BgPOWrf+NIF+OH4LFD1ZDd3LhoTfXJHDSBwVvz4gAHPR9icAP2shVimgaEtl5TXg==
   dependencies:
     ajv "^8.12.0"
     gun "^0.2020.1240"
