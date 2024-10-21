@@ -1,24 +1,25 @@
 <script>
 	// @ts-nocheck
-	import { onMount, getContext, onDestroy } from "svelte";
-	import { Map, GeolocateControl, Popup } from "mapbox-gl";
-	import { MapboxSearchBox } from "@mapbox/search-js-web";
-	import * as h3 from "h3-js";
-	import "../../node_modules/mapbox-gl/dist/mapbox-gl.css";
+	import { onMount, onDestroy } from 'svelte';
+	import { Map, GeolocateControl, Popup } from 'mapbox-gl';
+	import { MapboxSearchBox } from '@mapbox/search-js-web';
+	import * as h3 from 'h3-js';
+	import '../../node_modules/mapbox-gl/dist/mapbox-gl.css';
 
 	// import { SubmitForm, SchemaForm } from "@restspace/svelte-schema-form";
 	// import "@restspace/svelte-schema-form/css/layout.scss";
 	// import "@restspace/svelte-schema-form/css/basic-skin.scss";
 
-	import HoloSphere from "holosphere";
+	import { getContext } from 'svelte';
+	import HoloSphere from '../../../HoloSphere/holosphere.js';
 
-	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+	let holosphere = getContext('holosphere') || new HoloSphere('HolonsDebug');
 
 	let schema = {
-		type: "object",
+		type: 'object',
 		properties: {
-			x: { type: "string" },
-		},
+			x: { type: 'string' }
+		}
 	};
 	let value = {};
 
@@ -28,13 +29,17 @@
 
 	let map;
 	let mapContainer;
-	let ID;
-	let lense = "hubs";
+	let holonID;
+	let lense = 'hubs';
 
 	let lng, lat, zoom, shapes;
 	lng = -71.224518;
 	lat = 42.213995;
 	zoom = 9;
+
+	// Define constants for colors and access token
+	const ACCESS_TOKEN = 'your_access_token_here';
+	const DEFAULT_COLOR = '#ffffff';
 
 	// Create a local store to cache data from GUN
 	let store = {};
@@ -58,16 +63,26 @@
 	$: done = entries.filter(([key, entries]) => entries.done).length;
 
 	const create = (key) => {
-		holosphere.put(ID,lense,{ content: key, done: false });
+		holosphere.put(holonID, lense, { content: key, done: false });
 	};
 	const update = (key, value) =>
-		holosphere.gun.get(ID).get(lense).get(key).get("done").put(value);
-	const remove = (key) => holosphere.delete(ID,lense);
+		holosphere.gun.get(holonID).get(lense).get(key).get('done').put(value);
+	const remove = (key) => holosphere.delete(holonID, lense);
+
+	// Improved error handling for async operations
+	const fetchData = async (key) => {
+		try {
+			const data = await holosphere.get(key, lense);
+			// Process data...
+		} catch (error) {
+			console.error('Error fetching data:', error);
+		}
+	};
 
 	function goToHex(hex, scale) {
 		map.flyTo({
 			center: h3.cellToLatLng(hex),
-			zoom: 10,
+			zoom: 10
 		});
 	}
 
@@ -76,42 +91,37 @@
 		let hexagonData = {};
 		const kRing = h3.gridDisk(hex, 1);
 		// Reduce hexagon list to a map with random values
-		let hexagons = kRing.reduce(
-			(res, hexagon) => ({ ...res, [hexagon]: Math.random() }),
-			{},
-		);
+		let hexagons = kRing.reduce((res, hexagon) => ({ ...res, [hexagon]: Math.random() }), {});
 		kRing.forEach((hexID) => {
 			hexagonData[hexID] = {
 				height: Math.random() * 6500, // maxHeight is the maximum height you want
-				color: getRandomColor(), // A function to generate random colors
+				color: getRandomColor() // A function to generate random colors
 			};
 		});
 		// Get the hexagon boundaries
-		const hexBoundaries = kRing.map((hexagon) =>
-			h3.cellToBoundary(hexagon, true),
-		);
+		const hexBoundaries = kRing.map((hexagon) => h3.cellToBoundary(hexagon, true));
 
 		// Update the source data with the new hexagon to highlight.
-		map.getSource("random").setData({
-			type: "FeatureCollection",
+		map.getSource('random').setData({
+			type: 'FeatureCollection',
 			features: hexBoundaries.map((hexBoundary, index) => ({
-				type: "Feature",
+				type: 'Feature',
 				properties: {
 					id: kRing[index],
 					height: Math.random() * 1000,
-					color: getRandomColor(),
+					color: getRandomColor()
 				},
 				geometry: {
-					type: "Polygon",
-					coordinates: [hexBoundary], // Close the polygon by adding the first point again
-				},
-			})),
+					type: 'Polygon',
+					coordinates: [hexBoundary] // Close the polygon by adding the first point again
+				}
+			}))
 		});
 	}
 
 	function getRandomColor() {
-		var letters = "0123456789ABCDEF";
-		var color = "#";
+		var letters = '0123456789ABCDEF';
+		var color = '#';
 		for (var i = 0; i < 6; i++) {
 			color += letters[Math.floor(Math.random() * 16)];
 		}
@@ -129,62 +139,62 @@
 		}
 
 		const hexGeoJson = {
-			type: "Feature",
+			type: 'Feature',
 			properties: {},
 			geometry: {
-				type: "Polygon",
-				coordinates: [coordinates], // Close the polygon by adding the first point again
-			},
+				type: 'Polygon',
+				coordinates: [coordinates] // Close the polygon by adding the first point again
+			}
 		};
 
 		// Update the source data with the new hexagon to highlight.
-		map.getSource("clicked-hex-area").setData({
-			type: "FeatureCollection",
-			features: [hexGeoJson],
+		map.getSource('clicked-hex-area').setData({
+			type: 'FeatureCollection',
+			features: [hexGeoJson]
 		});
 	}
 	function highlightHexagons(map, lense) {
 		let features = [];
 		//remove all features
-		map.getSource("h3-hex-areas").setData({
-			type: "FeatureCollection",
-			features: features,
+		map.getSource('h3-hex-areas').setData({
+			type: 'FeatureCollection',
+			features: features
 		});
 
 		if (!lense || !shapes) return;
-		shapes.map( async(hex) => {
-			holosphere.gun.get(hex) //this way is much faster (using realtime db)
+		shapes.map(async (hex) => {
+			holosphere.gun
+				.get(hex) //this way is much faster (using realtime db)
 				.get(lense)
 				.map()
-				.once((data, key) => {
-				 if (data) {
-			// holosphere.get(hex, lense).then( data =>{ // this way is slow as it needs to wait for the promise
-			// 		if (data.length>0) {
-						console.log(data);
+				.once(async (data, key) => {
+					if (data) {
+						// holosphere.get(hex, lense).then( data =>{ // this way is slow as it needs to wait for the promise
+						// 		if (data.length>0) {
 						//Highlight hexagon
+						let parsed = await holosphere.parse(data);
+						console.log('parsed:', parsed);
+
 						const hexBoundary = h3.cellToBoundary(hex, true);
 
 						let coordinates = [];
 						for (let i = 0; i < hexBoundary.length; i++) {
-							coordinates.push([
-								hexBoundary[i][0],
-								hexBoundary[i][1],
-							]);
+							coordinates.push([hexBoundary[i][0], hexBoundary[i][1]]);
 						}
 
 						const hexGeoJson = {
-							type: "Feature",
+							type: 'Feature',
 							properties: {},
 							geometry: {
-								type: "Polygon",
-								coordinates: [coordinates], // Close the polygon by adding the first point again
-							},
+								type: 'Polygon',
+								coordinates: [coordinates] // Close the polygon by adding the first point again
+							}
 						};
 						features.push(hexGeoJson);
 						// Update the source data with the new hexagon to highlight.
-						map.getSource("h3-hex-areas").setData({
-							type: "FeatureCollection",
-							features: features,
+						map.getSource('h3-hex-areas').setData({
+							type: 'FeatureCollection',
+							features: features
 						});
 					}
 				});
@@ -209,7 +219,7 @@
 			[11, 18.2],
 			[12, 19.5],
 			[13, 21.1],
-			[14, 21.9],
+			[14, 21.9]
 		];
 
 		for (let [res, z] of resToZoom) {
@@ -234,7 +244,7 @@
 			[18.2, 11],
 			[19.5, 12],
 			[21.1, 13],
-			[21.9, 14],
+			[21.9, 14]
 		];
 
 		for (let [z, res] of zoomToRes) {
@@ -244,7 +254,8 @@
 	}
 
 	function getCellInfo(cell) {
-		holosphere.gun.get(cell)
+		holosphere.gun
+			.get(cell)
 			.get(content)
 			.on((data) => {
 				console.log(data);
@@ -265,16 +276,15 @@
 		const longitudeMin = -longitudeMax;
 
 		const extraFillArea = 0.5;
-		const blueColor = "#ffffff"; //'#0080ff';
-		const borderLayerName = "hex-layer-border";
-		const hexSourceName = "hex-source";
+		const blueColor = '#ffffff'; //'#0080ff';
+		const borderLayerName = 'hex-layer-border';
+		const hexSourceName = 'hex-source';
 
 		var currentZoom = map.getZoom();
 		var h3res = getResolution(currentZoom);
 		// console.log("Resolution: " + JSON.stringify(h3res));
 
-		const iw = window.innerWidth;
-		const ih = window.innerHeight;
+		const { width: iw, height: ih } = map.getContainer().getBoundingClientRect();
 		const cUL = map.unproject([0, 0]).toArray(); // Upper left
 		const cLR = map.unproject([iw, ih]).toArray(); // Lower right
 		const x1 = Math.min(cUL[0], cLR[0]);
@@ -307,14 +317,14 @@
 				[latitudeMin, longitudeMin],
 				[latitudeMin, 0],
 				[latitudeMax, 0],
-				[latitudeMax, longitudeMin],
+				[latitudeMax, longitudeMin]
 			]);
 
 			coordinates.push([
 				[latitudeMin, 0],
 				[latitudeMin, longitudeMax],
 				[latitudeMax, longitudeMax],
-				[latitudeMax, 0],
+				[latitudeMax, 0]
 			]);
 		} else {
 			const xIncrement = 180;
@@ -326,8 +336,8 @@
 						[y2withBuffer, lowerX],
 						[y2withBuffer, upperX],
 						[y1withBuffer, upperX],
-						[y1withBuffer, lowerX],
-					],
+						[y1withBuffer, lowerX]
+					]
 				]);
 				// console.log(
 				// 	`PUSH Coordinates x1:${lowerX} x2:${upperX} y1:${y1withBuffer} y2:${y2withBuffer}`,
@@ -339,12 +349,12 @@
 		shapes = [].concat(
 			...coordinates.map((e) => {
 				return h3.polygonToCells(e, h3res);
-			}),
+			})
 		);
 		var innershapes = [].concat(
 			...coordinates.map((e) => {
 				return h3.polygonToCells(e, h3res + 1);
-			}),
+			})
 		);
 		var hexBoundaries = [];
 		var pentaBoundaries = [];
@@ -377,32 +387,32 @@
 		// );
 
 		var featureCollection = {
-			type: "FeatureCollection",
+			type: 'FeatureCollection',
 			features: [
 				{
-					type: "Feature",
-					properties: { color: "gray" },
+					type: 'Feature',
+					properties: { color: 'gray' },
 					geometry: {
-						type: "Polygon",
-						coordinates: innerBoundaries,
-					},
+						type: 'Polygon',
+						coordinates: innerBoundaries
+					}
 				},
 				{
-					type: "Feature",
-					properties: { color: "white" },
+					type: 'Feature',
+					properties: { color: 'white' },
 					geometry: {
-						type: "Polygon",
-						coordinates: hexBoundaries,
-					},
+						type: 'Polygon',
+						coordinates: hexBoundaries
+					}
 				},
 				{
-					type: "Feature",
-					properties: { color: "white" },
+					type: 'Feature',
+					properties: { color: 'white' },
 					geometry: {
-						type: "Polygon",
-						coordinates: pentaBoundaries,
-					},
-				}, //,
+						type: 'Polygon',
+						coordinates: pentaBoundaries
+					}
+				} //,
 				// {
 				// 	type: "Feature",
 				// 	properties: { color: "blue" },
@@ -411,7 +421,7 @@
 				// 		coordinates: highlighted,
 				// 	},
 				// },
-			],
+			]
 		};
 
 		const hexSource = map.getSource(hexSourceName);
@@ -419,19 +429,19 @@
 			hexSource.setData(featureCollection);
 		} else {
 			var hexGeoJson = {
-				type: "geojson",
-				data: featureCollection,
+				type: 'geojson',
+				data: featureCollection
 			};
 			map.addSource(hexSourceName, hexGeoJson);
 			map.addLayer({
 				id: borderLayerName,
 				source: hexSourceName,
-				type: "line",
+				type: 'line',
 				layout: {},
 				paint: {
-					"line-color": ["get", "color"],
-					"line-width": 1,
-				},
+					'line-color': ['get', 'color'],
+					'line-width': 1
+				}
 			});
 		}
 	}
@@ -441,11 +451,11 @@
 
 		let hexagonData = {};
 		let accessToken =
-			"pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
+			'pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ';
 		let config = {
 			lng: 13.7496496,
 			lat: 42.8917571,
-			zoom: 0,
+			zoom: 0
 		};
 
 		map = new Map({
@@ -453,8 +463,8 @@
 			accessToken: accessToken,
 			center: [config.lng, config.lat],
 			zoom: config.zoom + 2,
-			style: "mapbox://styles/mapbox/satellite-streets-v12",
-			projection: "globe",
+			style: 'mapbox://styles/mapbox/satellite-streets-v12',
+			projection: 'globe'
 		});
 
 		const search = new MapboxSearchBox();
@@ -464,129 +474,110 @@
 		map.addControl(
 			new GeolocateControl({
 				positionOptions: {
-					enableHighAccuracy: true,
+					enableHighAccuracy: true
 				},
 				// When active the map will receive updates to the device's location as it changes.
 				trackUserLocation: true,
 				// Draw an arrow next to the location dot to indicate which direction the device is heading.
-				showUserHeading: true,
-			}),
+				showUserHeading: true
+			})
 		);
 
-
-		map.on("style.load", () => {
+		map.on('style.load', () => {
 			map.setFog({
 				color: "rgb(186, 210, 235)", // Lower atmosphere
-				"high-color": "rgb(36, 92, 92)", // Upper atmosphere
+				"high-color": "rgb(36, 92, 223)", // Upper atmosphere
 				"horizon-blend": 0.02, // Atmosphere thickness (default 0.2 at low zooms)
-				"space-color": "rgb(17, 24, 39)", // Background color
+				"space-color": "rgb(11, 11, 25)", // Background color
 				"star-intensity": 0.6, // Background star brightness (default 0.35 at low zoooms )
 			});
 		});
 
-		map.on("load", function () {
-			["zoomend", "dragend", "resize"].forEach((event) => {
+		map.on('load', function () {
+			['zoomend', 'dragend', 'resize'].forEach((event) => {
 				map.on(event, () => {
 					updateData(map);
 					renderHexes(map, lense);
 				});
 			});
 
-			map.addSource("random", {
-				type: "geojson",
+			map.addSource('random', {
+				type: 'geojson',
 				data: {
-					type: "FeatureCollection",
-					features: [],
-				},
+					type: 'FeatureCollection',
+					features: []
+				}
 			});
 
-			map.addSource("clicked-hex-area", {
-				type: "geojson",
+			map.addSource('clicked-hex-area', {
+				type: 'geojson',
 				data: {
-					type: "FeatureCollection",
-					features: [],
-				},
+					type: 'FeatureCollection',
+					features: []
+				}
 			});
 
-			map.addSource("h3-hex-areas", {
-				type: "geojson",
+			map.addSource('h3-hex-areas', {
+				type: 'geojson',
 				data: {
-					type: "FeatureCollection",
-					features: [],
-				},
+					type: 'FeatureCollection',
+					features: []
+				}
 			});
 
 			map.addLayer({
-				id: "highlighted-hex",
-				type: "fill",
-				source: "h3-hex-areas",
+				id: 'highlighted-hex',
+				type: 'fill',
+				source: 'h3-hex-areas',
 				paint: {
-					"fill-color": "green",
-					"fill-opacity": 0.6,
-					"fill-outline-color": "rgba(255, 0, 0, 1)",
-				},
+					'fill-color': 'green',
+					'fill-opacity': 0.6,
+					'fill-outline-color': 'rgba(255, 0, 0, 1)'
+				}
 			});
 
 			map.addLayer({
-				id: "clicked-hex",
-				type: "fill",
-				source: "clicked-hex-area",
+				id: 'clicked-hex',
+				type: 'fill',
+				source: 'clicked-hex-area',
 				paint: {
-					"fill-color": "blue",
-					"fill-opacity": 0.6,
-					"fill-outline-color": "rgba(255, 0, 0, 1)",
-				},
+					'fill-color': 'blue',
+					'fill-opacity': 0.6,
+					'fill-outline-color': 'rgba(255, 0, 0, 1)'
+				}
 			});
 
 			map.addLayer({
-				id: "3d-hexagons",
-				type: "fill-extrusion",
-				source: "random", // Your hexagon data source
+				id: '3d-hexagons',
+				type: 'fill-extrusion',
+				source: 'random', // Your hexagon data source
 				paint: {
 					// Use an expression to set the fill-extrusion-height based on the lookup table
-					"fill-extrusion-height": [
-						"get",
-						["to-string", ["get", "id"]],
-						["literal", hexagonData],
-					],
+					'fill-extrusion-height': ['get', ['to-string', ['get', 'id']], ['literal', hexagonData]],
 					// Set the fill-extrusion-color similarly
-					"fill-extrusion-color": [
-						"get",
-						["to-string", ["get", "id"]],
-						["literal", hexagonData],
-					],
-					"fill-extrusion-opacity": 0.6,
-				},
+					'fill-extrusion-color': ['get', ['to-string', ['get', 'id']], ['literal', hexagonData]],
+					'fill-extrusion-opacity': 0.6
+				}
 			});
 
 			renderHexes(map, lense);
 		});
 
-		
-		map.on("click", async (e) => {
-			ID = h3.latLngToCell(
-				e.lngLat.lat,
-				e.lngLat.lng,
-				getResolution(map.getZoom()),
-			);
+		map.on('click', async (e) => {
+			holonID = h3.latLngToCell(e.lngLat.lat, e.lngLat.lng, getResolution(map.getZoom()));
 
-			store = await holosphere.get(ID, lense);
-			console.log(store)
-			
+			store = await holosphere.get(holonID, lense);
+			console.log(store);
+
 			//highlightNearbyHexagons(map,clickedHex)
 
-			highlightHexagon(map, ID);
-			//localStorage.put("ID",ID)
+			highlightHexagon(map, holonID);
 			// new Popup().setLngLat(e.lngLat).setHTML(clickedHex).addTo(map);
 		});
 
-		map.on("contextmenu", (e) => {
+		map.on('contextmenu', (e) => {
 			console.log(e.lngLat);
-			const clickedHex = h3.latLngToCell(
-				e.lngLat.lat,
-				e.lngLat.lng,
-				getResolution(map.getZoom()),
-			);
+			const clickedHex = h3.latLngToCell(e.lngLat.lat, e.lngLat.lng, getResolution(map.getZoom()));
 			let form = `<form bind:this={form}>
 		<label for="fname">Hex:</label><br />
 		<input type="text" id="fname" name="fname" value="${clickedHex}" /><br />
@@ -608,20 +599,21 @@
 	});
 
 	onDestroy(() => {
-		//map.remove();
+		// Remove event listeners and clean up resources
+		map.off('click');
+		map.off('contextmenu');
+		// ... other cleanup ...
 	});
 </script>
 
-<head> </head>
+<head />
 <!-- <SubmitForm {schema} {value} on:submit={submit} />
 
 <SchemaForm {schema} {value} /> -->
 <div class="map-wrap">
 	<div class="map" bind:this={mapContainer} />
 	<div class="sidebar">
-		Longitude: {lng.toFixed(4)} | Latitude: {lat.toFixed(4)} | Zoom: {zoom.toFixed(
-			2,
-		)} | Hex: {ID}
+		Longitude: {lng.toFixed(4)} | Latitude: {lat.toFixed(4)} | Zoom: {zoom.toFixed(2)} | Hex: {holonID}
 	</div>
 </div>
 
@@ -632,17 +624,17 @@
 		placeholder="lense"
 		on:keyup={async (e) => {
 			lense = e.target.value;
-			store = await holosphere.get(ID, lense);
+			store = await holosphere.get(holonID, lense);
 			renderHexes(map, lense);
 		}}
 		on:change={async (e) => {
-			store = await holosphere.get(ID, lense);
+			store = await holosphere.get(holonID, lense);
 			renderHexes(map, lense);
 		}}
 	/>
 	<input
 		placeholder="add content"
-		on:change={(e) => create(e.target.value) && (e.target.value = "")}
+		on:change={(e) => create(e.target.value) && (e.target.value = '')}
 	/>
 	<br />
 	Found {entries.length} entries:
@@ -687,7 +679,7 @@
 		border-radius: 4px;
 	}
 
-	.floatingbox {
+	/* .floatingbox {
 		position: absolute;
 		top: 0;
 		right: 0;
@@ -696,7 +688,7 @@
 		background-color: #f1f1f1;
 		border: 1px solid black;
 		padding: 20px;
-	}
+	} */
 
 	.sidebar {
 		background-color: rgb(35 55 75 / 90%);

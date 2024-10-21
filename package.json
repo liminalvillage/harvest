@@ -50,13 +50,8 @@
 	"type": "module",
 	"dependencies": {
 		"@mapbox/search-js-web": "^1.0.0-beta.21",
-		"embla-carousel-svelte": "^8.3.0",
-		"holosphere": "^1.0.4",
+		"holosphere": "^1.0.5",
 		"mapbox-gl": "^3.3.0",
-		"sass": "^1.77.6",
-		"svelte-carousel": "^1.0.25",
-		"svelte-dnd-action": "^0.9.51",
-		"svelte-icons-pack": "^3.1.3",
-		"svelte-tree-view": "^1.4.2"
+		"sass": "^1.77.6"
 	}
 }
