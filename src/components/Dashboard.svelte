@@ -34,9 +34,9 @@
     });
 
     async function fetchData() {
-        let holons = await holosphere.get('','settings')
-        console.log(await Promise.all(holons.map(async function (holon: any) { return holon.id })))
-
+        // let holons = await holosphere.get('','settings')
+        // console.log(await Promise.all(holons.map(async function (holon: any) { return holon.id })))
+        if (!holonID) return
         // Fetch data from HoloSphere
         const chats = await holosphere.get(holonID, 'chats') || {};
         const users = await holosphere.get(holonID, 'users') || {};
