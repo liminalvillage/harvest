@@ -1,18 +1,19 @@
 <script>
 	// @ts-nocheck
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, getContext, setContext } from 'svelte';
 	import { Map, GeolocateControl, Popup } from 'mapbox-gl';
 	import * as h3 from 'h3-js';
 	import '../../node_modules/mapbox-gl/dist/mapbox-gl.css';
+	import { writable } from 'svelte/store';
 
 	// import { SubmitForm, SchemaForm } from "@restspace/svelte-schema-form";
 	// import "@restspace/svelte-schema-form/css/layout.scss";
 	// import "@restspace/svelte-schema-form/css/basic-skin.scss";
 
-	import { getContext } from 'svelte';
-	import HoloSphere from 'holosphere';
+	import HoloSphere from '../../../HoloSphere';
+	import { ID } from '../dashboard/store';
 
-	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+	let holosphere = getContext('holosphere') || new HoloSphere('HolonsDebug');
 
 	let schema = {
 		type: 'object',
@@ -36,26 +37,10 @@
 	lat = 42.213995;
 	zoom = 9;
 
-	// Define constants for colors and access token
-	const ACCESS_TOKEN = 'your_access_token_here';
-	const DEFAULT_COLOR = '#ffffff';
-
 	// Create a local store to cache data from GUN
 	let store = {};
 
-	// // Creates a listener that iterates over keys found in the "todo" node in GUN
-	// gun.get(clickedHex).map().on(function (todo, key) {
-	// 	console.log(todo, key)
-	// 	if (todo) {
-	// 		// Updates the store with the new value
-	// 		store[key] = todo;
-	// 	} else {
-	// 		// A key may contain a null value (if data has been deleted/set to null)
-	// 		// if so, we remove the item from the store
-	// 		delete store[key];
-	// 		store = store;
-	// 	}
-	// });
+
 	// The below lines listens for updates in the store and creates
 	// more convenient variables for use in markup
 	$: entries = Object.entries(store);
@@ -68,20 +53,14 @@
 		holosphere.gun.get(holonID).get(lense).get(key).get('done').put(value);
 	const remove = (key) => holosphere.delete(holonID, lense);
 
-	// Improved error handling for async operations
-	const fetchData = async (key) => {
-		try {
-			const data = await holosphere.get(key, lense);
-			// Process data...
-		} catch (error) {
-			console.error('Error fetching data:', error);
-		}
-	};
-
-	function goToHex(hex, scale) {
+	function goToHex(hex) {
+		const resolution = h3.getResolution(hex);
+		const zoom = getZoom(resolution);
+		const latlng = h3.cellToLatLng(hex);
+		console.log ( 'lat', latlng)
 		map.flyTo({
-			center: h3.cellToLatLng(hex),
-			zoom: 10
+			center: [latlng[1],latlng[0]],
+			zoom: zoom
 		});
 	}
 
@@ -172,7 +151,7 @@
 						// 		if (data.length>0) {
 						//Highlight hexagon
 						let parsed = await holosphere.parse(data);
-						console.log('parsed:', parsed);
+						console.log('Parsed:', parsed);
 
 						const hexBoundary = h3.cellToBoundary(hex, true);
 
@@ -379,7 +358,7 @@
 			innerBoundaries.push(h);
 		}
 
-		let highlighted = highlightHexagons(map, lense);
+		//let highlighted = highlightHexagons(map, lense);
 
 		// console.log(
 		// 	`currentZoom: ${currentZoom}, resolution: ${h3res}, shapes: ${shapes.length}`,
@@ -500,12 +479,17 @@
 		});
 
 		map.on('load', function () {
-			['zoomend', 'dragend', 'resize'].forEach((event) => {
+			[ 'dragend', 'resize','zoom'].forEach((event) => {
 				map.on(event, () => {
 					updateData(map);
 					renderHexes(map, lense);
 				});
 			});
+
+			map.on('zoomend', ( ) =>{
+					highlightHexagons(map, lense)
+			}
+			)
 
 			map.addSource('random', {
 				type: 'geojson',
@@ -567,18 +551,23 @@
 			});
 
 			renderHexes(map, lense);
+			let holonID = $ID
+			highlightHexagon(map, holonID);
+			goToHex(holonID);
+			//highlightHexagons(map, lense)
+			
 		});
 
 		map.on('click', async (e) => {
 			holonID = h3.latLngToCell(e.lngLat.lat, e.lngLat.lng, getResolution(map.getZoom()));
-
+			
+			// Update the ID store
+			ID.set(holonID);
+			goToHex(holonID);
 			store = await holosphere.get(holonID, lense);
 			console.log(store);
 
-			//highlightNearbyHexagons(map,clickedHex)
-
 			highlightHexagon(map, holonID);
-			// new Popup().setLngLat(e.lngLat).setHTML(clickedHex).addTo(map);
 		});
 
 		map.on('contextmenu', (e) => {
@@ -710,4 +699,6 @@
 		border-radius: 4px;
 	}
 </style>
+
+
 

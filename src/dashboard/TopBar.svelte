@@ -4,18 +4,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 
-	// Subscribe to the store to automatically save the value in localStorage
-	$: holonID = $ID;
-
-	const unsubscribe = ID.subscribe(value => {
-		holonID = value;
-		ID.set(value); // Update localStorage when the value changes
-	});
-
-	// Clean up the subscription when the component is destroyed
-	onDestroy(() => {
-		unsubscribe();
-	});
+	let holonID: string = '';
 
 	let showToast = false;
 
@@ -28,21 +17,23 @@
 		}
 	});
 
-	// Add this reactive statement
+	// Reactive statement to update route when ID changes
 	$: if ($ID) {
 		showToast = false;
+		holonID = $ID;
+		updateRoute($ID);
 	}
 
-	// Handle input changes
+	function updateRoute(id: string) {
+		let currentPath = $page.url.pathname.split('/').pop();
+		if (currentPath === holonID) currentPath = 'dashboard';
+		goto(`/${id ? id : 'holonid'}/${currentPath}`);
+	}
+
 	function handleInput(event: Event) {
 		const target = event.target as HTMLInputElement;
-		ID.set(target.value); // Update the store, re-rendering all dependent components
+		ID.set(target.value);
 		localStorage.setItem('holonID', target.value);
-		// Get current path
-		let currentPath = $page.url.pathname.split('/').pop();
-	
-		goto(`/${target.value?target.value:'holonid'}/${currentPath}`);
-		
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -50,6 +41,11 @@
 			handleInput(event);
 		}
 	}
+
+	// Clean up the subscription when the component is destroyed
+	onDestroy(() => {
+		// No need for explicit unsubscribe as we're using the $store syntax
+	});
 </script>
 
 <style>
