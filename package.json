@@ -49,6 +49,7 @@
 	},
 	"type": "module",
 	"dependencies": {
+		"@mapbox/mapbox-gl-geocoder": "^5.0.3",
 		"@mapbox/search-js-web": "^1.0.0-beta.21",
 		"holosphere": "^1.0.6",
 		"mapbox-gl": "^3.7.0",
