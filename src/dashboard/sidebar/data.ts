@@ -52,6 +52,11 @@ export const data = [
 		title: 'Shopping List',
 		icon: ShoppingListIcon,
 		link: '/shopping'
+	},
+	{
+		title: 'Status',
+		icon: StatusIcon,
+		link: '/status'
 	}
 	// {
 	// 	title: 'Documentation',
