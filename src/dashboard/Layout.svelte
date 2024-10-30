@@ -40,7 +40,7 @@
 		const interval = setInterval(() => {
 			const now = Date.now();
 			// Only switch if 30 seconds have passed since last mouse movement
-			if (now - lastMouseMove >= 30 * 1000) {
+			if (now - lastMouseMove >= 10 * 1000) {
 				currentRouteIndex = (currentRouteIndex + 1) % allowedRoutes.length;
 				goto('/' + $page.params.id + allowedRoutes[currentRouteIndex].link);
 			}
