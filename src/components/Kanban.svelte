@@ -16,8 +16,15 @@
 	let store = {};
 	$: quests = Object.entries(store);
 
-	// Add view state
-	let isListView = false;
+	// Load saved preferences from localStorage
+	let isListView = localStorage.getItem('kanbanViewMode') === 'list' || false;
+	let showCompleted = localStorage.getItem('kanbanShowCompleted') === 'true' || false;
+
+	// Save preferences when they change
+	$: {
+		localStorage.setItem('kanbanViewMode', isListView ? 'list' : 'grid');
+		localStorage.setItem('kanbanShowCompleted', showCompleted.toString());
+	}
 
 	onMount(async () => {
 		// Fetch all quests from holon
@@ -53,14 +60,25 @@
 	function update(hex) {
 		// Filter ongoing and scheduled quests
 		const filteredQuests = quests.filter(
-			(quest) => quest.status === 'ongoing' || quest.status === 'scheduled'
+			([_, quest]) => quest.status === 'ongoing' || quest.status === 'scheduled'
 		);
 
-		// Sort quests by when property
-		const sortedQuests = filteredQuests.sort((a, b) => new Date(a.when) - new Date(b.when));
+		// Sort quests by date field, falling back to when if date doesn't exist
+		const sortedQuests = filteredQuests.sort(([_, a], [__, b]) => {
+			const dateA = a.date ? new Date(a.date) : new Date(a.when);
+			const dateB = b.date ? new Date(b.date) : new Date(b.when);
+			return dateB - dateA;  // Newest first
+		});
 
 		return sortedQuests;
 	}
+
+	// Update the sorting in the template sections
+	$: sortedQuests = quests.sort(([_, a], [__, b]) => {
+		const dateA = a.date ? new Date(a.date) : new Date(a.when);
+		const dateB = b.date ? new Date(b.date) : new Date(b.when);
+		return dateB - dateA;
+	});
 </script>
 
 <div class="flex flex-wrap">
@@ -74,20 +92,25 @@
 			<div class="flex flex-wrap text-white">
 				<div class="pr-10">
 					<div class="text-2xl font-bold">
-						{quests.filter((quest) => quest.status === 'ongoing' || quest.status === 'scheduled')
-							.length}
+						{quests.filter(([_, quest]) => !quest.participants?.length && quest.status !== 'completed').length}
 					</div>
-					<div class="">In Progress</div>
+					<div class="">Unassigned</div>
 				</div>
 				<div class="pr-10">
 					<div class="text-2xl font-bold">
-						{quests.filter((quest) => quest.status === 'completed').length}
+						{quests.filter(([_, quest]) => quest.status === 'ongoing').length}
 					</div>
-					<div class="">Upcoming</div>
+					<div class="">Ongoing</div>
+				</div>
+				<div class="pr-10">
+					<div class="text-2xl font-bold">
+						{quests.filter(([_, quest]) => quest.status === 'completed').length}
+					</div>
+					<div class="">Completed</div>
 				</div>
 				<div>
 					<div class="text-2xl font-bold">{quests.length}</div>
-					<div class="">Total Projects</div>
+					<div class="">Total Tasks</div>
 				</div>
 			</div>
 			<div class="flex items-center mt-4 md:mt-0">
@@ -140,13 +163,31 @@
 			</div>
 		</div>
 
-		<!-- Replace the existing flex-wrap div with this conditional rendering -->
+		<div class="flex justify-end mb-4">
+			<label class="flex items-center cursor-pointer">
+				<div class="relative">
+					<input 
+						type="checkbox" 
+						class="sr-only" 
+						bind:checked={showCompleted}
+					>
+					<div class="w-10 h-6 bg-gray-600 rounded-full shadow-inner"></div>
+					<div class="dot absolute w-4 h-4 bg-white rounded-full transition left-1 top-1" 
+						class:translate-x-4={showCompleted}
+					></div>
+				</div>
+				<div class="ml-3 text-sm font-medium text-white">
+					Show Completed
+				</div>
+			</label>
+		</div>
+
 		{#if isListView}
 			<div class="space-y-2">
-				{#each quests as [key, quest]}
-					{#if (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest')}
+				{#each sortedQuests as [key, quest]}
+					{#if ((quest.status === 'ongoing' || quest.status === 'scheduled' || (showCompleted && quest.status === 'completed')) && (quest.type === 'task' || quest.type === 'quest'))}
 						<div id={key} class="w-full">
-							<div class="p-3 rounded-lg bg-gray-300 hover:bg-gray-200 transition-colors">
+							<div class="p-3 rounded-lg transition-colors {quest.status === 'completed' ? 'bg-gray-400 opacity-60' : 'bg-gray-300 hover:bg-gray-200'}">
 								<div class="flex justify-between items-center gap-4">
 									<div class="flex-1 min-w-0">
 										<h3 class="text-base font-bold opacity-70 truncate">{quest.title}</h3>
@@ -201,11 +242,11 @@
 			</div>
 		{:else}
 			<div class="flex flex-wrap">
-				{#each quests as [key, quest]}
-					{#if (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest')}
+				{#each sortedQuests as [key, quest]}
+					{#if ((quest.status === 'ongoing' || quest.status === 'scheduled' || (showCompleted && quest.status === 'completed')) && (quest.type === 'task' || quest.type === 'quest'))}
 						<div id={key} class="w-full md:w-4/12">
 							<div class="p-2">
-								<div class="p-4 rounded-3xl bg-gray-300 overflow-hidden">
+								<div class="p-4 rounded-3xl overflow-hidden {quest.status === 'completed' ? 'bg-gray-400 opacity-60' : 'bg-gray-300'}">
 									<div class="flex items-center justify-between">
 										{#if quest.when}
 											<span class="text-sm whitespace-nowrap">
@@ -265,3 +306,13 @@
 	</div>
 	<Announcements />
 </div>
+
+<style>
+	/* Add smooth transition for the toggle switch dot */
+	.dot {
+		transition: transform 0.3s ease-in-out;
+	}
+	.translate-x-4 {
+		transform: translateX(1rem);
+	}
+</style>
