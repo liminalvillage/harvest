@@ -16,6 +16,8 @@
 	let store = {};
 	$: quests = Object.entries(store);
 
+	// Add view state
+	let isListView = false;
 
 	onMount(async () => {
 		// Fetch all quests from holon
@@ -88,101 +90,178 @@
 					<div class="">Total Projects</div>
 				</div>
 			</div>
+			<div class="flex items-center mt-4 md:mt-0">
+				<button 
+					class="text-white {isListView ? 'bg-gray-700' : 'bg-transparent'} p-2" 
+					title="List View"
+					on:click={() => isListView = true}
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="24"
+						height="24"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<line x1="8" y1="6" x2="21" y2="6" />
+						<line x1="8" y1="12" x2="21" y2="12" />
+						<line x1="8" y1="18" x2="21" y2="18" />
+						<line x1="3" y1="6" x2="3.01" y2="6" />
+						<line x1="3" y1="12" x2="3.01" y2="12" />
+						<line x1="3" y1="18" x2="3.01" y2="18" />
+					</svg>
+				</button>
+				<button 
+					class="text-white {!isListView ? 'bg-gray-700' : 'bg-transparent'} p-2 ml-2" 
+					title="Grid View"
+					on:click={() => isListView = false}
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<rect x="3" y="3" width="7" height="7" />
+						<rect x="14" y="3" width="7" height="7" />
+						<rect x="14" y="14" width="7" height="7" />
+						<rect x="3" y="14" width="7" height="7" />
+					</svg>
+				</button>
+			</div>
 		</div>
-		<div class="flex flex-wrap">
-			{#each quests as [key, quest]}
-				{#if (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest')}
-					<div id={key} class="w-full md:w-4/12">
-						<div class="p-2">
-							<div class="p-4 rounded-3xl bg-gray-300">
-								<div class="flex items-center justify-b">
-									{#if quest.when}<span class="text-sm"
-											>{formatDate(quest.when) + ' @ ' + formatTime(quest.when)}
-											{#if quest.ends}- {formatTime(quest.ends)} {/if}</span
-										>
-									{/if}
-								</div>
-								<div class="text-center mb-4 mt-5">
-									<p class="text-base font-bold opacity-70">{quest.title}</p>
-									<!-- <p class="text-sm opacity-70 mt-2">{role}</p> -->
-								</div>
-								{#if quest.description}
-									<div class="text-sm opacity-70 mb-4">
-										{quest.description}
+
+		<!-- Replace the existing flex-wrap div with this conditional rendering -->
+		{#if isListView}
+			<div class="space-y-2">
+				{#each quests as [key, quest]}
+					{#if (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest')}
+						<div id={key} class="w-full">
+							<div class="p-3 rounded-lg bg-gray-300 hover:bg-gray-200 transition-colors">
+								<div class="flex justify-between items-center gap-4">
+									<div class="flex-1 min-w-0">
+										<h3 class="text-base font-bold opacity-70 truncate">{quest.title}</h3>
+										{#if quest.description}
+											<p class="text-sm opacity-70 truncate">{quest.description}</p>
+										{/if}
 									</div>
-								{/if}
-								{#if quest.location}
-									<div class="text-sm opacity-70 mb-4">
-										📍 {quest.location
-											.split(',')
-											.map((loc, i) => {
-												if (i === 0) {
-													return loc;
-												} else {
-													return loc.trim();
-												}
-											})
-											.join(', ')}
-									</div>
-								{/if}
-								{#if false}
-									<div>
-										<p class="text-sm font-bold m-0">Progress</p>
-										<div class="w-full h-1 rounded-md overflow-hidden bg-white my-2 mx-0">
-											<span class="block h-1 rounded-md bg-yellow-700 w-6/12" />
+									
+									<div class="flex items-center gap-4 text-sm whitespace-nowrap">
+										{#if quest.location}
+											<div class="opacity-70">
+												📍 {quest.location.split(',')[0]}
+											</div>
+										{/if}
+										
+										<div class="flex items-center gap-1">
+											<span class="opacity-70 font-bold text-base">🙋‍♂️ {quest.participants.length}</span>
+											<div class="flex -space-x-2">
+												{#each quest.participants.slice(0, 3) as participant}
+													{#if participant.picture}
+														<img
+															class="w-6 h-6 rounded-full border-2 border-gray-300"
+															src={participant.picture}
+															alt={participant.username}
+														/>
+													{/if}
+												{/each}
+												{#if quest.participants.length > 3}
+													<div class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300">
+														+{quest.participants.length - 3}
+													</div>
+												{/if}
+											</div>
 										</div>
-										<p class="text-right m-0 text-sm font-bold">60%</p>
-									</div>
-								{/if}
-								<div class="flex justify-between pt-4 relative">
-									<div class="flex items-center">
-										🙋‍♂️ {quest.participants.length}: <br />
-										{#each quest.participants as participant}
-											{#if participant.picture}
-												<img
-													class="w-5 h-5 rounded-full overflow-hidden object-cover"
-													src={participant.picture}
-													alt="participant"
-												/>
-											{/if}
-											{@html `@${participant.username}`}<br />
-										{/each}
-										<!-- <img
-                            class="w-5 h-5 rounded-full overflow-hidden object-cover"
-                            src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=2550&q=80"
-                            alt="participant"
-                        />
-                        <button
-                            class="w-5 h-5 rounded-full border-none ml-3 p-0 flex justify-center items-center bg-white"
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="12"
-                                height="12"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="3"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                class="feather feather-plus"
-                            >
-                                <path d="M12 5v14M5 12h14" />
-                            </svg>
-                        </button> -->
-									</div>
-									<div
-										class="text-sm rounded-lg flex flex-shrink-0 py-2 px-4 font-bold text-yellow-600"
-									>
-										👍 {quest.appreciation.length}
+
+										{#if quest.when}
+											<div class="text-sm font-medium">
+												{formatTime(quest.when)}
+												{#if quest.ends}- {formatTime(quest.ends)}{/if}
+											</div>
+										{/if}
+										
+										<div class="opacity-70 font-bold text-base">
+											👍 {quest.appreciation.length}
+										</div>
 									</div>
 								</div>
 							</div>
 						</div>
-					</div>
-				{/if}
-			{/each}
-		</div>
+					{/if}
+				{/each}
+			</div>
+		{:else}
+			<div class="flex flex-wrap">
+				{#each quests as [key, quest]}
+					{#if (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest')}
+						<div id={key} class="w-full md:w-4/12">
+							<div class="p-2">
+								<div class="p-4 rounded-3xl bg-gray-300 overflow-hidden">
+									<div class="flex items-center justify-between">
+										{#if quest.when}
+											<span class="text-sm whitespace-nowrap">
+												{formatDate(quest.when) + ' @ ' + formatTime(quest.when)}
+												{#if quest.ends}- {formatTime(quest.ends)} {/if}
+											</span>
+										{/if}
+									</div>
+									<div class="text-center mb-4 mt-5">
+										<p class="text-base font-bold opacity-70 truncate">{quest.title}</p>
+									</div>
+									{#if quest.description}
+										<div class="text-sm opacity-70 mb-4 line-clamp-2">
+											{quest.description}
+										</div>
+									{/if}
+									{#if quest.location}
+										<div class="text-sm opacity-70 mb-4 truncate">
+											📍 {quest.location
+													.split(',')
+													.map((loc, i) => {
+														if (i === 0) {
+															return loc;
+														} else {
+															return loc.trim();
+														}
+													})
+													.join(', ')}
+										</div>
+									{/if}
+									
+									<div class="flex justify-between pt-4 relative">
+										<div class="flex flex-col overflow-hidden">
+											<span class="opacity-70 font-bold text-base whitespace-nowrap mb-1">
+												🙋‍♂️ {quest.participants.length}
+											</span>
+											<div class="text-sm opacity-70">
+												{#each quest.participants.slice(0, 2) as participant}
+													<div class="truncate">@{participant.username}</div>
+												{/each}
+												{#if quest.participants.length > 2}
+													<div class="truncate">+{quest.participants.length - 2} more</div>
+												{/if}
+											</div>
+										</div>
+										<div class="opacity-70 font-bold text-base whitespace-nowrap">
+											👍 {quest.appreciation.length}
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					{/if}
+				{/each}
+			</div>
+		{/if}
 	</div>
 	<Announcements />
 </div>

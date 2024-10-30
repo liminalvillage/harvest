@@ -82,34 +82,11 @@
 				</button>
 			</div>
 			<div class="container flex left-0 relative w-3/4">
-				<div class="group hidden items-center ml-8 relative w-full md:flex lg:w-72">
-					<div
-						class="absolute block cursor-pointer flex items-center justify-center h-10 p-3 pr-2 text-gray-500 text-sm uppercase w-auto sm:hidden"
-					>
-						<svg
-							fill="none"
-							class="h-5 relative w-5"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width={2}
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-						</svg>
-					</div>
-					<svg
-						class="absolute fill-current h-4 hidden left-0 ml-4 pointer-events-none text-gray-500 w-4 group-hover:text-gray-400 sm:block"
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 20 20"
-					>
-						<path
-							d="M12.9 14.32a8 8 0 1 1 1.41-1.41l5.35 5.33-1.42 1.42-5.33-5.34zM8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z"
-						/>
-					</svg>
+				<div class="group items-center ml-8 relative w-full md:flex lg:w-72">
+					<span class="absolute left-0 ml-4 text-gray-500 pointer-events-none">ID:</span>
 					<input
 						type="text"
-						class="bg-gray-800 block leading-normal pl-10 py-1.5 pr-4 ring-opacity-90 rounded-2xl text-gray-400 w-full focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+						class="bg-gray-800 block leading-normal pl-12 py-1.5 pr-4 ring-opacity-90 rounded-2xl text-gray-400 w-full focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
 						placeholder="Holon ID"
 						on:keydown={handleKeydown}
 						on:blur={handleInput}
@@ -128,6 +105,6 @@
 		on:click={() => showToast = false}
 		on:keydown={(e) => e.key === 'Enter' && (showToast = false)}
 	>
-		To begin using the dashboard, please type the Holon ID in the search bar. You can get the Holon ID using the command /id on any chat containing the Telegram bot @HolonsBot.
+		To begin using the dashboard, please type the Holon ID in the search bar.<br/> You can get the Holon ID using the command /id on any chat containing the Telegram bot @HolonsBot.
 	</button>
 {/if}
