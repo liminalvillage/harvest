@@ -404,141 +404,144 @@
 
 	onMount(() => {
 		if (browser) {
-			mapboxgl.accessToken =
-				"pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
-			map = new mapboxgl.Map({
-				container: mapContainer,
-				style: "mapbox://styles/mapbox/satellite-streets-v12",
-				center: [13.7364963,42.8917537],
-				zoom: 5,
-				projection: "globe",
-				renderWorldCopies: false,
-				//maxBounds: [[-180, -90], [180, 90]]  // Changed to strict bounds
-			});
-
-			// Add geocoder (search box)
-			const geocoder = new MapboxGeocoder({
-				accessToken: mapboxgl.accessToken,
-				mapboxgl: mapboxgl,
-					marker: false,
-					placeholder: "Search for a location",
-			});
-
-			// Add geolocate control
-			const geolocate = new mapboxgl.GeolocateControl({
-				positionOptions: {
-					enableHighAccuracy: true,
-				},
-				trackUserLocation: true,
-				showUserHeading: true,
-			});
-
-			map.addControl(geocoder, "top-right");
-			map.addControl(geolocate, "top-right");
-
-			map.on("style.load", () => {
-				map.setFog({
-					color: "rgb(186, 210, 235)",
-					"high-color": "rgb(36, 92, 223)",
-					"horizon-blend": 0.02,
-					"space-color": "rgb(11, 11, 25)",
-					"star-intensity": 0.6,
-				});
-			});
-
-			map.on("load", () => {
-				console.log("Map loaded");
-				map.addSource("hexagon-grid", {
-					type: "geojson",
-					data: { type: "FeatureCollection", features: [] },
+			// Add a small delay to ensure container is properly sized
+			setTimeout(() => {
+				mapboxgl.accessToken =
+					"pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
+				map = new mapboxgl.Map({
+					container: mapContainer,
+					style: "mapbox://styles/mapbox/satellite-streets-v12",
+					center: [13.7364963,42.8917537],
+					zoom: 5,
+					projection: "globe",
+					renderWorldCopies: false,
+					//maxBounds: [[-180, -90], [180, 90]]  // Changed to strict bounds
 				});
 
-				map.addLayer({
-					id: "hexagon-grid-layer",
-					type: "line",
-					source: "hexagon-grid",
-					layout: {},
-					paint: {
-						"line-color": "#fff",
-						"line-width": 3,
+				// Add geocoder (search box)
+				const geocoder = new MapboxGeocoder({
+					accessToken: mapboxgl.accessToken,
+					mapboxgl: mapboxgl,
+						marker: false,
+						placeholder: "Search for a location",
+				});
+
+				// Add geolocate control
+				const geolocate = new mapboxgl.GeolocateControl({
+					positionOptions: {
+						enableHighAccuracy: true,
 					},
+					trackUserLocation: true,
+					showUserHeading: true,
 				});
 
-				map.addSource("hexagon-grid-lower", {
-					type: "geojson",
-					data: { type: "FeatureCollection", features: [] },
+				map.addControl(geocoder, "top-right");
+				map.addControl(geolocate, "top-right");
+
+				map.on("style.load", () => {
+					map.setFog({
+						color: "rgb(186, 210, 235)",
+						"high-color": "rgb(36, 92, 223)",
+						"horizon-blend": 0.02,
+						"space-color": "rgb(11, 11, 25)",
+						"star-intensity": 0.6,
+					});
 				});
 
-				map.addLayer({
-					id: "hexagon-grid-lower-layer",
-					type: "line",
-					source: "hexagon-grid-lower",
-					layout: {},
-					paint: {
-						"line-color": "#aaa",
-						"line-width": 1,
-					},
+				map.on("load", () => {
+					console.log("Map loaded");
+					map.addSource("hexagon-grid", {
+						type: "geojson",
+						data: { type: "FeatureCollection", features: [] },
+					});
+
+					map.addLayer({
+						id: "hexagon-grid-layer",
+						type: "line",
+						source: "hexagon-grid",
+						layout: {},
+						paint: {
+							"line-color": "#fff",
+							"line-width": 3,
+						},
+					});
+
+					map.addSource("hexagon-grid-lower", {
+						type: "geojson",
+						data: { type: "FeatureCollection", features: [] },
+					});
+
+					map.addLayer({
+						id: "hexagon-grid-lower-layer",
+						type: "line",
+						source: "hexagon-grid-lower",
+						layout: {},
+						paint: {
+							"line-color": "#aaa",
+							"line-width": 1,
+						},
+					});
+
+					map.addSource("selected-hexagon", {
+						type: "geojson",
+						data: {
+							type: "Feature",
+							properties: {},  // Add this line
+							geometry: { type: "Polygon", coordinates: [[]] },
+						},
+					});
+
+					map.addLayer({
+						id: "selected-hexagon-layer",
+						type: "fill",
+						source: "selected-hexagon",
+						layout: {},
+						paint: {
+							"fill-color": "#088",
+							"fill-opacity": 0.4,
+							"fill-outline-color": "#000",
+						},
+					});
+
+					map.addSource("highlighted-hexagons", {
+						type: "geojson",
+						data: {
+							type: "FeatureCollection",
+							features: []
+						}
+					});
+
+					map.addLayer({
+						id: "highlighted-hexagons-layer",
+						type: "fill",
+						source: "highlighted-hexagons",
+						layout: {},
+						paint: {
+							"fill-color": ["get", "color"],
+							"fill-opacity": 0.4,
+							"fill-outline-color": "#000"
+						}
+					});
+
+					// Initial subscription to default lens
+					subscribeToLens(selectedLens);
+					renderHexes(map, selectedLens);
 				});
 
-				map.addSource("selected-hexagon", {
-					type: "geojson",
-					data: {
-						type: "Feature",
-						properties: {},  // Add this line
-						geometry: { type: "Polygon", coordinates: [[]] },
-					},
+				// Update these event handlers to maintain subscriptions
+				map.on("moveend", handleMapMove);
+				map.on("zoomend", handleMapMove);
+
+				map.on("click", (e: mapboxgl.MapMouseEvent) => {
+					console.log("Map clicked", e.lngLat);
+					const { lng, lat } = e.lngLat;
+					const zoom = map.getZoom();
+					const resolution = getResolution(zoom);
+					hexId = h3.latLngToCell(lat, lng, resolution);
+					console.log("Hexagon ID:", hexId);
+					updateSelectedHexagon(hexId);
 				});
-
-				map.addLayer({
-					id: "selected-hexagon-layer",
-					type: "fill",
-					source: "selected-hexagon",
-					layout: {},
-					paint: {
-						"fill-color": "#088",
-						"fill-opacity": 0.4,
-						"fill-outline-color": "#000",
-					},
-				});
-
-				map.addSource("highlighted-hexagons", {
-					type: "geojson",
-					data: {
-						type: "FeatureCollection",
-						features: []
-					}
-				});
-
-				map.addLayer({
-					id: "highlighted-hexagons-layer",
-					type: "fill",
-					source: "highlighted-hexagons",
-					layout: {},
-					paint: {
-						"fill-color": ["get", "color"],
-						"fill-opacity": 0.4,
-						"fill-outline-color": "#000"
-					}
-				});
-
-				// Initial subscription to default lens
-				subscribeToLens(selectedLens);
-				renderHexes(map, selectedLens);
-			});
-
-			// Update these event handlers to maintain subscriptions
-			map.on("moveend", handleMapMove);
-			map.on("zoomend", handleMapMove);
-
-			map.on("click", (e: mapboxgl.MapMouseEvent) => {
-				console.log("Map clicked", e.lngLat);
-				const { lng, lat } = e.lngLat;
-				const zoom = map.getZoom();
-				const resolution = getResolution(zoom);
-				hexId = h3.latLngToCell(lat, lng, resolution);
-				console.log("Hexagon ID:", hexId);
-				updateSelectedHexagon(hexId);
-			});
+			}, 100);
 		}
 	});
 
@@ -598,18 +601,16 @@
 	.map-container {
 		position: relative;
 		width: 100%;
-		height: 100%; /* Changed from 400px to 100% */
-		flex-grow: 1; /* Added to allow the container to grow and fill available space */
-		display: flex; /* Added to ensure the map fills the container */
-		flex-direction: column; /* Added to stack children vertically */
+		height: calc(100vh - 64px);
+		display: flex;
+		flex-direction: column;
 	}
 
 	.map {
-		position: absolute;
-		top: 0;
-		bottom: 0;
+		position: relative;
 		width: 100%;
-		flex-grow: 1; /* Added to ensure the map fills the container */
+		height: 100%;
+		flex: 1;
 	}
 
 	.hex-info {
@@ -620,7 +621,7 @@
 		padding: 5px 10px;
 		border-radius: 4px;
 		font-size: 14px;
-		z-index: 1; /* Added to ensure the info appears above the map */
+		z-index: 1;
 	}
 
 	:global(.mapboxgl-ctrl-top-right) {

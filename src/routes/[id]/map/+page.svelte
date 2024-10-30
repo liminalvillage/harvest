@@ -1,9 +1,14 @@
-<script>
+<script lang="ts">
 	import Map from '../../../components/Map.svelte';
 </script>
 
-<svelte:head>
-	<title>Map</title>
-</svelte:head>
+<div class="h-full w-full">
+	<Map />
+</div>
 
-<Map />
+<style>
+	/* Ensure the container takes full height */
+	div {
+		height: calc(100vh - 64px); /* Adjust this value based on your TopBar height */
+	}
+</style>

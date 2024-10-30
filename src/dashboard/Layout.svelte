@@ -10,6 +10,7 @@
 	import Overlay from './Overlay.svelte';
 	import Sidebar from './sidebar/Sidebar.svelte';
 	import { closeSidebar, sidebarOpen } from './store';
+	import RouteTransition from '../components/RouteTransition.svelte';
 
 	const style = {
 		container: `bg-gray-900 h-screen overflow-hidden relative`,
@@ -67,7 +68,9 @@
 		<div class={style.mainContainer}>
 			<TopBar />
 			<main class={style.main}>
-				<slot />
+				<RouteTransition pathname={$page.url.pathname}>
+					<slot />
+				</RouteTransition>
 			</main>
 		</div>
 	</div>
