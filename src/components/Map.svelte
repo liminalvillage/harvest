@@ -8,9 +8,9 @@
 	import "@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css";
 	import { ID } from "../dashboard/store";
 
-	import HoloSphere from "holosphere";
+	import HoloSphere from 'holosphere';
 
-	let holosphere = getContext('holosphere') || new HoloSphere('HolonsDebug');
+	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
 	let mapContainer: HTMLElement;
 	let map: mapboxgl.Map;
@@ -97,10 +97,6 @@
 		const currentZoom = map.getZoom();
 		const h3res = getResolution(currentZoom);
 		const h3resLower = Math.max(0, h3res + 1);
-
-		console.log(
-			`Rendering hexes: Zoom ${currentZoom}, Resolutions ${h3res} and ${h3resLower}`
-		);
 
 		function generateHexagons(resolution: number) {
 			let hexagons = new Set<string>();
@@ -249,13 +245,6 @@
 			);
 		}
 
-		console.log(
-				`Generated ${hexagons.size} hexagons for resolution ${h3res}`
-			);
-		console.log(
-				`Generated ${hexagonsLower.size} hexagons for resolution ${h3resLower}`
-			);
-
 		const features = hexagonsToFeatures(hexagons);
 		const featuresLower = hexagonsToFeatures(hexagonsLower);
 
@@ -268,8 +257,6 @@
 			type: "FeatureCollection",
 			features: featuresLower,
 		});
-
-		console.log('Rendering hexes with lens:', lens);
 	}
 
 	function goToHex(hex: string) {
@@ -529,10 +516,10 @@
 				});
 
 				// Update these event handlers to maintain subscriptions
-				map.on("moveend", handleMapMove);
-				map.on("zoomend", handleMapMove);
+				map.on("move", handleMapMove);
+				map.on("zoom", handleMapMove);
 
-				map.on("click", (e: mapboxgl.MapMouseEvent) => {
+				map.on("click", async (e: mapboxgl.MapMouseEvent) => {
 					console.log("Map clicked", e.lngLat);
 					const { lng, lat } = e.lngLat;
 					const zoom = map.getZoom();
@@ -540,6 +527,14 @@
 					hexId = h3.latLngToCell(lat, lng, resolution);
 					console.log("Hexagon ID:", hexId);
 					updateSelectedHexagon(hexId);
+
+					// Log lens data for the clicked hexagon
+					try {
+						const data = await holosphere.get(hexId, selectedLens);
+						console.log(`${selectedLens} data for hexagon ${hexId}:`, data);
+					} catch (error) {
+						console.error(`Error fetching ${selectedLens} data:`, error);
+					}
 				});
 			}, 100);
 		}

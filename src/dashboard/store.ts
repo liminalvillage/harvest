@@ -14,3 +14,5 @@ export const ID = writable('');
 export { sidebarOpen, openSidebar, closeSidebar};
 
 export const mapStore = writable({});
+
+export const autoTransitionEnabled = writable(true);

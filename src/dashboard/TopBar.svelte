@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { openSidebar, ID } from './store';
+	import { openSidebar, ID, autoTransitionEnabled } from './store';
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { getContext } from 'svelte';
+	import { browser } from '$app/environment';
 	import HoloSphere from 'holosphere';
 
 	let holosphere = getContext('holosphere') || new HoloSphere('HolonsDebug');
@@ -27,24 +28,40 @@
 		}
 
 		// Load previous holons from localStorage
-		const stored = localStorage.getItem('previousHolons');
-		if (stored) {
-			previousHolons = JSON.parse(stored).filter((holon: HolonInfo) => !holon.id.startsWith('8'));
-			// Fetch names for holons that don't have them
-			previousHolons.forEach(async (holon) => {
-				if (!holon.name) {
-					try {
-						const data = await holosphere.get(holon.id, 'settings');
-						console.log(data);
-						if (data) {
-							holon.name = data;
-							localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+		if (browser) {
+			const stored = localStorage.getItem('previousHolons');
+			if (stored) {
+				previousHolons = JSON.parse(stored).filter((holon: HolonInfo) => !holon.id.startsWith('8'));
+				// Fetch names for holons that don't have them
+				previousHolons.forEach(async (holon) => {
+					if (!holon.name) {
+						try {
+							const data = await holosphere.get(holon.id, 'settings');
+							if (data) {
+								holon.name = data;
+								localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+							}
+						} catch (error) {
+							console.error(`Error fetching name for holon ${holon.id}:`, error);
 						}
-					} catch (error) {
-						console.error(`Error fetching name for holon ${holon.id}:`, error);
 					}
-				}
-			});
+				});
+			}
+
+			// Add event listeners only in browser environment
+			window.addEventListener('mousemove', handleActivity);
+			window.addEventListener('touchstart', handleActivity);
+			window.addEventListener('touchmove', handleActivity);
+			window.addEventListener('scroll', handleActivity);
+		}
+	});
+
+	onDestroy(() => {
+		if (browser) {
+			window.removeEventListener('mousemove', handleActivity);
+			window.removeEventListener('touchstart', handleActivity);
+			window.removeEventListener('touchmove', handleActivity);
+			window.removeEventListener('scroll', handleActivity);
 		}
 	});
 
@@ -91,6 +108,30 @@
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter') {
 			handleInput(event);
+		}
+	}
+
+	function toggleAutoTransition() {
+		autoTransitionEnabled.update(value => !value);
+	}
+
+	// Pause on any mouse or touch activity
+	function handleActivity() {
+		if ($autoTransitionEnabled) {
+			autoTransitionEnabled.set(false);
+		}
+	}
+
+	function removePreviousHolon(holonId: string, event: MouseEvent) {
+		event.preventDefault();
+		event.stopPropagation();
+		
+		// Remove the holon from the array
+		previousHolons = previousHolons.filter(holon => holon.id !== holonId);
+		
+		// Update localStorage if in browser environment
+		if (browser) {
+			localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 		}
 	}
 </script>
@@ -170,6 +211,23 @@
 		color: #9ca3af;
 		font-style: italic;
 	}
+	.delete-button {
+		opacity: 0;
+		transition: opacity 0.2s;
+		color: #9ca3af;
+	}
+	.delete-button:hover {
+		color: #ef4444;
+	}
+	.dropdown-item:hover .delete-button {
+		opacity: 1;
+	}
+	.dropdown-item-content {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		width: 100%;
+	}
 </style>
 
 <header class="h-20 items-center relative z-10">
@@ -204,18 +262,53 @@
 								{#each previousHolons as holon}
 									<div 
 										class="dropdown-item"
-										on:mousedown={() => selectPreviousHolon(holon)}
+										on:mousedown|preventDefault={() => selectPreviousHolon(holon)}
 									>
-										<span class="holon-id">{holon.id}</span>
-										{#if holon.name}
-											<span class="holon-name">{holon.name}</span>
-										{/if}
+										<div class="dropdown-item-content">
+											<div class="flex-grow cursor-pointer">
+												<span class="holon-id">{holon.id}</span>
+												{#if holon.name}
+													<span class="holon-name">{holon.name}</span>
+												{/if}
+											</div>
+											<button
+												type="button"
+												class="delete-button p-1 rounded-full hover:bg-gray-700"
+												on:mousedown|stopPropagation|preventDefault={(e) => {
+													removePreviousHolon(holon.id, e);
+													showDropdown = true; // Keep dropdown open after deletion
+												}}
+												aria-label="Remove holon from history"
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+												</svg>
+											</button>
+										</div>
 									</div>
 								{/each}
 							</div>
 						{/if}
 					</div>
 				</div>
+			</div>
+			<div class="flex items-center justify-end ml-auto">
+				<button
+					on:click={toggleAutoTransition}
+					class="p-2 rounded-full hover:bg-gray-700 transition-colors"
+					aria-label={$autoTransitionEnabled ? 'Pause auto-transition' : 'Play auto-transition'}
+				>
+					{#if $autoTransitionEnabled}
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+						</svg>
+					{:else}
+						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+						</svg>
+					{/if}
+				</button>
 			</div>
 		</div>
 	</div>

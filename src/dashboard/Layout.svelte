@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { data } from './sidebar/data';
 	import { onDestroy } from 'svelte';
+	import { autoTransitionEnabled } from './store';
 
 	import TopBar from './TopBar.svelte';
 	import Overlay from './Overlay.svelte';
@@ -39,8 +40,8 @@
 		// Set up interval for route switching
 		const interval = setInterval(() => {
 			const now = Date.now();
-			// Only switch if 30 seconds have passed since last mouse movement
-			if (now - lastMouseMove >= 10 * 1000) {
+			// Only switch if auto-transition is enabled
+			if ($autoTransitionEnabled && now - lastMouseMove >= 10 * 1000) {
 				currentRouteIndex = (currentRouteIndex + 1) % allowedRoutes.length;
 				goto('/' + $page.params.id + allowedRoutes[currentRouteIndex].link);
 			}
