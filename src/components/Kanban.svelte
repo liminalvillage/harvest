@@ -6,11 +6,10 @@
 	
 
 	import HoloSphere from 'holosphere';
-	import Announcements from './Announcements.svelte';
+	import Schedule from './ScheduleWidget.svelte';
+    import Announcements from './Announcements.svelte';
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
-
-	export let id;
 
 	$: holonID = $ID ;
 	let store = {};
@@ -28,22 +27,23 @@
 
 	onMount(async () => {
 		// Fetch all quests from holon
-		subscribeToquests();
+		subscribe();
+		
 
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
 	});
 
 	ID.subscribe((value) => {
 		holonID = value;
-		subscribeToquests();
+		subscribe();
 	});
 
 	$: update(holonID);
 
-	function subscribeToquests() {
+	function subscribe() {
 		store = {};
 		if (holosphere) {
-			holosphere.subscribe(id||holonID, 'quests', (newquest, key) => {
+			holosphere.subscribe(holonID, 'quests', (newquest, key) => {
 				if (newquest) {
 					// Updates the store with the new value
 					store[key] = JSON.parse(newquest);
@@ -304,7 +304,8 @@
 			</div>
 		{/if}
 	</div>
-	<Announcements />
+	<Schedule isWidget=true/>
+	
 </div>
 
 <style>

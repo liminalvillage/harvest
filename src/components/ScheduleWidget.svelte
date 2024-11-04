@@ -8,6 +8,8 @@
 	import { formatDate, formatTime } from '../utils/date';
 
 	import HoloSphere from 'holosphere';
+	import { get_all_dirty_from_scope, get_slot_changes } from 'svelte/internal';
+	
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
@@ -112,11 +114,10 @@
 	}
 </script>
 
-<div class="flex flex-wrap">
-	<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
-		<div class="flex justify-between text-white items-center mb-8">
-			<p class="text-2xl font-bold">Schedule Today</p>
-			<p class="">{new Date().toDateString()}</p>
+<div class="w-full mt-8 lg:mt-0 lg:w-4/12 lg:pl-4">
+	<div class="bg-gray-800 rounded-3xl px-6 pt-6">
+		<div class="flex text-white text-2xl pb-6 font-bold">
+			<p>Schedule</p>
 		</div>
 		<div class="scheduleContainer">
 			<!-- TIMES -->
@@ -197,7 +198,6 @@
 	<div class="event stage-saturn start-1930 end-2130 length-2">Drinks <span>Saturn Stage</span></div> -->
 		</div>
 	</div>
-	<Announcements />
 </div>
 
 <style lang="scss">

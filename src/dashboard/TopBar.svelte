@@ -7,7 +7,7 @@
 	import { browser } from '$app/environment';
 	import HoloSphere from 'holosphere';
 
-	let holosphere = getContext('holosphere') || new HoloSphere('HolonsDebug');
+	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 	
 	interface HolonInfo {
 		id: string;
