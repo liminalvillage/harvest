@@ -25,6 +25,39 @@
 		localStorage.setItem('kanbanShowCompleted', showCompleted.toString());
 	}
 
+	// Add this function near the top of the <script> section, after the imports
+	function getColorFromCategory(category) {
+		if (!category) return '#374151'; // default gray-800 for items without category
+		
+		// Simple string hash function
+		let hash = 0;
+		for (let i = 0; i < category.length; i++) {
+			hash = ((hash << 5) - hash) + category.charCodeAt(i);
+			hash = hash & hash;
+		}
+		
+		// Generate HSL color with consistent saturation and lightness
+		// Using hash to generate hue (0-360)
+		const hue = Math.abs(hash % 360);
+		return `hsl(${hue}, 70%, 85%)`; // Pastel colors with good contrast for text
+	}
+
+	// Add these new variables
+	let selectedCategory = 'all';
+	
+	// Compute unique categories from quests
+	$: categories = ['all', ...new Set(
+		Object.values(store)
+			.filter(quest => quest.category)
+			.map(quest => quest.category)
+	)];
+	
+	// Filter quests based on selected category
+	$: filteredQuests = sortedQuests.filter(([_, quest]) => {
+		if (selectedCategory === 'all') return true;
+		return quest.category === selectedCategory;
+	});
+
 	onMount(async () => {
 		// Fetch all quests from holon
 		subscribe();
@@ -214,7 +247,27 @@
 			</div>
 		</div>
 
-		<div class="flex justify-end mb-4">
+		<div class="flex justify-end mb-4 items-center gap-4">
+			<!-- Category Filter -->
+			<div class="relative">
+				<select
+					bind:value={selectedCategory}
+					class="appearance-none bg-gray-600 text-white px-4 py-1.5 pr-8 rounded-full cursor-pointer text-sm"
+				>
+					{#each categories as category}
+						<option value={category}>
+							{category === 'all' ? 'All Categories' : category}
+						</option>
+					{/each}
+				</select>
+				<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
+					<svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+						<path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+					</svg>
+				</div>
+			</div>
+
+			<!-- Show Completed Toggle -->
 			<label class="flex items-center cursor-pointer">
 				<div class="relative">
 					<input 
@@ -235,7 +288,7 @@
 
 		{#if isListView}
 			<div class="space-y-2">
-				{#each sortedQuests as [key, quest]}
+				{#each filteredQuests as [key, quest]}
 					{#if ((quest.status === 'ongoing' || quest.status === 'scheduled' || (showCompleted && quest.status === 'completed')) && (quest.type === 'task' || quest.type === 'quest'))}
 						<div 
 							id={key} 
@@ -249,12 +302,24 @@
 								}
 							}}
 						>
-							<div class="p-3 rounded-lg transition-colors {quest.status === 'completed' ? 'bg-gray-400 opacity-60' : 'bg-gray-300 hover:bg-gray-200'}">
+							<div class="p-3 rounded-lg transition-colors" 
+								style="background-color: {quest.status === 'completed' ? '#9CA3AF' : getColorFromCategory(quest.category)}; 
+									   opacity: {quest.status === 'completed' ? '0.6' : '1'}">
 								<div class="flex justify-between items-center gap-4">
 									<div class="flex-1 min-w-0">
 										<h3 class="text-base font-bold opacity-70 truncate">{quest.title}</h3>
 										{#if quest.description}
 											<p class="text-sm opacity-70 truncate">{quest.description}</p>
+										{/if}
+										{#if quest.category}
+											<p class="text-sm opacity-70 mt-1">
+												<span class="inline-flex items-center">
+													<svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
+														<path d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"/>
+													</svg>
+													{quest.category}
+												</span>
+											</p>
 										{/if}
 									</div>
 									
@@ -323,7 +388,7 @@
 			</div>
 		{:else}
 			<div class="flex flex-wrap">
-				{#each sortedQuests as [key, quest]}
+				{#each filteredQuests as [key, quest]}
 					{#if ((quest.status === 'ongoing' || quest.status === 'scheduled' || (showCompleted && quest.status === 'completed')) && (quest.type === 'task' || quest.type === 'quest'))}
 						<div 
 							id={key} 
@@ -338,7 +403,9 @@
 							}}
 						>
 							<div class="p-2">
-								<div class="p-4 rounded-3xl overflow-hidden {quest.status === 'completed' ? 'bg-gray-400 opacity-60' : 'bg-gray-300'}">
+								<div class="p-4 rounded-3xl overflow-hidden" 
+									style="background-color: {quest.status === 'completed' ? '#9CA3AF' : getColorFromCategory(quest.category)}; 
+										   opacity: {quest.status === 'completed' ? '0.6' : '1'}">
 									<div class="flex items-center justify-between">
 										{#if quest.when}
 											<span class="text-sm whitespace-nowrap">
@@ -349,6 +416,16 @@
 									</div>
 									<div class="text-center mb-4 mt-5">
 										<p class="text-base font-bold opacity-70 truncate">{quest.title}</p>
+										{#if quest.category}
+											<p class="text-sm opacity-70 mt-1">
+												<span class="inline-flex items-center justify-center">
+													<svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
+														<path d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"/>
+													</svg>
+													{quest.category}
+												</span>
+											</p>
+										{/if}
 									</div>
 									{#if quest.description}
 										<div class="text-sm opacity-70 mb-4 line-clamp-2">
