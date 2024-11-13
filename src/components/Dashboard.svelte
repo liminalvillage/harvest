@@ -10,8 +10,10 @@
         get: (id: string, collection: string) => Promise<any>;
     }
 
+    console.log("Logging the environment variables", import.meta.env.MODE)
+    let environmentName: string = import.meta.env.MODE === 'development' ? 'HolonsDebug' : 'Holons'  
     // Use the defined interface for holosphere
-    let holosphere: HoloSphereInterface = getContext('holosphere') || new HoloSphere('Holons');
+    let holosphere: HoloSphereInterface = getContext('holosphere') || new HoloSphere(environmentName);
     let holonID: string; // Declare holonID without initialization
 
     // Subscribe to the $page store to get the current page ID

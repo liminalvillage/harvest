@@ -2,14 +2,17 @@
 	// @ts-nocheck
 	import { onMount, getContext } from 'svelte';
 	import { ID } from '../dashboard/store.ts'; 
-	import { formatDate, formatTime } from '../utils/date';
-	
-
+	import { formatDate, formatTime } from '../utils/date';	
 	import HoloSphere from 'holosphere';
 	import Schedule from './ScheduleWidget.svelte';
     import Announcements from './Announcements.svelte';
 
+<<<<<<< Updated upstream
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+=======
+	let holosphere = getContext('holosphere') || new HoloSphere('HolonsDebug');
+	// export let id;
+>>>>>>> Stashed changes
 
 	$: holonID = $ID ;
 	let store = {};
@@ -27,8 +30,13 @@
 
 	onMount(async () => {
 		// Fetch all quests from holon
+<<<<<<< Updated upstream
 		subscribe();
 		
+=======
+		subscribeToquests();
+		testUpcast();
+>>>>>>> Stashed changes
 
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
 	});
@@ -55,6 +63,45 @@
 				}
 			});
 		}
+		
+	}
+	async function testUpcast(){
+		if(holosphere){
+		// 	console.log('Holosphere object', holosphere)
+		// 	let holosphereResolution = holosphere
+		// 	let ctx = {
+        //     message: {
+        //         chat: { id: "8c1e850d53b03ff" },  // Assign a unique chat ID or adjust as needed
+        //         message_id: "tasks",
+        //         text: `/quest "Test of the quest from the Kanban in svelte"`, // Assume title is part of content
+        //         from: { id: '123', username: 'user' }  // Example user data
+        //     },
+
+		// }
+		// 	holosphere.upcast("8c1e850d53b03ff", "tasks", ctx)
+		
+		// real data
+		// let realdata = await holosphere.getKey("-4516851538", 'quests', '39')
+		// // .once(data=>console.log('data from the reference', data))
+		// // console.log("reference from actual quest: ", reference);
+		// console.log("data from the actual quest: ", realdata);
+		// // real data
+
+		// // reference
+		console.log('testing the reference!')
+		let reference = holosphere.getNode("-4516851538", 'quests', '39')
+		console.log("!reference: ", reference)
+		// .once(data=>console.log("data", data))
+		// holosphere.upcast("8c1e850d53b03ff", "quests", reference)
+
+		// let realdata = holosphere.gun.get("1729747166746")
+		// .once(data=>console.log("If it's actual data: ", data))
+		// console.log("data from the actual quest: ", realdata);
+
+		// 1729747166746
+
+		}
+
 	}
 
 	function update(hex) {

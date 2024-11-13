@@ -367,10 +367,9 @@
 		const subscriptions = holoSubscriptions.get(lens);
 		if (subscriptions) {
 			// Clear all subscriptions for this lens
-			for (const subscription of subscriptions.values()) {
-				if (subscription && typeof subscription.off === 'function') {
-					subscription.off();
-				}
+			for (const [hex, subscription] of subscriptions.entries()) {
+				// Unsubscribe from Gun DB by calling .off() on the subscription path
+				holosphere.gun.get(hex).get(lens).map().off();
 			}
 			holoSubscriptions.delete(lens);
 			lensData[lens].clear();
