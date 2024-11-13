@@ -6,6 +6,7 @@
 	import HoloSphere from 'holosphere';
 	import Schedule from './ScheduleWidget.svelte';
     import Announcements from './Announcements.svelte';
+    import TaskModal from './TaskModal.svelte';
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
@@ -57,6 +58,9 @@
 		if (selectedCategory === 'all') return true;
 		return quest.category === selectedCategory;
 	});
+
+	// Add this variable to track the selected task
+	let selectedTask = null;
 
 	onMount(async () => {
 		// Fetch all quests from holon
@@ -162,6 +166,11 @@
 		if (dropdown && !dropdown.contains(event.target) && !event.target.closest('.task-card')) {
 			showDropdown = null;
 		}
+	}
+
+	// Replace the showDropdown click handler with this
+	function handleTaskClick(key, quest) {
+		selectedTask = { key, quest };
 	}
 </script>
 
@@ -295,10 +304,10 @@
 							class="w-full task-card relative" 
 							role="button"
 							tabindex="0"
-							on:click|stopPropagation={() => showDropdown = key}
+							on:click|stopPropagation={() => handleTaskClick(key, quest)}
 							on:keydown|stopPropagation={e => {
 								if (e.key === 'Enter' || e.key === ' ') {
-									showDropdown = key;
+									handleTaskClick(key, quest);
 								}
 							}}
 						>
@@ -395,10 +404,10 @@
 							class="w-full md:w-4/12 task-card relative" 
 							role="button"
 							tabindex="0"
-							on:click|stopPropagation={() => showDropdown = key}
+							on:click|stopPropagation={() => handleTaskClick(key, quest)}
 							on:keydown|stopPropagation={e => {
 								if (e.key === 'Enter' || e.key === ' ') {
-									showDropdown = key;
+									handleTaskClick(key, quest);
 								}
 							}}
 						>
@@ -494,6 +503,16 @@
 	</div>
 	<Schedule isWidget=true/>
 	
+	{#if selectedTask}
+		<TaskModal
+			quest={selectedTask.quest}
+			questId={selectedTask.key}
+			{userStore}
+			{holosphere}
+			holonId={holonID}
+			on:close={() => selectedTask = null}
+		/>
+	{/if}
 </div>
 
 <style>
