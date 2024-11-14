@@ -26,8 +26,8 @@
 
 	onMount(async () => {
 		// Fetch all quests from holon
-		subscribeToquests();
-		testUpcast();
+		subscribe();
+		// testUpcast();
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
 	});
 
@@ -78,9 +78,9 @@
 		// // real data
 
 		// // reference
-		console.log('testing the reference!')
-		let reference = holosphere.getNode("-4516851538", 'quests', '39')
-		console.log("!reference: ", reference)
+		// console.log('testing the reference!')
+		// let reference = holosphere.getNode("-4516851538", 'quests', '39')
+		// console.log("!reference: ", reference)
 		// .once(data=>console.log("data", data))
 		// holosphere.upcast("8c1e850d53b03ff", "quests", reference)
 

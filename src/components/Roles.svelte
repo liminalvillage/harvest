@@ -29,7 +29,9 @@
 	});
 
 	// Suscribe to changes in the specified holon
+	// #TODO: Roles should be specific to chatID
 	async function subscribeToroles() {
+		console.log("CI/CD test")
 		store = {};
 		if (holosphere)
 			holosphere.subscribe(holonID, 'roles', (newrole, key) => {
