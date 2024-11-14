@@ -7,6 +7,7 @@
 	import Schedule from './ScheduleWidget.svelte';
     import Announcements from './Announcements.svelte';
     import TaskModal from './TaskModal.svelte';
+    import { browser } from '$app/environment';
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
@@ -16,14 +17,24 @@
 	let showDropdown = null;
 	$: quests = Object.entries(store);
 
-	// Load saved preferences from localStorage
-	let isListView = localStorage.getItem('kanbanViewMode') === 'list' || false;
-	let showCompleted = localStorage.getItem('kanbanShowCompleted') === 'true' || false;
+	// Initialize preferences with default values
+	let isListView = false;
+	let showCompleted = false;
 
-	// Save preferences when they change
+	// Load preferences only in browser environment
+	onMount(() => {
+		if (browser) {
+			isListView = localStorage.getItem('kanbanViewMode') === 'list' || false;
+			showCompleted = localStorage.getItem('kanbanShowCompleted') === 'true' || false;
+		}
+	});
+
+	// Save preferences only in browser environment
 	$: {
-		localStorage.setItem('kanbanViewMode', isListView ? 'list' : 'grid');
-		localStorage.setItem('kanbanShowCompleted', showCompleted.toString());
+		if (browser) {
+			localStorage.setItem('kanbanViewMode', isListView ? 'list' : 'grid');
+			localStorage.setItem('kanbanShowCompleted', showCompleted.toString());
+		}
 	}
 
 	// Add this function near the top of the <script> section, after the imports
