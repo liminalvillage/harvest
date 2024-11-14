@@ -205,14 +205,14 @@
 		1530, 1600, 1630, 1700, 1730, 1800, 1830, 1900, 1930, 2000, 2030, 2100, 2130, 2200, 2230, 2300, 2330;
 	$blockLengths: 1, 2, 3, 4;
 
-	body {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 100vh;
-		padding: 4rem 0;
-		font-family: -system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-	}
+	// body {
+	// 	display: flex;
+	// 	align-items: center;
+	// 	justify-content: center;
+	// 	min-height: 100vh;
+	// 	padding: 4rem 0;
+	// 	font-family: -system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+	// }
 
 	.scheduleContainer {
 		display: grid;

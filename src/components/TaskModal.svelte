@@ -11,10 +11,13 @@
     const dispatch = createEventDispatcher();
     let showAddParticipants = false;
 
-    async function updateQuest(updates: any) {
+    async function updateQuest(updates: any, shouldClose = false) {
         const updatedQuest = { ...quest, ...updates };
         await holosphere.put(holonId, 'quests', updatedQuest);
         quest = updatedQuest;
+        if (shouldClose) {
+            dispatch('close');
+        }
     }
 
     async function deleteQuest() {
@@ -54,7 +57,7 @@
 
     async function completeQuest() {
         const newStatus = quest.status === 'completed' ? 'ongoing' : 'completed';
-        await updateQuest({ status: newStatus });
+        await updateQuest({ status: newStatus }, true);
     }
 </script>
 

@@ -168,11 +168,7 @@
 	.dropdown-item {
 		padding: 8px 12px;
 		cursor: pointer;
-		color: #d1d5db;
 		transition: background-color 0.2s;
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
 	}
 	.dropdown-item:hover {
 		background-color: #374151;
@@ -265,18 +261,18 @@
 										on:mousedown|preventDefault={() => selectPreviousHolon(holon)}
 									>
 										<div class="dropdown-item-content">
-											<div class="flex-grow cursor-pointer">
-												<span class="holon-id">{holon.id}</span>
+											<div class="flex-grow cursor-pointer flex flex-col">
 												{#if holon.name}
-													<span class="holon-name">{holon.name}</span>
+													<span class="text-sm font-medium text-white">{holon.name}</span>
 												{/if}
+												<span class="holon-id text-xs {holon.name ? 'text-gray-400' : 'text-white'}">{holon.id}</span>
 											</div>
 											<button
 												type="button"
 												class="delete-button p-1 rounded-full hover:bg-gray-700"
 												on:mousedown|stopPropagation|preventDefault={(e) => {
 													removePreviousHolon(holon.id, e);
-													showDropdown = true; // Keep dropdown open after deletion
+													showDropdown = true;
 												}}
 												aria-label="Remove holon from history"
 											>

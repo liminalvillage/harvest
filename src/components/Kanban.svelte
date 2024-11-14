@@ -28,7 +28,7 @@
 
 	// Add this function near the top of the <script> section, after the imports
 	function getColorFromCategory(category) {
-		if (!category) return '#374151'; // default gray-800 for items without category
+		if (!category) return '#E5E7EB'; // Light gray (gray-200) for items without category
 		
 		// Simple string hash function
 		let hash = 0;
@@ -61,6 +61,23 @@
 
 	// Add this variable to track the selected task
 	let selectedTask = null;
+
+	let holonName = '';
+
+	async function fetchHolonName() {
+		try {
+			const name = await holosphere.get(holonID, 'name');
+			holonName = name || 'Unnamed Holon';
+		} catch (error) {
+			console.error('Error fetching holon name:', error);
+			holonName = 'Unnamed Holon';
+		}
+	}
+
+	// Update when holonID changes
+	$: if (holonID) {
+		fetchHolonName();
+	}
 
 	onMount(async () => {
 		// Fetch all quests from holon
@@ -177,7 +194,10 @@
 <div class="flex flex-wrap">
 	<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
 		<div class="flex justify-between text-white items-center mb-8">
-			<p class="text-2xl font-bold">Tasks Today</p>
+			<div>
+				<h1 class="text-2xl font-bold">{holonName}</h1>
+				<p class="text-lg mt-1">Tasks Today</p>
+			</div>
 			<p class="">{new Date().toDateString()}</p>
 		</div>
 
@@ -443,16 +463,16 @@
 									{/if}
 									{#if quest.location}
 										<div class="text-sm opacity-70 mb-4 truncate">
-											📍 {quest.location
-													.split(',')
-													.map((loc, i) => {
-														if (i === 0) {
-															return loc;
-														} else {
-															return loc.trim();
-														}
-													})
-													.join(', ')}
+											 {quest.location
+												 .split(',')
+												 .map((loc, i) => {
+													 if (i === 0) {
+														 return loc;
+													 } else {
+														 return loc.trim();
+													 }
+												 })
+												 .join(', ')}
 										</div>
 									{/if}
 									
