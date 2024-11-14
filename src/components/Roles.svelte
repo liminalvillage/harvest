@@ -165,7 +165,7 @@
 							{/if} -->
 
 								<div class="flex justify-between pt-4 relative">
-									{#if role.participants.length > 0}
+									{#if role.participants && role.participants.length > 0}
 										<div class="flex items-center">
 											<div
 											class="text-sm rounded-lg flex flex-shrink-0 py-2 px-4 font-bold text-yellow-600"
@@ -173,15 +173,17 @@
 										🙋‍♂️{role.participants.length}:
 										
 											{#each role.participants as participant}
-												{#if participant.picture}
+												{#if participant && participant.picture}
 													<img
 														class="w-5 h-5 rounded-full overflow-hidden object-cover"
-														src = {participant.picture}
+														 src={participant.picture}
 														alt="participant"
 													/>
 												{/if}
 												<br/>
-												{@html `@${participant}`}<br/>
+												{#if participant}
+													{@html `@${participant}`}<br/>
+												{/if}
 											{/each}
 										</div>
 										</div>

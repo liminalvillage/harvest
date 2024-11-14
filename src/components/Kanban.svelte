@@ -7,12 +7,8 @@
 	import Schedule from './ScheduleWidget.svelte';
     import Announcements from './Announcements.svelte';
 
-<<<<<<< Updated upstream
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
-=======
-	let holosphere = getContext('holosphere') || new HoloSphere('HolonsDebug');
-	// export let id;
->>>>>>> Stashed changes
+
 
 	$: holonID = $ID ;
 	let store = {};
@@ -30,14 +26,8 @@
 
 	onMount(async () => {
 		// Fetch all quests from holon
-<<<<<<< Updated upstream
-		subscribe();
-		
-=======
 		subscribeToquests();
 		testUpcast();
->>>>>>> Stashed changes
-
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
 	});
 
