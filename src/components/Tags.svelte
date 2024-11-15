@@ -1,4 +1,3 @@
-
 <script>
 	// @ts-nocheck
 	import { onMount, getContext } from 'svelte';
@@ -41,34 +40,41 @@
 		if (holosphere)
 			holosphere.subscribe(holonID, 'tags', (tag, key) => {
 				if (tag) {
-					// Updates the store with the new value
 					store[key] = JSON.parse(tag);
 				} else {
-					// A key may contain a null value (if data has been deleted/set to null)
-					// if so, we remove the item from the store
 					delete store[key];
 					store = store;
 				}
 			});
-
-			for (const [key, tag] of Object.entries(store)) {
-				 let children = [];
-				for (const content of tag.content) {
-					let child = {};
-					child.label=  content.messageContent
-					children.push(child)
-				}
-		
-				tree.children.push({
-					label: key,
-					children: children
-				});
-			}
-			
 	}
 
-</script>
+	// Function to handle tag selection
+	function handleTagClick(tagName) {
+		// Handle tag click - could navigate to a tag-specific view
+		console.log('Selected tag:', tagName);
+		// Example: navigate to tag view
+		// goto(`/tags/${tagName}`);
+	}
 
+	// Function to check if text contains a URL
+	function extractUrl(text) {
+		const urlRegex = /(https?:\/\/[^\s]+)/g;
+		const match = text.match(urlRegex);
+		return match ? match[0] : null;
+	}
+
+	// Function to handle content item clicks
+	function handleContentClick(content, event) {
+		const url = extractUrl(content.messageContent);
+		if (url) {
+			window.open(url, '_blank');
+		} else if (content.link) {
+			window.open(content.link, '_blank');
+		} else if (content.url) {
+			window.open(content.url, '_blank');
+		}
+	}
+</script>
 
 <div class="flex flex-wrap">
 	<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
@@ -127,9 +133,35 @@
 			</div>
 		</div>
 
-		<div class="flex flex-wrap">
-			<TreeView {tree} />
+		<!-- New tag grid display -->
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+			{#each tags as [tagName, tagData]}
+				<div class="bg-gray-700 p-4 rounded-lg">
+					<button 
+						class="text-white font-bold mb-2 hover:text-blue-400 cursor-pointer transition-colors w-full text-left"
+						on:click={() => handleTagClick(tagName)}
+					>
+						{tagName}
+					</button>
+					<div class="space-y-2">
+						{#each tagData.content as content}
+							<a 
+								href={extractUrl(content.messageContent) || content.url || content.link || '#'} 
+								class="block text-gray-300 text-sm bg-gray-800 p-2 rounded hover:bg-gray-600 transition-colors {extractUrl(content.messageContent) ? 'text-blue-400 hover:text-blue-300' : ''}"
+								on:click|preventDefault={(e) => handleContentClick(content, e)}
+							>
+								{content.messageContent}
+							</a>
+						{/each}
+					</div>
+				</div>
+			{/each}
 		</div>
+
+		<!-- Keep TreeView as an alternative view if needed -->
+		<!-- <div class="flex flex-wrap">
+			<TreeView {tree} />
+		</div> -->
 	</div>
 	<Announcements />
 </div>
