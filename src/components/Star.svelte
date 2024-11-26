@@ -2,12 +2,13 @@
 	// @ts-nocheck
 	import { onMount, getContext } from 'svelte';
 	import { ID } from '../dashboard/store.ts'; 
-	import { formatDate, formatTime } from '../utils/date';	
+	import { formatDate, formatTime } from '../utils/date.js';	
 	import HoloSphere from 'holosphere';
 	import Schedule from './ScheduleWidget.svelte';
     import Announcements from './Announcements.svelte';
     import TaskModal from './TaskModal.svelte';
     import { browser } from '$app/environment';
+    import CanvasView from './CanvasView.svelte';
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
@@ -18,13 +19,13 @@
 	$: quests = Object.entries(store);
 
 	// Initialize preferences with default values
-	let isListView = false;
+	let viewMode = 'grid'; // can be 'grid', 'list', or 'canvas'
 	let showCompleted = false;
 
 	// Load preferences only in browser environment
 	onMount(() => {
 		if (browser) {
-			isListView = localStorage.getItem('kanbanViewMode') === 'list' || false;
+			viewMode = localStorage.getItem('kanbanViewMode') || 'grid';
 			showCompleted = localStorage.getItem('kanbanShowCompleted') === 'true' || false;
 		}
 	});
@@ -32,7 +33,7 @@
 	// Save preferences only in browser environment
 	$: {
 		if (browser) {
-			localStorage.setItem('kanbanViewMode', isListView ? 'list' : 'grid');
+			localStorage.setItem('kanbanViewMode', viewMode);
 			localStorage.setItem('kanbanShowCompleted', showCompleted.toString());
 		}
 	}
@@ -94,7 +95,7 @@
 		// Fetch all quests from holon
 		subscribe();
 		
-		isListView = localStorage.getItem('kanbanViewMode') === 'list' || false;
+		viewMode = localStorage.getItem('kanbanViewMode') || 'grid';
 		showCompleted = localStorage.getItem('kanbanShowCompleted') === 'true' || false;
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
 		
@@ -239,9 +240,9 @@
 			</div>
 			<div class="flex items-center mt-4 md:mt-0">
 				<button 
-					class="text-white {isListView ? 'bg-gray-700' : 'bg-transparent'} p-2" 
+					class="text-white {viewMode === 'list' ? 'bg-gray-700' : 'bg-transparent'} p-2" 
 					title="List View"
-					on:click={() => isListView = true}
+					on:click={() => viewMode = 'list'}
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -263,9 +264,9 @@
 					</svg>
 				</button>
 				<button 
-					class="text-white {!isListView ? 'bg-gray-700' : 'bg-transparent'} p-2 ml-2" 
+					class="text-white {viewMode === 'grid' ? 'bg-gray-700' : 'bg-transparent'} p-2 ml-2" 
 					title="Grid View"
-					on:click={() => isListView = false}
+					on:click={() => viewMode = 'grid'}
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -282,6 +283,27 @@
 						<rect x="14" y="3" width="7" height="7" />
 						<rect x="14" y="14" width="7" height="7" />
 						<rect x="3" y="14" width="7" height="7" />
+					</svg>
+				</button>
+				<button 
+					class="text-white {viewMode === 'canvas' ? 'bg-gray-700' : 'bg-transparent'} p-2 ml-2" 
+					title="Canvas View"
+					on:click={() => viewMode = 'canvas'}
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+						<line x1="3" y1="9" x2="21" y2="9"/>
+						<line x1="9" y1="21" x2="9" y2="9"/>
 					</svg>
 				</button>
 			</div>
@@ -326,7 +348,7 @@
 			</label>
 		</div>
 
-		{#if isListView}
+		{#if viewMode === 'list'}
 			<div class="space-y-2">
 				{#each filteredQuests as [key, quest]}
 					{#if ((quest.status === 'ongoing' || quest.status === 'scheduled' || (showCompleted && quest.status === 'completed')) && (quest.type === 'task' || quest.type === 'quest'))}
@@ -429,6 +451,14 @@
 					{/if}
 				{/each}
 			</div>
+		{:else if viewMode === 'canvas'}
+			<CanvasView
+				{filteredQuests}
+				{userStore}
+				{holosphere}
+				{holonID}
+				on:taskClick={handleTaskClick}
+			/>
 		{:else}
 			<div class="flex flex-wrap">
 				{#each filteredQuests as [key, quest]}

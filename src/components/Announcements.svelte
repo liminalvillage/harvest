@@ -52,14 +52,14 @@
 				<div
 					class="border-t solid border-gray-700 p-4 flex 2xl:items-start w-full hover:bg-gray-700"
 				>
-					<img src={announcement.image} alt="profile" class="object-cover w-10 h-10 rounded-full" />
+					<img src="http://gun.holons.io/getavatar?user_id={announcement.user.id}" alt="profile" class="object-cover w-10 h-10 rounded-full" />
 					<div class="pl-4 w-full">
 						<div class="flex items center justify-between w-full">
 							<div
 								class="text-white
                             font-medium"
 							>
-								{announcement.from}
+								{announcement.user.first_name?announcement.user.first_name : announcement.user.username} {announcement.user.last_name?announcement.user.last_name:''}
 							</div>
 							<div class="flex justify-center items-center cursor-pointer h-7 w-7">
 								<svg

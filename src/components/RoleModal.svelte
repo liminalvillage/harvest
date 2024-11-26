@@ -1,9 +1,21 @@
 <script lang="ts">
+    console.log('RoleModal props:', {
+        role,
+        roleId,
+        userStore,
+        holosphere,
+        holonId
+    });
+
+    $: if (role && !role.participants) {
+        role.participants = [];
+    }
+
     import { createEventDispatcher } from 'svelte';
     import { fade, scale } from 'svelte/transition';
     
-    export let quest: any;
-    export let questId: string;
+    export let role: any;
+    export let roleId: string;
     export let userStore: Record<string, any>;
     export let holosphere: any;
     export let holonId: string;
@@ -11,18 +23,15 @@
     const dispatch = createEventDispatcher();
     let showAddParticipants = false;
 
-    async function updateQuest(updates: any, shouldClose = false) {
-        const updatedQuest = { ...quest, ...updates };
-        await holosphere.put(holonId, 'quests', updatedQuest);
-        quest = updatedQuest;
-        if (shouldClose) {
-            dispatch('close');
-        }
+    async function updateRole(updates: any) {
+        const updatedRole = { ...role, ...updates };
+        await holosphere.put(holonId, 'roles', updatedRole);
+        role = updatedRole;
     }
 
-    async function deleteQuest() {
-        if (confirm('Are you sure you want to delete this task?')) {
-            await holosphere.delete(holonId, 'quests', questId);
+    async function deleteRole() {
+        if (confirm('Are you sure you want to delete this role?')) {
+            await holosphere.delete(holonId, 'roles', roleId);
             dispatch('close');
         }
     }
@@ -32,32 +41,27 @@
     }
 
     async function removeParticipant(participantId: string) {
-        const participants = quest.participants.filter((p: { id: string }) => p.id !== participantId);
-        await updateQuest({ participants });
+        const participants = role.participants.filter((p: { id: string }) => p.id !== participantId);
+        await updateRole({ participants });
     }
 
     async function addParticipant(userId: string) {
         const user = userStore[userId];
-        const participants = [...(quest.participants || [])];
+        const participants = [...(role.participants || [])];
         
         if (!participants.some((p: { id: string }) => p.id === userId)) {
             participants.push({
                 id: userId,
                 username: user.first_name + (user.last_name ? ' ' + user.last_name : ''),
-                picture: `http://gun.holons.io/getavatar?user_id=${userId}`
+                picture: user.picture
             });
-            await updateQuest({ participants });
+            await updateRole({ participants });
         }
         showAddParticipants = false;
     }
 
     function isUserParticipant(userId: string) {
-        return quest.participants?.some((p: { id: string }) => p.id === userId);
-    }
-
-    async function completeQuest() {
-        const newStatus = quest.status === 'completed' ? 'ongoing' : 'completed';
-        await updateQuest({ status: newStatus }, true);
+        return role.participants?.some((p: { id: string }) => p.id === userId);
     }
 </script>
 
@@ -76,7 +80,7 @@
     >
         <div class="p-6">
             <div class="flex justify-between items-start mb-6">
-                <h2 id="modal-title" class="text-2xl font-bold text-white">{quest.title}</h2>
+                <h2 id="modal-title" class="text-2xl font-bold text-white">{role.title}</h2>
                 <button 
                     class="text-gray-400 hover:text-white"
                     on:click={closeModal}
@@ -89,8 +93,8 @@
             </div>
 
             <div class="space-y-6 text-gray-300">
-                {#if quest.description}
-                    <p class="text-sm">{quest.description}</p>
+                {#if role.description}
+                    <p class="text-sm">{role.description}</p>
                 {/if}
 
                 <div class="space-y-4">
@@ -106,15 +110,17 @@
 
                     <!-- Current Participants List -->
                     <div class="space-y-2">
-                        {#if quest.participants?.length}
-                            {#each quest.participants as participant}
+                        {#if role.participants?.length}
+                            {#each role.participants as participant}
                                 <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg">
                                     <div class="flex items-center gap-2">
-                                        <img 
-                                            src={`http://gun.holons.io/getavatar?user_id=${participant.id}`}
-                                            alt={participant.username}
-                                            class="w-8 h-8 rounded-full"
-                                        />
+                                        {#if participant.picture}
+                                            <img 
+                                                src={participant.picture} 
+                                                alt={participant.username}
+                                                class="w-8 h-8 rounded-full"
+                                            />
+                                        {/if}
                                         <span>{participant.username}</span>
                                     </div>
                                     <button 
@@ -141,11 +147,13 @@
                                         class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2"
                                         on:click={() => addParticipant(userId)}
                                     >
-                                        <img 
-                                            src={`http://gun.holons.io/getavatar?user_id=${userId}`}
-                                            alt={user.first_name}
-                                            class="w-6 h-6 rounded-full"
-                                        />
+                                        {#if user.picture}
+                                            <img 
+                                                src={user.picture} 
+                                                alt={user.first_name}
+                                                class="w-6 h-6 rounded-full"
+                                            />
+                                        {/if}
                                         <span>{user.first_name} {user.last_name || ''}</span>
                                     </button>
                                 {/if}
@@ -157,25 +165,17 @@
                 <div class="flex justify-between pt-6">
                     <button
                         class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                        on:click={deleteQuest}
+                        on:click={deleteRole}
                     >
-                        Delete Task
+                        Delete Role
                     </button>
                     
-                    <div class="space-x-2">
-                        <button
-                            class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                            on:click={closeModal}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            class="px-4 py-2 {quest.status === 'completed' ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'} text-white rounded-lg transition-colors"
-                            on:click={completeQuest}
-                        >
-                            {quest.status === 'completed' ? 'Mark Ongoing' : 'Mark Complete'}
-                        </button>
-                    </div>
+                    <button
+                        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                        on:click={closeModal}
+                    >
+                        Close
+                    </button>
                 </div>
             </div>
         </div>
