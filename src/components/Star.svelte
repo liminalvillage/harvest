@@ -457,6 +457,7 @@
 				{userStore}
 				{holosphere}
 				{holonID}
+				{showCompleted}
 				on:taskClick={handleTaskClick}
 			/>
 		{:else}

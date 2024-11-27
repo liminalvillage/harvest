@@ -7,6 +7,7 @@
     export let userStore: Record<string, any>;
     export let holosphere: HoloSphere;
     export let holonID: string;
+    export let showCompleted: boolean;
 
     const dispatch = createEventDispatcher();
     let canvas: HTMLElement;
@@ -37,21 +38,23 @@
 
     // Update this to only set initial positions once when filteredQuests changes
     $: {
-        questCards = filteredQuests.map(([key, quest]) => {
-            // Try to find existing card to preserve its position
-            const existingCard = questCards.find(card => card.key === key);
-            if (existingCard) {
-                return existingCard;
-            }
-            
-            // Only create new position for new cards
-            return {
-                key,
-                quest,
-                x: quest.position?.x || INITIAL_OFFSET.x + Math.random() * 800,
-                y: quest.position?.y || INITIAL_OFFSET.y + Math.random() * 500
-            };
-        });
+        questCards = filteredQuests
+            .filter(([_, quest]) => showCompleted || quest.status !== 'completed')
+            .map(([key, quest]) => {
+                // Try to find existing card to preserve its position
+                const existingCard = questCards.find(card => card.key === key);
+                if (existingCard) {
+                    return existingCard;
+                }
+                
+                // Only create new position for new cards
+                return {
+                    key,
+                    quest,
+                    x: quest.position?.x || INITIAL_OFFSET.x + Math.random() * 800,
+                    y: quest.position?.y || INITIAL_OFFSET.y + Math.random() * 500
+                };
+            });
     }
 
     function handleMouseDown(event: MouseEvent, card: typeof questCards[0] | null = null) {
@@ -157,14 +160,18 @@
             const oldZoom = zoom;
             zoom = Math.min(Math.max(0.25, zoom * delta), 2);
             
-            // Adjust pan to zoom around mouse position
-            const rect = container.getBoundingClientRect();
-            const mouseX = event.clientX - rect.left;
-            const mouseY = event.clientY - rect.top;
+            // Get the center point of the canvas in screen space
+            const canvasCenterX = CANVAS_WIDTH / 2;
+            const canvasCenterY = CANVAS_HEIGHT / 2;
             
+            // Calculate how far the canvas center is from the viewport origin
+            const distanceFromOriginX = (canvasCenterX * oldZoom) + pan.x;
+            const distanceFromOriginY = (canvasCenterY * oldZoom) + pan.y;
+            
+            // Calculate new pan to maintain the canvas center position
             pan = {
-                x: mouseX - (mouseX - pan.x) * (zoom / oldZoom),
-                y: mouseY - (mouseY - pan.y) * (zoom / oldZoom)
+                x: distanceFromOriginX - (canvasCenterX * zoom),
+                y: distanceFromOriginY - (canvasCenterY * zoom)
             };
         } else {
             // Pan
@@ -206,6 +213,22 @@
             container?.removeEventListener('wheel', handleWheel);
         };
     });
+
+    // Add the getColorFromCategory function
+    function getColorFromCategory(category: string | null) {
+        if (!category) return '#E5E7EB'; // Light gray (gray-200) for items without category
+        
+        // Simple string hash function
+        let hash = 0;
+        for (let i = 0; i < category.length; i++) {
+            hash = ((hash << 5) - hash) + category.charCodeAt(i);
+            hash = hash & hash;
+        }
+        
+        // Generate HSL color with consistent saturation and lightness
+        const hue = Math.abs(hash % 360);
+        return `hsl(${hue}, 70%, 85%)`; // Pastel colors with good contrast for text
+    }
 </script>
 
 <div 
@@ -234,8 +257,17 @@
             >
                 <div 
                     class="w-64 p-4 rounded-xl shadow-lg border-2 bg-opacity-90"
-                    style="background-color: {card.quest.status === 'completed' ? 'rgba(156, 163, 175, 0.95)' : 'rgba(55, 65, 81, 0.95)'}; 
-                           border-color: {card.quest.status === 'completed' ? 'rgba(156, 163, 175, 0.9)' : 'rgba(75, 85, 101, 0.9)'}"
+                    style="background-color: {card.quest.status === 'completed' ? 
+                        'rgba(34, 197, 94, 0.95)' : 
+                        card.quest.category ? 
+                            getColorFromCategory(card.quest.category) : 
+                            'rgba(55, 65, 81, 0.95)'}; 
+                        border-color: {card.quest.status === 'completed' ? 
+                            'rgba(34, 197, 94, 0.9)' : 
+                            card.quest.category ? 
+                                getColorFromCategory(card.quest.category) : 
+                                'rgba(75, 85, 101, 0.9)'};
+                        opacity: {card.quest.status === 'completed' ? '0.6' : '1'}"
                 >
                     <h3 class="text-white font-bold mb-2">{card.quest.title}</h3>
                     {#if card.quest.description}
