@@ -62,7 +62,12 @@
 	});
 </script>
 
-<div class={style.container} on:mousemove={handleMouseMove}>
+<div 
+    class={style.container} 
+    on:mousemove={handleMouseMove}
+    role="application"
+    aria-label="Dashboard layout"
+>
 	<div class="flex items-start">
 		<Overlay />
 		<Sidebar mobileOrientation="start" />

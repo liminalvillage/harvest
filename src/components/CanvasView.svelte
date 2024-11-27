@@ -32,15 +32,30 @@
         maxY: CANVAS_HEIGHT - 100
     };
 
-    // Initialize positions if not set
-    $: questCards = filteredQuests.map(([key, quest]) => ({
-        key,
-        quest,
-        x: quest.position?.x || INITIAL_OFFSET.x + Math.random() * 800,
-        y: quest.position?.y || INITIAL_OFFSET.y + Math.random() * 500
-    }));
+    // Initialize positions if not set - move this out of the reactive statement
+    let questCards: { key: string; quest: any; x: number; y: number; }[] = [];
+
+    // Update this to only set initial positions once when filteredQuests changes
+    $: {
+        questCards = filteredQuests.map(([key, quest]) => {
+            // Try to find existing card to preserve its position
+            const existingCard = questCards.find(card => card.key === key);
+            if (existingCard) {
+                return existingCard;
+            }
+            
+            // Only create new position for new cards
+            return {
+                key,
+                quest,
+                x: quest.position?.x || INITIAL_OFFSET.x + Math.random() * 800,
+                y: quest.position?.y || INITIAL_OFFSET.y + Math.random() * 500
+            };
+        });
+    }
 
     function handleMouseDown(event: MouseEvent, card: typeof questCards[0] | null = null) {
+        event.preventDefault();
         event.stopPropagation();
         
         if (event.button === 1 || event.button === 2 || !card) {
@@ -55,11 +70,14 @@
         if (event.button === 0 && card) {
             isDragging = true;
             draggedCard = card;
-            const target = event.target as HTMLElement;
-            const rect = target.closest('.task-card')?.getBoundingClientRect() || target.getBoundingClientRect();
+            
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = (event.clientX - rect.left - pan.x) / zoom;
+            const mouseY = (event.clientY - rect.top - pan.y) / zoom;
+            
             offset = {
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top
+                x: mouseX - card.x,
+                y: mouseY - card.y
             };
         }
     }
@@ -85,19 +103,18 @@
         if (!isDragging || !draggedCard || !canvas) return;
 
         const rect = canvas.getBoundingClientRect();
-        const x = Math.min(Math.max(
-            (event.clientX - rect.left - offset.x - pan.x) / zoom,
-            0
-        ), CANVAS_WIDTH - 300); // Card width consideration
-        
-        const y = Math.min(Math.max(
-            (event.clientY - rect.top - offset.y - pan.y) / zoom,
-            0
-        ), CANVAS_HEIGHT - 200); // Card height consideration
+        const mouseX = (event.clientX - rect.left - pan.x) / zoom;
+        const mouseY = (event.clientY - rect.top - pan.y) / zoom;
+        const newX = mouseX - offset.x;
+        const newY = mouseY - offset.y;
 
         questCards = questCards.map(card => 
             card.key === draggedCard?.key 
-                ? { ...card, x, y }
+                ? { 
+                    ...card, 
+                    x: Math.min(Math.max(newX, 0), CANVAS_WIDTH - 300),
+                    y: Math.min(Math.max(newY, 0), CANVAS_HEIGHT - 200)
+                }
                 : card
         );
     }
@@ -106,20 +123,29 @@
         event.preventDefault();
         event.stopPropagation();
         
-        if (isDragging && draggedCard) {
-            const card = questCards.find(c => c.key === draggedCard.key);
-            if (card) {
-                const quest = { 
-                    ...card.quest, 
-                    position: { x: card.x, y: card.y } 
-                };
-                holosphere.put(holonID, 'quests', quest).catch(console.error);
-            }
-        }
+        const wasDragging = isDragging;
+        const draggedCardCopy = draggedCard;
         
+        // Reset states first
         isDragging = false;
         draggedCard = null;
         isPanning = false;
+        
+        // Then handle the update
+        if (wasDragging && draggedCardCopy) {
+            const card = questCards.find(c => c.key === draggedCardCopy?.key);
+            if (card) {
+                const updatedQuest = { 
+                    ...card.quest,
+                    position: { x: card.x, y: card.y } 
+                };
+                
+                holosphere.put(holonID, 'quests', {
+                    ...updatedQuest,
+                    id: card.key
+                }).catch(error => console.error('Error updating quest position:', error));
+            }
+        }
     }
 
     function handleWheel(event: WheelEvent) {
@@ -189,32 +215,37 @@
     bind:this={container}
     on:mousedown|preventDefault|stopPropagation={(e) => handleMouseDown(e)}
     on:contextmenu|preventDefault
+    role="region"
+    aria-label="Draggable canvas of tasks"
 >
     <div 
         bind:this={canvas}
         class="absolute w-full h-full"
         style="width: {CANVAS_WIDTH}px; height: {CANVAS_HEIGHT}px; transform: scale({zoom}) translate({pan.x}px, {pan.y}px); transform-origin: top left;"
+        role="application"
+        aria-label="Task cards container"
     >
         <!-- Grid background -->
-        <div class="absolute inset-0 grid-background"></div>
+        <div class="absolute inset-0 grid-background" role="presentation"></div>
 
         {#each questCards as card}
-            <div
+            <button
                 class="absolute task-card"
                 class:cursor-move={!isDragging}
                 class:cursor-grabbing={isDragging && draggedCard?.key === card.key}
                 style="left: {card.x}px; top: {card.y}px; transform: scale(1); transform-origin: top left;"
                 on:mousedown|stopPropagation={(e) => handleMouseDown(e, card)}
-                on:click|stopPropagation={() => !isDragging && dispatch('taskClick', { key: card.key, quest: card.quest })}
+                aria-label={`Draggable task: ${card.quest.title}`}
+                aria-describedby={`task-desc-${card.key}`}
             >
                 <div 
                     class="w-64 p-4 rounded-xl shadow-lg border-2 bg-opacity-90"
                     style="background-color: {card.quest.status === 'completed' ? 'rgba(156, 163, 175, 0.95)' : 'rgba(55, 65, 81, 0.95)'}; 
                            border-color: {card.quest.status === 'completed' ? 'rgba(156, 163, 175, 0.9)' : 'rgba(75, 85, 101, 0.9)'}"
                 >
-                    <h3 class="text-white font-bold mb-2">{card.quest.title}</h3>
+                    <h3 class="text-white font-bold mb-2" id={`task-title-${card.key}`}>{card.quest.title}</h3>
                     {#if card.quest.description}
-                        <p class="text-gray-300 text-sm mb-3 line-clamp-2">{card.quest.description}</p>
+                        <p class="text-gray-300 text-sm mb-3 line-clamp-2" id={`task-desc-${card.key}`}>{card.quest.description}</p>
                     {/if}
                     
                     <div class="flex justify-between items-center text-gray-300 text-sm">
@@ -251,7 +282,7 @@
                         </div>
                     {/if}
                 </div>
-            </div>
+            </button>
         {/each}
     </div>
 </div>

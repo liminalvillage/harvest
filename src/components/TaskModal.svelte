@@ -65,16 +65,18 @@
     class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
     on:click|self={closeModal}
     on:keydown={e => e.key === 'Escape' && closeModal()}
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="modal-title"
+    role="presentation"
     transition:fade
 >
     <div 
         class="bg-gray-800 rounded-xl max-w-2xl w-full shadow-xl" 
         transition:scale={{duration: 200, start: 0.95}}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        tabindex="-1"
     >
-        <div class="p-6">
+        <div class="p-6" role="document">
             <div class="flex justify-between items-start mb-6">
                 <h2 id="modal-title" class="text-2xl font-bold text-white">{quest.title}</h2>
                 <button 
@@ -82,7 +84,7 @@
                     on:click={closeModal}
                     aria-label="Close modal"
                 >
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
@@ -90,15 +92,17 @@
 
             <div class="space-y-6 text-gray-300">
                 {#if quest.description}
-                    <p class="text-sm">{quest.description}</p>
+                    <p class="text-sm" id="modal-description">{quest.description}</p>
                 {/if}
 
-                <div class="space-y-4">
+                <div class="space-y-4" role="region" aria-label="Participants">
                     <div class="flex justify-between items-center">
-                        <h3 class="text-lg font-semibold">Participants</h3>
+                        <h3 class="text-lg font-semibold" id="participants-heading">Participants</h3>
                         <button 
                             class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-full text-sm transition-colors"
                             on:click={() => showAddParticipants = !showAddParticipants}
+                            aria-expanded={showAddParticipants}
+                            aria-controls="participants-dropdown"
                         >
                             {showAddParticipants ? 'Cancel' : '+ Add Participant'}
                         </button>

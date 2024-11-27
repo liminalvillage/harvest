@@ -258,6 +258,7 @@
 								{#each previousHolons as holon}
 									<div 
 										class="dropdown-item"
+										role="button"
 										on:mousedown|preventDefault={() => selectPreviousHolon(holon)}
 									>
 										<div class="dropdown-item-content">
