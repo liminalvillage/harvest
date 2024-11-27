@@ -7,7 +7,14 @@
 	import { browser } from '$app/environment';
 	import HoloSphere from 'holosphere';
 
-	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+	// At the top of the script section, add HoloSphere type definition
+	interface HoloSphere {
+		get: (id: string, key: string) => Promise<any>;
+		put: (id: string, key: string, value: any) => Promise<void>;
+	}
+
+	// Update the holosphere context line to include type
+	let holosphere = getContext<HoloSphere>('holosphere') || new HoloSphere('Holons');
 	
 	interface HolonInfo {
 		id: string;
@@ -36,12 +43,12 @@
 				previousHolons.forEach(async (holon) => {
 					if (!holon.name) {
 						try {
-							const data = await holosphere.get(holon.id, 'settings');
+							const data: string = await holosphere.get(holon.id, 'settings');
 							if (data) {
 								holon.name = data;
 								localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 							}
-						} catch (error) {
+						} catch (error: unknown) {
 							console.error(`Error fetching name for holon ${holon.id}:`, error);
 						}
 					}
@@ -75,12 +82,12 @@
 		if (!$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
 			const newHolon: HolonInfo = { id: $ID };
 			// Fetch the name for the new holon
-			holosphere.get($ID, 'name').then(name => {
+			holosphere.get($ID, 'name').then((name: string) => {
 				if (name) {
 					newHolon.name = name;
 					localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 				}
-			}).catch(error => {
+			}).catch((error: unknown) => {
 				console.error(`Error fetching name for holon ${$ID}:`, error);
 			});
 			previousHolons = [...previousHolons, newHolon];
@@ -202,11 +209,6 @@
 	.holon-id {
 		font-family: monospace;
 	}
-	.holon-name {
-		font-size: 0.9em;
-		color: #9ca3af;
-		font-style: italic;
-	}
 	.delete-button {
 		opacity: 0;
 		transition: opacity 0.2s;
@@ -229,7 +231,7 @@
 <header class="h-20 items-center relative z-10">
 	<div class="flex flex-center flex-col h-full justify-center mx-auto relative px-3 text-white z-10">
 		<div class="flex items-center pl-1 relative w-full sm:ml-0 sm:pr-2 lg:max-w-68">
-			<div class="flex group h-full items-center relative w-12">
+			<div class="flex group h-full items-center relative w-12" role="button" tabindex="0" on:keydown={(e) => e.key === 'Enter' && openSidebar()}>
 				<button
 					type="button"
 					aria-expanded="false"
@@ -258,6 +260,8 @@
 								{#each previousHolons as holon}
 									<div 
 										class="dropdown-item"
+										role="button"
+										tabindex="0"
 										on:mousedown|preventDefault={() => selectPreviousHolon(holon)}
 									>
 										<div class="dropdown-item-content">
