@@ -38,7 +38,7 @@
 						try {
 							const data = await holosphere.get(holon.id, 'settings');
 							if (data) {
-								holon.name = data;
+								holon.name = data.name;
 								localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 							}
 						} catch (error) {

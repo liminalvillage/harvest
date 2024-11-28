@@ -21,9 +21,18 @@
     }
 
     async function deleteQuest() {
+        if (!questId || !holonId) {
+            console.error('Cannot delete quest: missing parameters', { questId, holonId });
+            return;
+        }
+
         if (confirm('Are you sure you want to delete this task?')) {
-            await holosphere.delete(holonId, 'quests', questId);
-            dispatch('close');
+            try {
+                await holosphere.delete(holonId, 'quests', questId);
+                dispatch('close', { deleted: true, questId });
+            } catch (error) {
+                console.error('Error deleting quest:', error);
+            }
         }
     }
 

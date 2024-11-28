@@ -67,11 +67,11 @@
         </div>
 
         <div class="grid grid-cols-2 md:grid-cols-3 gap-6">
-            <a href={``} class="bg-blue-500 p-6 rounded-lg text-white">
+            <a href={`/${holonID}/chats`} class="bg-blue-500 p-6 rounded-lg text-white">
                 <h3 class="text-xl font-semibold mb-2">Chats</h3>
                 <p class="text-3xl font-bold">{chatCount}</p>
             </a>
-            <a href={``} class="bg-green-500 p-6 rounded-lg text-white">
+            <a href={`/${holonID}/users`} class="bg-green-500 p-6 rounded-lg text-white">
                 <h3 class="text-xl font-semibold mb-2">Users</h3>
                 <p class="text-3xl font-bold">{userCount}</p>
             </a>

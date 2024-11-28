@@ -120,19 +120,21 @@
 		if (holosphere) {
 			holosphere.subscribe(holonID, 'quests', (newquest, key) => {
 				if (newquest) {
-					store[key] = JSON.parse(newquest);
+					store = { ...store, [key]: typeof newquest === 'string' ? JSON.parse(newquest) : newquest };
 				} else {
-					delete store[key];
-					store = store;
+					const newStore = { ...store };
+					delete newStore[key];
+					store = newStore;
 				}
 			});
 
 			holosphere.subscribe(holonID, 'users', (newUser, key) => {
 				if (newUser) {
-					userStore[key] = JSON.parse(newUser);
+					userStore = { ...userStore, [key]: typeof newUser === 'string' ? JSON.parse(newUser) : newUser };
 				} else {
-					delete userStore[key];
-					userStore = userStore;
+					const newUserStore = { ...userStore };
+					delete newUserStore[key];
+					userStore = newUserStore;
 				}
 			});
 		}
@@ -199,6 +201,10 @@
 
 	// Replace the showDropdown click handler with this
 	function handleTaskClick(key, quest) {
+		if (!key) {
+			console.error('Cannot select task: missing key');
+			return;
+		}
 		selectedTask = { key, quest };
 	}
 </script>

@@ -7,8 +7,11 @@
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
-	onMount(() => {
-		subscribeToAnnouncements();
+	onMount(() => {	
+		ID.subscribe((value) => {
+			holonID = value;
+			subscribeToAnnouncements();
+	});
 	});
 
 	/**
@@ -16,12 +19,6 @@
 	 */
 	let store = {};
 	$: holonID = $ID;
-
-	ID.subscribe((value) => {
-		holonID = value;
-		subscribeToAnnouncements();
-	});
-
 	$: announcements = Object.entries(store);
 
 	// Suscribe to changes in the specified holon
