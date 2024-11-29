@@ -1,18 +1,16 @@
 <script lang="ts">
 	import { openSidebar, ID, autoTransitionEnabled } from './store';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, getContext } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { getContext } from 'svelte';
 	import { browser } from '$app/environment';
-	import HoloSphere from 'holosphere';
 
-	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 	
 	interface HolonInfo {
 		id: string;
 		name?: string;
 	}
+
 
 	let holonID: string = '';
 	let showToast = false;
@@ -74,10 +72,12 @@
 		// Add to previous holons if it doesn't start with 8
 		if (!$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
 			const newHolon: HolonInfo = { id: $ID };
+			let holosphere = getContext('holosphere');
 			// Fetch the name for the new holon
-			holosphere.get($ID, 'name').then(name => {
-				if (name) {
-					newHolon.name = name;
+			holosphere.get($ID, 'settings').then((settings: any) => {
+				console.log("Settings", settings)
+				if (settings.name) {
+					newHolon.name = settings.name;
 					localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 				}
 			}).catch(error => {

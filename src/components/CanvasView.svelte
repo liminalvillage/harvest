@@ -4,7 +4,6 @@
     import HoloSphere from 'holosphere';
 
     export let filteredQuests: [string, any][];
-    export let userStore: Record<string, any>;
     export let holosphere: HoloSphere;
     export let holonID: string;
     export let showCompleted: boolean;
@@ -238,6 +237,7 @@
     bind:this={container}
     on:mousedown|preventDefault|stopPropagation={(e) => handleMouseDown(e)}
     on:contextmenu|preventDefault
+    
 >
     <div 
         bind:this={canvas}
