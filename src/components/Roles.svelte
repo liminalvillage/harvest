@@ -1,15 +1,13 @@
 <script>
 	// @ts-nocheck
 
-	import { onMount, getContext } from 'svelte';
-	import { ID } from '../dashboard/store.ts';
-	import { browser } from '$app/environment';
-	
-	import HoloSphere from 'holosphere';
-	import Announcements from './Announcements.svelte';
-	import RoleModal from './RoleModal.svelte';
+	import { onMount, getContext } from "svelte";
+	import { ID } from "../dashboard/store.ts";
+	import { browser } from "$app/environment";
 
-
+	import HoloSphere from "holosphere";
+	import Announcements from "./Announcements.svelte";
+	import RoleModal from "./RoleModal.svelte";
 
 	/**
 	 * @type {string | any[]}
@@ -17,35 +15,33 @@
 	let store = {};
 	let userStore = {};
 	$: holonID = $ID;
-	
 
 	$: roles = Object.entries(store || {});
-	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
 
 	// Initialize preferences with default values
 	let isListView = false;
-	
+
 	// Load preferences only in browser environment
 	onMount(() => {
 		if (browser) {
-			isListView = localStorage.getItem('rolesViewMode') === 'list' || false;
+			isListView =
+				localStorage.getItem("rolesViewMode") === "list" || false;
 		}
 	});
 
 	// Save preferences when they change
 	$: {
 		if (browser) {
-			localStorage.setItem('rolesViewMode', isListView ? 'list' : 'grid');
+			localStorage.setItem("rolesViewMode", isListView ? "list" : "grid");
 		}
 	}
 
 	onMount(() => {
-		subscribeToroles();
-	});
-
-	ID.subscribe((value) => {
-		holonID = value;
-		subscribeToroles();
+		ID.subscribe((value) => {
+			holonID = value;
+			subscribeToroles();
+		});
 	});
 
 	// Suscribe to changes in the specified holon
@@ -53,12 +49,12 @@
 		store = {};
 		userStore = {};
 		if (holosphere) {
-			holosphere.subscribe(holonID, 'roles', (newrole, key) => {
+			holosphere.subscribe(holonID, "roles", (newrole, key) => {
 				if (newrole) {
 					try {
 						store = { ...store, [key]: JSON.parse(newrole) };
 					} catch (e) {
-						console.error('Error parsing role:', e);
+						console.error("Error parsing role:", e);
 					}
 				} else {
 					const { [key]: _, ...rest } = store;
@@ -67,13 +63,13 @@
 			});
 
 			// Subscribe to users
-			holosphere.subscribe(holonID, 'users', (newUser, key) => {
+			holosphere.subscribe(holonID, "users", (newUser, key) => {
 				if (newUser) {
 					try {
 						userStore[key] = JSON.parse(newUser);
 						userStore = userStore;
 					} catch (e) {
-						console.error('Error parsing user:', e);
+						console.error("Error parsing user:", e);
 					}
 				} else {
 					delete userStore[key];
@@ -88,7 +84,7 @@
 	 * @param {string | number | Date} dateTime
 	 */
 	function formatTime(dateTime) {
-		const options = { hour: '2-digit', minute: '2-digit' };
+		const options = { hour: "2-digit", minute: "2-digit" };
 		return new Date(dateTime).toLocaleTimeString([], options);
 	}
 
@@ -99,9 +95,9 @@
 		tomorrow.setDate(tomorrow.getDate() + 1);
 
 		if (date.toDateString() === today.toDateString()) {
-			return 'today';
+			return "today";
 		} else if (date.toDateString() === tomorrow.toDateString()) {
-			return 'tomorrow';
+			return "tomorrow";
 		} else {
 			const diff = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
 			return `in ${diff} days`;
@@ -110,34 +106,34 @@
 
 	function getRoleColor(role) {
 		if (!role.participants || role.participants.length === 0) {
-			return '#553333'; // Red tint for unassigned roles
+			return "#553333"; // Red tint for unassigned roles
 		}
 		if (role.when) {
 			const roleDate = new Date(role.when);
 			const today = new Date();
-			
+
 			// If the role is in the past
 			if (roleDate < today) {
-				return '#553355'; // Purple tint for past roles
+				return "#553355"; // Purple tint for past roles
 			}
-			
+
 			// If the role is today
 			if (roleDate.toDateString() === today.toDateString()) {
-				return '#335533'; // Green tint for today's roles
+				return "#335533"; // Green tint for today's roles
 			}
-			
+
 			// If the role is in the future
-			return '#333355'; // Blue tint for future roles
+			return "#333355"; // Blue tint for future roles
 		}
-		return '#555555'; // Default gray for roles without dates
+		return "#555555"; // Default gray for roles without dates
 	}
 
 	let selectedRole = null;
 
 	function handleRoleClick(key, role) {
-		console.log('Clicked role:', { key, role });  // Debug log
+		console.log("Clicked role:", { key, role }); // Debug log
 		selectedRole = { key, role };
-		console.log('Selected role:', selectedRole);  // Debug log
+		console.log("Selected role:", selectedRole); // Debug log
 	}
 </script>
 
@@ -159,23 +155,30 @@
 				</div>
 				<div class="pr-10">
 					<div class="text-2xl font-bold">
-						{roles.filter((role) => role[1].participants?.length > 0).length}
+						{roles.filter(
+							(role) => role[1].participants?.length > 0
+						).length}
 					</div>
 					<div class="">Assigned</div>
 				</div>
 				<div>
 					<div class="text-2xl font-bold">
-						{roles.length - roles.filter((role) => role[1].participants?.length > 0).length}
+						{roles.length -
+							roles.filter(
+								(role) => role[1].participants?.length > 0
+							).length}
 					</div>
 					<div class="">Unassigned</div>
 				</div>
 			</div>
 
 			<div class="flex items-center mt-4 md:mt-0">
-				<button 
-					class="text-white {isListView ? 'bg-gray-700' : 'bg-transparent'} p-2" 
+				<button
+					class="text-white {isListView
+						? 'bg-gray-700'
+						: 'bg-transparent'} p-2"
 					title="List View"
-					on:click={() => isListView = true}
+					on:click={() => (isListView = true)}
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -196,10 +199,12 @@
 						<line x1="3" y1="18" x2="3.01" y2="18" />
 					</svg>
 				</button>
-				<button 
-					class="text-white {!isListView ? 'bg-gray-700' : 'bg-transparent'} p-2 ml-2" 
+				<button
+					class="text-white {!isListView
+						? 'bg-gray-700'
+						: 'bg-transparent'} p-2 ml-2"
 					title="Grid View"
-					on:click={() => isListView = false}
+					on:click={() => (isListView = false)}
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -224,42 +229,64 @@
 		{#if isListView}
 			<div class="space-y-2">
 				{#each roles as [key, role]}
-					<div 
-						id={key} 
-						class="w-full cursor-pointer" 
-						on:click|stopPropagation={() => handleRoleClick(key, role)}
-						on:keydown|stopPropagation={e => {
-							if (e.key === 'Enter' || e.key === ' ') {
+					<div
+						id={key}
+						class="w-full cursor-pointer"
+						on:click|stopPropagation={() =>
+							handleRoleClick(key, role)}
+						on:keydown|stopPropagation={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
 								handleRoleClick(key, role);
 							}
 						}}
 						role="button"
 						tabindex="0"
 					>
-						<div class="p-3 rounded-lg transition-colors"
-							style="background-color: {getRoleColor(role)}; color: white;"
+						<div
+							class="p-3 rounded-lg transition-colors"
+							style="background-color: {getRoleColor(
+								role
+							)}; color: white;"
 							role="button"
 							tabindex="0"
 						>
-							<div class="flex justify-between items-center gap-4">
+							<div
+								class="flex justify-between items-center gap-4"
+							>
 								<div class="flex-1 min-w-0">
-									<h3 class="text-base font-bold opacity-70 truncate">{role.title}</h3>
+									<h3
+										class="text-base font-bold opacity-70 truncate"
+									>
+										{role.title}
+									</h3>
 									{#if role.description}
-										<p class="text-sm opacity-70 truncate">{role.description}</p>
+										<p class="text-sm opacity-70 truncate">
+											{role.description}
+										</p>
 									{/if}
 								</div>
-								
-								<div class="flex items-center gap-4 text-sm whitespace-nowrap">
+
+								<div
+									class="flex items-center gap-4 text-sm whitespace-nowrap"
+								>
 									{#if role.when}
 										<div class="text-sm font-medium">
-											{formatDate(role.when)} @ {formatTime(role.when)}
-											{#if role.ends}- {formatTime(role.ends)}{/if}
+											{formatDate(role.when)} @ {formatTime(
+												role.when
+											)}
+											{#if role.ends}- {formatTime(
+													role.ends
+												)}{/if}
 										</div>
 									{/if}
-									
+
 									{#if role.participants?.length > 0}
 										<div class="flex items-center gap-1">
-											<span class="opacity-70 font-bold text-base">🙋‍♂️ {role.participants.length}</span>
+											<span
+												class="opacity-70 font-bold text-base"
+												>🙋‍♂️ {role.participants
+													.length}</span
+											>
 											<div class="flex items-center">
 												<div class="flex -space-x-2">
 													{#each role.participants.slice(0, 3) as participant}
@@ -273,7 +300,15 @@
 													{/each}
 												</div>
 												<div class="ml-2 text-sm">
-													{role.participants.map(p => `@${p.username || p}`).join(', ')}
+													{role.participants
+														.map(
+															(p) =>
+																`@${
+																	p.username ||
+																	p
+																}`
+														)
+														.join(", ")}
 												</div>
 											</div>
 										</div>
@@ -287,12 +322,13 @@
 		{:else}
 			<div class="flex flex-wrap">
 				{#each roles as [key, role]}
-					<div 
-						id={key} 
-						class="w-full md:w-4/12 cursor-pointer" 
-						on:click|stopPropagation={() => handleRoleClick(key, role)}
-						on:keydown|stopPropagation={e => {
-							if (e.key === 'Enter' || e.key === ' ') {
+					<div
+						id={key}
+						class="w-full md:w-4/12 cursor-pointer"
+						on:click|stopPropagation={() =>
+							handleRoleClick(key, role)}
+						on:keydown|stopPropagation={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
 								handleRoleClick(key, role);
 							}
 						}}
@@ -302,31 +338,51 @@
 						<div class="p-2">
 							<div
 								class="p-4 rounded-3xl transition-colors"
-								style="background-color: {getRoleColor(role)}; color: white;"
+								style="background-color: {getRoleColor(
+									role
+								)}; color: white;"
 								role="button"
 								tabindex="0"
 							>
 								<div class="flex items-center justify-between">
 									{#if role.when}
 										<span class="text-sm whitespace-nowrap">
-											{formatDate(role.when)} @ {formatTime(role.when)}
-											{#if role.ends}- {formatTime(role.ends)}{/if}
+											{formatDate(role.when)} @ {formatTime(
+												role.when
+											)}
+											{#if role.ends}- {formatTime(
+													role.ends
+												)}{/if}
 										</span>
 									{/if}
 								</div>
 								<div class="text-center mb-4 mt-5">
-									<p class="text-base font-bold opacity-70 truncate">{role.title}</p>
+									<p
+										class="text-base font-bold opacity-70 truncate"
+									>
+										{role.title}
+									</p>
 								</div>
 
 								{#if role.description}
-									<div class="text-sm opacity-70 mb-4 line-clamp-2">{role.description}</div>
+									<div
+										class="text-sm opacity-70 mb-4 line-clamp-2"
+									>
+										{role.description}
+									</div>
 								{/if}
 
 								<div class="flex justify-between pt-4">
 									{#if role.participants?.length > 0}
 										<div class="flex flex-col gap-2">
-											<div class="flex items-center gap-1">
-												<span class="opacity-70 font-bold text-base">🙋‍♂️ {role.participants.length}</span>
+											<div
+												class="flex items-center gap-1"
+											>
+												<span
+													class="opacity-70 font-bold text-base"
+													>🙋‍♂️ {role.participants
+														.length}</span
+												>
 												<div class="flex -space-x-2">
 													{#each role.participants.slice(0, 3) as participant}
 														{#if participant.picture}
@@ -338,14 +394,26 @@
 														{/if}
 													{/each}
 													{#if role.participants.length > 3}
-														<div class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300">
-															+{role.participants.length - 3}
+														<div
+															class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300"
+														>
+															+{role.participants
+																.length - 3}
 														</div>
 													{/if}
 												</div>
 											</div>
-											<div class="text-sm opacity-70 line-clamp-2">
-												{role.participants.map(p => `@${p.username || p}`).join(', ')}
+											<div
+												class="text-sm opacity-70 line-clamp-2"
+											>
+												{role.participants
+													.map(
+														(p) =>
+															`@${
+																p.username || p
+															}`
+													)
+													.join(", ")}
 											</div>
 										</div>
 									{/if}
@@ -357,7 +425,7 @@
 			</div>
 		{/if}
 	</div>
-	<Announcements/>
+	<Announcements />
 </div>
 
 {#if selectedRole}
@@ -368,7 +436,7 @@
 		{holosphere}
 		holonId={holonID}
 		on:close={() => {
-			console.log('Closing modal');  // Debug log
+			console.log("Closing modal"); // Debug log
 			selectedRole = null;
 		}}
 	/>

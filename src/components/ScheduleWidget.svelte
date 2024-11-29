@@ -1,38 +1,37 @@
 <script>
 	// @ts-nocheck
-	import { onMount, getContext } from 'svelte';
-	import { ID } from '../dashboard/store';
-	
-	import Announcements from './Announcements.svelte';
+	import { onMount, getContext } from "svelte";
+	import { ID } from "../dashboard/store";
 
-	import { formatDate, formatTime } from '../utils/date';
+	import Announcements from "./Announcements.svelte";
 
-	import HoloSphere from 'holosphere';
-	import { get_all_dirty_from_scope, get_slot_changes } from 'svelte/internal';
-	
+	import { formatDate, formatTime } from "../utils/date";
 
-	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+	import HoloSphere from "holosphere";
+	import {
+		get_all_dirty_from_scope,
+		get_slot_changes,
+	} from "svelte/internal";
+
+	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
 
 	$: holonID = $ID;
 	let store = {};
 	$: quests = Object.entries(store);
 
 	onMount(async () => {
-		//const data = await holosphere.get(holonID, 'quests');
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
-		subscribe();
-	});
-
-	ID.subscribe((value) => {
-		holonID = value;
-		subscribe();
+		ID.subscribe((value) => {
+			holonID = value;
+			subscribe();
+		});
 	});
 
 	$: update(holonID);
 
 	function subscribe() {
 		store = {};
-		holosphere.subscribe(holonID, 'quests', (newquest, key) => {
+		holosphere.subscribe(holonID, "quests", (newquest, key) => {
 			if (newquest) {
 				// Updates the store with the new value
 				store[key] = JSON.parse(newquest);
@@ -84,10 +83,10 @@
 	function getDay(quest) {
 		const today = new Date();
 		const date = new Date(quest.when);
-		if (date.getDate() < today.getDate()) return 'past';
-		if (date.getDate() === today.getDate()) return 'today';
-		if (date.getDate() === today.getDate() + 1) return 'tomorrow';
-		if (date.getDate() > today.getDate() + 1) return 'future';
+		if (date.getDate() < today.getDate()) return "past";
+		if (date.getDate() === today.getDate()) return "today";
+		if (date.getDate() === today.getDate() + 1) return "tomorrow";
+		if (date.getDate() > today.getDate() + 1) return "future";
 	}
 
 	function getLength(quest) {
@@ -104,11 +103,14 @@
 	function update(hex) {
 		// Filter ongoing and scheduled quests
 		const filteredQuests = quests.filter(
-			(quest) => quest.status === 'ongoing' || quest.status === 'scheduled'
+			(quest) =>
+				quest.status === "ongoing" || quest.status === "scheduled"
 		);
 
 		// Sort quests by when property
-		const sortedQuests = filteredQuests.sort((a, b) => new Date(a.when) - new Date(b.when));
+		const sortedQuests = filteredQuests.sort(
+			(a, b) => new Date(a.when) - new Date(b.when)
+		);
 
 		return sortedQuests;
 	}
@@ -155,16 +157,19 @@
 			<div class="time start-2330">23:30</div>
 
 			{#each quests as [key, quest]}
-				{#if quest && quest.status === 'scheduled' && isToday(quest)}
+				{#if quest && quest.status === "scheduled" && isToday(quest)}
 					<div
 						id={key}
-						class="event stage-{getDay(quest)} start-{getStartTime(quest)} end-{getEndTime(
+						class="event stage-{getDay(quest)} start-{getStartTime(
 							quest
-						)} length-4"
+						)} end-{getEndTime(quest)} length-4"
 					>
-						{quest.title} <span>{quest.location ? quest.location : ''}</span>
+						{quest.title}
+						<span>{quest.location ? quest.location : ""}</span>
 						<span>
-							<p class="mb-0 text-muted">🙋‍♂️ {quest.participants.length}</p>
+							<p class="mb-0 text-muted">
+								🙋‍♂️ {quest.participants.length}
+							</p>
 							{#each quest.participants as participant}
 								<p>{@html `@${participant.username}`}</p>
 							{/each}
@@ -201,10 +206,10 @@
 </div>
 
 <style lang="scss">
-	$blockTimes: 800, 830, 900, 930, 1000, 1030, 1100, 1130, 1200, 1230, 1300, 1330, 1400, 1430, 1500,
-		1530, 1600, 1630, 1700, 1730, 1800, 1830, 1900, 1930, 2000, 2030, 2100, 2130, 2200, 2230, 2300, 2330;
+	$blockTimes: 800, 830, 900, 930, 1000, 1030, 1100, 1130, 1200, 1230, 1300,
+		1330, 1400, 1430, 1500, 1530, 1600, 1630, 1700, 1730, 1800, 1830, 1900,
+		1930, 2000, 2030, 2100, 2130, 2200, 2230, 2300, 2330;
 	$blockLengths: 1, 2, 3, 4;
-
 
 	.scheduleContainer {
 		display: grid;
@@ -213,38 +218,38 @@
 		grid-template-columns: 5rem repeat(4, 1fr);
 		grid-template-rows: repeat(28, 1fr);
 		grid-template-areas:
-			'time800 stage stage stage stage'
-			'time830 stage stage stage stage'
-			'time900 stage stage stage stage'
-			'time930 stage stage stage stage'
-			'time1000 stage stage stage stage'
-			'time1030 stage stage stage stage'
-			'time1100 stage stage stage stage'
-			'time1130 stage stage stage stage'
-			'time1200 stage stage stage stage'
-			'time1230 stage stage stage stage'
-			'time1300 stage stage stage stage'
-			'time1330 stage stage stage stage'
-			'time1400 stage stage stage stage'
-			'time1430 stage stage stage stage'
-			'time1500 stage stage stage stage'
-			'time1530 stage stage stage stage'
-			'time1600 stage stage stage stage'
-			'time1630 stage stage stage stage'
-			'time1700 stage stage stage stage'
-			'time1730 stage stage stage stage'
-			'time1800 stage stage stage stage'
-			'time1830 stage stage stage stage'
-			'time1900 stage stage stage stage'
-			'time1930 stage stage stage stage'
-			'time2000 stage stage stage stage'
-			'time2030 stage stage stage stage'
-			'time2100 stage stage stage stage'
-			'time2130 stage stage stage stage'
-			'time2200 stage stage stage stage'
-			'time2230 stage stage stage stage'
-			'time2300 stage stage stage stage'
-			'time2330 stage stage stage stage';
+			"time800 stage stage stage stage"
+			"time830 stage stage stage stage"
+			"time900 stage stage stage stage"
+			"time930 stage stage stage stage"
+			"time1000 stage stage stage stage"
+			"time1030 stage stage stage stage"
+			"time1100 stage stage stage stage"
+			"time1130 stage stage stage stage"
+			"time1200 stage stage stage stage"
+			"time1230 stage stage stage stage"
+			"time1300 stage stage stage stage"
+			"time1330 stage stage stage stage"
+			"time1400 stage stage stage stage"
+			"time1430 stage stage stage stage"
+			"time1500 stage stage stage stage"
+			"time1530 stage stage stage stage"
+			"time1600 stage stage stage stage"
+			"time1630 stage stage stage stage"
+			"time1700 stage stage stage stage"
+			"time1730 stage stage stage stage"
+			"time1800 stage stage stage stage"
+			"time1830 stage stage stage stage"
+			"time1900 stage stage stage stage"
+			"time1930 stage stage stage stage"
+			"time2000 stage stage stage stage"
+			"time2030 stage stage stage stage"
+			"time2100 stage stage stage stage"
+			"time2130 stage stage stage stage"
+			"time2200 stage stage stage stage"
+			"time2230 stage stage stage stage"
+			"time2300 stage stage stage stage"
+			"time2330 stage stage stage stage";
 	}
 
 	/**
@@ -266,7 +271,7 @@
 
 		color: #ccc;
 
-		&[class*='30']:not(.start-1300) {
+		&[class*="30"]:not(.start-1300) {
 			font-size: 0.8rem;
 			color: #4d4949;
 		}

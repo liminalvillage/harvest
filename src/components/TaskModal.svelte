@@ -1,12 +1,13 @@
 <script lang="ts">
-    import { createEventDispatcher } from 'svelte';
+    import { createEventDispatcher, getContext } from 'svelte';
     import { fade, scale } from 'svelte/transition';
     
     export let quest: any;
     export let questId: string;
     export let userStore: Record<string, any>;
-    export let holosphere: any;
     export let holonId: string;
+
+    let holosphere = getContext('holosphere');
 
     const dispatch = createEventDispatcher();
     let showAddParticipants = false;

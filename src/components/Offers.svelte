@@ -1,37 +1,35 @@
 <script>
 	// @ts-nocheck
 
-	import { onMount, getContext } from 'svelte';
-	import { ID } from '../dashboard/store.ts';
-	
-	import HoloSphere from 'holosphere';
-	import Announcements from './Announcements.svelte';
-	
+	import { onMount, getContext } from "svelte";
+	import { ID } from "../dashboard/store.ts";
+
+	import HoloSphere from "holosphere";
+	import Announcements from "./Announcements.svelte";
+
 	/**
 	 * @type {string | any[]}
 	 */
 	let store = {};
 	$: holonID = $ID;
 
-	$: offers = Object.values(store).filter(item => item.type === 'offer');
-	$: needs = Object.values(store).filter(item => item.type === 'request');
+	$: offers = Object.values(store).filter((item) => item.type === "offer");
+	$: needs = Object.values(store).filter((item) => item.type === "request");
 
-	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
 
 	onMount(() => {
-		subscribeToOffersAndNeeds();
-	});
-
-	ID.subscribe((value) => {
-		holonID = value;
-		subscribeToOffersAndNeeds();
+		ID.subscribe((value) => {
+			holonID = value;
+			subscribeToOffersAndNeeds();
+		});
 	});
 
 	// Subscribe to changes in the specified holon
 	async function subscribeToOffersAndNeeds() {
 		store = {};
 		if (holosphere)
-			holosphere.subscribe(holonID, 'quests', (newItem, key) => {
+			holosphere.subscribe(holonID, "quests", (newItem, key) => {
 				if (newItem) {
 					const parsedItem = JSON.parse(newItem);
 					parsedItem.key = key; // Add the key to the parsed item object
@@ -50,7 +48,7 @@
 	 * @param {string | number | Date} dateTime
 	 */
 	function formatTime(dateTime) {
-		const options = { hour: '2-digit', minute: '2-digit' };
+		const options = { hour: "2-digit", minute: "2-digit" };
 		return new Date(dateTime).toLocaleTimeString([], options);
 	}
 
@@ -61,9 +59,9 @@
 		tomorrow.setDate(tomorrow.getDate() + 1);
 
 		if (date.toDateString() === today.toDateString()) {
-			return 'today';
+			return "today";
 		} else if (date.toDateString() === tomorrow.toDateString()) {
-			return 'tomorrow';
+			return "tomorrow";
 		} else {
 			const diff = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
 			return `in ${diff} days`;
@@ -72,12 +70,16 @@
 
 	// New function to generate table HTML
 	function generateTableHtml(items, caption, personHeader, itemHeader) {
-		const rows = items.map(item => `
+		const rows = items
+			.map(
+				(item) => `
 			<tr>
-				<td>${item.initiator?.first_name || ''}</td>
+				<td>${item.initiator?.first_name || ""}</td>
 				<td>${item.title}</td>
 			</tr>
-		`).join('');
+		`
+			)
+			.join("");
 
 		return `
 			<table class="w-full text-left border-collapse">
@@ -106,12 +108,19 @@
 		<div class="flex flex-wrap justify-between items-center pb-8">
 			<div class="flex flex-wrap text-white">
 				<div class="pr-10">
-					<div class="text-2xl font-bold">{offers.length + needs.length}</div>
+					<div class="text-2xl font-bold">
+						{offers.length + needs.length}
+					</div>
 					<div class="">Total</div>
 				</div>
 				<div>
 					<div class="text-2xl font-bold">
-						{offers.length + needs.length - (offers.concat(needs)).filter((item) => item.participants?.length > 0).length}
+						{offers.length +
+							needs.length -
+							offers
+								.concat(needs)
+								.filter((item) => item.participants?.length > 0)
+								.length}
 					</div>
 					<div class="">Unassigned</div>
 				</div>
@@ -138,7 +147,10 @@
 						<line x1="3" y1="18" x2="3.01" y2="18" />
 					</svg>
 				</button>
-				<button class="text-white bg-gray-700 p-2 ml-2" title="Grid View">
+				<button
+					class="text-white bg-gray-700 p-2 ml-2"
+					title="Grid View"
+				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
 						width="20"
@@ -158,11 +170,16 @@
 				</button>
 			</div>
 		</div>
-		
+
 		<div class="mb-8">
 			<div class="bg-white rounded-lg p-4">
 				{#if offers.length > 0}
-					{@html generateTableHtml(offers, 'Active Offers', 'Person', 'Offer')}
+					{@html generateTableHtml(
+						offers,
+						"Active Offers",
+						"Person",
+						"Offer"
+					)}
 				{:else}
 					<p class="text-gray-600">No active offers at the moment.</p>
 				{/if}
@@ -172,13 +189,19 @@
 		<div class="mb-8">
 			<div class="bg-white rounded-lg p-4">
 				{#if needs.length > 0}
-					{@html generateTableHtml(needs, 'Active Requests', 'Person', 'Request')}
+					{@html generateTableHtml(
+						needs,
+						"Active Requests",
+						"Person",
+						"Request"
+					)}
 				{:else}
-					<p class="text-gray-600">No active requests at the moment.</p>
+					<p class="text-gray-600">
+						No active requests at the moment.
+					</p>
 				{/if}
 			</div>
 		</div>
-		
 	</div>
-	<Announcements/>
+	<Announcements />
 </div>

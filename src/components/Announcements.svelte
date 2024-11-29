@@ -1,17 +1,17 @@
 <script>
 	// @ts-nocheck
-	import { onMount, getContext } from 'svelte';
-	import { ID } from '../dashboard/store';
-	import HoloSphere from 'holosphere';
-	import Announcements from './Announcements.svelte';
+	import { onMount, getContext } from "svelte";
+	import { ID } from "../dashboard/store";
+	import HoloSphere from "holosphere";
+	import Announcements from "./Announcements.svelte";
 
-	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
 
-	onMount(() => {	
+	onMount(() => {
 		ID.subscribe((value) => {
 			holonID = value;
 			subscribeToAnnouncements();
-	});
+		});
 	});
 
 	/**
@@ -25,7 +25,7 @@
 	async function subscribeToAnnouncements() {
 		store = {};
 		if (holosphere)
-			holosphere.subscribe(holonID, 'announcements', (announce, key) => {
+			holosphere.subscribe(holonID, "announcements", (announce, key) => {
 				if (announce) {
 					// Updates the store with the new value
 					store[key] = JSON.parse(announce);
@@ -49,16 +49,28 @@
 				<div
 					class="border-t solid border-gray-700 p-4 flex 2xl:items-start w-full hover:bg-gray-700"
 				>
-					<img src="http://gun.holons.io/getavatar?user_id={announcement.user.id}" alt="profile" class="object-cover w-10 h-10 rounded-full" />
+					<img
+						src="http://gun.holons.io/getavatar?user_id={announcement
+							.user.id}"
+						alt="profile"
+						class="object-cover w-10 h-10 rounded-full"
+					/>
 					<div class="pl-4 w-full">
 						<div class="flex items center justify-between w-full">
 							<div
 								class="text-white
                             font-medium"
 							>
-								{announcement.user.first_name?announcement.user.first_name : announcement.user.username} {announcement.user.last_name?announcement.user.last_name:''}
+								{announcement.user.first_name
+									? announcement.user.first_name
+									: announcement.user.username}
+								{announcement.user.last_name
+									? announcement.user.last_name
+									: ""}
 							</div>
-							<div class="flex justify-center items-center cursor-pointer h-7 w-7">
+							<div
+								class="flex justify-center items-center cursor-pointer h-7 w-7"
+							>
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
 									width="20"
@@ -77,7 +89,9 @@
 								</svg>
 							</div>
 						</div>
-						<p class="my-2 text-sm text-gray-400">{announcement.content}</p>
+						<p class="my-2 text-sm text-gray-400">
+							{announcement.content}
+						</p>
 						<p
 							class="text-right
                         text-gray-400 text-sm"

@@ -1,8 +1,8 @@
 <script lang="ts">
-    import { onMount, getContext } from 'svelte';
-    import { ID } from '../dashboard/store';
-    import HoloSphere from 'holosphere';
-    
+    import { onMount, getContext } from "svelte";
+    import { ID } from "../dashboard/store";
+    import HoloSphere from "holosphere";
+
     interface User {
         first_name: string;
         last_name?: string;
@@ -29,14 +29,14 @@
 
     let store: Record<string, User> = {};
     $: holonID = $ID;
-    let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+    let holosphere = getContext("holosphere") || new HoloSphere("Holons");
 
     // Default equation values
     const equation: Equation = {
         initiated: 1,
         completed: 1,
         sent: 1,
-        received: 1//,
+        received: 1, //,
         // hours: 1,
         // collaboration: 2,
         // wants: 0.5,
@@ -44,18 +44,16 @@
     };
 
     onMount(() => {
-        subscribeToUsers();
-    });
-
-    ID.subscribe((value) => {
-        holonID = value;
-        subscribeToUsers();
+        ID.subscribe((value) => {
+            holonID = value;
+            subscribeToUsers();
+        });
     });
 
     async function subscribeToUsers() {
         store = {};
         if (holosphere) {
-            holosphere.subscribe(holonID, 'users', (newUser, key) => {
+            holosphere.subscribe(holonID, "users", (newUser, key) => {
                 if (newUser) {
                     store[key] = JSON.parse(newUser);
                 } else {
@@ -65,17 +63,18 @@
             });
         }
     }
-    
 
     function calculateScore(user: User): number {
-        return user.initiated.length * equation.initiated +
+        return (
+            user.initiated.length * equation.initiated +
             user.completed.length * equation.completed +
             user.sent * equation.sent +
-            user.received * equation.received 
-            // user.hours * equation.hours +
-            // user.collaboration * equation.collaboration +
-            // user.wants.length * equation.wants +
-            // user.offers.length * equation.offers;
+            user.received * equation.received
+        );
+        // user.hours * equation.hours +
+        // user.collaboration * equation.collaboration +
+        // user.wants.length * equation.wants +
+        // user.offers.length * equation.offers;
     }
 
     $: sortedUsers = Object.entries(store).sort(([, a], [, b]) => {
@@ -97,7 +96,8 @@
             </div>
             <div>
                 <div class="text-2xl font-bold">
-                    {sortedUsers.filter(([, user]) => calculateScore(user) > 0).length}
+                    {sortedUsers.filter(([, user]) => calculateScore(user) > 0)
+                        .length}
                 </div>
                 <div class="">Active Users</div>
             </div>
@@ -122,7 +122,9 @@
                     {@const score = calculateScore(user)}
                     <tr class="border-b border-gray-700 hover:bg-gray-700">
                         <td class="p-3">{index + 1}</td>
-                        <td class="p-3">{user.first_name} {user.last_name || ''}</td>
+                        <td class="p-3"
+                            >{user.first_name} {user.last_name || ""}</td
+                        >
                         <td class="p-3">{user.initiated.length}</td>
                         <td class="p-3">{user.completed.length}</td>
                         <td class="p-3">{user.sent}</td>
@@ -136,7 +138,8 @@
 </div>
 
 <style>
-    th, td {
+    th,
+    td {
         @apply text-left;
     }
 
@@ -168,4 +171,4 @@
     tr:last-child td:last-child {
         @apply rounded-br-lg;
     }
-</style> 
+</style>

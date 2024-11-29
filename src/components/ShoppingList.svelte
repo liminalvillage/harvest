@@ -1,43 +1,49 @@
 <script lang="ts">
-    import { onMount, getContext } from 'svelte';
-    import { ID } from '../dashboard/store';
-    import { formatDate } from '../utils/date';
-    import HoloSphere from 'holosphere';
-    import type { ShoppingItem } from '../types/shoppingItem';
+    import { onMount, getContext } from "svelte";
+    import { ID } from "../dashboard/store";
+    import { formatDate } from "../utils/date";
+    import HoloSphere from "holosphere";
+    import type { ShoppingItem } from "../types/shoppingItem";
 
-    const holosphere = getContext('holosphere')||new HoloSphere('Holons');
+    const holosphere = getContext("holosphere") || new HoloSphere("Holons");
 
     $: holonID = $ID;
     let store: Record<string, ShoppingItem> = {};
     $: shoppingItems = Object.entries(store);
 
     onMount(() => {
-        subscribeToShoppingItems();
-    });
-
-    ID.subscribe((value) => {
-        holonID = value;
-        subscribeToShoppingItems();
+        ID.subscribe((value) => {
+            holonID = value;
+            subscribeToShoppingItems();
+        });
     });
 
     function subscribeToShoppingItems(): void {
         store = {};
         if (holosphere) {
-            holosphere.subscribe(holonID, 'shopping', (newItem: string, key: string) => {
-                if (newItem) {
-                    store[key] = JSON.parse(newItem);
-                } else {
-                    delete store[key];
+            holosphere.subscribe(
+                holonID,
+                "shopping",
+                (newItem: string, key: string) => {
+                    if (newItem) {
+                        store[key] = JSON.parse(newItem);
+                    } else {
+                        delete store[key];
+                    }
+                    store = store;
                 }
-                store = store;
-            });
+            );
         }
     }
 
     function toggleItemStatus(key: string): void {
         if (store[key]) {
             store[key].completed = !store[key].completed;
-            holosphere.put(holonID, `shopping/${key}`, JSON.stringify(store[key]));
+            holosphere.put(
+                holonID,
+                `shopping/${key}`,
+                JSON.stringify(store[key])
+            );
         }
     }
 
@@ -90,12 +96,20 @@
             {#each shoppingItems as [key, item]}
                 <div id={key} class="w-full">
                     <div class="p-1">
-                        <div class="p-3 rounded-3xl flex items-center justify-between {item.done ? 'bg-green-200' : 'bg-gray-300'}">
+                        <div
+                            class="p-3 rounded-3xl flex items-center justify-between {item.done
+                                ? 'bg-green-200'
+                                : 'bg-gray-300'}"
+                        >
                             <div class="flex items-center space-x-4">
                                 <div>
                                     <!-- <span class="text-sm">{formatDate(item.addedOn)}</span> -->
                                     <div class="text-center mb-2">
-                                        <p class="text-base font-bold opacity-70">{item.id}</p>
+                                        <p
+                                            class="text-base font-bold opacity-70"
+                                        >
+                                            {item.id}
+                                        </p>
                                         <!-- <p class="text-sm opacity-70 mt-1">Quantity: {item.quantity}</p> -->
                                     </div>
                                     <!-- <div class="text-sm opacity-70 mb-2">
