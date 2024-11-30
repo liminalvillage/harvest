@@ -81,23 +81,6 @@
 	// Add this variable to track the selected task
 	let selectedTask = null;
 
-	let holonName = "";
-
-	async function fetchHolonName() {
-		try {
-			const name = await holosphere.get(holonID, "settings")[0];
-			console.log("Name", name)	
-			holonName = name || "Unnamed Holon";
-		} catch (error) {
-			console.error("Error fetching holon name:", error);
-			holonName = "Unnamed Holon";
-		}
-	}
-
-	// Update when holonID changes
-	$: if (holonID) {
-		fetchHolonName();
-	}
 
 	onMount(async () => {
 		// Fetch all quests from holon
@@ -241,7 +224,6 @@
 	<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
 		<div class="flex justify-between text-white items-center mb-8">
 			<div>
-				<h1 class="text-2xl font-bold">{holonName}</h1>
 				<p class="text-lg mt-1">Tasks Today</p>
 			</div>
 			<p class="">{new Date().toDateString()}</p>

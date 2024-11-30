@@ -4,10 +4,12 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
+	import type { Holosphere } from 'holosphere';
 
-	let holosphere = getContext("holosphere")
+	let holosphere: Holosphere = getContext("holosphere")
 
-	
+	let currentHolonName: string | undefined;
+
 	interface HolonInfo {
 		id: string;
 		name?: string;
@@ -37,8 +39,8 @@
 					if (!holon.name) {
 						try {
 							const data = await holosphere.get(holon.id, 'settings');
-							if (data) {
-								holon.name = data.name;
+							if (data && data[0] && data[0].name) {
+								holon.name = data[0].name;
 								localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 							}
 						} catch (error) {
@@ -71,17 +73,26 @@
 		holonID = $ID;
 		updateRoute($ID);
 		
-		// Add to previous holons if it doesn't start with 8
+		// Fetch name for current holon
+		holosphere.get($ID, 'settings').then((settings: any) => {
+			if (settings && settings[0] && settings[0].name) {
+				currentHolonName = settings[0].name;
+			}
+		}).catch((error: Error) => {
+			console.error(`Error fetching name for holon ${$ID}:`, error);
+			currentHolonName = undefined;
+		});
+		
+		// Add to previous holons if it doesn't start with 8 (holosphere holons start with 8)
 		if (!$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
 			const newHolon: HolonInfo = { id: $ID };
 			// Fetch the name for the new holon
 			holosphere.get($ID, 'settings').then((settings: any) => {
-				console.log("Settings", settings)
-				if (settings.name) {
-					newHolon.name = settings.name;
+				if (settings && settings[0] && settings[0].name) {
+					newHolon.name = settings[0].name;
 					localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 				}
-			}).catch(error => {
+			}).catch((error: Error) => {
 				console.error(`Error fetching name for holon ${$ID}:`, error);
 			});
 			previousHolons = [...previousHolons, newHolon];
@@ -242,7 +253,15 @@
 				</button>
 			</div>
 			<div class="container flex left-0 relative w-3/4">
-				<div class="group items-center ml-8 relative w-full md:flex lg:w-72">
+				{#if currentHolonName}
+					<div class="flex items-center mr-4 flex-shrink-0">
+						<div class="w-5 h-5 border-2 border-white rounded-full mr-2 opacity-90"></div>
+						<span class="text-gray-300 text-lg whitespace-nowrap">
+							{currentHolonName}
+						</span>
+					</div>
+				{/if}
+				<div class="group items-center relative w-full md:flex lg:w-72 flex-shrink">
 					<span class="id-label">ID:</span>
 					<div class="input-container w-full">
 						<input
