@@ -17,7 +17,7 @@
 	$: holonID = $ID;
 
 	$: roles = Object.entries(store || {});
-	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
+	let holosphere = getContext("holosphere");
 
 	// Initialize preferences with default values
 	let isListView = false;

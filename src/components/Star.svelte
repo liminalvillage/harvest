@@ -10,7 +10,7 @@
 	import { browser } from "$app/environment";
 	import CanvasView from "./CanvasView.svelte";
 
-	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
+	let holosphere = getContext("holosphere");
 
 	$: holonID = $ID;
 	let store = {};

@@ -7,7 +7,7 @@
 	import HoloSphere from "holosphere";
 	import Announcements from "./Announcements.svelte";
 
-	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
+	let holosphere = getContext("holosphere");
 
 	onMount(() => {
 		ID.subscribe((value) => {

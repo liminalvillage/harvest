@@ -11,6 +11,7 @@
     const dispatch = createEventDispatcher();
     let canvas: HTMLElement;
     let container: HTMLElement;
+    let viewContainer: HTMLElement;
     let isDragging = false;
     let draggedCard: { key: string; quest: any; x: number; y: number; } | null = null;
     let offset = { x: 0, y: 0 };
@@ -88,7 +89,7 @@
         event.preventDefault();
         event.stopPropagation();
         
-        if (isPanning && container) {
+        if (isPanning && viewContainer) {
             const newPan = {
                 x: (event.clientX - startPan.x),
                 y: (event.clientY - startPan.y)
@@ -96,8 +97,8 @@
             
             // Constrain panning
             pan = {
-                x: Math.min(Math.max(newPan.x, -CANVAS_WIDTH + container.clientWidth), 0),
-                y: Math.min(Math.max(newPan.y, -CANVAS_HEIGHT + container.clientHeight), 0)
+                x: Math.min(Math.max(newPan.x, -CANVAS_WIDTH + viewContainer.clientWidth), 0),
+                y: Math.min(Math.max(newPan.y, -CANVAS_HEIGHT + viewContainer.clientHeight), 0)
             };
             return;
         }
@@ -175,14 +176,30 @@
         } else {
             // Pan
             pan = {
-                x: Math.min(Math.max(pan.x - event.deltaX, -CANVAS_WIDTH + container.clientWidth), 0),
-                y: Math.min(Math.max(pan.y - event.deltaY, -CANVAS_HEIGHT + container.clientHeight), 0)
+                x: Math.min(Math.max(pan.x - event.deltaX, -CANVAS_WIDTH + viewContainer.clientWidth), 0),
+                y: Math.min(Math.max(pan.y - event.deltaY, -CANVAS_HEIGHT + viewContainer.clientHeight), 0)
             };
         }
     }
 
+    // Add this to handle fullscreen toggle
+    let isFullscreen = false;
+
+    function toggleFullscreen() {
+        isFullscreen = !isFullscreen;
+        if (isFullscreen) {
+            viewContainer.requestFullscreen().catch(err => {
+                console.error('Error attempting to enable fullscreen:', err);
+            });
+        } else {
+            document.exitFullscreen().catch(err => {
+                console.error('Error attempting to exit fullscreen:', err);
+            });
+        }
+    }
+
     onMount(() => {
-        if (!canvas || !container) return;
+        if (!canvas || !viewContainer) return;
 
         const handleGlobalMouseMove = (e: MouseEvent) => {
             if (isDragging || isPanning) {
@@ -198,18 +215,25 @@
         
         window.addEventListener('mousemove', handleGlobalMouseMove, { passive: false });
         window.addEventListener('mouseup', handleGlobalMouseUp, { passive: false });
-        container.addEventListener('wheel', handleWheel, { passive: false });
+        viewContainer.addEventListener('wheel', handleWheel, { passive: false });
 
         // Center the view initially
         pan = { 
-            x: -INITIAL_OFFSET.x + container.clientWidth / 2, 
-            y: -INITIAL_OFFSET.y + container.clientHeight / 2 
+            x: -INITIAL_OFFSET.x + viewContainer.clientWidth / 2, 
+            y: -INITIAL_OFFSET.y + viewContainer.clientHeight / 2 
         };
+
+        const handleFullscreenChange = () => {
+            isFullscreen = !!document.fullscreenElement;
+        };
+        
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
 
         return () => {
             window.removeEventListener('mousemove', handleGlobalMouseMove);
             window.removeEventListener('mouseup', handleGlobalMouseUp);
-            container?.removeEventListener('wheel', handleWheel);
+            viewContainer?.removeEventListener('wheel', handleWheel);
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
         };
     });
 
@@ -231,14 +255,34 @@
 </script>
 
 <div 
-    class="w-full h-[600px] relative overflow-hidden bg-gray-900 rounded-lg"
+    class="w-full relative overflow-hidden bg-gray-900 rounded-lg transition-all duration-200"
+    class:h-[600px]={!isFullscreen}
+    class:fixed={isFullscreen}
+    class:inset-0={isFullscreen}
+    class:z-50={isFullscreen}
+    class:rounded-none={isFullscreen}
     class:cursor-grab={!isDragging && !isPanning}
     class:cursor-grabbing={(isDragging || isPanning)}
-    bind:this={container}
+    bind:this={viewContainer}
     on:mousedown|preventDefault|stopPropagation={(e) => handleMouseDown(e)}
     on:contextmenu|preventDefault
-    
 >
+    <!-- Add fullscreen toggle button -->
+    <button 
+        class="absolute top-4 right-4 z-10 p-2 bg-gray-800 rounded-lg text-white hover:bg-gray-700 transition-colors"
+        on:click={toggleFullscreen}
+    >
+        {#if isFullscreen}
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        {:else}
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5m-7 11h4m-4 0v4m0-4l5 5m11-5h-4m4 0v4m0-4l-5 5" />
+            </svg>
+        {/if}
+    </button>
+
     <div 
         bind:this={canvas}
         class="absolute w-full h-full"
@@ -343,5 +387,10 @@
     /* Prevent text from becoming blurry during transforms */
     :global(.task-card *) {
         transform: translateZ(0);
+    }
+
+    /* Add styles for fullscreen mode */
+    :global(body:has(.fixed)) {
+        overflow: hidden;
     }
 </style> 

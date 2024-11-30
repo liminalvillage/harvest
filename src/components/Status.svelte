@@ -29,7 +29,7 @@
 
     let store: Record<string, User> = {};
     $: holonID = $ID;
-    let holosphere = getContext("holosphere") || new HoloSphere("Holons");
+    let holosphere = getContext("holosphere");
 
     // Default equation values
     const equation: Equation = {

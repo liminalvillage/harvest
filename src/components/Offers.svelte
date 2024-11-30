@@ -16,7 +16,7 @@
 	$: offers = Object.values(store).filter((item) => item.type === "offer");
 	$: needs = Object.values(store).filter((item) => item.type === "request");
 
-	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
+	let holosphere = getContext("holosphere");
 
 	onMount(() => {
 		ID.subscribe((value) => {

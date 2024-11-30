@@ -14,7 +14,7 @@
 	$: holonID = $ID;
 	$: entries = Object.entries(store);
 
-	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
+	let holosphere = getContext("holosphere");
 
 	onMount(() => {
 		ID.subscribe((value) => {

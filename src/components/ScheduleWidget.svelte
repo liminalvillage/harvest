@@ -13,7 +13,7 @@
 		get_slot_changes,
 	} from "svelte/internal";
 
-	let holosphere = getContext("holosphere") || new HoloSphere("Holons");
+	let holosphere = getContext("holosphere");
 
 	$: holonID = $ID;
 	let store = {};
