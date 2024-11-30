@@ -5,6 +5,8 @@
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 
+	let holosphere = getContext("holosphere")
+
 	
 	interface HolonInfo {
 		id: string;
@@ -72,7 +74,6 @@
 		// Add to previous holons if it doesn't start with 8
 		if (!$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
 			const newHolon: HolonInfo = { id: $ID };
-			let holosphere = getContext('holosphere');
 			// Fetch the name for the new holon
 			holosphere.get($ID, 'settings').then((settings: any) => {
 				console.log("Settings", settings)
@@ -263,7 +264,7 @@
 										<div class="dropdown-item-content">
 											<div class="flex-grow cursor-pointer flex flex-col">
 												{#if holon.name}
-													<span class="text-sm font-medium text-white">{holon.name}</span>
+													<span class="text-sm font-medium text-white holon-name">{holon.name}</span>
 												{/if}
 												<span class="holon-id text-xs {holon.name ? 'text-gray-400' : 'text-white'}">{holon.id}</span>
 											</div>

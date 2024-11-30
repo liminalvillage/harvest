@@ -159,7 +159,7 @@
 		}
 	}
 
-	function update(hex) {
+	function update(holonID) {
 		// Filter ongoing and scheduled quests
 		const filteredQuests = quests.filter(
 			([_, quest]) =>

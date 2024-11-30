@@ -1,25 +1,23 @@
 <script lang="ts">
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
-    import { page } from "$app/stores"; // Import the $page store
+    import { page } from "$app/stores";
     import HoloSphere from "holosphere";
     import Announcements from "./Announcements.svelte";
 
-    // Define the type for holosphere
     interface HoloSphereInterface {
         get: (id: string, collection: string) => Promise<any>;
+        put: (id: string, collection: string, data: any) => Promise<any>;
     }
 
     console.log("Logging the environment variables", import.meta.env.MODE);
     let environmentName: string =
         import.meta.env.MODE === "development" ? "HolonsDebug" : "Holons";
-    // Use the defined interface for holosphere
-    let holosphere: HoloSphereInterface =
-        getContext("holosphere") || new HoloSphere("Holons");
-    let holonID: string; // Declare holonID without initialization
 
-    // Subscribe to the $page store to get the current page ID
-    $: holonID = $page.params.id; // Use the page ID from the $page store
+    // Initialize holosphere
+    const holosphere = getContext<HoloSphereInterface>("holosphere");
+    let holonID: string = $page.params.id;
+    let unsubscribe: () => void;
 
     let chatCount = 0;
     let userCount = 0;
@@ -28,40 +26,66 @@
     let recentEventCount = 0;
     let shoppingItemCount = 0;
 
-    onMount(async () => {
-        await ID.subscribe((value) => {
-            holonID = value;
-            fetchData();
+    onMount(() => {
+        // Set up subscription to ID store
+        unsubscribe = ID.subscribe((value) => {
+            if (value) {
+                holonID = value;
+                fetchData();
+            }
         });
+
+        // Initial fetch if we have an ID
+        if (holonID) {
+            fetchData();
+        }
+
+        // Cleanup subscription on unmount
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
     });
 
+    // Watch for page ID changes
+    $: {
+        const newId = $page.params.id;
+        if (newId && newId !== holonID) {
+            holonID = newId;
+            if (holosphere) {
+                fetchData();
+            }
+        }
+    }
+
     async function fetchData() {
-        // let holons = await holosphere.get('','settings')
-        // console.log(await Promise.all(holons.map(async function (holon: any) { return holon.id })))
-        if (!holonID) return;
-        // Fetch data from HoloSphere
-        const chats = (await holosphere.get(holonID, "chats")) || {};
-        const users = (await holosphere.get(holonID, "users")) || {};
-        const tasks = (await holosphere.get(holonID, "quests")) || {};
-        const events = (await holosphere.get(holonID, "events")) || {};
-        const shoppingItems = (await holosphere.get(holonID, "shopping")) || {};
+        if (!holonID || !holosphere) return;
+        
+        try {
+            const chats = (await holosphere.get(holonID, "chats")) || {};
+            const users = (await holosphere.get(holonID, "users")) || {};
+            const tasks = (await holosphere.get(holonID, "quests")) || {};
+            const events = (await holosphere.get(holonID, "events")) || {};
+            const shoppingItems = (await holosphere.get(holonID, "shopping")) || {};
 
-        chatCount = Object.keys(chats).length;
-        userCount = Object.keys(users).length;
-        shoppingItemCount = Object.keys(shoppingItems).length;
+            chatCount = Object.keys(chats).length;
+            userCount = Object.keys(users).length;
+            shoppingItemCount = Object.keys(shoppingItems).length;
 
-        completedTaskCount = Object.values(tasks).filter(
-            (task: any) => task.status === "completed"
-        ).length;
-        openTaskCount = Object.values(tasks).filter(
-            (task: any) => task.status !== "completed"
-        ).length;
+            completedTaskCount = Object.values(tasks).filter(
+                (task: any) => task.status === "completed"
+            ).length;
+            openTaskCount = Object.values(tasks).filter(
+                (task: any) => task.status !== "completed"
+            ).length;
 
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-        recentEventCount = Object.values(events).filter(
-            (event: any) => new Date(event.when) >= oneWeekAgo
-        ).length;
+            const oneWeekAgo = new Date();
+            oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+            recentEventCount = Object.values(events).filter(
+                (event: any) => new Date(event.when) >= oneWeekAgo
+            ).length;
+        } catch (error) {
+            console.error('Error fetching dashboard data:', error);
+        }
     }
 </script>
 

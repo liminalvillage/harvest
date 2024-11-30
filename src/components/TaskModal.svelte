@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { createEventDispatcher, getContext } from 'svelte';
+    import { createEventDispatcher, getContext, onMount } from 'svelte';
     import { fade, scale } from 'svelte/transition';
     
     export let quest: any;
@@ -7,12 +7,36 @@
     export let userStore: Record<string, any>;
     export let holonId: string;
 
-    let holosphere = getContext('holosphere');
+    interface HoloSphereInterface {
+        get: (id: string, collection: string) => Promise<any>;
+        put: (id: string, collection: string, data: any) => Promise<any>;
+        delete: (id: string, collection: string, itemId: string) => Promise<any>;
+    }
+
+    const holosphere = getContext<HoloSphereInterface>("holosphere");
+    
+    if (!holosphere) {
+        console.error("TaskModal - holosphere context is undefined");
+        console.log("Component hierarchy:", 
+            document.querySelector('[data-component="TaskModal"]')?.parentElement);
+    } else {
+        console.log("TaskModal - holosphere context is available");
+    }
+
+    onMount(() => {
+        console.log('TaskModal mounted - holosphere:', holosphere);
+    });
 
     const dispatch = createEventDispatcher();
     let showAddParticipants = false;
 
     async function updateQuest(updates: any, shouldClose = false) {
+    
+        if (!holosphere) {
+            console.error("Cannot update quest: holosphere is not available");
+            return;
+        }
+        
         const updatedQuest = { ...quest, ...updates };
         await holosphere.put(holonId, 'quests', updatedQuest);
         quest = updatedQuest;
@@ -71,7 +95,7 @@
     }
 </script>
 
-<div 
+<div data-component="TaskModal"
     class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
     on:click|self={closeModal}
     on:keydown={e => e.key === 'Escape' && closeModal()}
