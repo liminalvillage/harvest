@@ -14,8 +14,6 @@
 
 	$: holonID = $ID;
 	let store = {};
-	let userStore = {};
-	let showDropdown = null;
 	$: quests = Object.entries(store);
 
 	// Initialize preferences with default values
@@ -93,20 +91,13 @@
 		showCompleted =
 			localStorage.getItem("kanbanShowCompleted") === "true" || false;
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
-
-		// Add click outside listener
-		document.addEventListener("click", handleClickOutside);
-
-		return () => {
-			document.removeEventListener("click", handleClickOutside);
-		};
 	});
 
 	$: update(holonID);
 
 	function subscribe() {
 		store = {};
-		userStore = {};
+
 		if (holosphere) {
 			holosphere.subscribe(holonID, "quests", (newquest, key) => {
 				if (newquest) {
@@ -121,22 +112,6 @@
 					const newStore = { ...store };
 					delete newStore[key];
 					store = newStore;
-				}
-			});
-
-			holosphere.subscribe(holonID, "users", (newUser, key) => {
-				if (newUser) {
-					userStore = {
-						...userStore,
-						[key]:
-							typeof newUser === "string"
-								? JSON.parse(newUser)
-								: newUser,
-					};
-				} else {
-					const newUserStore = { ...userStore };
-					delete newUserStore[key];
-					userStore = newUserStore;
 				}
 			});
 		}
@@ -165,50 +140,6 @@
 		const dateB = b.date ? new Date(b.date) : new Date(b.when);
 		return dateB - dateA;
 	});
-
-	async function toggleParticipant(questId, userId) {
-		const quest = store[questId];
-		if (!quest) return;
-
-		if (!quest.participants) {
-			quest.participants = [];
-		}
-		if (!quest.appreciation) {
-			quest.appreciation = [];
-		}
-
-		const participantIndex = quest.participants.findIndex(
-			(p) => p.id === userId
-		);
-
-		if (participantIndex >= 0) {
-			quest.participants.splice(participantIndex, 1);
-		} else {
-			const user = userStore[userId];
-			quest.participants.push({
-				id: userId,
-				username:
-					user.first_name +
-					(user.last_name ? " " + user.last_name : ""),
-				picture: user.picture,
-			});
-		}
-
-		await holosphere.put(holonID, "quests", quest);
-
-		showDropdown = null;
-	}
-
-	function handleClickOutside(event) {
-		const dropdown = document.querySelector(".user-dropdown");
-		if (
-			dropdown &&
-			!dropdown.contains(event.target) &&
-			!event.target.closest(".task-card")
-		) {
-			showDropdown = null;
-		}
-	}
 
 	// Replace the showDropdown click handler with this
 	function handleTaskClick(key, quest) {
@@ -518,41 +449,6 @@
 										</div>
 									</div>
 								</div>
-
-								{#if showDropdown === key}
-									<div
-										class="user-dropdown absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
-									>
-										<div class="py-1">
-											{#each Object.entries(userStore) as [userId, user]}
-												{@const isParticipant =
-													quest.participants?.some(
-														(p) => p.id === userId
-													)}
-												<button
-													class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-between"
-													on:click|stopPropagation={() =>
-														toggleParticipant(
-															key,
-															userId
-														)}
-												>
-													<span
-														>{user.first_name}
-														{user.last_name ||
-															""}</span
-													>
-													{#if isParticipant}
-														<span
-															class="text-green-500"
-															>✓</span
-														>
-													{/if}
-												</button>
-											{/each}
-										</div>
-									</div>
-								{/if}
 							</div>
 						</div>
 					{/if}
@@ -561,7 +457,6 @@
 		{:else if viewMode === "canvas"}
 			<CanvasView
 				{filteredQuests}
-				{userStore}
 				{holosphere}
 				{holonID}
 				{showCompleted}
@@ -721,42 +616,6 @@
 											👍 {quest.appreciation?.length || 0}
 										</div>
 									</div>
-
-									{#if showDropdown === key}
-										<div
-											class="user-dropdown absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50"
-										>
-											<div class="py-1">
-												{#each Object.entries(userStore) as [userId, user]}
-													{@const isParticipant =
-														quest.participants?.some(
-															(p) =>
-																p.id === userId
-														)}
-													<button
-														class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center justify-between"
-														on:click|stopPropagation={() =>
-															toggleParticipant(
-																key,
-																userId
-															)}
-													>
-														<span
-															>{user.first_name}
-															{user.last_name ||
-																""}</span
-														>
-														{#if isParticipant}
-															<span
-																class="text-green-500"
-																>✓</span
-															>
-														{/if}
-													</button>
-												{/each}
-											</div>
-										</div>
-									{/if}
 								</div>
 							</div>
 						</div>
@@ -771,7 +630,6 @@
 		<TaskModal
 			quest={selectedTask.quest}
 			questId={selectedTask.key}
-			userStore={userStore}
 			holonId={holonID}
 			on:close={() => (selectedTask = null)}
 		/>
@@ -789,24 +647,6 @@
 
 	.task-card {
 		position: relative;
-	}
-
-	.user-dropdown {
-		position: absolute;
-		top: 100%;
-		right: 0;
-		max-height: 200px;
-		overflow-y: auto;
-		z-index: 50;
-		background: white;
-		border-radius: 0.375rem;
-		box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
-			0 2px 4px -1px rgba(0, 0, 0, 0.06);
-	}
-
-	/* Optional: Add some animation */
-	.user-dropdown {
-		animation: slideDown 0.2s ease-out;
 	}
 
 	@keyframes slideDown {

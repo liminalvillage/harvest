@@ -4,13 +4,23 @@
     
     export let quest: any;
     export let questId: string;
-    export let userStore: Record<string, any>;
     export let holonId: string;
 
     interface HoloSphereInterface {
         get: (id: string, collection: string) => Promise<any>;
         put: (id: string, collection: string, data: any) => Promise<any>;
         delete: (id: string, collection: string, itemId: string) => Promise<any>;
+        subscribe: (id: string, collection: string, callback: (data: any, key: string) => void) => void;
+    }
+
+    interface User {
+        first_name: string;
+        last_name?: string;
+        picture?: string;
+    }
+
+    interface UserStore {
+        [key: string]: User;
     }
 
     const holosphere = getContext<HoloSphereInterface>("holosphere");
@@ -23,12 +33,35 @@
         console.log("TaskModal - holosphere context is available");
     }
 
+    let userStore: UserStore = {};
+
     onMount(() => {
         console.log('TaskModal mounted - holosphere:', holosphere);
+        document.addEventListener('click', handleClickOutside);
+        
+        if (holosphere) {
+            holosphere.subscribe(holonId, "users", (newUser: User | string | null, key: string) => {
+                if (newUser) {
+                    const parsedUser = typeof newUser === "string" ? JSON.parse(newUser) : newUser;
+                    userStore = {
+                        ...userStore,
+                        [key]: parsedUser
+                    };
+                } else {
+                    const { [key]: _, ...rest } = userStore;
+                    userStore = rest;
+                }
+            });
+        }
+
+        return () => {
+            document.removeEventListener('click', handleClickOutside);
+        };
     });
 
     const dispatch = createEventDispatcher();
     let showAddParticipants = false;
+    let showDropdown = false;
 
     async function updateQuest(updates: any, shouldClose = false) {
     
@@ -75,11 +108,7 @@
         const participants = [...(quest.participants || [])];
         
         if (!participants.some((p: { id: string }) => p.id === userId)) {
-            participants.push({
-                id: userId,
-                username: user.first_name + (user.last_name ? ' ' + user.last_name : ''),
-                picture: `http://gun.holons.io/getavatar?user_id=${userId}`
-            });
+            participants.push(user);
             await updateQuest({ participants });
         }
         showAddParticipants = false;
@@ -92,6 +121,35 @@
     async function completeQuest() {
         const newStatus = quest.status === 'completed' ? 'ongoing' : 'completed';
         await updateQuest({ status: newStatus }, true);
+    }
+
+    async function toggleParticipant(userId: string) {
+        const participants = [...(quest.participants || [])];
+        const participantIndex = participants.findIndex(p => p.id === userId);
+
+        if (participantIndex >= 0) {
+            participants.splice(participantIndex, 1);
+        } else {
+            const user = userStore[userId];
+            if (user) {
+                participants.push({
+                    id: user.id,
+                    first_name: user.first_name,
+                    last_name: user.last_name,
+                    username: user.username
+                });
+            }
+        }
+
+        await updateQuest({ participants });
+        showDropdown = false;
+    }
+
+    function handleClickOutside(event: MouseEvent) {
+        const dropdown = document.querySelector('.user-dropdown');
+        if (dropdown && !dropdown.contains(event.target as Node)) {
+            showDropdown = false;
+        }
     }
 </script>
 
@@ -133,9 +191,9 @@
                         <h3 class="text-lg font-semibold">Participants</h3>
                         <button 
                             class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-full text-sm transition-colors"
-                            on:click={() => showAddParticipants = !showAddParticipants}
+                            on:click|stopPropagation={() => showDropdown = !showDropdown}
                         >
-                            {showAddParticipants ? 'Cancel' : '+ Add Participant'}
+                            {showDropdown ? 'Cancel' : '+ Add Participant'}
                         </button>
                     </div>
 
@@ -167,14 +225,14 @@
                         {/if}
                     </div>
 
-                    <!-- Add Participants Dropdown -->
-                    {#if showAddParticipants}
-                        <div class="bg-gray-700 rounded-lg overflow-hidden mt-2">
+                    <!-- User Dropdown -->
+                    {#if showDropdown}
+                        <div class="bg-gray-700 rounded-lg overflow-hidden mt-2 user-dropdown">
                             {#each Object.entries(userStore) as [userId, user]}
                                 {#if !isUserParticipant(userId)}
                                     <button
                                         class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2"
-                                        on:click={() => addParticipant(userId)}
+                                        on:click|stopPropagation={() => toggleParticipant(userId)}
                                     >
                                         <img 
                                             src={`http://gun.holons.io/getavatar?user_id=${userId}`}
