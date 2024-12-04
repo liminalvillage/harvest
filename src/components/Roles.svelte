@@ -7,7 +7,7 @@
 
 	import HoloSphere from "holosphere";
 	import Announcements from "./Announcements.svelte";
-	import RoleModal from "./RoleModal.svelte";
+	import ItemModal from "./ItemModal.svelte";
 
 	/**
 	 * @type {string | any[]}
@@ -231,7 +231,7 @@
 				{#each roles as [key, role]}
 					<div
 						id={key}
-						class="w-full cursor-pointer"
+						class="w-full task-card relative"
 						on:click|stopPropagation={() =>
 							handleRoleClick(key, role)}
 						on:keydown|stopPropagation={(e) => {
@@ -287,29 +287,24 @@
 												>🙋‍♂️ {role.participants
 													.length}</span
 											>
-											<div class="flex items-center">
-												<div class="flex -space-x-2">
-													{#each role.participants.slice(0, 3) as participant}
-														{#if participant.picture}
-															<img
-																class="w-6 h-6 rounded-full border-2 border-gray-300"
-																src={participant.picture}
-																alt={participant}
-															/>
-														{/if}
-													{/each}
-												</div>
-												<div class="ml-2 text-sm">
-													{role.participants
-														.map(
-															(p) =>
-																`@${
-																	p.username ||
-																	p
-																}`
-														)
-														.join(", ")}
-												</div>
+											<div class="flex -space-x-2 relative group">
+												{#each role.participants.slice(0, 3) as participant}
+													<div class="relative">
+														<img
+															class="w-6 h-6 rounded-full border-2 border-gray-300"
+															src={`http://gun.holons.io/getavatar?user_id=${participant.id}`}
+															alt={participant.username}
+														/>
+														<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
+															{participant.username}
+														</div>
+													</div>
+												{/each}
+												{#if role.participants.length > 3}
+													<div class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300">
+														+{role.participants.length - 3}
+													</div>
+												{/if}
 											</div>
 										</div>
 									{/if}
@@ -324,7 +319,7 @@
 				{#each roles as [key, role]}
 					<div
 						id={key}
-						class="w-full md:w-4/12 cursor-pointer"
+						class="w-full md:w-4/12 task-card relative"
 						on:click|stopPropagation={() =>
 							handleRoleClick(key, role)}
 						on:keydown|stopPropagation={(e) => {
@@ -374,46 +369,31 @@
 
 								<div class="flex justify-between pt-4">
 									{#if role.participants?.length > 0}
-										<div class="flex flex-col gap-2">
-											<div
-												class="flex items-center gap-1"
-											>
-												<span
-													class="opacity-70 font-bold text-base"
-													>🙋‍♂️ {role.participants
-														.length}</span
-												>
-												<div class="flex -space-x-2">
-													{#each role.participants.slice(0, 3) as participant}
-														{#if participant.picture}
-															<img
-																class="w-6 h-6 rounded-full border-2 border-gray-300"
-																src={participant.picture}
-																alt={participant}
-															/>
-														{/if}
-													{/each}
-													{#if role.participants.length > 3}
-														<div
-															class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300"
-														>
-															+{role.participants
-																.length - 3}
+										<div class="flex flex-col overflow-hidden">
+											<span class="opacity-70 font-bold text-base whitespace-nowrap mb-1">
+												🙋‍♂️ {role.participants.length}
+											</span>
+											<div class="flex -space-x-2 relative group">
+												{#each role.participants.slice(0, 3) as participant}
+													<div class="relative">
+														<img
+															class="w-6 h-6 rounded-full border-2 border-gray-300"
+															src={`http://gun.holons.io/getavatar?user_id=${participant.id}`}
+															alt={participant.username}
+														/>
+														<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
+															{participant.username}
 														</div>
-													{/if}
-												</div>
-											</div>
-											<div
-												class="text-sm opacity-70 line-clamp-2"
-											>
-												{role.participants
-													.map(
-														(p) =>
-															`@${
-																p.username || p
-															}`
-													)
-													.join(", ")}
+													</div>
+												{/each}
+												{#if role.participants.length > 3}
+													<div class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300 relative group">
+														<span>+{role.participants.length - 3}</span>
+														<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
+															{role.participants.slice(3).map((p) => p.username).join(", ")}
+														</div>
+													</div>
+												{/if}
 											</div>
 										</div>
 									{/if}
@@ -429,14 +409,14 @@
 </div>
 
 {#if selectedRole}
-	<RoleModal
+	<ItemModal
 		role={selectedRole.role}
 		roleId={selectedRole.key}
 		{userStore}
 		{holosphere}
 		holonId={holonID}
 		on:close={() => {
-			console.log("Closing modal"); // Debug log
+			console.log("Closing modal");
 			selectedRole = null;
 		}}
 	/>
@@ -452,5 +432,26 @@
 		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+	}
+
+	.task-card {
+		position: relative;
+	}
+
+	/* Add tooltip arrow */
+	.group-hover\:visible {
+		position: absolute;
+		pointer-events: none;
+	}
+
+	.group-hover\:visible::before {
+		content: "";
+		position: absolute;
+		top: -4px;
+		left: 50%;
+		transform: translateX(-50%);
+		border-width: 0 4px 4px 4px;
+		border-style: solid;
+		border-color: transparent transparent #1f2937 transparent;
 	}
 </style>

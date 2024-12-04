@@ -102,7 +102,7 @@
                 <p class="text-3xl font-bold">{userCount}</p>
             </a>
             <a
-                href={`/${holonID}/kanban`}
+                href={`/${holonID}/tasks`}
                 class="bg-yellow-500 p-6 rounded-lg text-white"
             >
                 <h3 class="text-xl font-semibold mb-2">Tasks</h3>

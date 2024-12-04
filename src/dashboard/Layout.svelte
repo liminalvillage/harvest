@@ -25,7 +25,7 @@
 
 	// Define the allowed routes for auto-switching
 	const allowedRoutes = data.filter(item => 
-		['/kanban', '/schedule', '/roles', '/offers', '/status'].includes(item.link)
+		['/tasks', '/schedule', '/roles', '/offers', '/status'].includes(item.link)
 	);
 
 	// Handle mouse movement

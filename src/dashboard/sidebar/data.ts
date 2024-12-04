@@ -21,7 +21,7 @@ export const data = [
 	{
 		title: 'Tasks',
 		icon: ArchivesIcon,
-		link: '/kanban'
+		link: '/tasks'
 	},
 	{
 		title: 'Schedule',

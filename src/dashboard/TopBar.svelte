@@ -38,7 +38,7 @@
 				previousHolons.forEach(async (holon) => {
 					if (!holon.name) {
 						try {
-							const data = await holosphere.get(holon.id, 'settings');
+							const data = await holosphere.getAll(holon.id, 'settings');
 							if (data && data[0] && data[0].name) {
 								holon.name = data[0].name;
 								localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
@@ -74,8 +74,9 @@
 		updateRoute($ID);
 		
 		// Fetch name for current holon
-		holosphere.get($ID, 'settings').then((settings: any) => {
+		holosphere.getAll($ID, 'settings').then((settings: any) => {
 			if (settings && settings[0] && settings[0].name) {
+				console.log("Settings", settings);
 				currentHolonName = settings[0].name;
 			}
 		}).catch((error: Error) => {
