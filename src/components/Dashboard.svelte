@@ -2,20 +2,10 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
-    import HoloSphere from "holosphere";
     import Announcements from "./Announcements.svelte";
 
-    interface HoloSphereInterface {
-        get: (id: string, collection: string) => Promise<any>;
-        put: (id: string, collection: string, data: any) => Promise<any>;
-    }
-
-    console.log("Logging the environment variables", import.meta.env.MODE);
-    let environmentName: string =
-        import.meta.env.MODE === "development" ? "HolonsDebug" : "Holons";
-
     // Initialize holosphere
-    const holosphere = getContext<HoloSphereInterface>("holosphere");
+    const holosphere = getContext("holosphere");
     let holonID: string = $page.params.id;
     let unsubscribe: () => void;
 
@@ -61,11 +51,11 @@
         if (!holonID || !holosphere) return;
         
         try {
-            const chats = (await holosphere.get(holonID, "chats")) || {};
-            const users = (await holosphere.get(holonID, "users")) || {};
-            const tasks = (await holosphere.get(holonID, "quests")) || {};
-            const events = (await holosphere.get(holonID, "events")) || {};
-            const shoppingItems = (await holosphere.get(holonID, "shopping")) || {};
+            const chats = (await holosphere.getAll(holonID, "chats")) || {};
+            const users = (await holosphere.getAll(holonID, "users")) || {};
+            const tasks = (await holosphere.getAll(holonID, "quests")) || {};
+            const events = (await holosphere.getAll(holonID, "events")) || {};
+            const shoppingItems = (await holosphere.getAll(holonID, "shopping")) || {};
 
             chatCount = Object.keys(chats).length;
             userCount = Object.keys(users).length;

@@ -1,17 +1,12 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount } from 'svelte';
     import { fade, scale } from 'svelte/transition';
+  
     
     export let quest: any;
     export let questId: string;
     export let holonId: string;
 
-    interface HoloSphereInterface {
-        get: (id: string, collection: string) => Promise<any>;
-        put: (id: string, collection: string, data: any) => Promise<any>;
-        delete: (id: string, collection: string, itemId: string) => Promise<any>;
-        subscribe: (id: string, collection: string, callback: (data: any, key: string) => void) => void;
-    }
 
     interface User {
         first_name: string;
@@ -23,16 +18,8 @@
         [key: string]: User;
     }
 
-    const holosphere = getContext<HoloSphereInterface>("holosphere");
+    const holosphere = getContext("holosphere");
     
-    if (!holosphere) {
-        console.error("TaskModal - holosphere context is undefined");
-        console.log("Component hierarchy:", 
-            document.querySelector('[data-component="TaskModal"]')?.parentElement);
-    } else {
-        console.log("TaskModal - holosphere context is available");
-    }
-
     let userStore: UserStore = {};
 
     onMount(() => {

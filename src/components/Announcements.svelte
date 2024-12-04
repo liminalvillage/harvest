@@ -1,8 +1,7 @@
 <script>
 	// @ts-nocheck
 	import { onMount, getContext } from "svelte";
-	import { ID } from "../dashboard/store";
-	import HoloSphere from "holosphere";
+	import { ID } from "../dashboard/store";;
 	import Announcements from "./Announcements.svelte";
 
 	let holosphere = getContext("holosphere");
