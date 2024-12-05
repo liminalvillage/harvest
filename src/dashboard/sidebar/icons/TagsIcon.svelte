@@ -1,3 +1,7 @@
+<script lang="ts">
+  export let active = false;
+</script>
+
 <svg
 	xmlns="http://www.w3.org/2000/svg"
 	width="24"
@@ -11,5 +15,6 @@
 		stroke-width="2"
 		stroke-linecap="round"
 		stroke-linejoin="round"
+		class={active ? 'text-indigo-400' : 'text-gray-400'}
 	/>
 </svg>

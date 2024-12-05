@@ -9,8 +9,8 @@ import DocumentationIcon from './icons/DocumentationIcon.svelte';
 import RolesIcon from './icons/RolesIcon.svelte';
 import OffersIcon from './icons/OffersIcon.svelte'; // Add this import
 import DashboardIcon from './icons/DashboardIcon.svelte';
-import ShoppingListIcon from './icons/ShoppingListIcon.svelte';
-
+import ShoppingIcon from './icons/ShoppingIcon.svelte';
+import ChecklistIcon from './icons/ChecklistIcon.svelte';
 
 export const data = [
 	{
@@ -50,8 +50,13 @@ export const data = [
 	},
 	{
 		title: 'Shopping List',
-		icon: ShoppingListIcon,
+		icon: ShoppingIcon,
 		link: '/shopping'
+	},
+	{
+		title: 'Checklists',
+		icon: ChecklistIcon,
+		link: '/checklists'
 	},
 	{
 		title: 'Status',
