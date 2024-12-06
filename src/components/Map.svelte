@@ -16,21 +16,31 @@
 	let mapContainer: HTMLElement;
 	let map: mapboxgl.Map;
 	let hexId: string;
-	let selectedLens = 'hubs';
+	export let selectedLens = 'holons';
 	let isLoading = false;
 	let holoSubscriptions = new Map();
 	let lensData = {
 		quests: new Set<string>(),
 		needs: new Set<string>(),
 		offers: new Set<string>(),
-		hubs: new Set<string>()
+		communities: new Set<string>(),
+		organizations: new Set<string>(),
+		projects: new Set<string>(),
+		currencies: new Set<string>(),
+		people: new Set<string>(),
+		holons: new Set<string>()
 	};
 
 	const lensOptions = [
-		{ value: 'hubs', label: 'Hubs' },
 		{ value: 'quests', label: 'Tasks' },
-		{ value: 'needs', label: 'Needs' },
-		{ value: 'offers', label: 'Offers' }
+		{ value: 'needs', label: 'Local Needs' },
+		{ value: 'offers', label: 'Offers' },
+		{ value: 'communities', label: 'Communities' },
+		{ value: 'organizations', label: 'Organizations' },
+		{ value: 'projects', label: 'Projects' },
+		{ value: 'currencies', label: 'Currencies' },
+		{ value: 'people', label: 'People' },
+		{ value: 'holons', label: 'Holons' }
 	];
 
 	function getResolution(zoom: number): number {
@@ -222,9 +232,29 @@
 				highlightedHexes = lensData.offers;
 				highlightColor = '#4caf50';
 				break;
-			case 'hubs':
-				highlightedHexes = lensData.hubs;
+			case 'communities':
+				highlightedHexes = lensData.communities;
 				highlightColor = '#ff9800';
+				break;
+			case 'organizations':
+				highlightedHexes = lensData.organizations;
+				highlightColor = '#9c27b0';
+				break;
+			case 'projects':
+				highlightedHexes = lensData.projects;
+				highlightColor = '#3f51b5';
+				break;
+			case 'currencies':
+				highlightedHexes = lensData.currencies;
+				highlightColor = '#e91e63';
+				break;
+			case 'people':
+				highlightedHexes = lensData.people;
+				highlightColor = '#607d8b';
+				break;
+			case 'holons':
+				highlightedHexes = lensData.holons;
+				highlightColor = '#ff5722';
 				break;
 		}
 
@@ -604,7 +634,7 @@
 
     <MapSidebar 
         {selectedLens}
-        hexId={hexId}
+        {hexId}
         {holosphere}
     />
 </div>

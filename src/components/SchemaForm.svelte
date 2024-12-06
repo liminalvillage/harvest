@@ -182,7 +182,27 @@
 
     function handleCheckboxInput(event: Event, fieldName: string) {
         const target = event.target as HTMLInputElement;
-        formData[fieldName] = target.checked;
+        const value = target.value;
+        
+        // Initialize array if it doesn't exist
+        if (!formData[fieldName]) {
+            formData[fieldName] = [];
+        }
+        
+        // Ensure formData[fieldName] is an array
+        if (!Array.isArray(formData[fieldName])) {
+            formData[fieldName] = [];
+        }
+        
+        if (target.checked) {
+            // Add value if checked and not already in array
+            if (!formData[fieldName].includes(value)) {
+                formData[fieldName] = [...formData[fieldName], value];
+            }
+        } else {
+            // Remove value if unchecked
+            formData[fieldName] = formData[fieldName].filter((v: string) => v !== value);
+        }
     }
 
     function getInputType(field: Field): string {
@@ -208,6 +228,9 @@
             }
         });
     }
+
+    // Add viewOnly prop
+    export let viewOnly = false;
 </script>
 
 <form on:submit|preventDefault={handleSubmit} class="space-y-4">
@@ -217,25 +240,29 @@
                 <span class={field.required ? 'text-blue-400' : 'text-gray-200'}>
                     {field.title || fieldName.replace(/_/g, ' ')}
                 </span>
-                {#if field.required}
-                    <span class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">Required</span>
-                {/if}
             </label>
 
             {#if isDropdownField(fieldName, field)}
                 <!-- Dropdown fields -->
-                <select 
-                    bind:value={formData[fieldName]}
-                    class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600 {field.required ? 'border-blue-500' : ''}"
-                    required={field.required}
-                >
-                    <option value="">Select {fieldName.replace(/_/g, ' ')}</option>
-                    {#each field.enum || [] as value, i}
-                        <option value={value}>
-                            {field.enumNames?.[i] || value}
-                        </option>
-                    {/each}
-                </select>
+                {#if viewOnly}
+                    <div class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600">
+                        {formData[fieldName] || '-'}
+                    </div>
+                {:else}
+                    <select 
+                        bind:value={formData[fieldName]}
+                        class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
+                        required={field.required}
+                        disabled={viewOnly}
+                    >
+                        <option value="">Select {fieldName.replace(/_/g, ' ')}</option>
+                        {#each field.enum || [] as value, i}
+                            <option value={value}>
+                                {field.enumNames?.[i] || value}
+                            </option>
+                        {/each}
+                    </select>
+                {/if}
 
             {:else if field.type === 'array' && field.items?.enum}
                 <!-- Checkboxes for array of enums -->
@@ -245,7 +272,7 @@
                             <input
                                 type="checkbox"
                                 value={value}
-                                checked={formData[fieldName]?.includes(value)}
+                                checked={Array.isArray(formData[fieldName]) && formData[fieldName]?.includes(value)}
                                 on:change={(e) => handleCheckboxInput(e, fieldName)}
                                 class="bg-gray-600 border-gray-500"
                             />
@@ -257,67 +284,85 @@
                 </div>
 
             {:else if field.type === 'array' && field.items?.type === 'string'}
-                <!-- Tags input -->
-                <div class="space-y-2">
-                    <input
-                        type="text"
-                        placeholder="Type and press Enter or comma to add tags"
-                        on:keydown={handleTagInput}
-                        on:input={handleTagDirectInput}
-                        bind:value={tagInputValue}
-                        class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
-                    />
+                {#if viewOnly}
                     <div class="flex flex-wrap gap-2">
                         {#if formData[fieldName]}
                             {#each formData[fieldName] as tag}
-                                <span class="bg-gray-600 text-white px-2 py-1 rounded-full text-sm flex items-center">
+                                <span class="bg-gray-600 text-white px-2 py-1 rounded-full text-sm">
                                     {tag}
-                                    <button
-                                        type="button"
-                                        on:click={() => removeTag(tag)}
-                                        class="ml-2 text-gray-400 hover:text-white"
-                                    >
-                                        ×
-                                    </button>
                                 </span>
                             {/each}
                         {/if}
                     </div>
-                </div>
+                {:else}
+                    <!-- Tags input -->
+                    <div class="space-y-2">
+                        <input
+                            type="text"
+                            placeholder="Type and press Enter or comma to add tags"
+                            on:keydown={handleTagInput}
+                            on:input={handleTagDirectInput}
+                            bind:value={tagInputValue}
+                            class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
+                        />
+                        <div class="flex flex-wrap gap-2">
+                            {#if formData[fieldName]}
+                                {#each formData[fieldName] as tag}
+                                    <span class="bg-gray-600 text-white px-2 py-1 rounded-full text-sm flex items-center">
+                                        {tag}
+                                        <button
+                                            type="button"
+                                            on:click={() => removeTag(tag)}
+                                            class="ml-2 text-gray-400 hover:text-white"
+                                        >
+                                            ×
+                                        </button>
+                                    </span>
+                                {/each}
+                            {/if}
+                        </div>
+                    </div>
+                {/if}
 
             {:else}
-                <!-- Input fields based on type -->
-                {#if getInputType(field) === 'datetime-local'}
-                    <input
-                        type="datetime-local"
-                        value={formData[fieldName] || ''}
-                        on:input={(e) => handleInputChange(e, fieldName)}
-                        class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
-                        placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
-                    />
-                {:else if getInputType(field) === 'number'}
-                    <input
-                        type="number"
-                        value={formData[fieldName] || ''}
-                        on:input={(e) => handleInputChange(e, fieldName)}
-                        class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
-                        placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
-                    />
-                {:else if getInputType(field) === 'checkbox'}
-                    <input
-                        type="checkbox"
-                        checked={formData[fieldName] || false}
-                        on:change={(e) => handleCheckboxInput(e, fieldName)}
-                        class="bg-gray-700 border-gray-600"
-                    />
+                {#if viewOnly}
+                    <div class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600">
+                        {formData[fieldName] || '-'}
+                    </div>
                 {:else}
-                    <input
-                        type="text"
-                        value={formData[fieldName] || ''}
-                        on:input={(e) => handleInputChange(e, fieldName)}
-                        class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
-                        placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
-                    />
+                    <!-- Input fields based on type -->
+                    {#if getInputType(field) === 'datetime-local'}
+                        <input
+                            type="datetime-local"
+                            value={formData[fieldName] || ''}
+                            on:input={(e) => handleInputChange(e, fieldName)}
+                            class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
+                            placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
+                        />
+                    {:else if getInputType(field) === 'number'}
+                        <input
+                            type="number"
+                            value={formData[fieldName] || ''}
+                            on:input={(e) => handleInputChange(e, fieldName)}
+                            class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
+                            placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
+                        />
+                    {:else if getInputType(field) === 'checkbox'}
+                        <input
+                            type="checkbox"
+                            checked={formData[fieldName] || false}
+                            on:change={(e) => handleCheckboxInput(e, fieldName)}
+                            class="bg-gray-700 border-gray-600"
+                        />
+                    {:else}
+                        <input
+                            type="text"
+                            value={formData[fieldName] || ''}
+                            on:input={(e) => handleInputChange(e, fieldName)}
+                            class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
+                            placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
+                        />
+                    {/if}
                 {/if}
             {/if}
 
@@ -327,12 +372,14 @@
         </div>
     {/each}
 
-    <button
-        type="submit"
-        class="w-full bg-blue-600 text-white rounded-lg py-2 px-4 hover:bg-blue-700 transition-colors"
-    >
-        Submit
-    </button>
+    {#if !viewOnly}
+        <button
+            type="submit"
+            class="w-full bg-blue-600 text-white rounded-lg py-2 px-4 hover:bg-blue-700 transition-colors"
+        >
+            Submit
+        </button>
+    {/if}
 </form>
 
 <style>
