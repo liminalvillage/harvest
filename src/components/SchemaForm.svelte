@@ -1,0 +1,350 @@
+<script lang="ts">
+    import { createEventDispatcher } from 'svelte';
+    
+    export let schema: string;
+    export let schemaDefinition: Record<string, any> | null = null;
+    export let initialData: Record<string, any> = {};
+    
+    const dispatch = createEventDispatcher();
+    
+    // Update system fields to be hidden
+    const HIDDEN_FIELDS = ['id', 'linked_schemas', 'geolocation', 'latitude', 'longitude'];
+    const SYSTEM_FIELDS = ['date', 'created_at', 'updated_at'];
+    const TIME_FIELDS = ['when', 'date', 'expires_at', 'founding_date', 'created_at', 'updated_at'];
+    
+    // Add fields that should be dropdowns
+    const DROPDOWN_FIELDS = [
+        'status',
+        'exchange_type',
+        'item_type',
+        'geographic_scope',
+        'category',
+        'movement',
+        'legal_form',
+        'monetary_model',
+        'unit_of_account_type'
+    ];
+    
+    interface Field {
+        type: string;
+        required?: boolean;
+        title?: string;
+        description?: string;
+        enum?: string[];
+        enumNames?: string[];
+        format?: string;
+        items?: {
+            type?: string;
+            enum?: string[];
+            enumNames?: string[];
+        };
+    }
+    
+    interface Schema {
+        [key: string]: Field;
+    }
+    
+    // Common field types mapping
+    const fieldTypes: Record<string, string> = {
+        string: 'text',
+        number: 'number',
+        integer: 'number',
+        boolean: 'checkbox'
+    };
+    
+    function isTimeField(fieldName: string): boolean {
+        return TIME_FIELDS.includes(fieldName) || fieldName.toLowerCase().includes('date') || fieldName.toLowerCase().includes('time');
+    }
+    
+    function unixToDateTimeLocal(timestamp: number): string {
+        const date = new Date(timestamp);
+        return date.toISOString().slice(0, 16); // Format: YYYY-MM-DDThh:mm
+    }
+    
+    function dateTimeLocalToUnix(datetime: string): number {
+        return new Date(datetime).getTime();
+    }
+    
+    function isDropdownField(fieldName: string, field: Field): boolean {
+        return DROPDOWN_FIELDS.includes(fieldName) || 
+               (field.type === 'string' && field.enum !== undefined && !field.items);
+    }
+    
+    function getSchemaDefinition(schemaName: string): Schema {
+        if (schemaDefinition) {
+            const filteredProperties = Object.entries(schemaDefinition.properties)
+                .filter(([key]) => !HIDDEN_FIELDS.includes(key))
+                .reduce((acc, [key, value]) => {
+                    // Add datetime format for time fields
+                    if (isTimeField(key)) {
+                        return { 
+                            ...acc, 
+                            [key]: { 
+                                ...(value as Field), 
+                                type: 'string',
+                                format: 'datetime-local' 
+                            } 
+                        };
+                    }
+                    // Convert string fields with limited options to dropdowns
+                    if (isDropdownField(key, value as Field)) {
+                        return {
+                            ...acc,
+                            [key]: {
+                                ...(value as Field),
+                                type: 'select'
+                            }
+                        };
+                    }
+                    return { ...acc, [key]: value };
+                }, {});
+
+            return filteredProperties;
+        }
+        return {};
+    }
+
+    let formData: Record<string, any> = { ...initialData };
+    let currentSchema = getSchemaDefinition(schema);
+    
+    // Add prop for hexId
+    export let hexId: string | null = null;
+
+    function getGeolocationFromHexId(): { lat: number; lon: number } | null {
+        if (!hexId) return null;
+        const [lat, lon] = hexId.split(',').map(Number);
+        return { lat, lon };
+    }
+
+    function handleTagInput(event: KeyboardEvent & { currentTarget: HTMLInputElement }) {
+        if (event.key === 'Enter' || event.key === ',') {
+            event.preventDefault();
+            const tag = event.currentTarget.value.trim();
+            if (tag) {
+                // Remove any commas from the tag
+                const cleanTag = tag.replace(/,/g, '');
+                if (cleanTag) {
+                    formData.tags = [...(formData.tags || []), cleanTag];
+                    event.currentTarget.value = '';
+                }
+            }
+        }
+    }
+
+    let tagInputValue = ''; // Add state for tag input
+
+    function handleTagDirectInput(event: Event & { currentTarget: HTMLInputElement }) {
+        const value = event.currentTarget.value;
+        tagInputValue = value; // Update the state
+        
+        // Check if the value ends with a comma
+        if (value.endsWith(',')) {
+            const tag = value.slice(0, -1).trim();
+            if (tag) {
+                formData.tags = [...(formData.tags || []), tag];
+                tagInputValue = ''; // Clear the input state
+                event.currentTarget.value = ''; // Clear the input
+            }
+        }
+    }
+
+    function handleSubmit() {
+        // Convert datetime-local values to Unix timestamps where needed
+        const processedData = Object.entries(formData).reduce((acc, [key, value]) => {
+            if (isTimeField(key) && value) {
+                return { ...acc, [key]: dateTimeLocalToUnix(value) };
+            }
+            return { ...acc, [key]: value };
+        }, {});
+
+        // Get geolocation from hexId
+        const geolocation = getGeolocationFromHexId();
+
+        // Add system fields and geolocation
+        const finalData = {
+            ...processedData,
+            id: crypto.randomUUID(),
+            date: Date.now(),
+            updated_at: Date.now(),
+            ...(geolocation && {
+                geolocation,
+                latitude: geolocation.lat,
+                longitude: geolocation.lon
+            })
+        };
+
+        dispatch('submit', finalData);
+    }
+
+    function removeTag(tag: string) {
+        formData.tags = formData.tags.filter((t: string) => t !== tag);
+    }
+
+    function handleCheckboxInput(event: Event, fieldName: string) {
+        const target = event.target as HTMLInputElement;
+        formData[fieldName] = target.checked;
+    }
+
+    function getInputType(field: Field): string {
+        if (field.format === 'datetime-local') return 'datetime-local';
+        return fieldTypes[field.type] || 'text';
+    }
+
+    function handleInputChange(event: Event, fieldName: string) {
+        const target = event.target as HTMLInputElement;
+        
+        if (isTimeField(fieldName)) {
+            formData[fieldName] = target.value;
+        } else {
+            formData[fieldName] = target.type === 'number' ? Number(target.value) : target.value;
+        }
+    }
+
+    // Initialize time fields with current datetime
+    $: {
+        Object.keys(currentSchema).forEach(fieldName => {
+            if (isTimeField(fieldName) && !formData[fieldName]) {
+                formData[fieldName] = new Date().toISOString().slice(0, 16);
+            }
+        });
+    }
+</script>
+
+<form on:submit|preventDefault={handleSubmit} class="space-y-4">
+    {#each Object.entries(currentSchema) as [fieldName, field]}
+        <div class="form-field">
+            <label class="block text-sm font-medium mb-1 flex items-center gap-2">
+                <span class={field.required ? 'text-blue-400' : 'text-gray-200'}>
+                    {field.title || fieldName.replace(/_/g, ' ')}
+                </span>
+                {#if field.required}
+                    <span class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">Required</span>
+                {/if}
+            </label>
+
+            {#if isDropdownField(fieldName, field)}
+                <!-- Dropdown fields -->
+                <select 
+                    bind:value={formData[fieldName]}
+                    class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600 {field.required ? 'border-blue-500' : ''}"
+                    required={field.required}
+                >
+                    <option value="">Select {fieldName.replace(/_/g, ' ')}</option>
+                    {#each field.enum || [] as value, i}
+                        <option value={value}>
+                            {field.enumNames?.[i] || value}
+                        </option>
+                    {/each}
+                </select>
+
+            {:else if field.type === 'array' && field.items?.enum}
+                <!-- Checkboxes for array of enums -->
+                <div class="space-y-2 p-2 bg-gray-700 rounded-lg border border-gray-600">
+                    {#each field.items.enum as value, i}
+                        <label class="flex items-center space-x-2 hover:bg-gray-600 p-2 rounded transition-colors">
+                            <input
+                                type="checkbox"
+                                value={value}
+                                checked={formData[fieldName]?.includes(value)}
+                                on:change={(e) => handleCheckboxInput(e, fieldName)}
+                                class="bg-gray-600 border-gray-500"
+                            />
+                            <span class="text-sm text-gray-200">
+                                {field.items.enumNames?.[i] || value}
+                            </span>
+                        </label>
+                    {/each}
+                </div>
+
+            {:else if field.type === 'array' && field.items?.type === 'string'}
+                <!-- Tags input -->
+                <div class="space-y-2">
+                    <input
+                        type="text"
+                        placeholder="Type and press Enter or comma to add tags"
+                        on:keydown={handleTagInput}
+                        on:input={handleTagDirectInput}
+                        bind:value={tagInputValue}
+                        class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
+                    />
+                    <div class="flex flex-wrap gap-2">
+                        {#if formData[fieldName]}
+                            {#each formData[fieldName] as tag}
+                                <span class="bg-gray-600 text-white px-2 py-1 rounded-full text-sm flex items-center">
+                                    {tag}
+                                    <button
+                                        type="button"
+                                        on:click={() => removeTag(tag)}
+                                        class="ml-2 text-gray-400 hover:text-white"
+                                    >
+                                        ×
+                                    </button>
+                                </span>
+                            {/each}
+                        {/if}
+                    </div>
+                </div>
+
+            {:else}
+                <!-- Input fields based on type -->
+                {#if getInputType(field) === 'datetime-local'}
+                    <input
+                        type="datetime-local"
+                        value={formData[fieldName] || ''}
+                        on:input={(e) => handleInputChange(e, fieldName)}
+                        class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
+                        placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
+                    />
+                {:else if getInputType(field) === 'number'}
+                    <input
+                        type="number"
+                        value={formData[fieldName] || ''}
+                        on:input={(e) => handleInputChange(e, fieldName)}
+                        class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
+                        placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
+                    />
+                {:else if getInputType(field) === 'checkbox'}
+                    <input
+                        type="checkbox"
+                        checked={formData[fieldName] || false}
+                        on:change={(e) => handleCheckboxInput(e, fieldName)}
+                        class="bg-gray-700 border-gray-600"
+                    />
+                {:else}
+                    <input
+                        type="text"
+                        value={formData[fieldName] || ''}
+                        on:input={(e) => handleInputChange(e, fieldName)}
+                        class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
+                        placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
+                    />
+                {/if}
+            {/if}
+
+            {#if field.description}
+                <p class="mt-1 text-sm text-gray-400">{field.description}</p>
+            {/if}
+        </div>
+    {/each}
+
+    <button
+        type="submit"
+        class="w-full bg-blue-600 text-white rounded-lg py-2 px-4 hover:bg-blue-700 transition-colors"
+    >
+        Submit
+    </button>
+</form>
+
+<style>
+    /* Add styles for required fields focus */
+    input:required:focus,
+    select:required:focus {
+        border-color: theme('colors.blue.500');
+        box-shadow: 0 0 0 1px theme('colors.blue.500');
+    }
+
+    /* Style checkboxes */
+    input[type="checkbox"] {
+        @apply rounded border-gray-500;
+    }
+</style> 

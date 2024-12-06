@@ -9,6 +9,7 @@
 	import { ID } from "../dashboard/store";
 
 	import HoloSphere from 'holosphere';
+	import MapSidebar from "./MapSidebar.svelte";
 
 	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
 
@@ -529,7 +530,7 @@
 
 					// Log lens data for the clicked hexagon
 					try {
-						const data = await holosphere.get(hexId, selectedLens);
+						const data = await holosphere.getAll(hexId, selectedLens);
 						console.log(`${selectedLens} data for hexagon ${hexId}:`, data);
 					} catch (error) {
 						console.error(`Error fetching ${selectedLens} data:`, error);
@@ -571,39 +572,55 @@
 	});
 </script>
 
-<div class="map-container">
-	<div class="lens-selector">
-		<label for="lens-select">Lens:</label>
-		<select id="lens-select" bind:value={selectedLens}>
-			{#each lensOptions as option}
-				<option value={option.value}>{option.label}</option>
-			{/each}
-		</select>
-	</div>
-	{#if isLoading}
-		<div class="loading-overlay">
-			<div class="loading-spinner">Loading...</div>
-		</div>
-	{/if}
-	<div bind:this={mapContainer} class="map" />
-	{#if hexId}
-		<div class="hex-info">Selected Hexagon: {hexId}</div>
-	{/if}
+<div class="flex flex-wrap">
+    <div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
+        <div class="flex justify-between text-white items-center mb-8">
+            <div>
+                <p class="text-2xl font-bold">Map</p>
+                <p class="text-lg mt-1">Explore your local area</p>
+            </div>
+            <div class="lens-selector">
+                <label for="lens-select">Lens:</label>
+                <select id="lens-select" bind:value={selectedLens}>
+                    {#each lensOptions as option}
+                        <option value={option.value}>{option.label}</option>
+                    {/each}
+                </select>
+            </div>
+        </div>
+
+        <div class="relative rounded-3xl overflow-hidden">
+            {#if isLoading}
+                <div class="loading-overlay">
+                    <div class="loading-spinner">Loading...</div>
+                </div>
+            {/if}
+            <div bind:this={mapContainer} class="map rounded-3xl" />
+            {#if hexId}
+                <div class="hex-info">Selected Hexagon: {hexId}</div>
+            {/if}
+        </div>
+    </div>
+
+    <MapSidebar 
+        {selectedLens}
+        hexId={hexId}
+        {holosphere}
+    />
 </div>
 
 <style>
 	.map-container {
 		position: relative;
 		width: 100%;
-		height: calc(100vh - 64px);
-		display: flex;
-		flex-direction: column;
+		height: 100%;
+		min-height: calc(100vh - 64px - 2rem);
 	}
 
 	.map {
 		position: relative;
 		width: 100%;
-		height: 100%;
+		height: calc(100vh - 64px - 8rem);
 		flex: 1;
 	}
 
@@ -611,9 +628,10 @@
 		position: absolute;
 		bottom: 10px;
 		left: 10px;
-		background-color: rgba(255, 255, 255, 0.8);
+		background-color: rgba(31, 41, 55, 0.8);
+		color: white;
 		padding: 5px 10px;
-		border-radius: 4px;
+		border-radius: 9999px;
 		font-size: 14px;
 		z-index: 1;
 	}
@@ -628,14 +646,9 @@
 	}
 
 	.lens-selector {
-		position: absolute;
-		top: 10px;
-		left: 10px;
-		z-index: 1;
-		background-color: white;
-		padding: 8px;
-		border-radius: 4px;
-		box-shadow: 0 0 10px rgba(0,0,0,0.1);
+		background-color: transparent;
+		padding: 0;
+		box-shadow: none;
 		display: flex;
 		align-items: center;
 		gap: 8px;
@@ -644,15 +657,16 @@
 	.lens-selector label {
 		font-size: 14px;
 		font-weight: 500;
-		color: #333;
+		color: white;
 	}
 
 	.lens-selector select {
 		padding: 5px 10px;
-		border: 1px solid #ccc;
-		border-radius: 4px;
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: 9999px;
 		font-size: 14px;
-		background-color: white;
+		background-color: rgba(255, 255, 255, 0.1);
+		color: white;
 		cursor: pointer;
 		min-width: 120px;
 	}
@@ -663,18 +677,19 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		background: rgba(255, 255, 255, 0.7);
+		background: rgba(31, 41, 55, 0.7);
 		display: flex;
 		justify-content: center;
 		align-items: center;
 		z-index: 1000;
+		border-radius: 1.5rem;
 	}
 
 	.loading-spinner {
-		background: white;
+		background: rgba(31, 41, 55, 0.9);
+		color: white;
 		padding: 1rem;
-		border-radius: 4px;
-		box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+		border-radius: 0.5rem;
 	}
 </style>
 
