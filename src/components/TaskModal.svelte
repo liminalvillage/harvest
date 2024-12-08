@@ -111,24 +111,35 @@
     async function completeQuest() {
         const newStatus = quest.status === 'completed' ? 'ongoing' : 'completed';
         
-        if (newStatus === 'completed' && quest.participants) {
-            for (const participant of quest.participants) {
-                const userData = await holosphere.get(holonId, 'users', participant.id) || {
-                    id: participant.id,
-                    actions: []
-                };
-                
-                await holosphere.put(holonId, 'users', {
-                    ...userData,
-                    id: participant.id,
-                    actions: [...userData.actions, {
-                        type: 'completed',
-                        action: quest.title,
-                        category: quest.category || '',
-                        amount: 1,
-                        timestamp: Date.now()
-                    }]
-                });
+        if (newStatus === 'completed') {
+            // Track initiator action
+            const initiatorData = await holosphere.get(holonId, 'users', quest.initiator.id);
+            await holosphere.put(holonId, 'users', {
+                ...initiatorData,
+                initiated: [...(initiatorData.initiated || []), quest.title],
+                actions: [...(initiatorData.actions || []), {
+                    type: 'initiated',
+                    action: quest.title,
+                    amount: 0,
+                    timestamp: new Date()
+                }]
+            });
+
+            // Track participant completions
+            if (quest.participants) {
+                for (const participant of quest.participants) {
+                    const userData = await holosphere.get(holonId, 'users', participant.id);
+                    await holosphere.put(holonId, 'users', {
+                        ...userData,
+                        completed: [...(userData.completed || []), quest.title],
+                        actions: [...(userData.actions || []), {
+                            type: 'completed',
+                            action: quest.title,
+                            amount: 0,
+                            timestamp: new Date()
+                        }]
+                    });
+                }
             }
         }
         
@@ -178,52 +189,6 @@
         const dropdown = document.querySelector('.user-dropdown');
         if (dropdown && !dropdown.contains(event.target as Node)) {
             showDropdown = false;
-        }
-    }
-
-    async function appreciateParticipant(participantId: string) {
-        const currentUser = await holosphere.get(holonId, 'users', holosphere.user?.id);
-        if (participantId === currentUser?.id) return;
-        
-        const updatedAppreciation = [...(quest.appreciation || [])];
-        if (!updatedAppreciation.includes(participantId)) {
-            updatedAppreciation.push(participantId);
-            
-            const recipientData = await holosphere.get(holonId, 'users', participantId) || {
-                id: participantId,
-                actions: []
-            };
-            
-            await holosphere.put(holonId, 'users', {
-                ...recipientData,
-                id: participantId,
-                actions: [...recipientData.actions, {
-                    type: 'received',
-                    action: quest.title,
-                    category: quest.category || '',
-                    amount: 1,
-                    timestamp: Date.now()
-                }]
-            });
-            
-            const currentUserData = await holosphere.get(holonId, 'users', currentUser.id) || {
-                id: currentUser.id,
-                actions: []
-            };
-            
-            await holosphere.put(holonId, 'users', {
-                ...currentUserData,
-                id: currentUser.id,
-                actions: [...currentUserData.actions, {
-                    type: 'sent',
-                    action: quest.title,
-                    category: quest.category || '',
-                    amount: 1,
-                    timestamp: Date.now()
-                }]
-            });
-            
-            await updateQuest({ appreciation: updatedAppreciation });
         }
     }
 </script>
@@ -286,15 +251,6 @@
                                         <span>{participant.username}</span>
                                     </div>
                                     <div class="flex items-center gap-2">
-                                        <button 
-                                            class="text-gray-400 hover:text-yellow-400 transition-colors"
-                                            on:click={() => appreciateParticipant(participant.id)}
-                                            disabled={quest.appreciation?.includes(participant.id)}
-                                        >
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
-                                            </svg>
-                                        </button>
                                         <button 
                                             class="text-gray-400 hover:text-red-400 transition-colors"
                                             on:click={() => removeParticipant(participant.id)}

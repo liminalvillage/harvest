@@ -6,6 +6,7 @@
     console.log("Logging the environment variables", import.meta.env.MODE);
     let environmentName: string =
         import.meta.env.MODE === "development" ? "HolonsDebug" : "Holons";
+    console.log("Environment name:", environmentName)
 
     const holosphere = new HoloSphere(environmentName);
     setContext('holosphere', holosphere);
