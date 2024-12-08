@@ -9,16 +9,24 @@
 
 
     interface User {
+        id: string;
         first_name: string;
         last_name?: string;
         picture?: string;
+        username: string;
     }
 
     interface UserStore {
         [key: string]: User;
     }
 
-    const holosphere = getContext("holosphere");
+    interface Holosphere {
+        subscribe: (hexId: string, lens: string, callback: (data: any) => void) => { off: () => void };
+        put: (hexId: string, lens: string, data: any) => Promise<void>;
+        delete: (hexId: string, lens: string, id: string) => Promise<void>;
+    }
+
+    const holosphere = getContext("holosphere") as Holosphere;
     
     let userStore: UserStore = {};
 
@@ -177,7 +185,7 @@
                     <div class="flex justify-between items-center">
                         <h3 class="text-lg font-semibold">Participants</h3>
                         <button 
-                            class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-full text-sm transition-colors"
+                            class="px-3 py-1 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm"
                             on:click|stopPropagation={() => showDropdown = !showDropdown}
                         >
                             {showDropdown ? 'Cancel' : '+ Add Participant'}
@@ -188,7 +196,7 @@
                     <div class="space-y-2">
                         {#if quest.participants?.length}
                             {#each quest.participants as participant}
-                                <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg">
+                                <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg border border-gray-600">
                                     <div class="flex items-center gap-2">
                                         <img 
                                             src={`http://gun.holons.io/getavatar?user_id=${participant.id}`}
@@ -198,7 +206,7 @@
                                         <span>{participant.username}</span>
                                     </div>
                                     <button 
-                                        class="text-red-400 hover:text-red-300"
+                                        class="text-gray-400 hover:text-red-400 transition-colors"
                                         on:click={() => removeParticipant(participant.id)}
                                     >
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -214,11 +222,11 @@
 
                     <!-- User Dropdown -->
                     {#if showDropdown}
-                        <div class="bg-gray-700 rounded-lg overflow-hidden mt-2 user-dropdown">
+                        <div class="bg-gray-700 rounded-lg overflow-hidden mt-2 user-dropdown border border-gray-600">
                             {#each Object.entries(userStore) as [userId, user]}
                                 {#if !isUserParticipant(userId)}
                                     <button
-                                        class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2"
+                                        class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2 text-gray-200"
                                         on:click|stopPropagation={() => toggleParticipant(userId)}
                                     >
                                         <img 
@@ -236,7 +244,7 @@
 
                 <div class="flex justify-between pt-6">
                     <button
-                        class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                        class="px-4 py-2 bg-gray-700 text-red-400 rounded-lg hover:bg-gray-600 border border-red-500 transition-colors"
                         on:click={deleteQuest}
                     >
                         Delete Task
@@ -244,13 +252,13 @@
                     
                     <div class="space-x-2">
                         <button
-                            class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                            class="px-4 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors"
                             on:click={closeModal}
                         >
                             Cancel
                         </button>
                         <button
-                            class="px-4 py-2 {quest.status === 'completed' ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'} text-white rounded-lg transition-colors"
+                            class="px-4 py-2 bg-gray-700 {quest.status === 'completed' ? 'text-yellow-400 border-yellow-500 hover:bg-gray-600' : 'text-green-400 border-green-500 hover:bg-gray-600'} rounded-lg border transition-colors"
                             on:click={completeQuest}
                         >
                             {quest.status === 'completed' ? 'Mark Ongoing' : 'Mark Complete'}

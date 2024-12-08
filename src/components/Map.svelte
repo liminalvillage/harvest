@@ -343,14 +343,33 @@
 		goToHex(hexId);
 	}
 
+	// Add debounce utility
+	let moveTimeout: number;
+	function debounce(fn: () => void, delay: number) {
+		clearTimeout(moveTimeout);
+		moveTimeout = setTimeout(fn, delay) as unknown as number;
+	}
+
+	// Update the map move handler to refresh subscriptions
+	function handleMapMove() {
+		// Render hexes immediately for smooth visual feedback
+		if (selectedLens) renderHexes(map, selectedLens);
+		
+		// Debounce the subscription update
+		debounce(() => {
+			if (selectedLens) {
+				subscribeToLens(selectedLens);
+			}
+		}, 300);
+	}
+
 	// Modify the subscription management functions
 	function subscribeToLens(lens: string) {
-		if (holoSubscriptions.has(lens)) {
-			return; // Already subscribed
+		// Only show loading for initial subscription
+		if (!holoSubscriptions.has(lens)) {
+			isLoading = true;
 		}
 
-		isLoading = true;
-		
 		// Get the current map bounds
 		const bounds = map.getBounds();
 		const west = bounds.getWest();
@@ -370,15 +389,23 @@
 			}
 		}
 
-		// Subscribe to each visible hexagon
-		const subscriptions = new Map();
+		// Get existing subscriptions for this lens
+		const existingSubscriptions = holoSubscriptions.get(lens) || new Map();
+		const newSubscriptions = new Map();
 		
+		// Subscribe to each visible hexagon
 		for (const hex of hexagons) {
+			// Reuse existing subscription if available
+			if (existingSubscriptions.has(hex)) {
+				newSubscriptions.set(hex, existingSubscriptions.get(hex));
+				continue;
+			}
+			
 			const subscription = holosphere.subscribe(hex, lens, (data, key) => {
 				try {
 					if (data) {
 						// Update the lensData for this lens
-						lensData[lens].add(hex);
+						lensData[lens as LensType].add(hex);
 						// Trigger a re-render
 						renderHexes(map, selectedLens);
 					}
@@ -387,10 +414,19 @@
 				}
 			});
 			
-			subscriptions.set(hex, subscription);
+			newSubscriptions.set(hex, subscription);
 		}
 		
-		holoSubscriptions.set(lens, subscriptions);
+		// Clean up old subscriptions that are no longer in view
+		for (const [hex, subscription] of existingSubscriptions) {
+			if (!newSubscriptions.has(hex)) {
+				subscription.off();
+			}
+		}
+		
+		holoSubscriptions.set(lens, newSubscriptions);
+		
+		// Turn off loading after subscriptions are set up
 		isLoading = false;
 	}
 
@@ -404,18 +440,6 @@
 			}
 			holoSubscriptions.delete(lens);
 			lensData[lens].clear();
-		}
-	}
-
-	// Update the map move handler to refresh subscriptions
-	function handleMapMove() {
-		if (selectedLens) {
-			// Unsubscribe from current subscriptions
-			unsubscribeFromLens(selectedLens);
-			// Subscribe to new area
-			subscribeToLens(selectedLens);
-			// Render hexes
-			renderHexes(map, selectedLens);
 		}
 	}
 
