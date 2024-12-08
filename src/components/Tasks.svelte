@@ -1,19 +1,37 @@
-<script>
-	// @ts-nocheck
+<script lang="ts">
+	
 	import { onMount, getContext } from "svelte";
-	import { ID } from "../dashboard/store.ts";
+	import { ID } from "../dashboard/store";
 	import { formatDate, formatTime } from "../utils/date.js";
 	import HoloSphere from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
-	import Announcements from "./Announcements.svelte";
 	import TaskModal from "./TaskModal.svelte";
 	import { browser } from "$app/environment";
 	import CanvasView from "./CanvasView.svelte";
 
-	let holosphere = getContext("holosphere");
+	interface Quest {
+		id: string;
+		title: string;
+		description?: string;
+		date?: string;
+		when?: string;
+		status: 'ongoing' | 'completed' | 'scheduled';
+		category?: string;
+		participants: Array<{ id: string; username: string }>;
+		appreciation: string[];
+		location?: string;
+		ends?: string;
+		type: 'task' | 'quest';
+	}
+
+	interface Store {
+		[key: string]: Quest;
+	}
+
+	let holosphere = getContext("holosphere") as HoloSphere;
 
 	$: holonID = $ID;
-	let store = {};
+	let store: Store = {};
 	$: quests = Object.entries(store);
 
 	// Initialize preferences with default values
@@ -41,7 +59,7 @@
 	}
 
 	// Add this function near the top of the <script> section, after the imports
-	function getColorFromCategory(category) {
+	function getColorFromCategory(category: string) {
 		if (!category) return "#E5E7EB"; // Light gray (gray-200) for items without category
 
 		// Simple string hash function
@@ -65,19 +83,19 @@
 		"all",
 		...new Set(
 			Object.values(store)
-				.filter((quest) => quest.category)
-				.map((quest) => quest.category)
+				.filter((quest: any) => quest.category)
+				.map((quest: any) => quest.category)
 		),
 	];
 
 	// Filter quests based on selected category
-	$: filteredQuests = sortedQuests.filter(([_, quest]) => {
+	$: filteredQuests = sortedQuests.filter(([_, quest]: any) => {
 		if (selectedCategory === "all") return true;
 		return quest.category === selectedCategory;
 	});
 
 	// Add this variable to track the selected task
-	let selectedTask = null;
+	let selectedTask: any = null;
 
 
 	onMount(async () => {
@@ -109,26 +127,25 @@
 								: newquest,
 					};
 				} else {
-					const newStore = { ...store };
-					delete newStore[key];
-					store = newStore;
+					const { [key]: _, ...rest } = store;
+					store = rest;
 				}
 			});
 		}
 	}
 
-	function update(holonID) {
+	function update(holonID: string) {
 		// Filter ongoing and scheduled quests
 		const filteredQuests = quests.filter(
 			([_, quest]) =>
 				quest.status === "ongoing" || quest.status === "scheduled"
 		);
-
+		
 		// Sort quests by date field, falling back to when if date doesn't exist
 		const sortedQuests = filteredQuests.sort(([_, a], [__, b]) => {
-			const dateA = a.date ? new Date(a.date) : new Date(a.when);
-			const dateB = b.date ? new Date(b.date) : new Date(b.when);
-			return dateB - dateA; // Newest first
+			const dateA = new Date(a.date || a.when || 0);
+			const dateB = new Date(b.date || b.when || 0);
+			return dateB.getTime() - dateA.getTime(); // Newest first
 		});
 
 		return sortedQuests;
@@ -136,9 +153,9 @@
 
 	// Update the sorting in the template sections
 	$: sortedQuests = quests.sort(([_, a], [__, b]) => {
-		const dateA = a.date ? new Date(a.date) : new Date(a.when);
-		const dateB = b.date ? new Date(b.date) : new Date(b.when);
-		return dateB - dateA;
+		const dateA = new Date(a.date || a.when || 0);
+		const dateB = new Date(b.date || b.when || 0);
+		return dateB.getTime() - dateA.getTime();
 	});
 
 	// Replace the showDropdown click handler with this

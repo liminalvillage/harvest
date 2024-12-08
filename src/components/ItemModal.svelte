@@ -1,7 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount } from 'svelte';
     import { fade, scale } from 'svelte/transition';
-  
+    import HoloSphere from "holosphere";
     // Allow either quest or role to be passed
     export let quest: any = undefined;
     export let role: any = undefined;
@@ -25,13 +25,8 @@
         [key: string]: User;
     }
 
-    interface Holosphere {
-        subscribe: (holonId: string, type: string, callback: (data: any, key: string) => void) => void;
-        put: (holonId: string, type: string, data: any) => Promise<void>;
-        delete: (holonId: string, type: string, itemId: string) => Promise<void>;
-    }
 
-    const holosphere = getContext<Holosphere>("holosphere");
+    const holosphere = getContext("holosphere") as HoloSphere;
     
     let userStore: UserStore = {};
 

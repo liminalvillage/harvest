@@ -4,9 +4,9 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import type { Holosphere } from 'holosphere';
+	import  HoloSphere  from 'holosphere';
 
-	let holosphere: Holosphere = getContext("holosphere")
+	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let currentHolonName: string | undefined;
 

@@ -5,7 +5,7 @@
     import { ID } from "../dashboard/store";
     import SchemaForm from './SchemaForm.svelte';
     import { schemas, type SchemaName } from '../lib/schemas';
-
+    import HoloSphere from "holosphere";
     // Update schema options to use imported schemas
     const schemaOptions = [
         { 
@@ -54,18 +54,11 @@
             schema: 'holons_schema-v0.0.1' as SchemaName
         }
     ];
-
-
-
-    // Add type definition for holosphere at the top of the script
-    interface Holosphere {
-        subscribe: (hexId: string, lens: string, callback: (data: any) => void) => { off: () => void };
-        put: (hexId: string, lens: string, data: any) => Promise<void>;
-    }
+ 
 
     export let selectedLens: string;
     export let hexId: string | null;
-    let holosphere = getContext('holosphere') as Holosphere;
+    let holosphere = getContext('holosphere') as HoloSphere;
     let content: Record<string, any> | null = null;
     let subscription: { off: () => void } | null = null;
     let showForm = false;
