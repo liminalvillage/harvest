@@ -11,7 +11,7 @@
 	let holosphere = getContext('holosphere') as HoloSphere;
 
 	$: holonID = $ID;
-	let store = {};
+	let store: Record<string, Quest> = {};
 	$: quests = Object.entries(store);
 
 	onMount(async () => {
@@ -25,19 +25,28 @@
 		subscribe();
 	});
 
-	$: update(holonID);
-
 	function subscribe() {
 		store = {};
+		console.log('Subscribing to quests for holon:', holonID);
 		holosphere.subscribe(holonID, 'quests', (newquest, key) => {
+			console.log('Received quest update:', { key, newquest });
 			if (newquest) {
+				const parsedQuest = JSON.parse(newquest);
+				console.log('Parsed quest:', parsedQuest);
+				console.log('Is scheduled?', parsedQuest.status === "scheduled");
+				console.log('Is today?', isToday(parsedQuest));
+				
 				// Updates the store with the new value
-				store[key] = JSON.parse(newquest);
+				store[key] = parsedQuest;
+				store = store; // trigger reactivity
+				
+				console.log('Updated store:', store);
+				console.log('Current quests:', Object.entries(store));
 			} else {
 				// A key may contain a null value (if data has been deleted/set to null)
 				// if so, we remove the item from the store
 				delete store[key];
-				store = store;
+				store = store; // trigger reactivity
 			}
 		});
 	}
@@ -67,9 +76,16 @@
 	}
 
 	function isToday(quest) {
+		if (!quest || !quest.when) return false;
+		
 		const today = new Date();
 		const date = new Date(quest.when);
-		return date.getDate() === today.getDate();
+		
+		return (
+			date.getDate() === today.getDate() &&
+			date.getMonth() === today.getMonth() &&
+			date.getFullYear() === today.getFullYear()
+		);
 	}
 
 	function isTomorrow(quest) {
@@ -96,18 +112,6 @@
 		const minutes = Math.floor(diff / 60000);
 		const length = minutes / 30;
 		return length;
-	}
-
-	function update(hex) {
-		// Filter ongoing and scheduled quests
-		const filteredQuests = quests.filter(
-			(quest) => quest.status === 'ongoing' || quest.status === 'scheduled'
-		);
-
-		// Sort quests by when property
-		const sortedQuests = filteredQuests.sort((a, b) => new Date(a.when) - new Date(b.when));
-
-		return sortedQuests;
 	}
 </script>
 
@@ -153,14 +157,12 @@
 			<div class="time start-2330">23:30</div>
 
 			{#each quests as [key, quest]}
-				{#if quest && quest.status === 'scheduled' && isToday(quest)}
+				{#if quest && quest.status === "scheduled" && isToday(quest)}
 					<div
 						id={key}
-						class="event stage-{getDay(quest)} start-{getStartTime(quest)} end-{getEndTime(
-							quest
-						)} length-4"
+						class="event stage-{getDay(quest)} start-{getStartTime(quest)} end-{getEndTime(quest)} length-4"
 					>
-						{quest.title} <span>{quest.location ? quest.location : ''}</span>
+						{quest.title} <span>{quest.location || ''}</span>
 						<span>
 							<p class="mb-0 text-muted">🙋‍♂️ {quest.participants.length}</p>
 							{#each quest.participants as participant}

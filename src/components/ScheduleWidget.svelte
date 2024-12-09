@@ -11,7 +11,7 @@
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	$: holonID = $ID;
-	let store = {};
+	let store: Record<string, Quest> = {};
 	$: quests = Object.entries(store);
 
 	onMount(async () => {
@@ -64,9 +64,16 @@
 	}
 
 	function isToday(quest) {
+		if (!quest || !quest.when) return false;
+		
 		const today = new Date();
 		const date = new Date(quest.when);
-		return date.getDate() === today.getDate();
+		
+		return (
+			date.getDate() === today.getDate() &&
+			date.getMonth() === today.getMonth() &&
+			date.getFullYear() === today.getFullYear()
+		);
 	}
 
 	function isTomorrow(quest) {
@@ -160,7 +167,7 @@
 						)} end-{getEndTime(quest)} length-4"
 					>
 						{quest.title}
-						<span>{quest.location ? quest.location : ""}</span>
+						<span>{quest.location || ''}</span>
 						<span>
 							<p class="mb-0 text-muted">
 								🙋‍♂️ {quest.participants.length}
