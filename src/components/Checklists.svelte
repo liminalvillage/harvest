@@ -23,6 +23,10 @@
     
     $: checklistEntries = Object.entries(checklists);
 
+    let showInput = false;
+    let inputText = "";
+    let isAddingChecklist = false;
+
     onMount(() => {
         ID.subscribe((value) => {
             holonID = value;
@@ -57,15 +61,10 @@
                 checked: !checklist.items[itemIndex].checked
             };
             
-            checklists = {
-                ...checklists,
-                [checklistId]: checklist
-            };
-
-            holosphere?.put(
+            holosphere.put(
                 holonID,
-                `checklists/${checklistId}`,
-                JSON.stringify(checklist)
+                "checklists",
+                checklist
             );
         }
     }
@@ -82,24 +81,82 @@
                 checked: false
             }));
             
-            checklists = {
-                ...checklists,
-                [checklistId]: checklist
-            };
-
-            holosphere?.put(
+            holosphere.put(
                 holonID,
-                `checklists/${checklistId}`,
-                JSON.stringify(checklist)
+                "checklists",
+                checklist
             );
         }
+    }
+
+    function showAddInput(forChecklist: boolean) {
+        isAddingChecklist = forChecklist;
+        inputText = "";
+        showInput = true;
+    }
+
+    function handleAdd() {
+        if (!inputText.trim()) return;
+        
+        if (isAddingChecklist) {
+            const newChecklist = {
+                id: inputText.trim(),
+                items: [],
+                creator: 'Dashboard User',
+                created: new Date().toISOString()
+            };
+            holosphere.put(
+                holonID,
+                "checklists",
+                newChecklist
+            );
+        } else if (selectedChecklist) {
+            const checklist = {...checklists[selectedChecklist]};
+            checklist.items = [
+                ...checklist.items,
+                {
+                    text: inputText.trim(),
+                    checked: false
+                }
+            ];
+            holosphere.put(
+                holonID,
+                "checklists",
+                checklist
+            );
+        }
+        
+        showInput = false;
+        inputText = "";
+    }
+
+    function deleteChecklist(checklistId: string): void {
+        holosphere.delete(
+            holonID,
+            "checklists",
+            checklistId
+        );
     }
 </script>
 
 <div class="flex flex-wrap">
     <div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
         <div class="flex justify-between text-white items-center mb-8">
-            <p class="text-2xl font-bold">Checklists</p>
+            <p class="text-2xl font-bold">
+                {#if selectedChecklist && checklists[selectedChecklist]}
+                    {checklists[selectedChecklist].id}
+                {:else}
+                    Checklists
+                {/if}
+            </p>
+            {#if !selectedChecklist}
+            <button 
+                on:click={() => showAddInput(true)}
+                class="text-white text-2xl font-bold hover:text-gray-300"
+            >
+                +
+            </button>
+            {/if}
         </div>
 
         {#if !selectedChecklist}
@@ -109,11 +166,13 @@
                     <div id={key} class="w-full">
                         <div class="p-1">
                             <div
-                                on:click={() => selectChecklist(key)}
                                 class="p-3 rounded-3xl flex items-center justify-between cursor-pointer bg-gray-300 hover:bg-gray-400"
                             >
-                                <div class="flex items-center space-x-4">
-                                    <div class="text-center">
+                                <div
+                                    on:click={() => selectChecklist(key)}
+                                    class="flex items-center space-x-4 flex-grow"
+                                >
+                                    <div>
                                         <p class="text-base font-bold opacity-70">
                                             {checklist.id}
                                         </p>
@@ -122,48 +181,70 @@
                                         </p>
                                     </div>
                                 </div>
+                                <button 
+                                    on:click|stopPropagation={() => deleteChecklist(key)}
+                                    class="text-gray-600 hover:text-red-600"
+                                >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button>
                             </div>
                         </div>
                     </div>
                 {/each}
             </div>
-        {:else}
-            <!-- Show items of selected checklist -->
-            <div class="mb-4">
+            <div class="flex justify-center mt-4">
                 <button 
-                    on:click={() => selectedChecklist = null}
-                    class="text-white hover:underline"
+                    on:click={() => showAddInput(true)}
+                    class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none"
                 >
-                    ← Back to Checklists
-                </button>
-                <button 
-                    on:click={() => clearChecklist(selectedChecklist)}
-                    class="ml-4 text-white hover:underline"
-                >
-                    Clear All
+                    +
                 </button>
             </div>
+        {:else if checklists[selectedChecklist]}
+            <!-- Show items of selected checklist -->
+            <div class="mb-4">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <button 
+                            on:click={() => selectedChecklist = null}
+                            class="text-white hover:underline"
+                        >
+                            ← Back to Checklists
+                        </button>
+                        <button 
+                            on:click={() => clearChecklist(selectedChecklist)}
+                            class="ml-4 text-white hover:underline"
+                        >
+                            Clear All
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-            {#if checklists[selectedChecklist]}
-                <div class="flex flex-wrap">
-                    {#each checklists[selectedChecklist].items as item, index}
-                        <div class="w-full">
-                            <div class="p-1">
+            <div class="flex flex-wrap">
+                {#each checklists[selectedChecklist].items as item, index}
+                    <div class="w-full">
+                        <div class="p-1">
+                            <div
+                                class="p-3 rounded-3xl flex items-center justify-between cursor-pointer {item.checked
+                                    ? 'bg-green-200 hover:bg-green-300'
+                                    : 'bg-gray-300 hover:bg-gray-400'}"
+                            >
                                 <div
                                     on:click={() => toggleItemStatus(selectedChecklist, index)}
-                                    class="p-3 rounded-3xl flex items-center justify-between cursor-pointer {item.checked
-                                        ? 'bg-green-200 hover:bg-green-300'
-                                        : 'bg-gray-300 hover:bg-gray-400'}"
+                                    class="flex items-center space-x-4 flex-grow"
                                 >
-                                    <div class="flex items-center space-x-4">
-                                        <div>
-                                            <div class="text-center mb-2">
-                                                <p class="text-base font-bold opacity-70">
-                                                    {item.text}
-                                                </p>
-                                            </div>
+                                    <div>
+                                        <div class="mb-2">
+                                            <p class="text-base font-bold opacity-70">
+                                                {item.text}
+                                            </p>
                                         </div>
                                     </div>
+                                </div>
+                                <div class="flex items-center space-x-2">
                                     <input
                                         type="checkbox"
                                         checked={item.checked}
@@ -171,12 +252,68 @@
                                         on:change={() => toggleItemStatus(selectedChecklist, index)}
                                         class="form-checkbox h-4 w-4 text-blue-600"
                                     />
+                                    <button 
+                                        on:click|stopPropagation={() => removeItem(selectedChecklist, index)}
+                                        class="text-gray-600 hover:text-red-600"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
                         </div>
-                    {/each}
-                </div>
-            {/if}
+                    </div>
+                {/each}
+            </div>
+
+            <div class="flex justify-center mt-4">
+                <button 
+                    on:click={() => showAddInput(false)}
+                    class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none"
+                >
+                    +
+                </button>
+            </div>
         {/if}
     </div>
 </div>
+
+{#if showInput}
+    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
+            <h3 class="text-white text-lg font-bold mb-4">
+                {isAddingChecklist ? 'Add New Checklist' : 'Add New Item'}
+            </h3>
+            <div class="flex">
+                <input
+                    type="text"
+                    bind:value={inputText}
+                    placeholder={isAddingChecklist ? "Checklist name..." : "Item text..."}
+                    class="w-full px-3 py-2 text-sm rounded-l-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
+                    on:keydown={(e) => {
+                        if (e.key === 'Enter') {
+                            handleAdd();
+                        } else if (e.key === 'Escape') {
+                            showInput = false;
+                        }
+                    }}
+                    autofocus
+                />
+                <button
+                    on:click={handleAdd}
+                    class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-r-md"
+                >
+                    Add
+                </button>
+            </div>
+            <button
+                on:click={() => showInput = false}
+                class="mt-4 text-gray-400 hover:text-white text-sm"
+            >
+                Cancel
+            </button>
+        </div>
+    </div>
+{/if}
+
