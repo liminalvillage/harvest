@@ -9,6 +9,7 @@
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let currentHolonName: string | undefined;
+	let isLoadingName = false;
 
 	interface HolonInfo {
 		id: string;
@@ -67,39 +68,50 @@
 		}
 	});
 
-	// Reactive statement to update route when ID changes
+	// Move the name fetching logic into a separate function
+	async function fetchHolonName(id: string) {
+		isLoadingName = true;
+		currentHolonName = undefined;
+		
+		try {
+			const settings = await holosphere.getAll(id, 'settings');
+			if (settings && settings[0] && settings[0].name) {
+				currentHolonName = settings[0].name;
+			} else {
+				currentHolonName = undefined;
+			}
+		} catch (error) {
+			console.error(`Error fetching name for holon ${id}:`, error);
+			currentHolonName = undefined;
+		} finally {
+			isLoadingName = false;
+		}
+	}
+
+	// Update the reactive statement
 	$: if ($ID) {
 		showToast = false;
 		holonID = $ID;
 		updateRoute($ID);
 		
-		// Fetch name for current holon
-		holosphere.getAll($ID, 'settings').then((settings: any) => {
-			if (settings && settings[0] && settings[0].name) {
-				currentHolonName = settings[0].name;
-			}
-		}).catch((error: Error) => {
-			console.error(`Error fetching name for holon ${$ID}:`, error);
-			currentHolonName = undefined;
-		});
+		// Fetch the name whenever ID changes
+		fetchHolonName($ID);
 		
-		// Add to previous holons if it doesn't start with 8 (holosphere holons start with 8)
+		// Add to previous holons if it doesn't start with 8
 		if (!$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
 			const newHolon: HolonInfo = { id: $ID };
-			// Add the holon immediately
 			previousHolons = [...previousHolons, newHolon];
 			localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 			
-			// Then try to fetch and update its name
+			// Then try to fetch and update its name in the previous holons list
 			holosphere.getAll($ID, 'settings').then((settings: any) => {
 				if (settings && settings[0] && settings[0].name) {
-					// Update the holon's name in the array
-					previousHolons = previousHolons.map(holon => 
-						holon.id === $ID 
-							? { ...holon, name: settings[0].name }
-							: holon
-					);
-					localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+						previousHolons = previousHolons.map(holon => 
+							holon.id === $ID 
+								? { ...holon, name: settings[0].name }
+								: holon
+						);
+						localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 				}
 			}).catch((error: Error) => {
 				console.error(`Error fetching name for holon ${$ID}:`, error);
@@ -260,7 +272,12 @@
 				</button>
 			</div>
 			<div class="container flex left-0 relative w-3/4">
-				{#if currentHolonName}
+				{#if isLoadingName}
+					<div class="flex items-center mr-4 flex-shrink-0">
+						<div class="w-5 h-5 border-2 border-white rounded-full mr-2 opacity-90 animate-spin"></div>
+						<span class="text-gray-300 text-lg">Loading...</span>
+					</div>
+				{:else if currentHolonName}
 					<div class="flex items-center mr-4 flex-shrink-0">
 						<div class="w-5 h-5 border-2 border-white rounded-full mr-2 opacity-90"></div>
 						<span class="text-gray-300 text-lg whitespace-nowrap">

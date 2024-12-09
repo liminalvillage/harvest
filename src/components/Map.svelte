@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy, getContext} from "svelte";
+	import { onMount, onDestroy, getContext, createEventDispatcher} from "svelte";
 	import { browser } from "$app/environment";
 	import mapboxgl from "mapbox-gl";
 	import "mapbox-gl/dist/mapbox-gl.css";
@@ -42,6 +42,8 @@
 		{ value: 'people', label: 'People' },
 		{ value: 'holons', label: 'Holons' }
 	];
+
+	const dispatch = createEventDispatcher();
 
 	function getResolution(zoom: number): number {
 		const zoomToRes = [
@@ -339,6 +341,9 @@
 				coordinates: [normalizedBoundary],
 			},
 		});
+		
+		dispatch('holonChange', { id: hexId });
+		
 		ID.set(hexId);
 		goToHex(hexId);
 	}
@@ -597,6 +602,7 @@
 	// Subscribe to changes in the ID store
 	$: if (map && $ID && $ID !== hexId) {
 		hexId = $ID;
+		dispatch('holonChange', { id: $ID });
 		updateSelectedHexagon($ID);
 	}
 
@@ -659,6 +665,7 @@
     <MapSidebar 
         {selectedLens}
         {hexId}
+        on:holonChange
     />
 </div>
 

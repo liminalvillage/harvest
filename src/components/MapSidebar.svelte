@@ -6,6 +6,9 @@
     import SchemaForm from './SchemaForm.svelte';
     import { schemas, type SchemaName } from '../lib/schemas';
     import HoloSphere from "holosphere";
+    import { createEventDispatcher } from 'svelte';
+    const dispatch = createEventDispatcher();
+
     // Update schema options to use imported schemas
     const schemaOptions = [
         { 
@@ -65,45 +68,64 @@
     let formData: Record<string, any> = {};
     let viewingItem: Record<string, any> | null = null;
 
-    $: if (hexId && selectedLens) {
-        unsubscribe();
-        subscribe();
+    // Reset form state when hexId changes
+    $: if (hexId) {
+        console.log('Hexagon changed to:', hexId);
+        showForm = false;
+        formData = {};
+        viewingItem = null;
+        // Re-subscribe when hexId changes
+        if (selectedLens) {
+            unsubscribe();
+            subscribe();
+        }
     }
 
     function subscribe() {
         if (!hexId || !selectedLens) return;
-
-        subscription = holosphere.subscribe(hexId, selectedLens, (data: any) => {
-            if (data) {
-                content = typeof data === 'string' ? JSON.parse(data) : data;
-            } else {
-                content = null;
+        
+        try {
+            const off = holosphere.subscribe(hexId, selectedLens, (data: any) => {
+                console.log('Received data:', data);
+                if (data) {
+                    content = typeof data === 'string' ? JSON.parse(data) : data;
+                } else {
+                    content = null;
+                }
+            });
+            
+            if (typeof off === 'function') {
+                subscription = { off };
             }
-        });
+        } catch (error) {
+            console.error('Error subscribing:', error);
+            content = null;
+        }
     }
 
     function unsubscribe() {
-        if (subscription) {
-            subscription.off();
-            subscription = null;
+        try {
+            if (subscription?.off) {
+                subscription.off();
+                subscription = null;
+                content = null;
+            }
+        } catch (error) {
+            console.error('Error unsubscribing:', error);
         }
-        content = null;
     }
 
-    onDestroy(unsubscribe);
-
-
-    
-
     function toggleForm() {
+        console.log('Toggling form, current state:', showForm);
         showForm = !showForm;
         if (!showForm) {
             formData = {};
+            viewingItem = null;
         }
     }
 
     async function handleFormSubmit(event: CustomEvent) {
-        const formData = event.detail;
+        const newFormData = event.detail;
         
         if (!hexId) {
             console.error('No hexagon selected');
@@ -111,20 +133,11 @@
         }
 
         try {
-            // ID is handled by the form component
-            const updatedContent = {
-                ...formData
-                
-            };
-
-            // Store the updated content
+            const updatedContent = { ...newFormData };
             await holosphere.put(hexId, selectedLens, updatedContent);
             
-            // Update local content
-            content = updatedContent;
-            
-            // Hide form after successful submission
             showForm = false;
+            formData = {};
             
             console.log('Successfully stored new entry:', updatedContent);
         } catch (error) {
@@ -166,6 +179,10 @@
         viewingItem = null;
         showForm = false;
     }
+
+    onDestroy(() => {
+        unsubscribe();
+    });
 
 </script>
 
