@@ -137,6 +137,19 @@
             checklistId
         );
     }
+
+    function removeItem(checklistId: string, itemIndex: number): void {
+        if (checklistId && checklists[checklistId]) {
+            const checklist = {...checklists[checklistId]};
+            checklist.items = checklist.items.filter((_, index) => index !== itemIndex);
+            
+            holosphere.put(
+                holonID,
+                "checklists",
+                checklist
+            );
+        }
+    }
 </script>
 
 <div class="flex flex-wrap">
@@ -149,14 +162,6 @@
                     Checklists
                 {/if}
             </p>
-            {#if !selectedChecklist}
-            <button 
-                on:click={() => showAddInput(true)}
-                class="text-white text-2xl font-bold hover:text-gray-300"
-            >
-                +
-            </button>
-            {/if}
         </div>
 
         {#if !selectedChecklist}
@@ -257,7 +262,12 @@
                                         class="text-gray-600 hover:text-red-600"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                            <path 
+                                                stroke-linecap="round" 
+                                                stroke-linejoin="round" 
+                                                stroke-width="2" 
+                                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                            />
                                         </svg>
                                     </button>
                                 </div>
@@ -280,11 +290,24 @@
 </div>
 
 {#if showInput}
-    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+    <div 
+        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+        on:click|self={() => showInput = false}
+    >
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
-            <h3 class="text-white text-lg font-bold mb-4">
-                {isAddingChecklist ? 'Add New Checklist' : 'Add New Item'}
-            </h3>
+            <div class="relative">
+                <button
+                    on:click={() => showInput = false}
+                    class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+                <h3 class="text-white text-lg font-bold mb-4">
+                    {isAddingChecklist ? 'Add New Checklist' : 'Add New Item'}
+                </h3>
+            </div>
             <div class="flex">
                 <input
                     type="text"
@@ -302,17 +325,11 @@
                 />
                 <button
                     on:click={handleAdd}
-                    class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-r-md"
+                    class="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-r-md"
                 >
                     Add
                 </button>
             </div>
-            <button
-                on:click={() => showInput = false}
-                class="mt-4 text-gray-400 hover:text-white text-sm"
-            >
-                Cancel
-            </button>
         </div>
     </div>
 {/if}

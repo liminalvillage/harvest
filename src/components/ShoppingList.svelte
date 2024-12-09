@@ -18,6 +18,9 @@
     let newItemText = "";
     $: shoppingItems = Object.entries(store);
 
+    let showInput = false;
+    let inputText = "";
+
     onMount(() => {
         ID.subscribe((value) => {
             holonID = value;
@@ -55,25 +58,30 @@
         }
     }
 
-    function addItem(): void {
-        if (!newItemText.trim()) return;
+    function showAddInput() {
+        inputText = "";
+        showInput = true;
+    }
+
+    function handleAdd() {
+        if (!inputText.trim()) return;
         
         const newItem: ShoppingItem = {
-            id: newItemText.trim(),
+            id: inputText.trim(),
             quantity: 1,
             done: false,
             from: 'Dashboard User',
             addedOn: new Date().toISOString()
         };
 
-        const key = `item-${Date.now()}`;
         holosphere.put(
             holonID,
-            `shopping`,
+            "shopping",
             newItem
         );
         
-        newItemText = "";
+        showInput = false;
+        inputText = "";
     }
 
     function removeChecked(): void {
@@ -119,22 +127,7 @@
         </div>
 
         <div class="mb-4">
-            <div class="flex justify-between items-center">
-                <div class="flex">
-                    <input
-                        type="text"
-                        bind:value={newItemText}
-                        placeholder="Add item..."
-                        class="w-48 px-2 py-1 text-sm rounded-l-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
-                        on:keydown={(e) => e.key === 'Enter' && addItem()}
-                    />
-                    <button
-                        on:click={addItem}
-                        class="bg-gray-600 hover:bg-gray-500 text-white text-sm px-2 py-1 rounded-r-md"
-                    >
-                        Add
-                    </button>
-                </div>
+            <div class="flex justify-end items-center">
                 <button 
                     on:click={removeChecked}
                     class="text-white hover:underline flex items-center"
@@ -195,5 +188,59 @@
                 </div>
             {/each}
         </div>
+
+        <div class="flex justify-center mt-4">
+            <button 
+                on:click={showAddInput}
+                class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none"
+            >
+                +
+            </button>
+        </div>
     </div>
 </div>
+
+{#if showInput}
+    <div 
+        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+        on:click|self={() => showInput = false}
+    >
+        <div class="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
+            <div class="relative">
+                <button
+                    on:click={() => showInput = false}
+                    class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+                <h3 class="text-white text-lg font-bold mb-4">
+                    Add New Item
+                </h3>
+            </div>
+            <div class="flex">
+                <input
+                    type="text"
+                    bind:value={inputText}
+                    placeholder="Item name..."
+                    class="w-full px-3 py-2 text-sm rounded-l-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
+                    on:keydown={(e) => {
+                        if (e.key === 'Enter') {
+                            handleAdd();
+                        } else if (e.key === 'Escape') {
+                            showInput = false;
+                        }
+                    }}
+                    autofocus
+                />
+                <button
+                    on:click={handleAdd}
+                    class="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-r-md"
+                >
+                    Add
+                </button>
+            </div>
+        </div>
+    </div>
+{/if}
