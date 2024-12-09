@@ -3,9 +3,10 @@
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
     import Announcements from "./Announcements.svelte";
+    import HoloSphere from 'holosphere';
 
     // Initialize holosphere
-    const holosphere = getContext("holosphere");
+    const holosphere = getContext("holosphere") as HoloSphere;
     let holonID: string = $page.params.id;
     let unsubscribe: () => void;
 

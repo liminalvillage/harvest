@@ -11,7 +11,7 @@
 	import HoloSphere from 'holosphere';
 	import MapSidebar from "./MapSidebar.svelte";
 
-	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+	let holosphere = getContext('holosphere') as HoloSphere 
 
 	let mapContainer: HTMLElement;
 	let map: mapboxgl.Map;
@@ -659,7 +659,6 @@
     <MapSidebar 
         {selectedLens}
         {hexId}
-        {holosphere}
     />
 </div>
 

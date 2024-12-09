@@ -6,7 +6,6 @@
 	import { data } from './sidebar/data';
 	import { onDestroy, onMount, setContext } from 'svelte';
 	import { autoTransitionEnabled } from './store';
-	import HoloSphere from "holosphere";
 
 	import TopBar from './TopBar.svelte';
 	import Overlay from './Overlay.svelte';

@@ -76,7 +76,6 @@
 		// Fetch name for current holon
 		holosphere.getAll($ID, 'settings').then((settings: any) => {
 			if (settings && settings[0] && settings[0].name) {
-				console.log("Settings", settings);
 				currentHolonName = settings[0].name;
 			}
 		}).catch((error: Error) => {
@@ -87,17 +86,24 @@
 		// Add to previous holons if it doesn't start with 8 (holosphere holons start with 8)
 		if (!$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
 			const newHolon: HolonInfo = { id: $ID };
-			// Fetch the name for the new holon
-			holosphere.get($ID, 'settings').then((settings: any) => {
+			// Add the holon immediately
+			previousHolons = [...previousHolons, newHolon];
+			localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+			
+			// Then try to fetch and update its name
+			holosphere.getAll($ID, 'settings').then((settings: any) => {
 				if (settings && settings[0] && settings[0].name) {
-					newHolon.name = settings[0].name;
+					// Update the holon's name in the array
+					previousHolons = previousHolons.map(holon => 
+						holon.id === $ID 
+							? { ...holon, name: settings[0].name }
+							: holon
+					);
 					localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 				}
 			}).catch((error: Error) => {
 				console.error(`Error fetching name for holon ${$ID}:`, error);
 			});
-			previousHolons = [...previousHolons, newHolon];
-			localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 		}
 	}
 

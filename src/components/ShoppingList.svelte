@@ -5,7 +5,7 @@
     import HoloSphere from "holosphere";
     import type { ShoppingItem } from "../types/shoppingItem";
 
-    const holosphere = getContext("holosphere");
+    const holosphere = getContext("holosphere") as HoloSphere;
 
     $: holonID = $ID;
     let store: Record<string, ShoppingItem> = {};

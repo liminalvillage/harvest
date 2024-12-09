@@ -26,7 +26,6 @@
     let userStore: UserStore = {};
 
     onMount(() => {
-        console.log('TaskModal mounted - holosphere:', holosphere);
         document.addEventListener('click', handleClickOutside);
         
         if (holosphere) {

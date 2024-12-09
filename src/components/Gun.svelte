@@ -1,5 +1,4 @@
-<script>
-	// @ts-nocheck
+<script lang="ts">
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store.ts";
 	import HoloSphere from "holosphere";
@@ -14,7 +13,7 @@
 	$: holonID = $ID;
 	$: entries = Object.entries(store);
 
-	let holosphere = getContext("holosphere");
+	let holosphere = getContext("holosphere") as HoloSphere;
 
 	onMount(() => {
 		ID.subscribe((value) => {

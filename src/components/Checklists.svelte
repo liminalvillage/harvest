@@ -15,7 +15,7 @@
         created?: Date;
     }
 
-    const holosphere = getContext<HoloSphere>("holosphere");
+    const holosphere = getContext("holosphere") as HoloSphere;
 
     $: holonID = $ID;
     let checklists: Record<string, Checklist> = {};

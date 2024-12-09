@@ -29,18 +29,18 @@
 
     let store: Record<string, User> = {};
     $: holonID = $ID;
-    let holosphere = getContext("holosphere");
+    let holosphere = getContext("holosphere") as HoloSphere;
 
     // Default equation values
     const equation: Equation = {
         initiated: 1,
         completed: 1,
         sent: 1,
-        received: 1, //,
-        // hours: 1,
-        // collaboration: 2,
-        // wants: 0.5,
-        // offers: 0.5
+        received: 1,
+        hours: 1,
+        collaboration: 2,
+        wants: 0.5,
+        offers: 0.5
     };
 
     onMount(() => {

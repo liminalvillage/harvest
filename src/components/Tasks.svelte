@@ -474,7 +474,6 @@
 		{:else if viewMode === "canvas"}
 			<CanvasView
 				{filteredQuests}
-				{holosphere}
 				{holonID}
 				{showCompleted}
 				on:taskClick={handleTaskClick}

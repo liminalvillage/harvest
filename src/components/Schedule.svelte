@@ -1,5 +1,5 @@
-<script>
-	// @ts-nocheck
+<script lang="ts">
+
 	import { onMount, getContext } from 'svelte';
 	import { ID } from '../dashboard/store';
 	
@@ -8,8 +8,7 @@
 	import { formatDate, formatTime } from '../utils/date';
 
 	import HoloSphere from 'holosphere';
-
-	let holosphere = getContext('holosphere') || new HoloSphere('Holons');
+	let holosphere = getContext('holosphere') as HoloSphere;
 
 	$: holonID = $ID;
 	let store = {};

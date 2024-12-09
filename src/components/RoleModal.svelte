@@ -1,11 +1,5 @@
 <script lang="ts">
-    console.log('RoleModal props:', {
-        role,
-        roleId,
-        userStore,
-        holosphere,
-        holonId
-    });
+
 
     $: if (role && !role.participants) {
         role.participants = [];

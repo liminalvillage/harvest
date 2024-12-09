@@ -1,8 +1,9 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount } from 'svelte';
     import { formatDate, formatTime } from '../utils/date.js';
+    import HoloSphere from 'holosphere';
 
-    const holosphere = getContext("holosphere");
+    const holosphere = getContext("holosphere") as HoloSphere;
 
     export let filteredQuests: [string, any][];
     export let holonID: string;

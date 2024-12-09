@@ -1,22 +1,28 @@
-<script>
-	// @ts-nocheck
+<script lang="ts">
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";;
-	import Announcements from "./Announcements.svelte";
+	import HoloSphere from 'holosphere';
 
-	let holosphere = getContext("holosphere");
+	let holosphere = getContext("holosphere") as HoloSphere;
 
 	onMount(() => {
 		ID.subscribe((value) => {
-			holonID = value;
 			subscribeToAnnouncements();
 		});
 	});
 
-	/**
-	 * @type {string | any[]}
-	 */
-	let store = {};
+	interface Announcement {
+		user: {
+			id: string;
+			first_name?: string;
+			last_name?: string;
+			username?: string;
+		};
+		content: string;
+		date: string;
+	}
+
+	let store: Record<string, Announcement> = {};
 	$: holonID = $ID;
 	$: announcements = Object.entries(store);
 
@@ -49,8 +55,7 @@
 					class="border-t solid border-gray-700 p-4 flex 2xl:items-start w-full hover:bg-gray-700"
 				>
 					<img
-						src="http://gun.holons.io/getavatar?user_id={announcement
-							.user.id}"
+						src="http://gun.holons.io/getavatar?user_id={announcement.user?.id}"
 						alt="profile"
 						class="object-cover w-10 h-10 rounded-full"
 					/>
@@ -60,11 +65,11 @@
 								class="text-white
                             font-medium"
 							>
-								{announcement.user.first_name
+								{announcement.user?.first_name
 									? announcement.user.first_name
-									: announcement.user.username}
-								{announcement.user.last_name
-									? announcement.user.last_name
+									: announcement.user?.username}
+								{announcement.user?.last_name
+									? announcement.user?.last_name
 									: ""}
 							</div>
 							<div

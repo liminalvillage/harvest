@@ -1,19 +1,14 @@
-<script>
-	// @ts-nocheck
+<script lang="ts">
+	
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
-
-	import Announcements from "./Announcements.svelte";
 
 	import { formatDate, formatTime } from "../utils/date";
 
 	import HoloSphere from "holosphere";
-	import {
-		get_all_dirty_from_scope,
-		get_slot_changes,
-	} from "svelte/internal";
+	
 
-	let holosphere = getContext("holosphere");
+	let holosphere = getContext("holosphere") as HoloSphere;
 
 	$: holonID = $ID;
 	let store = {};

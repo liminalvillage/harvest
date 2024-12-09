@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
 	// @ts-nocheck
 
 	import { onMount, getContext } from "svelte";
@@ -17,7 +17,7 @@
 	$: holonID = $ID;
 
 	$: roles = Object.entries(store || {});
-	let holosphere = getContext("holosphere");
+	let holosphere = getContext("holosphere") as HoloSphere;
 
 	// Initialize preferences with default values
 	let isListView = false;

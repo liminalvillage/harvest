@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
 	// @ts-nocheck
 
 	import { onMount, getContext } from "svelte";
@@ -16,7 +16,7 @@
 	$: offers = Object.values(store).filter((item) => item.type === "offer");
 	$: needs = Object.values(store).filter((item) => item.type === "request");
 
-	let holosphere = getContext("holosphere");
+	let holosphere = getContext("holosphere") as HoloSphere;
 
 	onMount(() => {
 		ID.subscribe((value) => {

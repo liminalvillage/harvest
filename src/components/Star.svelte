@@ -1,4 +1,4 @@
-<script>
+<script lang="ts">
 	// @ts-nocheck
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store.ts";
@@ -10,7 +10,7 @@
 	import { browser } from "$app/environment";
 	import CanvasView from "./CanvasView.svelte";
 
-	let holosphere = getContext("holosphere");
+	let holosphere = getContext("holosphere") as HoloSphere;
 
 	$: holonID = $ID;
 	let store = {};
