@@ -243,7 +243,7 @@
                                 <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg border border-gray-600">
                                     <div class="flex items-center gap-2">
                                         <img 
-                                            src={`http://gun.holons.io/getavatar?user_id=${participant.id}`}
+                                            src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
                                             alt={participant.username}
                                             class="w-8 h-8 rounded-full"
                                         />
@@ -276,7 +276,7 @@
                                         on:click|stopPropagation={() => toggleParticipant(userId)}
                                     >
                                         <img 
-                                            src={`http://gun.holons.io/getavatar?user_id=${userId}`}
+                                            src={`https://gun.holons.io/getavatar?user_id=${userId}`}
                                             alt={user.first_name}
                                             class="w-6 h-6 rounded-full"
                                         />
