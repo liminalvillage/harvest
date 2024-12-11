@@ -25,6 +25,10 @@
     
     let userStore: UserStore = {};
 
+    let showDatePicker = false;
+    let selectedDate = quest.when ? new Date(quest.when) : new Date();
+    let selectedTime = quest.when ? new Date(quest.when).toTimeString().slice(0,5) : '12:00';
+
     onMount(() => {
         document.addEventListener('click', handleClickOutside);
         
@@ -92,19 +96,13 @@
         await updateQuest({ participants });
     }
 
-    async function addParticipant(userId: string) {
-        const user = userStore[userId];
-        const participants = [...(quest.participants || [])];
-        
-        if (!participants.some((p: { id: string }) => p.id === userId)) {
-            participants.push(user);
-            await updateQuest({ participants });
-        }
-        showAddParticipants = false;
-    }
-
     function isUserParticipant(userId: string) {
-        return quest.participants?.some((p: { id: string }) => p.id === userId);
+        const user = userStore[userId];
+        if (!user) return false;
+        
+        return quest.participants?.some((p: { username: string }) => 
+            p.username === user.username
+        ) ?? false;
     }
 
     async function completeQuest() {
@@ -146,40 +144,47 @@
     }
 
     async function toggleParticipant(userId: string) {
-        const participants = [...(quest.participants || [])];
-        const participantIndex = participants.findIndex(p => p.id === userId);
-
-        if (participantIndex >= 0) {
-            participants.splice(participantIndex, 1);
-        } else {
-            const user = userStore[userId];
-            if (user) {
-                participants.push({
-                    id: user.id,
-                    first_name: user.first_name,
-                    last_name: user.last_name,
-                    username: user.username
-                });
-
-                const userData = await holosphere.get(holonId, 'users', user.id) || {
-                    id: user.id,
-                    actions: []
-                };
-                
-                await holosphere.put(holonId, 'users', {
-                    ...userData,
-                    id: user.id,
-                    actions: [...userData.actions, {
-                        type: 'joined',
-                        action: quest.title,
-                        category: quest.category || '',
-                        amount: 1,
-                        timestamp: Date.now()
-                    }]
-                });
-            }
+        const user = userStore[userId];
+        if (!user) {
+            console.error('User not found:', userId);
+            return;
         }
 
+        // Check if user is already a participant by username
+        if (quest.participants?.some(p => p.username === user.username)) {
+            showDropdown = false;
+            return;
+        }
+
+        // Create new participant object
+        const newParticipant = {
+            id: user.id,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            username: user.username
+        };
+
+        const participants = [...(quest.participants || []), newParticipant];
+
+        // Update user data
+        const userData = await holosphere.get(holonId, 'users', user.id) || {
+            id: user.id,
+            actions: []
+        };
+        
+        await holosphere.put(holonId, 'users', {
+            ...userData,
+            id: user.id,
+            actions: [...userData.actions, {
+                type: 'joined',
+                action: quest.title,
+                category: quest.category || '',
+                amount: 1,
+                timestamp: Date.now()
+            }]
+        });
+
+        // Update quest with new participants
         await updateQuest({ participants });
         showDropdown = false;
     }
@@ -189,6 +194,18 @@
         if (dropdown && !dropdown.contains(event.target as Node)) {
             showDropdown = false;
         }
+    }
+
+    async function scheduleTask() {
+        const dateTime = new Date(selectedDate);
+        const [hours, minutes] = selectedTime.split(':');
+        dateTime.setHours(parseInt(hours), parseInt(minutes));
+        
+        await updateQuest({ 
+            when: dateTime.toISOString(),
+            status: 'scheduled'
+        });
+        showDatePicker = false;
     }
 </script>
 
@@ -207,8 +224,19 @@
         aria-labelledby="modal-title"
     >
         <div class="p-6">
+            <!-- Header -->
             <div class="flex justify-between items-start mb-6">
-                <h2 id="modal-title" class="text-2xl font-bold text-white">{quest.title}</h2>
+                <div>
+                    <h2 id="modal-title" class="text-2xl font-bold text-white">{quest.title}</h2>
+                    {#if quest.category}
+                        <span class="inline-flex items-center mt-2 text-sm text-gray-400">
+                            <svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"/>
+                            </svg>
+                            {quest.category}
+                        </span>
+                    {/if}
+                </div>
                 <button 
                     class="text-gray-400 hover:text-white"
                     on:click={closeModal}
@@ -221,15 +249,102 @@
             </div>
 
             <div class="space-y-6 text-gray-300">
+                <!-- Description -->
                 {#if quest.description}
-                    <p class="text-sm">{quest.description}</p>
+                    <div class="bg-gray-700/50 p-4 rounded-lg">
+                        <p class="text-sm">{quest.description}</p>
+                    </div>
                 {/if}
 
-                <div class="space-y-4">
+                <!-- Schedule Section -->
+                <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">
                     <div class="flex justify-between items-center">
-                        <h3 class="text-lg font-semibold">Participants</h3>
+                        <h3 class="text-lg font-semibold flex items-center gap-2">
+                            <svg class="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                                <line x1="16" y1="2" x2="16" y2="6" />
+                                <line x1="8" y1="2" x2="8" y2="6" />
+                                <line x1="3" y1="10" x2="21" y2="10" />
+                            </svg>
+                            Schedule
+                        </h3>
                         <button 
-                            class="px-3 py-1 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm"
+                            class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm"
+                            on:click={() => showDatePicker = !showDatePicker}
+                        >
+                            {quest.when ? 'Reschedule' : 'Schedule Task'}
+                        </button>
+                    </div>
+
+                    {#if showDatePicker}
+                        <div class="bg-gray-700 p-4 rounded-lg border border-gray-600 space-y-4">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="space-y-2">
+                                    <label class="block text-sm font-medium text-gray-300">Date</label>
+                                    <input 
+                                        type="date" 
+                                        class="w-full bg-gray-800 text-white rounded-lg border border-gray-600 p-2"
+                                        bind:value={selectedDate}
+                                    />
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="block text-sm font-medium text-gray-300">Time</label>
+                                    <input 
+                                        type="time" 
+                                        class="w-full bg-gray-800 text-white rounded-lg border border-gray-600 p-2"
+                                        bind:value={selectedTime}
+                                    />
+                                </div>
+                            </div>
+                            <div class="flex justify-end space-x-2">
+                                <button
+                                    class="px-3 py-1.5 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm"
+                                    on:click={() => showDatePicker = false}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    class="px-3 py-1.5 bg-gray-800 text-blue-400 rounded-lg hover:bg-gray-600 border border-blue-500 transition-colors text-sm"
+                                    on:click={scheduleTask}
+                                >
+                                    Save Schedule
+                                </button>
+                            </div>
+                        </div>
+                    {/if}
+
+                    {#if quest.when}
+                        <div class="bg-gray-700/50 p-3 rounded-lg border border-gray-600/50">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-gray-300">
+                                        {new Date(quest.when).toLocaleDateString()} at {new Date(quest.when).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                </div>
+                                <button 
+                                    class="text-gray-400 hover:text-red-400 transition-colors"
+                                    on:click={() => updateQuest({ when: null, status: 'ongoing' })}
+                                >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    {/if}
+                </div>
+
+                <!-- Participants Section -->
+                <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-lg font-semibold flex items-center gap-2">
+                            <svg class="w-5 h-5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
+                            Participants
+                        </h3>
+                        <button 
+                            class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm"
                             on:click|stopPropagation={() => showDropdown = !showDropdown}
                         >
                             {showDropdown ? 'Cancel' : '+ Add Participant'}
@@ -240,25 +355,23 @@
                     <div class="space-y-2">
                         {#if quest.participants?.length}
                             {#each quest.participants as participant}
-                                <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg border border-gray-600">
+                                <div class="flex items-center justify-between bg-gray-700/50 p-2 rounded-lg border border-gray-600/50">
                                     <div class="flex items-center gap-2">
                                         <img 
                                             src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
-                                            alt={participant.username}
+                                            alt={`${participant.first_name} ${participant.last_name || ''}`}
                                             class="w-8 h-8 rounded-full"
                                         />
-                                        <span>{participant.username}</span>
+                                        <span>{participant.first_name} {participant.last_name || ''}</span>
                                     </div>
-                                    <div class="flex items-center gap-2">
-                                        <button 
-                                            class="text-gray-400 hover:text-red-400 transition-colors"
-                                            on:click={() => removeParticipant(participant.id)}
-                                        >
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                            </svg>
-                                        </button>
-                                    </div>
+                                    <button 
+                                        class="text-gray-400 hover:text-red-400 transition-colors"
+                                        on:click={() => removeParticipant(participant.id)}
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
                                 </div>
                             {/each}
                         {:else}
@@ -269,47 +382,43 @@
                     <!-- User Dropdown -->
                     {#if showDropdown}
                         <div class="bg-gray-700 rounded-lg overflow-hidden mt-2 user-dropdown border border-gray-600">
-                            {#each Object.entries(userStore) as [userId, user]}
-                                {#if !isUserParticipant(userId)}
-                                    <button
-                                        class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2 text-gray-200"
-                                        on:click|stopPropagation={() => toggleParticipant(userId)}
-                                    >
-                                        <img 
-                                            src={`https://gun.holons.io/getavatar?user_id=${userId}`}
-                                            alt={user.first_name}
-                                            class="w-6 h-6 rounded-full"
-                                        />
-                                        <span>{user.first_name} {user.last_name || ''}</span>
-                                    </button>
-                                {/if}
+                            {#each Object.entries(userStore).filter(([userId]) => !isUserParticipant(userId)) as [userId, user]}
+                                <button
+                                    class="w-full text-left px-4 py-2 transition-colors flex items-center gap-2 hover:bg-gray-600 text-gray-200"
+                                    on:click|stopPropagation={() => toggleParticipant(userId)}
+                                >
+                                    <img 
+                                        src={`https://gun.holons.io/getavatar?user_id=${userId}`}
+                                        alt={user.first_name}
+                                        class="w-6 h-6 rounded-full"
+                                    />
+                                    <span>{user.first_name} {user.last_name || ''}</span>
+                                </button>
                             {/each}
+                            {#if Object.entries(userStore).filter(([userId]) => !isUserParticipant(userId)).length === 0}
+                                <div class="px-4 py-2 text-gray-400 text-sm">
+                                    No more users available
+                                </div>
+                            {/if}
                         </div>
                     {/if}
                 </div>
 
-                <div class="flex justify-between pt-6">
+                <!-- Action Buttons -->
+                <div class="flex gap-2 pt-4">
                     <button
-                        class="px-4 py-2 bg-gray-700 text-red-400 rounded-lg hover:bg-gray-600 border border-red-500 transition-colors"
+                        class="px-4 py-2 bg-gray-700/50 text-red-400 rounded-lg hover:bg-gray-600 border border-red-500/50 transition-colors"
                         on:click={deleteQuest}
                     >
                         Delete Task
                     </button>
                     
-                    <div class="space-x-2">
-                        <button
-                            class="px-4 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors"
-                            on:click={closeModal}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            class="px-4 py-2 bg-gray-700 {quest.status === 'completed' ? 'text-yellow-400 border-yellow-500 hover:bg-gray-600' : 'text-green-400 border-green-500 hover:bg-gray-600'} rounded-lg border transition-colors"
-                            on:click={completeQuest}
-                        >
-                            {quest.status === 'completed' ? 'Mark Ongoing' : 'Mark Complete'}
-                        </button>
-                    </div>
+                    <button
+                        class="px-4 py-2 bg-gray-700/50 {quest.status === 'completed' ? 'text-yellow-400 border-yellow-500/50' : 'text-green-400 border-green-500/50'} rounded-lg border hover:bg-gray-600 transition-colors"
+                        on:click={completeQuest}
+                    >
+                        {quest.status === 'completed' ? 'Mark Ongoing' : 'Mark Complete'}
+                    </button>
                 </div>
             </div>
         </div>

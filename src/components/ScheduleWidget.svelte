@@ -1,11 +1,12 @@
 <script lang="ts">
 	
-	import { onMount, getContext } from "svelte";
+	import { onMount, getContext, createEventDispatcher } from "svelte";
 	import { ID } from "../dashboard/store";
 
 	import { formatDate, formatTime } from "../utils/date";
 
 	import HoloSphere from "holosphere";
+	import type { Quest } from '../types/Quest';
 	
 
 	let holosphere = getContext("holosphere") as HoloSphere;
@@ -14,12 +15,33 @@
 	let store: Record<string, Quest> = {};
 	$: quests = Object.entries(store);
 
+	let showDatePicker = false;
+	let selectedQuest: { id: string; quest: Quest } | null = null;
+	let tempDate: string;
+	let tempTime: string;
+
+	const dispatch = createEventDispatcher();
+
 	onMount(async () => {
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
 		ID.subscribe((value) => {
 			holonID = value;
 			subscribe();
 		});
+
+		// Add keyboard event listener for Escape key
+		const handleEscape = (e: KeyboardEvent) => {
+			if (e.key === 'Escape' && showDatePicker) {
+				showDatePicker = false;
+				selectedQuest = null;
+			}
+		};
+		
+		document.addEventListener('keydown', handleEscape);
+
+		return () => {
+			document.removeEventListener('keydown', handleEscape);
+		};
 	});
 
 	$: update(holonID);
@@ -116,6 +138,87 @@
 
 		return sortedQuests;
 	}
+
+	function handleQuestClick(key: string, quest: Quest) {
+		selectedQuest = { id: key, quest };
+		const date = new Date(quest.when);
+		tempDate = date.toISOString().split('T')[0];
+		tempTime = date.toTimeString().slice(0, 5);
+		showDatePicker = true;
+	}
+
+	function updateDateTime() {
+		if (!selectedQuest) {
+			console.error('No quest selected');
+			return;
+		}
+		
+		const newDate = new Date(`${tempDate}T${tempTime}`);
+		const updatedQuest = {
+			...selectedQuest.quest,
+			when: newDate.toISOString()
+		};
+		
+		// Close modal immediately
+		showDatePicker = false;
+		selectedQuest = null;
+		
+		// Then update in holosphere
+		try {
+			holosphere.put(holonID, 'quests', updatedQuest)
+				.then((success) => {
+					if (!success) {
+						console.error('Failed to update quest');
+					}
+				})
+				.catch((error) => {
+					console.error('Error updating quest:', error);
+				});
+		} catch (error) {
+			console.error('Error updating quest:', error);
+		}
+	}
+
+	function handleClickOutside(event: MouseEvent) {
+		const modal = document.querySelector('.schedule-modal');
+		if (modal && !modal.contains(event.target as Node)) {
+			showDatePicker = false;
+			selectedQuest = null;
+		}
+	}
+
+	function deleteSchedule() {
+		if (!selectedQuest) {
+			console.error('No quest selected');
+			return;
+		}
+
+		try {
+			// Update the quest to remove scheduling
+			const updatedQuest = {
+				...selectedQuest.quest,
+				when: null,
+				status: 'ongoing'
+			};
+			
+			// Close modal immediately
+			showDatePicker = false;
+			selectedQuest = null;
+			
+			// Update in holosphere
+			holosphere.put(holonID, 'quests', updatedQuest)
+				.then((success) => {
+					if (!success) {
+						console.error('Failed to remove schedule');
+					}
+				})
+				.catch((error) => {
+					console.error('Error removing schedule:', error);
+				});
+		} catch (error) {
+			console.error('Error removing schedule:', error);
+		}
+	}
 </script>
 
 <div class="w-full mt-8 lg:mt-0 lg:w-4/12 lg:pl-4">
@@ -165,6 +268,9 @@
 						class="event stage-{getDay(quest)} start-{getStartTime(
 							quest
 						)} end-{getEndTime(quest)} length-4"
+						on:click={() => handleQuestClick(key, quest)}
+						role="button"
+						tabindex="0"
 					>
 						{quest.title}
 						<span>{quest.location || ''}</span>
@@ -206,6 +312,77 @@
 		</div>
 	</div>
 </div>
+
+{#if showDatePicker}
+	<div 
+		class="fixed inset-0 bg-black/75 flex items-center justify-center z-50"
+		on:click={handleClickOutside}
+	>
+		<div 
+			class="bg-gray-800 p-6 rounded-xl schedule-modal border border-gray-700 shadow-xl max-w-md w-full"
+			on:click|stopPropagation={() => {}}
+		>
+			<div class="flex justify-between items-center mb-6">
+				<h3 class="text-white text-lg font-medium">Update Schedule</h3>
+				<button 
+					class="text-gray-400 hover:text-white transition-colors"
+					on:click={() => {
+						showDatePicker = false;
+						selectedQuest = null;
+					}}
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
+			</div>
+			
+			<div class="space-y-4">
+				<div>
+					<label class="text-gray-300 text-sm font-medium block mb-2">Date</label>
+					<input 
+						type="date" 
+						bind:value={tempDate}
+						class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
+					>
+				</div>
+				
+				<div>
+					<label class="text-gray-300 text-sm font-medium block mb-2">Time</label>
+					<input 
+						type="time" 
+						bind:value={tempTime}
+						class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
+					>
+				</div>
+				
+				<div class="flex gap-3 justify-end pt-2">
+					<button 
+						class="px-4 py-2 bg-gray-700 text-red-300 rounded-lg hover:bg-gray-600 border border-red-900/20 transition-colors text-sm font-medium"
+						on:click={deleteSchedule}
+					>
+						Remove Schedule
+					</button>
+					<button 
+						class="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm font-medium"
+						on:click={() => {
+							showDatePicker = false;
+							selectedQuest = null;
+						}}
+					>
+						Cancel
+					</button>
+					<button 
+						class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-colors text-sm font-medium"
+						on:click={updateDateTime}
+					>
+						Update
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style lang="scss">
 	$blockTimes: 800, 830, 900, 930, 1000, 1030, 1100, 1130, 1200, 1230, 1300,
