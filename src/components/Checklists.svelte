@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
+    import Schedule from "./ScheduleWidget.svelte";
     import HoloSphere from "holosphere";
 
     interface ChecklistItem {
@@ -20,7 +21,7 @@
     $: holonID = $ID;
     let checklists: Record<string, Checklist> = {};
     let selectedChecklist: string | null = null;
-    
+
     $: checklistEntries = Object.entries(checklists);
 
     let showInput = false;
@@ -54,18 +55,14 @@
 
     function toggleItemStatus(checklistId: string, itemIndex: number): void {
         if (checklists[checklistId]) {
-            const checklist = {...checklists[checklistId]};
+            const checklist = { ...checklists[checklistId] };
             checklist.items = [...checklist.items];
             checklist.items[itemIndex] = {
                 ...checklist.items[itemIndex],
-                checked: !checklist.items[itemIndex].checked
+                checked: !checklist.items[itemIndex].checked,
             };
-            
-            holosphere.put(
-                holonID,
-                "checklists",
-                checklist
-            );
+
+            holosphere.put(holonID, "checklists", checklist);
         }
     }
 
@@ -75,17 +72,13 @@
 
     function clearChecklist(checklistId: string | null): void {
         if (checklistId && checklists[checklistId]) {
-            const checklist = {...checklists[checklistId]};
-            checklist.items = checklist.items.map(item => ({
+            const checklist = { ...checklists[checklistId] };
+            checklist.items = checklist.items.map((item) => ({
                 ...item,
-                checked: false
+                checked: false,
             }));
-            
-            holosphere.put(
-                holonID,
-                "checklists",
-                checklist
-            );
+
+            holosphere.put(holonID, "checklists", checklist);
         }
     }
 
@@ -97,57 +90,43 @@
 
     function handleAdd() {
         if (!inputText.trim()) return;
-        
+
         if (isAddingChecklist) {
             const newChecklist = {
                 id: inputText.trim(),
                 items: [],
-                creator: 'Dashboard User',
-                created: new Date().toISOString()
+                creator: "Dashboard User",
+                created: new Date().toISOString(),
             };
-            holosphere.put(
-                holonID,
-                "checklists",
-                newChecklist
-            );
+            holosphere.put(holonID, "checklists", newChecklist);
         } else if (selectedChecklist) {
-            const checklist = {...checklists[selectedChecklist]};
+            const checklist = { ...checklists[selectedChecklist] };
             checklist.items = [
                 ...checklist.items,
                 {
                     text: inputText.trim(),
-                    checked: false
-                }
+                    checked: false,
+                },
             ];
-            holosphere.put(
-                holonID,
-                "checklists",
-                checklist
-            );
+            holosphere.put(holonID, "checklists", checklist);
         }
-        
+
         showInput = false;
         inputText = "";
     }
 
     function deleteChecklist(checklistId: string): void {
-        holosphere.delete(
-            holonID,
-            "checklists",
-            checklistId
-        );
+        holosphere.delete(holonID, "checklists", checklistId);
     }
 
     function removeItem(checklistId: string, itemIndex: number): void {
         if (checklistId && checklists[checklistId]) {
-            const checklist = {...checklists[checklistId]};
-            checklist.items = checklist.items.filter((_, index) => index !== itemIndex);
-            
-            holosphere.put(
-                holonID,
-                "checklists",
-                checklist
+            const checklist = { ...checklists[checklistId] };
+            checklist.items = checklist.items.filter(
+                (_, index) => index !== itemIndex
             );
+
+            holosphere.put(holonID, "checklists", checklist);
         }
     }
 </script>
@@ -178,20 +157,35 @@
                                     class="flex items-center space-x-4 flex-grow"
                                 >
                                     <div>
-                                        <p class="text-base font-bold opacity-70">
+                                        <p
+                                            class="text-base font-bold opacity-70"
+                                        >
                                             {checklist.id}
                                         </p>
                                         <p class="text-sm opacity-70">
-                                            {checklist.items.filter(item => item.checked).length}/{checklist.items.length} completed
+                                            {checklist.items.filter(
+                                                (item) => item.checked
+                                            ).length}/{checklist.items.length} completed
                                         </p>
                                     </div>
                                 </div>
-                                <button 
-                                    on:click|stopPropagation={() => deleteChecklist(key)}
+                                <button
+                                    on:click|stopPropagation={() =>
+                                        deleteChecklist(key)}
                                     class="text-gray-600 hover:text-red-600"
                                 >
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    <svg
+                                        class="w-5 h-5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            stroke-width="2"
+                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                        />
                                     </svg>
                                 </button>
                             </div>
@@ -200,7 +194,7 @@
                 {/each}
             </div>
             <div class="flex justify-center mt-4">
-                <button 
+                <button
                     on:click={() => showAddInput(true)}
                     class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none"
                 >
@@ -212,13 +206,13 @@
             <div class="mb-4">
                 <div class="flex justify-between items-center">
                     <div>
-                        <button 
-                            on:click={() => selectedChecklist = null}
+                        <button
+                            on:click={() => (selectedChecklist = null)}
                             class="text-white hover:underline"
                         >
                             ← Back to Checklists
                         </button>
-                        <button 
+                        <button
                             on:click={() => clearChecklist(selectedChecklist)}
                             class="ml-4 text-white hover:underline"
                         >
@@ -238,12 +232,18 @@
                                     : 'bg-gray-300 hover:bg-gray-400'}"
                             >
                                 <div
-                                    on:click={() => toggleItemStatus(selectedChecklist, index)}
+                                    on:click={() =>
+                                        toggleItemStatus(
+                                            selectedChecklist,
+                                            index
+                                        )}
                                     class="flex items-center space-x-4 flex-grow"
                                 >
                                     <div>
                                         <div class="mb-2">
-                                            <p class="text-base font-bold opacity-70">
+                                            <p
+                                                class="text-base font-bold opacity-70"
+                                            >
                                                 {item.text}
                                             </p>
                                         </div>
@@ -254,18 +254,31 @@
                                         type="checkbox"
                                         checked={item.checked}
                                         on:click|stopPropagation
-                                        on:change={() => toggleItemStatus(selectedChecklist, index)}
+                                        on:change={() =>
+                                            toggleItemStatus(
+                                                selectedChecklist,
+                                                index
+                                            )}
                                         class="form-checkbox h-4 w-4 text-blue-600"
                                     />
-                                    <button 
-                                        on:click|stopPropagation={() => removeItem(selectedChecklist, index)}
+                                    <button
+                                        on:click|stopPropagation={() =>
+                                            removeItem(
+                                                selectedChecklist,
+                                                index
+                                            )}
                                         class="text-gray-600 hover:text-red-600"
                                     >
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path 
-                                                stroke-linecap="round" 
-                                                stroke-linejoin="round" 
-                                                stroke-width="2" 
+                                        <svg
+                                            class="w-4 h-4"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                stroke-width="2"
                                                 d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
                                             />
                                         </svg>
@@ -278,7 +291,7 @@
             </div>
 
             <div class="flex justify-center mt-4">
-                <button 
+                <button
                     on:click={() => showAddInput(false)}
                     class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none"
                 >
@@ -287,37 +300,50 @@
             </div>
         {/if}
     </div>
+    <Schedule />
 </div>
 
 {#if showInput}
-    <div 
+    <div
         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-        on:click|self={() => showInput = false}
+        on:click|self={() => (showInput = false)}
     >
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
             <div class="relative">
                 <button
-                    on:click={() => showInput = false}
+                    on:click={() => (showInput = false)}
                     class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
                 >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    <svg
+                        class="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12"
+                        />
                     </svg>
                 </button>
                 <h3 class="text-white text-lg font-bold mb-4">
-                    {isAddingChecklist ? 'Add New Checklist' : 'Add New Item'}
+                    {isAddingChecklist ? "Add New Checklist" : "Add New Item"}
                 </h3>
             </div>
             <div class="flex">
                 <input
                     type="text"
                     bind:value={inputText}
-                    placeholder={isAddingChecklist ? "Checklist name..." : "Item text..."}
+                    placeholder={isAddingChecklist
+                        ? "Checklist name..."
+                        : "Item text..."}
                     class="w-full px-3 py-2 text-sm rounded-l-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
                     on:keydown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === "Enter") {
                             handleAdd();
-                        } else if (e.key === 'Escape') {
+                        } else if (e.key === "Escape") {
                             showInput = false;
                         }
                     }}
@@ -333,4 +359,3 @@
         </div>
     </div>
 {/if}
-

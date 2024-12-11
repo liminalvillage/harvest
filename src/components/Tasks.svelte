@@ -6,7 +6,6 @@
 	import HoloSphere from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
-	import { browser } from "$app/environment";
 	import CanvasView from "./CanvasView.svelte";
 
 	interface Quest {
@@ -35,26 +34,36 @@
 	$: quests = Object.entries(store);
 
 	// Initialize preferences with default values
-	let viewMode = "grid"; // can be 'grid', 'list', or 'canvas'
+	let viewMode: 'grid' | 'list' | 'canvas' = "grid";
 	let showCompleted = false;
 
-	// Load preferences only in browser environment
-	onMount(() => {
-		if (browser) {
-			viewMode = localStorage.getItem("kanbanViewMode") || "grid";
-			showCompleted =
-				localStorage.getItem("kanbanShowCompleted") === "true" || false;
+	// Load preferences immediately if we're in the browser
+	if (typeof window !== 'undefined') {
+		const savedViewMode = localStorage.getItem("kanbanViewMode");
+		if (savedViewMode && (savedViewMode === 'grid' || savedViewMode === 'list' || savedViewMode === 'canvas')) {
+			viewMode = savedViewMode;
 		}
+		showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
+	}
+
+	onMount(() => {
+		// Subscribe to ID changes
+		ID.subscribe((value: string) => {
+			holonID = value;
+			subscribe();
+		});
 	});
 
-	// Save preferences only in browser environment
+	// Create separate reactive statements for localStorage updates
 	$: {
-		if (browser) {
+		if (typeof window !== 'undefined') {
 			localStorage.setItem("kanbanViewMode", viewMode);
-			localStorage.setItem(
-				"kanbanShowCompleted",
-				showCompleted.toString()
-			);
+		}
+	}
+
+	$: {
+		if (typeof window !== 'undefined') {
+			localStorage.setItem("kanbanShowCompleted", showCompleted.toString());
 		}
 	}
 
@@ -429,7 +438,7 @@
 													<div class="relative">
 														<img
 															class="w-6 h-6 rounded-full border-2 border-gray-300"
-															src={`http://gun.holons.io/getavatar?user_id=${participant.id}`}
+															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
 															alt={participant.username}
 														/>
 														<div
@@ -591,7 +600,7 @@
 													<div class="relative">
 														<img
 															class="w-6 h-6 rounded-full border-2 border-gray-300"
-															src={`http://gun.holons.io/getavatar?user_id=${participant.id}`}
+															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
 															alt={participant.username}
 														/>
 														<div
