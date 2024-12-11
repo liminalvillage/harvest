@@ -267,6 +267,7 @@
     bind:this={viewContainer}
     on:mousedown|preventDefault|stopPropagation={(e) => handleMouseDown(e)}
     on:contextmenu|preventDefault
+    role="presentation"
 >
     <!-- Add fullscreen toggle button -->
     <button 

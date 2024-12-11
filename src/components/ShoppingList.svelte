@@ -232,7 +232,6 @@
                             showInput = false;
                         }
                     }}
-                    autofocus
                 />
                 <button
                     on:click={handleAdd}

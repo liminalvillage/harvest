@@ -226,10 +226,14 @@
 		<div class="flex text-white text-2xl pb-6 font-bold">
 			<p>Schedule</p>
 		</div>
-		<div class="scheduleContainer">
+		<div 
+			class="scheduleContainer"
+			role="grid"
+			aria-label="Daily schedule"
+		>
 			<!-- TIMES -->
-			<div class="time start-800">8:00</div>
-			<div class="time start-830">8:30</div>
+			<div class="time start-800" role="rowheader">8:00</div>
+			<div class="time start-830" role="rowheader">8:30</div>
 			<div class="time start-900">9:00</div>
 			<div class="time start-930">9:30</div>
 			<div class="time start-1000">10:00</div>
@@ -263,26 +267,27 @@
 
 			{#each quests as [key, quest]}
 				{#if quest && quest.status === "scheduled" && isToday(quest)}
-					<div
+					<button 
+						type="button"
 						id={key}
-						class="event stage-{getDay(quest)} start-{getStartTime(
-							quest
-						)} end-{getEndTime(quest)} length-4"
+						class="event stage-{getDay(quest)} start-{getStartTime(quest)} end-{getEndTime(quest)} length-4"
 						on:click={() => handleQuestClick(key, quest)}
-						role="button"
-						tabindex="0"
+						aria-label="Edit schedule for {quest.title}"
+						role="gridcell"
 					>
-						{quest.title}
-						<span>{quest.location || ''}</span>
-						<span>
-							<p class="mb-0 text-muted">
+						<span class="font-medium">{quest.title}</span>
+						{#if quest.location}
+							<span class="text-sm text-gray-300">{quest.location}</span>
+						{/if}
+						<span class="text-sm">
+							<span class="text-gray-400">
 								🙋‍♂️ {quest.participants.length}
-							</p>
+							</span>
 							{#each quest.participants as participant}
-								<p>{@html `@${participant.username}`}</p>
+								<span class="block text-gray-300">@{participant.username}</span>
 							{/each}
 						</span>
-					</div>
+					</button>
 				{/if}
 			{/each}
 
@@ -317,19 +322,26 @@
 	<div 
 		class="fixed inset-0 bg-black/75 flex items-center justify-center z-50"
 		on:click={handleClickOutside}
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="modal-title"
+		aria-describedby="modal-description"
 	>
 		<div 
 			class="bg-gray-800 p-6 rounded-xl schedule-modal border border-gray-700 shadow-xl max-w-md w-full"
 			on:click|stopPropagation={() => {}}
 		>
 			<div class="flex justify-between items-center mb-6">
-				<h3 class="text-white text-lg font-medium">Update Schedule</h3>
+				<h3 id="modal-title" class="text-white text-lg font-medium">Update Schedule</h3>
+				<span id="modal-description" class="sr-only">Update schedule date and time</span>
 				<button 
+					type="button"
 					class="text-gray-400 hover:text-white transition-colors"
 					on:click={() => {
 						showDatePicker = false;
 						selectedQuest = null;
 					}}
+					aria-label="Close modal"
 				>
 					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -339,8 +351,9 @@
 			
 			<div class="space-y-4">
 				<div>
-					<label class="text-gray-300 text-sm font-medium block mb-2">Date</label>
+					<label for="date-input" class="text-gray-300 text-sm font-medium block mb-2">Date</label>
 					<input 
+						id="date-input"
 						type="date" 
 						bind:value={tempDate}
 						class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
@@ -348,8 +361,9 @@
 				</div>
 				
 				<div>
-					<label class="text-gray-300 text-sm font-medium block mb-2">Time</label>
+					<label for="time-input" class="text-gray-300 text-sm font-medium block mb-2">Time</label>
 					<input 
+						id="time-input"
 						type="time" 
 						bind:value={tempTime}
 						class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
@@ -358,23 +372,29 @@
 				
 				<div class="flex gap-3 justify-end pt-2">
 					<button 
+						type="button"
 						class="px-4 py-2 bg-gray-700 text-red-300 rounded-lg hover:bg-gray-600 border border-red-900/20 transition-colors text-sm font-medium"
 						on:click={deleteSchedule}
+						aria-label="Remove schedule"
 					>
 						Remove Schedule
 					</button>
 					<button 
+						type="button"
 						class="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm font-medium"
 						on:click={() => {
 							showDatePicker = false;
 							selectedQuest = null;
 						}}
+						aria-label="Cancel changes"
 					>
 						Cancel
 					</button>
 					<button 
+						type="button"
 						class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-colors text-sm font-medium"
 						on:click={updateDateTime}
+						aria-label="Update schedule"
 					>
 						Update
 					</button>
