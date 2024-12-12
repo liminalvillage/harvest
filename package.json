@@ -1,5 +1,5 @@
 {
-	"name": "dashboard",
+	"name": "Harvest",
 	"version": "1.0.0",
 	"author": {
 		"name": "Roberto Valenti"
@@ -26,10 +26,8 @@
 		"format": "prettier --plugin-search-dir . --write ."
 	},
 	"devDependencies": {
-		"esbuild": "^0.19.2",
-		"@sveltejs/adapter-auto": "^3.0.0",
-		"@sveltejs/kit": "^2.0.0",
-		"@sveltejs/vite-plugin-svelte": "^3.0.0",
+		"@sveltejs/adapter-auto": "^2.0.0",
+		"@sveltejs/kit": "^1.5.0",
 		"@typescript-eslint/eslint-plugin": "^5.45.0",
 		"@typescript-eslint/parser": "^5.45.0",
 		"autoprefixer": "^10.4.14",
@@ -41,12 +39,12 @@
 		"postcss": "^8.4.24",
 		"prettier": "^2.8.0",
 		"prettier-plugin-svelte": "^2.8.1",
-		"svelte": "^4.0.0",
+		"svelte": "^4.2.19",
 		"svelte-check": "^3.0.1",
 		"tailwindcss": "^3.3.2",
 		"tslib": "^2.4.1",
 		"typescript": "^5.0.0",
-		"vite": "^5.0.0",
+		"vite": "^4.3.0",
 		"vitest": "^0.25.3"
 	},
 	"type": "module",
@@ -56,7 +54,6 @@
 		"d3": "^7.9.0",
 		"holosphere": "^1.1.0",
 		"mapbox-gl": "^3.7.0",
-		"sass": "^1.77.6",
-		"zircle": "^1.5.4"
+		"sass": "^1.77.6"
 	}
 }
