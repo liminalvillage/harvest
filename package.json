@@ -1,13 +1,11 @@
 {
-	"name": "Harvest",
+	"name": "harvest",
 	"version": "1.0.0",
 	"author": {
 		"name": "Roberto Valenti"
 	},
 	"license": "MIT",
 	"keywords": [
-		"ui",
-		"components",
 		"dashboard",
 		"admin",
 		"tailwindcss",

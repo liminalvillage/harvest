@@ -21,6 +21,10 @@
 		location?: string;
 		ends?: string;
 		type: 'task' | 'quest';
+		position?: {
+			x: number;
+			y: number;
+		};
 	}
 
 	interface Store {
@@ -106,6 +110,28 @@
 	// Add this variable to track the selected task
 	let selectedTask: any = null;
 
+	// Add these near the top of the script section, after the interface definitions
+	let sortField: 'x' | 'y' = 'x';
+	let sortDirection: 'asc' | 'desc' = 'desc';
+
+	// Simplify the sorting logic
+	$: sortedQuests = quests.sort(([_, a], [__, b]) => {
+		const posA = a.position?.[sortField] ?? 0;
+		const posB = b.position?.[sortField] ?? 0;
+		return sortDirection === 'desc'
+			? posB - posA
+			: posA - posB
+	});
+
+	// Modify the toggle function to handle both field and direction
+	function toggleSort() {
+		if (sortDirection === 'desc') {
+			sortDirection = 'asc';
+		} else {
+			sortDirection = 'desc';
+			sortField = sortField === 'x' ? 'y' : 'x';
+		}
+	}
 
 	onMount(async () => {
 		// Fetch all quests from holon
@@ -159,13 +185,6 @@
 
 		return sortedQuests;
 	}
-
-	// Update the sorting in the template sections
-	$: sortedQuests = quests.sort(([_, a], [__, b]) => {
-		const dateA = new Date(a.date || a.when || 0);
-		const dateB = new Date(b.date || b.when || 0);
-		return dateB.getTime() - dateA.getTime();
-	});
 
 	// Replace the showDropdown click handler with this
 	function handleTaskClick(key, quest) {
@@ -329,6 +348,30 @@
 						/>
 					</svg>
 				</div>
+			</div>
+
+			<!-- Replace the two buttons with a single button -->
+			<div class="flex gap-2">
+				<button
+					class="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-full text-sm hover:bg-gray-500 transition-colors"
+					on:click={toggleSort}
+				>
+					Sort
+					<svg
+						class="w-4 h-4 transform transition-transform"
+						style="transform: rotate({sortField === 'x' 
+							? (sortDirection === 'desc' ? '90' : '270') 
+							: (sortDirection === 'desc' ? '180' : '0')}deg)"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M12 5v14M19 12l-7 7-7-7"/>
+					</svg>
+				</button>
 			</div>
 
 			<!-- Show Completed Toggle -->
@@ -700,5 +743,11 @@
 		border-width: 0 4px 4px 4px;
 		border-style: solid;
 		border-color: transparent transparent #1f2937 transparent;
+	}
+
+	/* Update transform styles */
+	.transform {
+		transform-origin: center;
+		transition: transform 0.3s ease;
 	}
 </style>

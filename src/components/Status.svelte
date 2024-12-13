@@ -30,25 +30,45 @@
     let store: Record<string, User> = {};
     $: holonID = $ID;
     let holosphere = getContext("holosphere") as HoloSphere;
+    let valueEquationLoaded = false;
 
-    // Default equation values
-    const equation: Equation = {
+    // Initialize equation with default values
+    let equation: Equation = {
         initiated: 1,
         completed: 1,
         sent: 1,
         received: 1,
         hours: 1,
-        collaboration: 2,
-        wants: 0.5,
-        offers: 0.5
+        collaboration: 1,
+        wants: 1,
+        offers: 1
     };
 
-    onMount(() => {
+    onMount(async () => {
         ID.subscribe((value) => {
             holonID = value;
+            loadEquation();
             subscribeToUsers();
+            
         });
     });
+
+    async function loadEquation() {
+        try {
+            const settings = await holosphere.getAll(holonID, 'settings');
+         
+            if (settings && settings[0]?.valueEquation) {
+                equation = {
+                    ...equation, // Keep defaults as fallback
+                    ...settings[0].valueEquation  // Override with stored values
+                };
+                console.log('Loaded equation settings:', equation);
+                valueEquationLoaded = true;
+            } 
+        } catch (error) {
+            console.error('Error loading equation settings:', error);
+        }
+    }
 
     async function subscribeToUsers() {
         store = {};
@@ -88,53 +108,63 @@
         <p class="">{new Date().toDateString()}</p>
     </div>
 
-    <div class="flex flex-wrap justify-between items-center pb-8">
-        <div class="flex flex-wrap text-white">
-            <div class="pr-10">
-                <div class="text-2xl font-bold">{sortedUsers.length}</div>
-                <div class="">Total Users</div>
-            </div>
-            <div>
-                <div class="text-2xl font-bold">
-                    {sortedUsers.filter(([, user]) => calculateScore(user) > 0)
-                        .length}
+    {#if !valueEquationLoaded}
+        <div class="flex items-center justify-center py-12 text-gray-400">
+            <svg class="animate-spin h-8 w-8 mr-3" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+            </svg>
+            <span>Loading value equation...</span>
+        </div>
+    {:else}
+        <div class="flex flex-wrap justify-between items-center pb-8">
+            <div class="flex flex-wrap text-white">
+                <div class="pr-10">
+                    <div class="text-2xl font-bold">{sortedUsers.length}</div>
+                    <div class="">Total Users</div>
                 </div>
-                <div class="">Active Users</div>
+                <div>
+                    <div class="text-2xl font-bold">
+                        {sortedUsers.filter(([, user]) => calculateScore(user) > 0)
+                            .length}
+                    </div>
+                    <div class="">Active Users</div>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div class="overflow-x-auto">
-        <table class="w-full text-white">
-            <thead>
-                <tr class="bg-gray-700">
-                    <th class="p-3 text-left">Rank</th>
-                    <th class="p-3 text-left">Name</th>
-                    <th class="p-3 text-left">Tasks Initiated</th>
-                    <th class="p-3 text-left">Tasks Completed</th>
-                    <th class="p-3 text-left">Sent</th>
-                    <th class="p-3 text-left">Received</th>
-                    <th class="p-3 text-left">Score</th>
-                </tr>
-            </thead>
-            <tbody>
-                {#each sortedUsers as [userId, user], index}
-                    {@const score = calculateScore(user)}
-                    <tr class="border-b border-gray-700 hover:bg-gray-700">
-                        <td class="p-3">{index + 1}</td>
-                        <td class="p-3"
-                            >{user.first_name} {user.last_name || ""}</td
-                        >
-                        <td class="p-3">{user.initiated.length}</td>
-                        <td class="p-3">{user.completed.length}</td>
-                        <td class="p-3">{user.sent}</td>
-                        <td class="p-3">{user.received}</td>
-                        <td class="p-3">{score.toFixed(1)}</td>
+        <div class="overflow-x-auto">
+            <table class="w-full text-white">
+                <thead>
+                    <tr class="bg-gray-700">
+                        <th class="p-3 text-left">Rank</th>
+                        <th class="p-3 text-left">Name</th>
+                        <th class="p-3 text-left">Tasks Initiated</th>
+                        <th class="p-3 text-left">Tasks Completed</th>
+                        <th class="p-3 text-left">Sent</th>
+                        <th class="p-3 text-left">Received</th>
+                        <th class="p-3 text-left">Score</th>
                     </tr>
-                {/each}
-            </tbody>
-        </table>
-    </div>
+                </thead>
+                <tbody>
+                    {#each sortedUsers as [userId, user], index}
+                        {@const score = calculateScore(user)}
+                        <tr class="border-b border-gray-700 hover:bg-gray-700">
+                            <td class="p-3">{index + 1}</td>
+                            <td class="p-3"
+                                >{user.first_name} {user.last_name || ""}</td
+                            >
+                            <td class="p-3">{user.initiated.length}</td>
+                            <td class="p-3">{user.completed.length}</td>
+                            <td class="p-3">{user.sent}</td>
+                            <td class="p-3">{user.received}</td>
+                            <td class="p-3">{score.toFixed(1)}</td>
+                        </tr>
+                    {/each}
+                </tbody>
+            </table>
+        </div>
+    {/if}
 </div>
 
 <style>

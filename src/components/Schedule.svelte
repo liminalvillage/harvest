@@ -27,21 +27,13 @@
 
 	function subscribe() {
 		store = {};
-		console.log('Subscribing to quests for holon:', holonID);
 		holosphere.subscribe(holonID, 'quests', (newquest, key) => {
-			console.log('Received quest update:', { key, newquest });
 			if (newquest) {
 				const parsedQuest = JSON.parse(newquest);
-				console.log('Parsed quest:', parsedQuest);
-				console.log('Is scheduled?', parsedQuest.status === "scheduled");
-				console.log('Is today?', isToday(parsedQuest));
-				
 				// Updates the store with the new value
 				store[key] = parsedQuest;
 				store = store; // trigger reactivity
 				
-				console.log('Updated store:', store);
-				console.log('Current quests:', Object.entries(store));
 			} else {
 				// A key may contain a null value (if data has been deleted/set to null)
 				// if so, we remove the item from the store
