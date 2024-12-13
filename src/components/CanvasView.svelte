@@ -211,6 +211,90 @@
         }
     }
 
+    // Add these state variables at the top
+    let touchStartDistance = 0;
+    let touchStartZoom = 1;
+    let touchStartPan = { x: 0, y: 0 };
+
+    // Add these touch event handlers
+    function handleTouchStart(event: TouchEvent) {
+        event.preventDefault();
+        
+        if (event.touches.length === 2) {
+            // Pinch to zoom
+            const touch1 = event.touches[0];
+            const touch2 = event.touches[1];
+            touchStartDistance = Math.hypot(
+                touch2.clientX - touch1.clientX,
+                touch2.clientY - touch1.clientY
+            );
+            touchStartZoom = zoom;
+            touchStartPan = { ...pan };
+            
+            // Calculate the midpoint (center of zoom)
+            const rect = viewContainer.getBoundingClientRect();
+            lastMouseX = ((touch1.clientX + touch2.clientX) / 2) - rect.left;
+            lastMouseY = ((touch1.clientY + touch2.clientY) / 2) - rect.top;
+        } else if (event.touches.length === 1) {
+            // Single touch for panning or dragging
+            const touch = event.touches[0];
+            startPan = {
+                x: touch.clientX - pan.x,
+                y: touch.clientY - pan.y
+            };
+            isPanning = true;
+        }
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+        event.preventDefault();
+        
+        if (event.touches.length === 2) {
+            // Handle pinch zoom
+            const touch1 = event.touches[0];
+            const touch2 = event.touches[1];
+            const currentDistance = Math.hypot(
+                touch2.clientX - touch1.clientX,
+                touch2.clientY - touch1.clientY
+            );
+            
+            // Calculate new zoom
+            const zoomDelta = currentDistance / touchStartDistance;
+            const newZoom = Math.min(Math.max(0.25, touchStartZoom * zoomDelta), 2);
+            
+            // Calculate the point on canvas under the midpoint
+            const canvasX = (lastMouseX - touchStartPan.x) / touchStartZoom;
+            const canvasY = (lastMouseY - touchStartPan.y) / touchStartZoom;
+            
+            // Update zoom and pan to keep the point under the midpoint
+            zoom = newZoom;
+            pan = {
+                x: lastMouseX - (canvasX * zoom),
+                y: lastMouseY - (canvasY * zoom)
+            };
+            
+            // Apply bounds
+            const rect = viewContainer.getBoundingClientRect();
+            pan = {
+                x: Math.min(Math.max(pan.x, -CANVAS_WIDTH * zoom + rect.width), 0),
+                y: Math.min(Math.max(pan.y, -CANVAS_HEIGHT * zoom + rect.height), 0)
+            };
+        } else if (event.touches.length === 1 && isPanning) {
+            // Handle panning
+            const touch = event.touches[0];
+            pan = {
+                x: Math.min(Math.max(touch.clientX - startPan.x, -CANVAS_WIDTH * zoom + viewContainer.clientWidth), 0),
+                y: Math.min(Math.max(touch.clientY - startPan.y, -CANVAS_HEIGHT * zoom + viewContainer.clientHeight), 0)
+            };
+        }
+    }
+
+    function handleTouchEnd(event: TouchEvent) {
+        if (event.touches.length === 0) {
+            isPanning = false;
+        }
+    }
+
     onMount(() => {
         if (!canvas || !viewContainer) return;
 
@@ -248,6 +332,13 @@
             window.removeEventListener('mouseup', handleGlobalMouseUp);
             viewContainer?.removeEventListener('wheel', handleWheel);
             document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            
+            // Clean up touch events if needed
+            if (viewContainer) {
+                viewContainer.removeEventListener('touchstart', handleTouchStart);
+                viewContainer.removeEventListener('touchmove', handleTouchMove);
+                viewContainer.removeEventListener('touchend', handleTouchEnd);
+            }
         };
     });
 
@@ -279,12 +370,16 @@
     class:cursor-grabbing={(isDragging || isPanning)}
     bind:this={viewContainer}
     on:mousedown|preventDefault|stopPropagation={(e) => handleMouseDown(e)}
+    on:touchstart|preventDefault={handleTouchStart}
+    on:touchmove|preventDefault={handleTouchMove}
+    on:touchend|preventDefault={handleTouchEnd}
     on:contextmenu|preventDefault
 >
     <!-- Add fullscreen toggle button -->
     <button 
-        class="absolute top-4 right-4 z-10 p-2 bg-gray-800 rounded-lg text-white hover:bg-gray-700 transition-colors"
+        class="absolute top-4 right-4 z-10 p-2 bg-gray-800/50 hover:bg-gray-700 rounded-lg text-white/70 hover:text-white/90 transition-colors"
         on:click={toggleFullscreen}
+        aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
     >
         {#if isFullscreen}
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -292,7 +387,7 @@
             </svg>
         {:else}
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5m-7 11h4m-4 0v4m0-4l5 5m11-5h-4m4 0v4m0-4l-5 5" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 3h6m0 0v6m0-6L13 11m-4 10H3m0 0v-6m0 6l8-8" />
             </svg>
         {/if}
     </button>
