@@ -9,7 +9,6 @@
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let currentHolonName: string | undefined;
-	let isLoadingName = false;
 
 	interface HolonInfo {
 		id: string;
@@ -70,12 +69,9 @@
 
 	// Move the name fetching logic into a separate function
 	async function fetchHolonName(id: string) {
-		isLoadingName = true;
-		currentHolonName = undefined;
-		
 		try {
 			const settings = await holosphere.getAll(id, 'settings');
-			if (settings && settings[0] && settings[0].name) {
+			if (settings?.[0]?.name) {
 				currentHolonName = settings[0].name;
 			} else {
 				currentHolonName = undefined;
@@ -83,8 +79,6 @@
 		} catch (error) {
 			console.error(`Error fetching name for holon ${id}:`, error);
 			currentHolonName = undefined;
-		} finally {
-			isLoadingName = false;
 		}
 	}
 
@@ -272,12 +266,7 @@
 				</button>
 			</div>
 			<div class="container flex left-0 relative w-3/4">
-				{#if isLoadingName}
-					<div class="flex items-center mr-4 flex-shrink-0">
-						<div class="w-5 h-5 border-2 border-white rounded-full mr-2 opacity-90 animate-spin"></div>
-						<span class="text-gray-300 text-lg">Loading...</span>
-					</div>
-				{:else if currentHolonName}
+				{#if currentHolonName}
 					<div class="flex items-center mr-4 flex-shrink-0">
 						<div class="w-5 h-5 border-2 border-white rounded-full mr-2 opacity-90"></div>
 						<span class="text-gray-300 text-lg whitespace-nowrap">
