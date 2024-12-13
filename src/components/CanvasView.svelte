@@ -295,6 +295,21 @@
         }
     }
 
+    // Initialize from localStorage or use defaults
+    if (typeof window !== 'undefined') {
+        const savedView = localStorage.getItem('canvasViewState');
+        if (savedView) {
+            const { zoom: savedZoom, pan: savedPan } = JSON.parse(savedView);
+            zoom = savedZoom;
+            pan = savedPan;
+        }
+    }
+
+    // Save view state whenever pan or zoom changes
+    $: if (typeof window !== 'undefined') {
+        localStorage.setItem('canvasViewState', JSON.stringify({ zoom, pan }));
+    }
+
     onMount(() => {
         if (!canvas || !viewContainer) return;
 
@@ -314,12 +329,14 @@
         window.addEventListener('mouseup', handleGlobalMouseUp, { passive: false });
         viewContainer.addEventListener('wheel', handleWheel, { passive: false });
 
-        // Center the view initially using getBoundingClientRect
-        const containerRect = viewContainer.getBoundingClientRect();
-        pan = { 
-            x: -INITIAL_OFFSET.x + containerRect.width / 2, 
-            y: -INITIAL_OFFSET.y + containerRect.height / 2 
-        };
+        // Only center the view if there's no saved state
+        if (!localStorage.getItem('canvasViewState')) {
+            const containerRect = viewContainer.getBoundingClientRect();
+            pan = { 
+                x: -INITIAL_OFFSET.x + containerRect.width / 2, 
+                y: -INITIAL_OFFSET.y + containerRect.height / 2 
+            };
+        }
 
         const handleFullscreenChange = () => {
             isFullscreen = !!document.fullscreenElement;

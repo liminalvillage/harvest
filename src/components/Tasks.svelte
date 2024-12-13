@@ -37,16 +37,24 @@
 	let store: Store = {};
 	$: quests = Object.entries(store);
 
+	// Add near the top of the script section, after the interface definitions
+	let viewMode: 'grid' | 'list' | 'canvas';
+
+	// Initialize viewMode from localStorage or default to 'grid'
+	if (typeof window !== 'undefined') {
+		viewMode = localStorage.getItem('taskViewMode') as 'grid' | 'list' | 'canvas' || 'grid';
+	}
+
+	// Add a reactive statement to save viewMode changes
+	$: if (typeof window !== 'undefined') {
+		localStorage.setItem('taskViewMode', viewMode);
+	}
+
 	// Initialize preferences with default values
-	let viewMode: 'grid' | 'list' | 'canvas' = "grid";
 	let showCompleted = false;
 
 	// Load preferences immediately if we're in the browser
 	if (typeof window !== 'undefined') {
-		const savedViewMode = localStorage.getItem("kanbanViewMode");
-		if (savedViewMode && (savedViewMode === 'grid' || savedViewMode === 'list' || savedViewMode === 'canvas')) {
-			viewMode = savedViewMode;
-		}
 		showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
 	}
 
@@ -59,12 +67,6 @@
 	});
 
 	// Create separate reactive statements for localStorage updates
-	$: {
-		if (typeof window !== 'undefined') {
-			localStorage.setItem("kanbanViewMode", viewMode);
-		}
-	}
-
 	$: {
 		if (typeof window !== 'undefined') {
 			localStorage.setItem("kanbanShowCompleted", showCompleted.toString());
@@ -307,16 +309,12 @@
 						stroke-linecap="round"
 						stroke-linejoin="round"
 					>
-						<rect
-							x="3"
-							y="3"
-							width="18"
-							height="18"
-							rx="2"
-							ry="2"
-						/>
-						<line x1="3" y1="9" x2="21" y2="9" />
-						<line x1="9" y1="21" x2="9" y2="9" />
+						<path d="M5 9l-3 3 3 3"/>
+						<path d="M9 5l3-3 3 3"/>
+						<path d="M9 19l3 3 3-3"/>
+						<path d="M19 9l3 3-3 3"/>
+						<path d="M2 12h20"/>
+						<path d="M12 2v20"/>
 					</svg>
 				</button>
 			</div>
