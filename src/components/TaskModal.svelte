@@ -280,18 +280,16 @@
                         <div class="bg-gray-700 p-4 rounded-lg border border-gray-600 space-y-4">
                             <div class="grid grid-cols-2 gap-4">
                                 <div class="space-y-2">
-                                    <label for="taskInput1" class="block text-sm font-medium text-gray-300">Date</label>
+                                    <label class="block text-sm font-medium text-gray-300">Date</label>
                                     <input 
-                                        id="taskInput1"
                                         type="date" 
                                         class="w-full bg-gray-800 text-white rounded-lg border border-gray-600 p-2"
                                         bind:value={selectedDate}
                                     />
                                 </div>
                                 <div class="space-y-2">
-                                    <label for="taskInput2" class="block text-sm font-medium text-gray-300">Time</label>
+                                    <label class="block text-sm font-medium text-gray-300">Time</label>
                                     <input 
-                                        id="taskInput2"
                                         type="time" 
                                         class="w-full bg-gray-800 text-white rounded-lg border border-gray-600 p-2"
                                         bind:value={selectedTime}

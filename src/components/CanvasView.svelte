@@ -152,33 +152,45 @@
         }
     }
 
+    // Add these state variables at the top
+    let targetZoom = zoom;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+
     function handleWheel(event: WheelEvent) {
         event.preventDefault();
         
         if (event.ctrlKey || event.metaKey) {
-            // Zoom
-            const delta = event.deltaY > 0 ? 0.9 : 1.1;
-            const oldZoom = zoom;
-            zoom = Math.min(Math.max(0.25, zoom * delta), 2);
-            
-            // Get the center point of the canvas in screen space
-            const canvasCenterX = CANVAS_WIDTH / 2;
-            const canvasCenterY = CANVAS_HEIGHT / 2;
-            
-            // Calculate how far the canvas center is from the viewport origin
-            const distanceFromOriginX = (canvasCenterX * oldZoom) + pan.x;
-            const distanceFromOriginY = (canvasCenterY * oldZoom) + pan.y;
-            
-            // Calculate new pan to maintain the canvas center position
+            // Store mouse position relative to canvas
+            const rect = viewContainer.getBoundingClientRect();
+            lastMouseX = event.clientX - rect.left;
+            lastMouseY = event.clientY - rect.top;
+
+            // Calculate the point on canvas under mouse BEFORE zoom
+            const canvasX = (lastMouseX - pan.x) / zoom;
+            const canvasY = (lastMouseY - pan.y) / zoom;
+
+            // Update zoom
+            const zoomFactor = event.deltaY > 0 ? 0.95 : 1.05;
+            zoom = Math.min(Math.max(0.25, zoom * zoomFactor), 2);
+
+            // Calculate new pan to keep the same canvas point under mouse
             pan = {
-                x: distanceFromOriginX - (canvasCenterX * zoom),
-                y: distanceFromOriginY - (canvasCenterY * zoom)
+                x: lastMouseX - (canvasX * zoom),
+                y: lastMouseY - (canvasY * zoom)
+            };
+
+            // Apply bounds
+            const rect2 = viewContainer.getBoundingClientRect();
+            pan = {
+                x: Math.min(Math.max(pan.x, -CANVAS_WIDTH * zoom + rect2.width), 0),
+                y: Math.min(Math.max(pan.y, -CANVAS_HEIGHT * zoom + rect2.height), 0)
             };
         } else {
-            // Pan
+            // Simple panning
             pan = {
-                x: Math.min(Math.max(pan.x - event.deltaX, -CANVAS_WIDTH + viewContainer.clientWidth), 0),
-                y: Math.min(Math.max(pan.y - event.deltaY, -CANVAS_HEIGHT + viewContainer.clientHeight), 0)
+                x: Math.min(Math.max(pan.x - event.deltaX, -CANVAS_WIDTH * zoom + viewContainer.clientWidth), 0),
+                y: Math.min(Math.max(pan.y - event.deltaY, -CANVAS_HEIGHT * zoom + viewContainer.clientHeight), 0)
             };
         }
     }
@@ -218,10 +230,11 @@
         window.addEventListener('mouseup', handleGlobalMouseUp, { passive: false });
         viewContainer.addEventListener('wheel', handleWheel, { passive: false });
 
-        // Center the view initially
+        // Center the view initially using getBoundingClientRect
+        const containerRect = viewContainer.getBoundingClientRect();
         pan = { 
-            x: -INITIAL_OFFSET.x + viewContainer.clientWidth / 2, 
-            y: -INITIAL_OFFSET.y + viewContainer.clientHeight / 2 
+            x: -INITIAL_OFFSET.x + containerRect.width / 2, 
+            y: -INITIAL_OFFSET.y + containerRect.height / 2 
         };
 
         const handleFullscreenChange = () => {
@@ -267,7 +280,6 @@
     bind:this={viewContainer}
     on:mousedown|preventDefault|stopPropagation={(e) => handleMouseDown(e)}
     on:contextmenu|preventDefault
-    role="presentation"
 >
     <!-- Add fullscreen toggle button -->
     <button 
@@ -288,7 +300,7 @@
     <div 
         bind:this={canvas}
         class="absolute w-full h-full"
-        style="width: {CANVAS_WIDTH}px; height: {CANVAS_HEIGHT}px; transform: scale({zoom}) translate({pan.x}px, {pan.y}px); transform-origin: top left;"
+        style="width: {CANVAS_WIDTH}px; height: {CANVAS_HEIGHT}px; transform: translate({pan.x}px, {pan.y}px) scale({zoom}); transform-origin: 0 0;"
     >
         <!-- Grid background -->
         <div class="absolute inset-0 grid-background"></div>
