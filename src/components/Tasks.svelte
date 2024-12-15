@@ -31,6 +31,7 @@
 		[key: string]: Quest;
 	}
 
+
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	$: holonID = $ID;
@@ -57,6 +58,19 @@
 	if (typeof window !== 'undefined') {
 		showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
 	}
+
+	// Add these variables after the existing let declarations
+	let showTaskInput = false;
+	let newTask: Quest = {
+		id: generateId(),
+		title: '',
+		description: '',
+		category: '',
+		status: 'ongoing',
+		type: 'task',
+		participants: [],
+		appreciation: []
+	};
 
 	onMount(() => {
 		// Subscribe to ID changes
@@ -195,6 +209,31 @@
 			return;
 		}
 		selectedTask = { key, quest };
+	}
+
+	// Add this helper function after the existing functions
+	function generateId() {
+		return ''+ Date.now() + Math.random().toString(36).substr(2, 9);
+	}
+
+	// Update the handleAddTask function
+	function handleAddTask() {
+		if (!newTask.title.trim()) return;
+
+		const task = {
+			...newTask,
+			id: generateId(), // Add unique id
+			title: newTask.title.trim(),
+			description: newTask.description?.trim(),
+			created: new Date().toISOString(),
+			position: {  // Add default position for canvas view
+				x: Math.random() * 800,
+				y: Math.random() * 600
+			}
+		};
+
+		holosphere.put(holonID, "quests", task);
+		showTaskInput = false;
 	}
 </script>
 
@@ -398,18 +437,10 @@
 			<div class="space-y-2">
 				{#each filteredQuests as [key, quest]}
 					{#if (quest.status === "ongoing" || quest.status === "scheduled" || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
-						<div
+						<button
 							id={key}
-							class="w-full task-card relative"
-							role="button"
-							tabindex="0"
-							on:click|stopPropagation={() =>
-								handleTaskClick(key, quest)}
-							on:keydown|stopPropagation={(e) => {
-								if (e.key === "Enter" || e.key === " ") {
-									handleTaskClick(key, quest);
-								}
-							}}
+							class="w-full task-card relative text-left"
+							on:click|stopPropagation={() => handleTaskClick(key, quest)}
 						>
 							<div
 								class="p-3 rounded-lg transition-colors"
@@ -517,7 +548,7 @@
 									</div>
 								</div>
 							</div>
-						</div>
+						</button>
 					{/if}
 				{/each}
 			</div>
@@ -532,18 +563,10 @@
 			<div class="flex flex-wrap">
 				{#each filteredQuests as [key, quest]}
 					{#if (quest.status === "ongoing" || quest.status === "scheduled" || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
-						<div
+						<button
 							id={key}
-							class="w-full md:w-4/12 task-card relative"
-							role="button"
-							tabindex="0"
-							on:click|stopPropagation={() =>
-								handleTaskClick(key, quest)}
-							on:keydown|stopPropagation={(e) => {
-								if (e.key === "Enter" || e.key === " ") {
-									handleTaskClick(key, quest);
-								}
-							}}
+							class="w-full md:w-4/12 task-card relative text-left"
+							on:click|stopPropagation={() => handleTaskClick(key, quest)}
 						>
 							<div class="p-2">
 								<div
@@ -684,11 +707,20 @@
 									</div>
 								</div>
 							</div>
-						</div>
+						</button>
 					{/if}
 				{/each}
 			</div>
 		{/if}
+		<div class="flex justify-center mt-4">
+			<button
+				on:click={() => showTaskInput = true}
+				class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none"
+			>
+				+
+			</button>
+		</div>
+	
 	</div>
 	<Schedule />
 
@@ -699,6 +731,83 @@
 			holonId={holonID}
 			on:close={() => (selectedTask = null)}
 		/>
+	{/if}
+
+	
+	<!-- Add Task Modal -->
+	{#if showTaskInput}
+		<button
+			class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+			on:click|self={() => (showTaskInput = false)}
+			>
+			<div class="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
+				<div class="relative">
+					<button
+						on:click={() => (showTaskInput = false)}
+						class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
+					>
+						<svg
+							class="w-5 h-5"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M6 18L18 6M6 6l12 12"
+							/>
+						</svg>
+					</button>
+					<h3 class="text-white text-lg font-bold mb-4">Add New Task</h3>
+				</div>
+				<div class="space-y-4">
+					<div>
+						<input
+							type="text"
+							bind:value={newTask.title}
+							placeholder="Task title..."
+							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
+						/>
+					</div>
+					<div>
+						<textarea
+							bind:value={newTask.description}
+							placeholder="Description..."
+							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600 resize-none"
+							rows="3"
+						/>
+					</div>
+					<div>
+						<select
+							bind:value={newTask.category}
+							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white border-gray-600"
+						>
+							<option value="">Select category...</option>
+							{#each categories.filter(cat => cat !== 'all') as category}
+								<option value={category}>{category}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="flex justify-end gap-2">
+						<button
+							on:click={() => showTaskInput = false}
+							class="px-4 py-2 text-sm rounded-md bg-gray-700 text-white hover:bg-gray-600"
+						>
+							Cancel
+						</button>
+						<button
+							on:click={handleAddTask}
+							class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-500"
+							disabled={!newTask.title.trim()}
+						>
+							Add Task
+						</button>
+					</div>
+				</div>
+			</div>
+		</button>
 	{/if}
 </div>
 

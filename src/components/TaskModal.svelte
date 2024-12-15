@@ -36,6 +36,17 @@
     let touchStartX = 0;
     let touchStartY = 0;
 
+    let tempTitle = quest.title;
+    let questCards: Array<{key: string; quest: any; x: number; y: number;}> = [];
+    let canvas: HTMLCanvasElement;
+    let viewContainer: HTMLElement;
+    let isPanning = false;
+    let startPan = { x: 0, y: 0 };
+    let pan = { x: 0, y: 0 };
+    let zoom = 1;
+    const CANVAS_WIDTH = 2000;
+    const CANVAS_HEIGHT = 1500;
+
     onMount(() => {
         document.addEventListener('click', handleClickOutside);
         
@@ -158,7 +169,7 @@
         }
 
         // Check if user is already a participant by username
-        if (quest.participants?.some(p => p.username === user.username)) {
+        if (quest.participants?.some((p: { username: string }) => p.username === user.username)) {
             showDropdown = false;
             return;
         }
@@ -230,7 +241,7 @@
         if (cardElement) {
             // Find the card data that matches this element
             const cardId = cardElement.getAttribute('data-card-id');
-            touchedCard = questCards.find(card => card.key === cardId) || null;
+            touchedCard = questCards.find((card: {key: string; quest: any; x: number; y: number;}) => card.key === cardId) || null;
             
             if (touchedCard) {
                 const touch = event.touches[0];
@@ -264,7 +275,7 @@
             const newX = (touch.clientX - rect.left - pan.x) / zoom - touchStartX;
             const newY = (touch.clientY - rect.top - pan.y) / zoom - touchStartY;
             
-            questCards = questCards.map(card => 
+            questCards = questCards.map((card: {key: string; quest: any; x: number; y: number;}) => 
                 card.key === touchedCard?.key 
                     ? { 
                         ...card, 
@@ -286,7 +297,7 @@
     function handleTouchEnd(event: TouchEvent) {
         if (touchedCard) {
             // Save the card's new position
-            const card = questCards.find(c => c.key === touchedCard?.key);
+            const card = questCards.find((c: {key: string; quest: any; x: number; y: number;}) => c.key === touchedCard?.key);
             if (card) {
                 const updatedQuest = { 
                     ...card.quest,
@@ -307,6 +318,19 @@
     // Add this focus action
     function focusOnMount(node: HTMLElement) {
         node.focus();
+    }
+
+    function handleTitleEdit() {
+        saveTitle();
+    }
+
+    function handleTitleKeydown(event: KeyboardEvent) {
+        if (event.key === 'Enter') {
+            saveTitle();
+        } else if (event.key === 'Escape') {
+            tempTitle = quest.title;
+            editingTitle = false;
+        }
     }
 </script>
 

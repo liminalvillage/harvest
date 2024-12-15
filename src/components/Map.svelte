@@ -674,12 +674,12 @@
 </div>
 
 <style>
-	.map-container {
+	/* .map-container {
 		position: relative;
 		width: 100%;
 		height: 100%;
 		min-height: calc(100vh - 64px - 2rem);
-	}
+	} */
 
 	.map {
 		position: relative;

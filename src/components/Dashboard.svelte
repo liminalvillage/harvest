@@ -99,14 +99,14 @@
         </div>
 
         <div class="grid grid-cols-2 md:grid-cols-3 gap-6">
-            <a
+            <!-- <a
                 href={`/${holonID}/chats`}
                 class="bg-blue-500 p-6 rounded-lg text-white relative overflow-hidden"
             >
                 <i class="fas fa-comments text-6xl absolute bottom-0 right-0 transform translate-x-2 translate-y-2 opacity-20"></i>
                 <h3 class="text-xl font-semibold mb-2">Chats</h3>
                 <p class="text-3xl font-bold">{chatCount}</p>
-            </a>
+            </a> -->
             <a
                 href={`/${holonID}/status`}
                 class="bg-green-500 p-6 rounded-lg text-white relative overflow-hidden"
