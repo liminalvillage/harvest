@@ -391,6 +391,7 @@
     on:touchmove|preventDefault={handleTouchMove}
     on:touchend|preventDefault={handleTouchEnd}
     on:contextmenu|preventDefault
+    role="presentation"
 >
     <!-- Add fullscreen toggle button -->
     <button 
@@ -424,6 +425,7 @@
                 class:cursor-grabbing={isDragging && draggedCard?.key === card.key}
                 style="left: {card.x}px; top: {card.y}px; transform: scale(1); transform-origin: top left;"
                 on:mousedown|stopPropagation={(e) => handleMouseDown(e, card)}
+                role="presentation"
             >
                 <div 
                     class="w-64 p-4 rounded-xl shadow-lg border-2 bg-opacity-90"

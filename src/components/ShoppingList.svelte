@@ -204,6 +204,9 @@
     <div 
         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
         on:click|self={() => showInput = false}
+        on:keydown|self={(e) => e.key === 'Escape' && (showInput = false)}
+        role="button"
+        tabindex="0"
     >
         <div class="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
             <div class="relative">

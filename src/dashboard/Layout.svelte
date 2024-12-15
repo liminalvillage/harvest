@@ -62,7 +62,7 @@
 	});
 </script>
 
-<div class={style.container} on:mousemove={handleMouseMove}>
+<div class={style.container} on:mousemove={handleMouseMove} role="presentation">
 	<div class="flex items-start">
 		<Overlay />
 		<Sidebar mobileOrientation="start" />

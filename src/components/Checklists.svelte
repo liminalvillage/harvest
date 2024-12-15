@@ -152,7 +152,8 @@
                             <div
                                 class="p-3 rounded-3xl flex items-center justify-between cursor-pointer bg-gray-300 hover:bg-gray-400"
                             >
-                                <div
+                                <button
+                                    type="button"
                                     on:click={() => selectChecklist(key)}
                                     class="flex items-center space-x-4 flex-grow"
                                 >
@@ -168,7 +169,7 @@
                                             ).length}/{checklist.items.length} completed
                                         </p>
                                     </div>
-                                </div>
+                                </button>
                                 <button
                                     on:click|stopPropagation={() =>
                                         deleteChecklist(key)}
@@ -231,12 +232,9 @@
                                     ? 'bg-green-200 hover:bg-green-300'
                                     : 'bg-gray-300 hover:bg-gray-400'}"
                             >
-                                <div
-                                    on:click={() =>
-                                        toggleItemStatus(
-                                            selectedChecklist,
-                                            index
-                                        )}
+                                <button
+                                    type="button"
+                                    on:click={() => toggleItemStatus(selectedChecklist, index)}
                                     class="flex items-center space-x-4 flex-grow"
                                 >
                                     <div>
@@ -248,7 +246,7 @@
                                             </p>
                                         </div>
                                     </div>
-                                </div>
+                                </button>
                                 <div class="flex items-center space-x-2">
                                     <input
                                         type="checkbox"
@@ -304,11 +302,18 @@
 </div>
 
 {#if showInput}
-    <div
+    <button
+        type="button"
         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-        on:click|self={() => (showInput = false)}
+        on:click={() => (showInput = false)}
+        aria-label="Close modal overlay"
     >
-        <div class="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
+        <button 
+            type="button"
+            class="bg-gray-800 p-6 rounded-lg shadow-lg w-96" 
+            on:click|stopPropagation={() => {}}
+            aria-label="Modal content"
+        >
             <div class="relative">
                 <button
                     on:click={() => (showInput = false)}
@@ -347,7 +352,6 @@
                             showInput = false;
                         }
                     }}
-                    autofocus
                 />
                 <button
                     on:click={handleAdd}
@@ -356,6 +360,6 @@
                     Add
                 </button>
             </div>
-        </div>
-    </div>
+        </button>
+    </button>
 {/if}

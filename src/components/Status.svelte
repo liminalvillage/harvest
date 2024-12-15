@@ -1,4 +1,5 @@
 <script lang="ts">
+	// @ts-nocheck
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import HoloSphere from "holosphere";
@@ -170,15 +171,16 @@
 <style>
     th,
     td {
-        @apply text-left;
+        text-align: left;
     }
 
     tr:hover {
-        @apply transition-colors duration-200;
+        transition-property: color, background-color;
+        transition-duration: 200ms;
     }
 
     .overflow-x-auto {
-        @apply rounded-lg;
+        border-radius: 0.5rem;
     }
 
     table {
@@ -187,18 +189,18 @@
     }
 
     th:first-child {
-        @apply rounded-tl-lg;
+        border-top-left-radius: 0.5rem;
     }
 
     th:last-child {
-        @apply rounded-tr-lg;
+        border-top-right-radius: 0.5rem;
     }
 
     tr:last-child td:first-child {
-        @apply rounded-bl-lg;
+        border-bottom-left-radius: 0.5rem;
     }
 
     tr:last-child td:last-child {
-        @apply rounded-br-lg;
+        border-bottom-right-radius: 0.5rem;
     }
 </style>

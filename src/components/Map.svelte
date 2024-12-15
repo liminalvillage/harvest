@@ -11,15 +11,17 @@
 	import HoloSphere from 'holosphere';
 	import MapSidebar from "./MapSidebar.svelte";
 
+	type LensType = 'quests' | 'needs' | 'offers' | 'communities' | 'organizations' | 'projects' | 'currencies' | 'people' | 'holons';
+
 	let holosphere = getContext('holosphere') as HoloSphere 
 
 	let mapContainer: HTMLElement;
 	let map: mapboxgl.Map;
 	let hexId: string;
-	export let selectedLens = 'holons';
+	export let selectedLens: LensType = 'quests';
 	let isLoading = false;
 	let holoSubscriptions = new Map();
-	let lensData = {
+	let lensData: Record<LensType, Set<string>> = {
 		quests: new Set<string>(),
 		needs: new Set<string>(),
 		offers: new Set<string>(),
@@ -31,7 +33,7 @@
 		holons: new Set<string>()
 	};
 
-	const lensOptions = [
+	const lensOptions: Array<{value: LensType, label: string}> = [
 		{ value: 'quests', label: 'Tasks' },
 		{ value: 'needs', label: 'Local Needs' },
 		{ value: 'offers', label: 'Offers' },
@@ -406,10 +408,10 @@
 				continue;
 			}
 			
-			const subscription = holosphere.subscribe(hex, lens, (data, key) => {
+			const subscription = holosphere.subscribe(hex, lens, (data: any, key: string) => {
 				try {
 					if (data) {
-						// Update the lensData for this lens
+						// Type assertion since we know lens is a valid LensType
 						lensData[lens as LensType].add(hex);
 						// Trigger a re-render
 						renderHexes(map, selectedLens);
@@ -435,13 +437,15 @@
 		isLoading = false;
 	}
 
-	function unsubscribeFromLens(lens: string) {
+	function unsubscribeFromLens(lens: LensType) {
 		const subscriptions = holoSubscriptions.get(lens);
 		if (subscriptions) {
 			// Clear all subscriptions for this lens
 			for (const [hex, subscription] of subscriptions.entries()) {
-				// Unsubscribe from Gun DB by calling .off() on the subscription path
-				holosphere.gun.get(hex).get(lens).map().off();
+				// Unsubscribe from Gun DB
+				if (holosphere.gun) {
+					holosphere.gun.get(hex).get(lens).map().off();
+				}
 			}
 			holoSubscriptions.delete(lens);
 			lensData[lens].clear();

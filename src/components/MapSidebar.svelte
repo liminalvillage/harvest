@@ -239,8 +239,9 @@
             <div class="space-y-4">
                 {#if Array.isArray(content)}
                     {#each content as item}
-                        <div 
-                            class="p-4 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"
+                        <button 
+                            type="button"
+                            class="w-full text-left p-4 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"
                             on:click={() => viewItem(item)}
                         >
                             <h4 class="font-medium text-white">{item.title || item.name}</h4>
@@ -256,18 +257,19 @@
                                     {/each}
                                 </div>
                             {/if}
-                        </div>
+                        </button>
                     {/each}
                 {:else if content.title || content.name}
-                    <div 
-                        class="p-4 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"
+                    <button
+                        type="button" 
+                        class="w-full text-left p-4 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"
                         on:click={() => viewItem(content)}
                     >
                         <h4 class="font-medium text-white">{content.title || content.name}</h4>
                         {#if content.description}
                             <p class="text-gray-300 text-sm mt-1">{content.description}</p>
                         {/if}
-                    </div>
+                    </button>
                 {/if}
             </div>
         {:else}

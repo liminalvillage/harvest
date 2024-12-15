@@ -7,6 +7,15 @@ export default defineConfig({
 		include: ['src/**/*.{test,spec}.{js,ts}']
 	},
 	optimizeDeps: {
-	
+		include: ['svelte'],
+		exclude: ['@sveltejs/kit']
+	},
+	resolve: {
+		dedupe: ['svelte']
+	},
+	server: {
+		fs: {
+			strict: false
+		}
 	}
 });
