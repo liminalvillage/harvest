@@ -29,6 +29,13 @@
     let selectedDate = quest.when ? new Date(quest.when) : new Date();
     let selectedTime = quest.when ? new Date(quest.when).toTimeString().slice(0,5) : '12:00';
 
+    let editingTitle = false;
+    let editedTitle = quest.title;
+
+    let touchedCard: { key: string; quest: any; x: number; y: number; } | null = null;
+    let touchStartX = 0;
+    let touchStartY = 0;
+
     onMount(() => {
         document.addEventListener('click', handleClickOutside);
         
@@ -207,6 +214,100 @@
         });
         showDatePicker = false;
     }
+
+    async function saveTitle() {
+        if (editedTitle.trim() !== quest.title) {
+            await updateQuest({ title: editedTitle.trim() });
+        }
+        editingTitle = false;
+    }
+
+    function handleTouchStart(event: TouchEvent) {
+        event.preventDefault();
+        
+        // Get the card element that was touched (if any)
+        const cardElement = (event.target as HTMLElement).closest('.task-card');
+        if (cardElement) {
+            // Find the card data that matches this element
+            const cardId = cardElement.getAttribute('data-card-id');
+            touchedCard = questCards.find(card => card.key === cardId) || null;
+            
+            if (touchedCard) {
+                const touch = event.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                
+                // Calculate touch offset relative to card position
+                touchStartX = (touch.clientX - rect.left - pan.x) / zoom - touchedCard.x;
+                touchStartY = (touch.clientY - rect.top - pan.y) / zoom - touchedCard.y;
+                return;
+            }
+        }
+        
+        // If no card was touched, handle canvas panning
+        if (event.touches.length === 1) {
+            isPanning = true;
+            const touch = event.touches[0];
+            startPan = {
+                x: touch.clientX - pan.x,
+                y: touch.clientY - pan.y
+            };
+        }
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+        event.preventDefault();
+        
+        if (touchedCard) {
+            // Move the touched card
+            const touch = event.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const newX = (touch.clientX - rect.left - pan.x) / zoom - touchStartX;
+            const newY = (touch.clientY - rect.top - pan.y) / zoom - touchStartY;
+            
+            questCards = questCards.map(card => 
+                card.key === touchedCard?.key 
+                    ? { 
+                        ...card, 
+                        x: Math.min(Math.max(newX, 0), CANVAS_WIDTH - 300),
+                        y: Math.min(Math.max(newY, 0), CANVAS_HEIGHT - 200)
+                    }
+                    : card
+            );
+        } else if (isPanning && event.touches.length === 1) {
+            // Handle canvas panning
+            const touch = event.touches[0];
+            pan = {
+                x: Math.min(Math.max(touch.clientX - startPan.x, -CANVAS_WIDTH * zoom + viewContainer.clientWidth), 0),
+                y: Math.min(Math.max(touch.clientY - startPan.y, -CANVAS_HEIGHT * zoom + viewContainer.clientHeight), 0)
+            };
+        }
+    }
+
+    function handleTouchEnd(event: TouchEvent) {
+        if (touchedCard) {
+            // Save the card's new position
+            const card = questCards.find(c => c.key === touchedCard?.key);
+            if (card) {
+                const updatedQuest = { 
+                    ...card.quest,
+                    position: { x: card.x, y: card.y } 
+                };
+                
+                holosphere.put(holonId, 'quests', {
+                    ...updatedQuest,
+                    id: card.key
+                }).catch(error => console.error('Error updating quest position:', error));
+            }
+            touchedCard = null;
+        }
+        
+        isPanning = false;
+    }
+
+    // Add this focus action
+    function focusOnMount(node: HTMLElement) {
+        node.focus();
+    }
 </script>
 
 <div data-component="TaskModal"
@@ -227,7 +328,27 @@
             <!-- Header -->
             <div class="flex justify-between items-start mb-6">
                 <div>
-                    <h2 id="modal-title" class="text-2xl font-bold text-white">{quest.title}</h2>
+                    {#if editingTitle}
+                        <!-- Editable title input -->
+                        <input
+                            type="text"
+                            bind:value={tempTitle}
+                            class="text-2xl font-bold text-white bg-gray-700 rounded px-2 py-1 w-full"
+                            on:blur={handleTitleEdit}
+                            on:keydown={handleTitleKeydown}
+                            use:focusOnMount
+                        />
+                    {:else}
+                        <!-- Clickable title -->
+                        <button 
+                            type="button"
+                            id="modal-title" 
+                            class="text-2xl font-bold text-white text-left hover:text-gray-300"
+                            on:click={() => editingTitle = true}
+                        >
+                            {quest.title}
+                        </button>
+                    {/if}
                     {#if quest.category}
                         <span class="inline-flex items-center mt-2 text-sm text-gray-400">
                             <svg class="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">

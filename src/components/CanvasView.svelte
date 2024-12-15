@@ -198,16 +198,32 @@
     // Add this to handle fullscreen toggle
     let isFullscreen = false;
 
+    function requestFullscreen(element: HTMLElement) {
+        if (element.requestFullscreen) {
+            element.requestFullscreen();
+        } else if ((element as any).webkitRequestFullscreen) {
+            (element as any).webkitRequestFullscreen(); // Safari
+        } else if ((element as any).msRequestFullscreen) {
+            (element as any).msRequestFullscreen(); // IE11
+        }
+    }
+
+    function exitFullscreen() {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+            (document as any).webkitExitFullscreen(); // Safari
+        } else if ((document as any).msExitFullscreen) {
+            (document as any).msExitFullscreen(); // IE11
+        }
+    }
+
     function toggleFullscreen() {
         isFullscreen = !isFullscreen;
         if (isFullscreen) {
-            viewContainer.requestFullscreen().catch(err => {
-                console.error('Error attempting to enable fullscreen:', err);
-            });
+            requestFullscreen(viewContainer);
         } else {
-            document.exitFullscreen().catch(err => {
-                console.error('Error attempting to exit fullscreen:', err);
-            });
+            exitFullscreen();
         }
     }
 
@@ -339,16 +355,24 @@
         }
 
         const handleFullscreenChange = () => {
-            isFullscreen = !!document.fullscreenElement;
+            isFullscreen = !!(
+                document.fullscreenElement ||
+                (document as any).webkitFullscreenElement ||
+                (document as any).msFullscreenElement
+            );
         };
         
         document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('MSFullscreenChange', handleFullscreenChange);
 
         return () => {
             window.removeEventListener('mousemove', handleGlobalMouseMove);
             window.removeEventListener('mouseup', handleGlobalMouseUp);
             viewContainer?.removeEventListener('wheel', handleWheel);
             document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
             
             // Clean up touch events if needed
             if (viewContainer) {
@@ -520,5 +544,31 @@
     /* Add styles for fullscreen mode */
     :global(body:has(.fixed)) {
         overflow: hidden;
+    }
+
+    /* Add these fullscreen styles */
+    :global(.fixed) {
+        position: fixed !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
+
+    :global(:fullscreen),
+    :global(:-webkit-full-screen),
+    :global(:-ms-fullscreen) {
+        width: 100% !important;
+        height: 100% !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        z-index: 999999 !important;
+        background: #1a1a1a !important;
     }
 </style> 
