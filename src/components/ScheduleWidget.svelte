@@ -61,31 +61,31 @@
 		});
 	}
 
-	function getStartTime(quest) {
+	function getStartTime(quest: Quest) {
 		const date = new Date(quest.when);
 		let hours = date.getHours();
-		let minutes = date.getMinutes();
+		let minutes: number | string = date.getMinutes();
 		minutes = minutes < 10 ? (minutes = `0${minutes}`) : minutes;
 		return `${hours}${minutes}`;
 	}
 
-	function getEndTime(quest) {
+	function getEndTime(quest: Quest) {
 		if (!quest.ends) {
 			const date = new Date(quest.when);
 			let hours = date.getHours();
-			let minutes = date.getMinutes();
+			let minutes: number | string = date.getMinutes();
 			minutes = minutes < 10 ? (minutes = `0${minutes}`) : minutes;
 			return `${hours + 1}${minutes}`;
 		} else {
 			const date = new Date(quest.ends);
 			let hours = date.getHours();
-			let minutes = date.getMinutes();
+			let minutes: number | string = date.getMinutes();
 			minutes = minutes < 10 ? (minutes = `0${minutes}`) : minutes;
 			return `${hours}${minutes}`;
 		}
 	}
 
-	function isToday(quest) {
+	function isToday(quest: Quest) {
 		if (!quest || !quest.when) return false;
 		
 		const today = new Date();
@@ -98,13 +98,13 @@
 		);
 	}
 
-	function isTomorrow(quest) {
+	function isTomorrow(quest: Quest) {
 		const today = new Date();
 		const date = new Date(quest.when);
 		return date.getDate() === today.getDate() + 1;
 	}
 
-	function getDay(quest) {
+	function getDay(quest: Quest) {
 		const today = new Date();
 		const date = new Date(quest.when);
 		if (date.getDate() < today.getDate()) return "past";
@@ -113,14 +113,14 @@
 		if (date.getDate() > today.getDate() + 1) return "future";
 	}
 
-	function getLength(quest) {
+	function getLength(quest: Quest	) {
 		if (!quest.when) return 0;
 		if (!quest.ends) return 1;
-		const start = new Date(quest.when);
-		const end = new Date(quest.end);
-		const diff = end - start;
-		const minutes = Math.floor(diff / 60000);
-		const length = minutes / 30;
+		const start: Date = new Date(quest.when);
+		const end: Date = new Date(quest.end);
+		const diff: number = end.getTime() - start.getTime();
+		const minutes: number = Math.floor(diff / 60000);
+		const length: number = minutes / 30;
 		return length;
 	}
 
