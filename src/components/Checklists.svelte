@@ -174,6 +174,7 @@
                                     on:click|stopPropagation={() =>
                                         deleteChecklist(key)}
                                     class="text-gray-600 hover:text-red-600"
+                                    aria-label="Delete checklist"
                                 >
                                     <svg
                                         class="w-5 h-5"
@@ -266,6 +267,7 @@
                                                 index
                                             )}
                                         class="text-gray-600 hover:text-red-600"
+                                        aria-label="Remove item"
                                     >
                                         <svg
                                             class="w-4 h-4"
@@ -292,6 +294,7 @@
                 <button
                     on:click={() => showAddInput(false)}
                     class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none"
+                    aria-label="Add new item"
                 >
                     +
                 </button>
@@ -302,64 +305,69 @@
 </div>
 
 {#if showInput}
-    <button
-        type="button"
-        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-        on:click={() => (showInput = false)}
-        aria-label="Close modal overlay"
+    <dialog 
+        class="fixed inset-0 bg-black bg-opacity-50 z-50"
+        bind:this={dialogElement}
+        on:close={() => (showInput = false)}
+        open
     >
-        <button 
-            type="button"
-            class="bg-gray-800 p-6 rounded-lg shadow-lg w-96" 
-            on:click|stopPropagation={() => {}}
-            aria-label="Modal content"
-        >
-            <div class="relative">
-                <button
-                    on:click={() => (showInput = false)}
-                    class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
-                >
-                    <svg
-                        class="w-5 h-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
+        <div class="fixed inset-0 flex items-center justify-center">
+            <form 
+                method="dialog"
+                class="bg-gray-800 p-6 rounded-lg shadow-lg w-96"
+            >
+                <div class="relative">
+                    <div 
+                        class="absolute -top-2 -right-2 text-gray-400 hover:text-white cursor-pointer"
+                        on:click={() => (showInput = false)}
+                        on:keydown={(e) => e.key === 'Enter' && (showInput = false)}
+                        role="button"
+                        tabindex="0"
+                        aria-label="Close modal"
                     >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M6 18L18 6M6 6l12 12"
-                        />
-                    </svg>
-                </button>
-                <h3 class="text-white text-lg font-bold mb-4">
-                    {isAddingChecklist ? "Add New Checklist" : "Add New Item"}
-                </h3>
-            </div>
-            <div class="flex">
-                <input
-                    type="text"
-                    bind:value={inputText}
-                    placeholder={isAddingChecklist
-                        ? "Checklist name..."
-                        : "Item text..."}
-                    class="w-full px-3 py-2 text-sm rounded-l-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
-                    on:keydown={(e) => {
-                        if (e.key === "Enter") {
-                            handleAdd();
-                        } else if (e.key === "Escape") {
-                            showInput = false;
-                        }
-                    }}
-                />
-                <button
-                    on:click={handleAdd}
-                    class="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-r-md"
-                >
-                    Add
-                </button>
-            </div>
-        </button>
-    </button>
+                        <svg
+                            class="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M6 18L18 6M6 6l12 12"
+                            />
+                        </svg>
+                    </div>
+                    <h3 class="text-white text-lg font-bold mb-4">
+                        {isAddingChecklist ? "Add New Checklist" : "Add New Item"}
+                    </h3>
+                </div>
+                <div class="flex">
+                    <input
+                        type="text"
+                        bind:value={inputText}
+                        placeholder={isAddingChecklist
+                            ? "Checklist name..."
+                            : "Item text..."}
+                        class="w-full px-3 py-2 text-sm rounded-l-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
+                        on:keydown={(e) => {
+                            if (e.key === "Enter") {
+                                handleAdd();
+                            } else if (e.key === "Escape") {
+                                showInput = false;
+                            }
+                        }}
+                    />
+                    <button
+                        on:click={handleAdd}
+                        class="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-r-md"
+                        aria-label="Add item"
+                    >
+                        Add
+                    </button>
+                </div>
+            </form>
+        </div>
+    </dialog>
 {/if}

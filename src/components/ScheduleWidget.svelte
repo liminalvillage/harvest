@@ -321,37 +321,36 @@
 {#if showDatePicker}
 	<dialog 
 		class="fixed inset-0 bg-black/75 z-50"
+		bind:this={dialogElement}
+		on:close={() => handleClickOutside()}
 		open
 	>
-		<button 
-			type="button"
-			class="fixed inset-0 flex items-center justify-center"
-			on:click={handleClickOutside}
-			aria-label="Close modal overlay"
-		>
-			<button 
-				type="button"
+		<div class="fixed inset-0 flex items-center justify-center">
+			<form 
+				method="dialog"
 				class="bg-gray-800 p-6 rounded-xl schedule-modal border border-gray-700 shadow-xl max-w-md w-full"
-				on:click|stopPropagation={() => {}}
+				role="dialog"
 				aria-labelledby="modal-title"
 				aria-describedby="modal-description"
 			>
 				<div class="flex justify-between items-center mb-6">
 					<h3 id="modal-title" class="text-white text-lg font-medium">Update Schedule</h3>
 					<span id="modal-description" class="sr-only">Update schedule date and time</span>
-					<button 
-						type="button"
-						class="text-gray-400 hover:text-white transition-colors"
+					<div 
+						class="text-gray-400 hover:text-white transition-colors cursor-pointer"
 						on:click={() => {
 							showDatePicker = false;
 							selectedQuest = null;
 						}}
+						on:keydown={(e) => e.key === 'Enter' && (showDatePicker = false)}
+						role="button"
+						tabindex="0"
 						aria-label="Close modal"
 					>
 						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 						</svg>
-					</button>
+					</div>
 				</div>
 				
 				<div class="space-y-4">
@@ -405,8 +404,8 @@
 						</button>
 					</div>
 				</div>
-			</button>
-		</button>
+			</form>
+		</div>
 	</dialog>
 {/if}
 

@@ -736,78 +736,88 @@
 	
 	<!-- Add Task Modal -->
 	{#if showTaskInput}
-		<button
-			class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-			on:click|self={() => (showTaskInput = false)}
+		<dialog
+			class="bg-transparent w-full h-full fixed inset-0 z-50"
+			bind:this={dialogElement}
+			on:close={() => showTaskInput = false}
+			{open}
+		>
+			<div 
+				class="bg-black bg-opacity-50 w-full h-full flex items-center justify-center"
+				on:click|self={() => dialogElement?.close()}
 			>
-			<div class="bg-gray-800 p-6 rounded-lg shadow-lg w-96">
-				<div class="relative">
-					<button
-						on:click={() => (showTaskInput = false)}
-						class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
-					>
-						<svg
-							class="w-5 h-5"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
+				<div 
+					class="bg-gray-800 p-6 rounded-lg shadow-lg w-96" 
+					on:click|stopPropagation
+				>
+					<div class="relative">
+						<button
+							on:click={() => (showTaskInput = false)}
+							class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
 						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M6 18L18 6M6 6l12 12"
+							<svg
+								class="w-5 h-5"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M6 18L18 6M6 6l12 12"
+								/>
+							</svg>
+						</button>
+						<h3 class="text-white text-lg font-bold mb-4">Add New Task</h3>
+					</div>
+					<div class="space-y-4">
+						<div>
+							<input
+								type="text"
+								bind:value={newTask.title}
+								placeholder="Task title..."
+								class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
 							/>
-						</svg>
-					</button>
-					<h3 class="text-white text-lg font-bold mb-4">Add New Task</h3>
-				</div>
-				<div class="space-y-4">
-					<div>
-						<input
-							type="text"
-							bind:value={newTask.title}
-							placeholder="Task title..."
-							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
-						/>
-					</div>
-					<div>
-						<textarea
-							bind:value={newTask.description}
-							placeholder="Description..."
-							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600 resize-none"
-							rows="3"
-						/>
-					</div>
-					<div>
-						<select
-							bind:value={newTask.category}
-							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white border-gray-600"
-						>
-							<option value="">Select category...</option>
-							{#each categories.filter(cat => cat !== 'all') as category}
-								<option value={category}>{category}</option>
-							{/each}
-						</select>
-					</div>
-					<div class="flex justify-end gap-2">
-						<button
-							on:click={() => showTaskInput = false}
-							class="px-4 py-2 text-sm rounded-md bg-gray-700 text-white hover:bg-gray-600"
-						>
-							Cancel
-						</button>
-						<button
-							on:click={handleAddTask}
-							class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-500"
-							disabled={!newTask.title.trim()}
-						>
-							Add Task
-						</button>
+						</div>
+						<div>
+							<textarea
+								bind:value={newTask.description}
+								placeholder="Description..."
+								class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600 resize-none"
+								rows="3"
+							/>
+						</div>
+						<div>
+							<select
+								bind:value={newTask.category}
+								class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white border-gray-600"
+							>
+								<option value="">Select category...</option>
+								{#each categories.filter(cat => cat !== 'all') as category}
+									<option value={category}>{category}</option>
+								{/each}
+							</select>
+						</div>
+						<div class="flex justify-end gap-2">
+							<button
+								on:click={() => showTaskInput = false}
+								class="px-4 py-2 text-sm rounded-md bg-gray-700 text-white hover:bg-gray-600"
+							>
+								Cancel
+							</button>
+							<button
+								on:click={handleAddTask}
+								class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-500"
+								disabled={!newTask.title.trim()}
+							>
+								Add Task
+							</button>
+						</div>
 					</div>
 				</div>
 			</div>
-		</button>
+		</dialog>
 	{/if}
 </div>
 
