@@ -1,55 +1,49 @@
-# Salvia-kit Dashboard v4 Svelte-kit
+# Harvest 🌱
 
-![Salvia-kit Dashboard v4](https://www.salvia-kit.com/images/dashboards/dashv4.jpg)
+Harvest is a dashboard for visualizing and interacting with holonic networks. It provides an intuitive interface for monitoring and managing holonic systems.
 
-## 📋 Documentation
-You can see the documentation on [http://localhost:3000/admin/documentation](http://localhost:3000/admin/documentation)
+## Features
 
-## Browser Support
+### Holonic Network Visualization 🕸️
+- Interactive network graph showing holons and their relationships
+- Real-time updates of holon states and connections
+- Zoom and pan controls for easy navigation
+- Color-coded nodes representing different holon types and states
 
-| Chrome | Firefox | Edge | Safari | Opera |
-|:---:|:---:|:---:|:---:|:---:|
-| <img src="https://github.com/creativetimofficial/public-assets/blob/master/logos/chrome-logo.png?raw=true" width="64" height="64"> | <img src="https://raw.githubusercontent.com/creativetimofficial/public-assets/master/logos/firefox-logo.png" width="64" height="64"> | <img src="https://raw.githubusercontent.com/creativetimofficial/public-assets/master/logos/edge-logo.png" width="64" height="64"> | <img src="https://raw.githubusercontent.com/creativetimofficial/public-assets/master/logos/safari-logo.png" width="64" height="64"> | <img src="https://raw.githubusercontent.com/creativetimofficial/public-assets/master/logos/opera-logo.png" width="64" height="64"> |
+### Holon Management 🎛️
+- View detailed information about individual holons
+- Monitor holon health and status
+- Inspect holon properties and configurations
+- Track holon relationships and dependencies
 
-## Contribution
-If you would like to contribute on the project, fixing bugs, please follow our [Contribution guide](https://github.com/salvia-kit/dashboard-v1-svelte/blob/main/contributing.md)
+### Sidebar Controls 📊
+- Filter holons by type or status
+- Search functionality to quickly find specific holons
+- Collapsible sidebar for maximizing view space
+- Real-time metrics and statistics
 
+## Getting Started
 
-# create-svelte
+### Prerequisites
+- Node.js (v20 or higher)
+- npm or yarn
 
-Everything you need to build a Svelte project, powered by [`create-svelte`](https://github.com/sveltejs/kit/tree/master/packages/create-svelte).
+### Installation
 
-## Creating a project
-
-If you're seeing this, you've probably already done this step. Congrats!
-
-```bash
-# create a new project in the current directory
-npm create svelte@latest
-
-# create a new project in my-app
-npm create svelte@latest my-app
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+1. Clone the repository:
 
 ```bash
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+git clone https://github.com/liminalvillage/harvest.git
 ```
 
-## Building
-
-To create a production version of your app:
+2. Install dependencies:
 
 ```bash
-npm run build
+yarn 
 ```
 
-You can preview the production build with `npm run preview`.
+3. Run the development server:
 
-> To deploy your app, you may need to install an [adapter](https://kit.svelte.dev/docs/adapters) for your target environment.
+```bash
+yarn dev
+```

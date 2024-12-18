@@ -10,3 +10,14 @@ declare global {
 }
 
 export {};
+
+/// <reference types="vite/client" />
+
+interface ImportMetaEnv {
+	readonly VITE_LOCAL_MODE: string
+	// Add other env vars here
+}
+
+interface ImportMeta {
+	readonly env: ImportMetaEnv
+}

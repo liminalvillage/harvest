@@ -86,8 +86,8 @@
         
         try {
             const off = holosphere.subscribe(hexId, selectedLens, (data: any) => {
-                console.log('Received data:', data);
                 if (data) {
+                    console.log('Data received:', data);
                     content = typeof data === 'string' ? JSON.parse(data) : data;
                 } else {
                     content = null;

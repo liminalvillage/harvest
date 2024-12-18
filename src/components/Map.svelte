@@ -425,11 +425,11 @@
 		}
 		
 		// Clean up old subscriptions that are no longer in view
-		for (const [hex, subscription] of existingSubscriptions) {
-			if (!newSubscriptions.has(hex)) {
-				subscription.off();
-			}
-		}
+		// for (const [hex, subscription] of existingSubscriptions) {
+		// 	if (!newSubscriptions.has(hex)) {
+		// 		subscription.off();
+		// 	}
+		// }
 		
 		holoSubscriptions.set(lens, newSubscriptions);
 		
