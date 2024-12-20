@@ -1,8 +1,9 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount } from 'svelte';
     import HoloSphere from 'holosphere';
+    import { ID } from "../dashboard/store";
     import { formatDate, formatTime } from '../utils/date.js';
-    import { phase } from 'lune';
+    import Timeline from './Timeline.svelte';
 
     const holosphere = getContext("holosphere") as HoloSphere;
     const dispatch = createEventDispatcher();
@@ -19,72 +20,67 @@
     $: monthData = getMonthData(currentDate);
     $: weekData = getWeekData(currentDate);
 
-    // Add new state for celestial data
-    let solarPhase = 0; // 0-1 representing position in year
-    
-    // Calculate solar phase (position in year)
-    $: {
-        const year = currentDate.getFullYear();
-        const events = getSolarEvents(year);
-        
-        // Find the current season
-        const now = currentDate.getTime();
-        let seasonStart: Date;
-        let seasonEnd: Date;
-        let seasonName: string;
-        
-        if (now < events.springEquinox.getTime()) {
-            seasonStart = new Date(year, 0, 1);
-            seasonEnd = events.springEquinox;
-            seasonName = 'Winter';
-        } else if (now < events.summerSolstice.getTime()) {
-            seasonStart = events.springEquinox;
-            seasonEnd = events.summerSolstice;
-            seasonName = 'Spring';
-        } else if (now < events.autumnEquinox.getTime()) {
-            seasonStart = events.summerSolstice;
-            seasonEnd = events.autumnEquinox;
-            seasonName = 'Summer';
-        } else if (now < events.winterSolstice.getTime()) {
-            seasonStart = events.autumnEquinox;
-            seasonEnd = events.winterSolstice;
-            seasonName = 'Autumn';
-        } else {
-            seasonStart = events.winterSolstice;
-            seasonEnd = new Date(year + 1, 0, 1);
-            seasonName = 'Winter';
-        }
-        
-        // Calculate phase within the year
-        const yearStart = new Date(year, 0, 1);
-        const yearEnd = new Date(year + 1, 0, 1);
-        solarPhase = (now - yearStart.getTime()) / (yearEnd.getTime() - yearStart.getTime());
-        
-        // Calculate phase within the season
-        const seasonPhase = (now - seasonStart.getTime()) / (seasonEnd.getTime() - seasonStart.getTime());
-    }
-    
-    // Subscribe to events
+    let currentDayPercentage = 0;
+
+    // Add these before the calendar state variables
+    let users: Record<string, User> = {};
+    let profiles: Record<string, Profile> = {};
+    let unsubscribe: (() => void) | null = null;
+
     onMount(() => {
-        if (holosphere) {
-            holosphere.getGlobal('Events', (newEvent, key) => {
-                if (newEvent) {
-                    const event = typeof newEvent === 'string' ? JSON.parse(newEvent) : newEvent;
-                    const dateKey = new Date(event.date).toDateString();
+        loadProfiles();
+        return () => {
+            if (unsubscribe) unsubscribe();
+        };
+    });
+
+    // Watch for month/year changes
+    $: {
+        const month = currentDate.getMonth();
+        const year = currentDate.getFullYear();
+        if (unsubscribe) {
+            unsubscribe();
+            users = {};
+            profiles = {};
+        }
+        loadProfiles();
+    }
+
+    // Load profiles
+    function loadProfiles() {
+        if (!holosphere) return;
+        
+        try {
+            // Subscribe to users
+            unsubscribe = holosphere.subscribe($ID, "users", async (newUser, key) => {
+                if (newUser) {
+                    const userData = typeof newUser === 'string' ? JSON.parse(newUser) : newUser;
+                    users[key] = userData;
+                    users = users; // Trigger reactivity
                     
-                    events = {
-                        ...events,
-                        [dateKey]: [...(events[dateKey] || []), { ...event, id: key }]
-                    };
+                    // Load profile for this user
+                    try {
+                        const profile = await holosphere.get(userData.id || key, 'profile', userData.id || key);
+                        if (profile) {
+                            profiles[key] = typeof profile === 'string' ? JSON.parse(profile) : profile;
+                            profiles = profiles; // Trigger reactivity
+                        }
+                    } catch (error) {
+                        console.error(`Error loading profile for user ${key}:`, error);
+                    }
                 } else {
-                    // Remove event
-                    Object.keys(events).forEach(date => {
-                        events[date] = events[date].filter(e => e.id !== key);
-                    });
+                    delete users[key];
+                    delete profiles[key];
+                    users = users;
+                    profiles = profiles;
                 }
             });
+        } catch (error) {
+            console.error('Error loading users and profiles:', error);
+            users = {};
+            profiles = {};
         }
-    });
+    }
 
     function getMonthData(date: Date) {
         const year = date.getFullYear();
@@ -167,304 +163,90 @@
         return events[date.toDateString()] || [];
     }
 
-    function getSolarEvents(year: number) {
-        // Approximate dates - these vary slightly year to year
-        return {
-            springEquinox: new Date(year, 2, 20), // March 20
-            summerSolstice: new Date(year, 5, 21), // June 21
-            autumnEquinox: new Date(year, 8, 22), // September 22
-            winterSolstice: new Date(year, 11, 21) // December 21
-        };
-    }
-
-    // Add these state variables at the top of the script
-    let timelineZoom = 1;
-    let timelinePan = 0;
-    let isDragging = false;
-    let startX = 0;
-    let startPan = 0;
-    let timelineContainer: HTMLElement;
-
-    // Add these state variables
-    let visibleYears = new Set([currentDate.getFullYear()]);
-    let timelineWidth = 2000; // Width per year
-
-    // Add function to calculate visible years based on pan and zoom
-    function updateVisibleYears() {
-        const viewportStart = -timelinePan / timelineZoom;
-        const viewportEnd = (timelineContainer.clientWidth - timelinePan) / timelineZoom;
-        
-        const startYear = Math.floor(viewportStart / timelineWidth) + currentDate.getFullYear();
-        const endYear = Math.ceil(viewportEnd / timelineWidth) + currentDate.getFullYear();
-        
-        const newVisibleYears = new Set();
-        for (let year = startYear; year <= endYear; year++) {
-            newVisibleYears.add(year);
-        }
-        visibleYears = newVisibleYears;
-    }
-
-    // Add these functions for timeline interaction
-    function handleTimelineWheel(event: WheelEvent) {
-        event.preventDefault();
-        
-        if (event.ctrlKey || event.metaKey) {
-            // Zoom
-            const rect = timelineContainer.getBoundingClientRect();
-            const mouseX = event.clientX - rect.left;
-            const zoomPoint = (mouseX - timelinePan) / timelineZoom;
-            
-            const newZoom = Math.min(Math.max(0.5, timelineZoom * (event.deltaY > 0 ? 0.95 : 1.05)), 10);
-            timelinePan = mouseX - (zoomPoint * newZoom);
-            timelineZoom = newZoom;
-        } else {
-            // Pan
-            timelinePan = timelinePan - event.deltaX;
-        }
-        updateVisibleYears();
-    }
-
-    function handleTimelineMouseDown(event: MouseEvent) {
-        isDragging = true;
-        startX = event.clientX;
-        startPan = timelinePan;
-    }
-
-    function handleTimelineMouseMove(event: MouseEvent) {
-        if (!isDragging) return;
-        const delta = event.clientX - startX;
-        timelinePan = startPan + delta;
-        updateVisibleYears();
-    }
-
-    function handleTimelineMouseUp() {
-        isDragging = false;
-    }
-
-    // Add function to get moon phases for the year
-    function getMoonPhases(year: number) {
-        const phases = [];
-        const startDate = new Date(year, 0, 1);
-        const endDate = new Date(year + 1, 0, 1);
-        
-        // Check every 6 hours for better accuracy
-        let currentDate = new Date(startDate);
-        
-        while (currentDate < endDate) {
-            const phaseInfo = phase(currentDate);
-            
-            // Only add exact new moons (phase ≈ 0) or full moons (phase ≈ 0.5)
-            if (phaseInfo.phase < 0.025 || (phaseInfo.phase > 0.475 && phaseInfo.phase < 0.525)) {
-                // Check if we already have a similar phase nearby (within 10 days)
-                const isDuplicate = phases.some(p => 
-                    Math.abs(p.date.getTime() - currentDate.getTime()) < 10 * 24 * 60 * 60 * 1000
-                );
-                
-                if (!isDuplicate) {
-                    phases.push({
-                        date: new Date(currentDate),
-                        isNew: phaseInfo.phase < 0.025
-                    });
-                }
-            }
-            
-            // Move forward by 6 hours
-            currentDate = new Date(currentDate.getTime() + 6 * 60 * 60 * 1000);
-        }
-        
-        return phases;
-    }
-
-    // Add to reactive statements
-    $: moonPhases = getMoonPhases(currentDate.getFullYear());
-
-    // Add function to handle timeline clicks and cursor drags
-    function handleTimelineClick(event: MouseEvent) {
-        if (isDragging) return;
-        
-        const rect = timelineContainer.getBoundingClientRect();
-        const x = (event.clientX - rect.left - timelinePan) / timelineZoom;
-        
-        // Calculate total months from the start
-        const totalMonths = (x / (timelineWidth / 12));
-        const years = Math.floor(totalMonths / 12);
-        const months = Math.floor(totalMonths % 12);
-        const daysIntoMonth = ((totalMonths % 1) * getDaysInMonth(currentDate.getMonth()));
-        
-        updateSelectedDate(years, months, daysIntoMonth);
-    }
-
-    function updateSelectedDate(yearOffset: number, monthOffset: number, days: number) {
-        const newDate = new Date(currentDate);
-        newDate.setFullYear(currentDate.getFullYear() + yearOffset);
-        newDate.setMonth(monthOffset);
-        newDate.setDate(Math.floor(days));
-        
-        currentDate = newDate;
+    function handleTimelineDateSelect(event: CustomEvent<{date: Date, dayOfYear: number}>) {
+        currentDate = event.detail.date;
         selectedDate = currentDate;
+        currentDayPercentage = (event.detail.dayOfYear / 365) * 100;
+        
         dispatch('dateSelect', { 
             date: currentDate, 
             events: events[currentDate.toDateString()] || [] 
         });
     }
 
-    // Helper function to get days in a month
-    function getDaysInMonth(month: number): number {
-        return new Date(currentDate.getFullYear(), month + 1, 0).getDate();
+    function getStaysForDay(date: Date) {
+        const dateStr = date.toDateString();
+        return Object.entries(profiles)
+            .filter(([_, profile]) => {
+                if (!profile.arrival || !profile.departure) return false;
+                const arrivalDate = new Date(profile.arrival);
+                const departureDate = new Date(profile.departure);
+                const checkDate = new Date(dateStr);
+                return checkDate >= arrivalDate && checkDate <= departureDate;
+            })
+            .map(([userId, profile]) => ({
+                userId,
+                profile,
+                user: users[userId],
+                isArrival: new Date(profile.arrival).toDateString() === dateStr,
+                isDeparture: new Date(profile.departure).toDateString() === dateStr
+            }));
     }
 
-    // Update the timeline container element
-
-    // Add a function to format date for display
-    function formatDateDisplay(date: Date): string {
-        return date.toLocaleDateString(undefined, { 
-            weekday: 'short', 
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric' 
-        });
+    // Add interface for Profile type
+    interface Profile {
+        arrival: string;
+        departure: string;
+        // ... other profile fields ...
     }
 
-    // Add function to get current moon phase icon
-    function getMoonPhaseIcon(phaseValue: number) {
-        // 0 = new moon, 0.5 = full moon, 1 = new moon
-        if (phaseValue < 0.125) return '🌑'; // new moon
-        if (phaseValue < 0.25) return '🌒'; // waxing crescent
-        if (phaseValue < 0.375) return '🌓'; // first quarter
-        if (phaseValue < 0.5) return '🌔'; // waxing gibbous
-        if (phaseValue < 0.625) return '🌕'; // full moon
-        if (phaseValue < 0.75) return '🌖'; // waning gibbous
-        if (phaseValue < 0.875) return '🌗'; // last quarter
-        return '🌘'; // waning crescent
+    // Add this helper function at the script level
+    function getUserColor(userId: string): string {
+        // Generate a hash from the userId
+        let hash = 0;
+        for (let i = 0; i < userId.length; i++) {
+            hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        // Convert to HSL color with fixed saturation and lightness
+        const hue = hash % 360;
+        return `hsl(${hue}, 70%, 60%)`;
+    }
+
+    // Update getStayStyle to use the user color
+    function getStayStyle(date: Date, profile: Profile, userId: string): string {
+        const arrivalDate = new Date(profile.arrival);
+        const departureDate = new Date(profile.departure);
+        const checkDate = new Date(date.toDateString());
+        
+        let style = `bg-opacity-90 `;
+        style += `style="background-color: ${getUserColor(userId)};" `;
+        
+        // First day of stay
+        if (checkDate.getTime() === arrivalDate.setHours(0,0,0,0)) {
+            style += "rounded-l ";
+        }
+        
+        // Last day of stay
+        if (checkDate.getTime() === departureDate.setHours(0,0,0,0)) {
+            style += "rounded-r ";
+        }
+        
+        // Middle days
+        if (checkDate > arrivalDate && checkDate < departureDate) {
+            style += "-mx-[1px] "; // Negative margin to connect bars
+        }
+        
+        return style;
     }
 </script>
 
-<div class="bg-gray-800 rounded-3xl p-6 mb-6">
-    <div class="flex justify-between items-center mb-4">
-        <h3 class="text-lg font-medium text-white">Timeline</h3>
-        <div class="text-sm text-gray-400">
-            Zoom: {timelineZoom.toFixed(1)}x
-        </div>
-    </div>
-    
-    <!-- Timeline container -->
-    <div 
-        class="relative h-32 overflow-hidden cursor-grab select-none"
-        class:cursor-grabbing={isDragging}
-        bind:this={timelineContainer}
-        on:wheel={handleTimelineWheel}
-        on:mousedown={handleTimelineMouseDown}
-        on:mousemove={handleTimelineMouseMove}
-        on:mouseup={handleTimelineMouseUp}
-        on:mouseleave={handleTimelineMouseUp}
-        on:click={handleTimelineClick}
-    >
-        <!-- Timeline content -->
-        <div 
-            class="absolute inset-0"
-            style="transform: translateX({timelinePan}px);"
-        >
-            <!-- Scalable elements container -->
-            <div 
-                class="absolute inset-0"
-                style="transform: scaleX({timelineZoom}); transform-origin: left center;"
-            >
-                {#each [...visibleYears] as year}
-                    {@const yearOffset = (year - currentDate.getFullYear()) * timelineWidth}
-                    <!-- Base timeline line -->
-                    <div class="absolute w-[2000px] h-px bg-gray-600 top-1/2"
-                        style="left: {yearOffset}px"
-                    ></div>
-                    
-                    <!-- Month grid lines -->
-                    {#each Array(12) as _, i}
-                        <div 
-                            class="absolute h-full"
-                            style="left: {yearOffset + (i / 12) * timelineWidth}px"
-                        >
-                            <div class="h-full w-px bg-gray-700 opacity-50"></div>
-                        </div>
-                    {/each}
-                {/each}
-            </div>
-
-            <!-- Non-scaling elements -->
-            {#each [...visibleYears] as year}
-                {@const yearOffset = (year - currentDate.getFullYear()) * timelineWidth * timelineZoom}
-                
-                <!-- Month labels -->
-                {#each Array(12) as _, i}
-                    <div 
-                        class="absolute text-xs text-gray-400"
-                        style="left: {yearOffset + (i / 12) * timelineWidth * timelineZoom}px; top: 8px; transform: translateX(-50%)"
-                    >
-                        {new Date(year, i, 1).toLocaleString('default', { month: 'long' })}
-                    </div>
-                {/each}
-
-                <!-- Solar events -->
-                {#each Object.entries(getSolarEvents(year)) as [name, date]}
-                    <div 
-                        class="absolute top-1/2 transform -translate-y-1/2 group"
-                        style="left: {yearOffset + (date.getTime() - new Date(year, 0, 1).getTime()) / 
-                            (new Date(year + 1, 0, 1).getTime() - new Date(year, 0, 1).getTime()) * timelineWidth * timelineZoom}px"
-                    >
-                        <!-- Different icons for solstices and equinoxes -->
-                        {#if name.includes('Solstice')}
-                            <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
-                        {:else}
-                            <div class="w-3 h-3 overflow-hidden relative">
-                                <div class="absolute inset-0 rounded-l-full bg-yellow-400"></div>
-                                <div class="absolute inset-0 rounded-r-full bg-gray-600"></div>
-                            </div>
-                        {/if}
-                        
-                        <!-- Tooltip -->
-                        <div class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                            {name.replace(/([A-Z])/g, ' $1').trim()}: {date.toLocaleDateString()}
-                        </div>
-                    </div>
-                {/each}
-            {/each}
-
-            <!-- Move moon phase markers outside the year loop -->
-            {#each moonPhases as { date, isNew }}
-                <div 
-                    class="absolute top-1/2 transform -translate-y-1/2 group"
-                    style="left: {((date.getTime() - new Date(currentDate.getFullYear(), 0, 1).getTime()) / 
-                        (new Date(currentDate.getFullYear() + 1, 0, 1).getTime() - new Date(currentDate.getFullYear(), 0, 1).getTime())) * timelineWidth * timelineZoom}px"
-                >
-                    <div 
-                        class="w-2 h-2 rounded-full border border-gray-400"
-                        class:bg-gray-800={isNew}
-                        class:bg-gray-300={!isNew}
-                    ></div>
-                    <!-- Tooltip -->
-                    <div class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                        {isNew ? '🌑 New Moon' : '🌕 Full Moon'}: {date.toLocaleDateString()}
-                    </div>
-                </div>
-            {/each}
-
-            <!-- Current date indicator -->
-            <div 
-                class="absolute h-full w-px bg-white top-0 cursor-ew-resize z-10"
-                style="left: {((currentDate.getTime() - new Date(currentDate.getFullYear(), 0, 1).getTime()) / 
-                    (new Date(currentDate.getFullYear() + 1, 0, 1).getTime() - new Date(currentDate.getFullYear(), 0, 1).getTime()) + 
-                    (currentDate.getFullYear() - Math.min(...visibleYears))) * timelineWidth * timelineZoom}px;"
-            >
-                <div class="absolute top-0 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded flex items-center gap-2">
-                    <span>{formatDateDisplay(currentDate)}</span>
-                    <span class="text-base" title="Current moon phase">
-                        {getMoonPhaseIcon(phase(currentDate).phase)}
-                    </span>
-                </div>
-                <!-- Indicator handle -->
-                <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full"></div>
-            </div>
-        </div>
-    </div>
-</div>
+<Timeline 
+    currentDate={currentDate}
+    {currentDayPercentage}
+    {profiles}
+    {users}
+    on:dateSelect={handleTimelineDateSelect}
+/>
 
 <div class="bg-gray-800 rounded-3xl p-6">
     <div class="flex justify-between items-center mb-6">
@@ -517,11 +299,12 @@
             
             {#each monthData as date}
                 {@const dateEvents = getDayEvents(date)}
+                {@const stays = getStaysForDay(date)}
                 <button 
                     class="p-2 min-h-[100px] text-left bg-gray-800 relative group transition-colors hover:bg-gray-700"
                     class:opacity-50={!isCurrentMonth(date)}
-                    class:ring-2={date.toDateString() === currentDate.toDateString()}
-                    class:ring-white={date.toDateString() === currentDate.toDateString()}
+                    class:ring-2={isSelected(date)}
+                    class:ring-white={isSelected(date)}
                     on:click={() => handleDateClick(date)}
                 >
                     <span 
@@ -532,6 +315,25 @@
                     </span>
                     
                     <div class="mt-1 space-y-1">
+                        {#each stays as stay}
+                            <div 
+                                class="text-xs p-1 truncate flex items-center gap-1 relative {getStayStyle(date, stay.profile, stay.userId)}"
+                                class:mt-px={!stay.isArrival}
+                                class:mb-px={!stay.isDeparture}
+                                class:z-10={stay.isArrival || stay.isDeparture}
+                                class:z-0={!stay.isArrival && !stay.isDeparture}
+                                style="background-color: {getUserColor(stay.userId)};"
+                            >
+                                {#if stay.isArrival}
+                                    <span>🛬</span>
+                                {/if}
+                                <span class="truncate">{stay.user.first_name}</span>
+                                {#if stay.isDeparture}
+                                    <span>🛫</span>
+                                {/if}
+                            </div>
+                        {/each}
+                        
                         {#each dateEvents.slice(0, 3) as event}
                             <div 
                                 class="text-xs p-1 rounded bg-opacity-90 truncate"
@@ -579,6 +381,27 @@
                                     {hour.toString().padStart(2, '0')}:00
                                 </div>
                                 
+                                {#if hour === 12}
+                                    {#each getStaysForDay(date) as stay}
+                                        <div 
+                                            class="text-xs p-1 truncate flex items-center gap-1 relative {getStayStyle(date, stay.profile, stay.userId)}"
+                                            class:mt-px={!stay.isArrival}
+                                            class:mb-px={!stay.isDeparture}
+                                            class:z-10={stay.isArrival || stay.isDeparture}
+                                            class:z-0={!stay.isArrival && !stay.isDeparture}
+                                            style="background-color: {getUserColor(stay.userId)};"
+                                        >
+                                            {#if stay.isArrival}
+                                                <span>🛬</span>
+                                            {/if}
+                                            <span class="truncate">{stay.user.first_name}</span>
+                                            {#if stay.isDeparture}
+                                                <span>🛫</span>
+                                            {/if}
+                                        </div>
+                                    {/each}
+                                {/if}
+                                
                                 {#each getDayEvents(date).filter(event => new Date(event.date).getHours() === hour) as event}
                                     <div 
                                         class="text-xs p-1 rounded bg-opacity-90 truncate mt-1"
@@ -597,43 +420,23 @@
 </div>
 
 <style>
-    /* Ensure smooth transitions */
     button {
         transition: all 0.2s ease;
     }
-    
-    /* Custom scrollbar styles */
-    div {
-        scrollbar-width: thin;
-        scrollbar-color: rgba(75, 85, 99, 0.5) transparent;
-    }
-    
-    div::-webkit-scrollbar {
-        width: 6px;
-    }
-    
-    div::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    
-    div::-webkit-scrollbar-thumb {
-        background-color: rgba(75, 85, 99, 0.5);
-        border-radius: 3px;
-    }
 
-    /* Prevent text selection during dragging */
-    .select-none {
-        user-select: none;
-        -webkit-user-select: none;
+    /* Add these new styles */
+    .mt-px {
+        margin-top: 1px;
     }
-
-    /* Smooth transitions */
-    .transition-transform {
-        transition: transform 0.1s ease-out;
+    
+    .mb-px {
+        margin-bottom: 1px;
     }
-
-    /* Hide scrollbars */
-    .overflow-hidden::-webkit-scrollbar {
-        display: none;
+    
+    /* Ensure the calendar grid has no gaps */
+    :global(.grid.grid-cols-7) {
+        gap: 1px;
+        margin: -1px;
+        padding: 1px;
     }
 </style> 
