@@ -30,7 +30,7 @@
             {/if}
         {:else}
             <span>
-                <span class="no-arrow"/>
+                <span class="no-arrow"></span>
                 <h2 class="label">{label}</h2>
             </span>
         {/if}

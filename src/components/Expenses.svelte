@@ -17,12 +17,14 @@
     
     $: holonID = $ID;
     let expenses: Record<string, Expense> = {};
-    let users: string[] = [];
+    let store: Record<string, any> = {};
     let selectedCurrency = "usd";
     let creditMatrix: number[][] = [];
     
     // Get unique currencies from expenses
     $: currencies = [...new Set(Object.values(expenses).map(e => e.currency))];
+    
+    $: users = Object.values(store).map(user => user.first_name);
     
     onMount(() => {
         ID.subscribe((value) => {
@@ -52,17 +54,19 @@
     }
 
     function subscribeToUsers(): void {
+        store = {};
         if (holosphere) {
             holosphere.subscribe(
                 holonID,
                 "users",
-                (newItem: string) => {
-                    if (newItem) {
-                        const user = JSON.parse(newItem);
-                        if (!users.includes(user.username)) {
-                            users = [...users, user.username];
-                        }
+                (newUser, key) => {
+                    if (newUser) {
+                        store[key] = JSON.parse(newUser);
+                    } else {
+                        delete store[key];
+                        store = store;
                     }
+                    users = Object.values(store).map(user => user.first_name);
                     calculateCredits(selectedCurrency);
                 }
             );

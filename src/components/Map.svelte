@@ -659,7 +659,7 @@
                     <div class="loading-spinner">Loading...</div>
                 </div>
             {/if}
-            <div bind:this={mapContainer} class="map rounded-3xl" />
+            <div bind:this={mapContainer} class="map rounded-3xl"></div>
             {#if hexId}
                 <div class="hex-info">Selected Hexagon: {hexId}</div>
             {/if}

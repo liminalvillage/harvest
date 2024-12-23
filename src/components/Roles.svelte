@@ -179,6 +179,7 @@
 						: 'bg-transparent'} p-2"
 					title="List View"
 					on:click={() => (isListView = true)}
+					aria-label="Switch to list view"
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -205,6 +206,7 @@
 						: 'bg-transparent'} p-2 ml-2"
 					title="Grid View"
 					on:click={() => (isListView = false)}
+					aria-label="Switch to grid view"
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"

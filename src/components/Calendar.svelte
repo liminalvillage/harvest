@@ -123,10 +123,11 @@
                     if (!userData?.id) return; // Skip if no user ID
                     users[key] = userData;
                     users = users; // Trigger reactivity
-                    
+                   
                     // Load profile for this user
                     try {
-                        const profile = await holosphere.get(userData.id || key, 'profile', userData.id || key);
+                        const profile = await holosphere.get(userData.id, 'profile', userData.id );
+                        console.log("profile found:",profile)
                         if (profile) {
                             profiles[key] = typeof profile === 'string' ? JSON.parse(profile) : profile;
                             profiles = profiles; // Trigger reactivity
@@ -621,10 +622,10 @@
                 </div>
             </div>
             
-            <div class="day-grid relative">
+            <div class="divide-y divide-gray-700 relative">
                 {#each Array(24) as _, i}
                     <div 
-                        class="hour-slot group hover:bg-gray-700 transition-colors"
+                        class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors"
                         style="grid-row: {i + 1}"
                         on:click={() => {
                             const eventDate = new Date(currentDate);
@@ -632,10 +633,9 @@
                             handleDateClick(eventDate);
                         }}
                     >
-                        <div class="text-xs text-gray-500 group-hover:text-gray-400 p-1">
+                        <div class="text-xs text-gray-500 group-hover:text-gray-400">
                             {i.toString().padStart(2, '0')}:00
                         </div>
-                        <div class="absolute inset-x-0 bottom-0 border-b border-gray-700"></div>
                     </div>
                 {/each}
 
@@ -704,13 +704,12 @@
                     {@const currentMinute = now.getMinutes()}
                     {@const position = currentHour + currentMinute / 60}
                     <div 
-                        class="absolute left-0 right-0 flex items-center z-30"
+                        class="absolute left-0 right-0 border-t-2 border-red-500 z-30"
                         style="top: {(position / 24) * 100}%"
                     >
-                        <div class="text-red-500 text-xs px-2">
+                        <div class="absolute -left-16 -top-3 text-red-500 text-xs">
                             {currentHour.toString().padStart(2, '0')}:{currentMinute.toString().padStart(2, '0')}
                         </div>
-                        <div class="flex-1 border-t-2 border-red-500"></div>
                     </div>
                 {/if}
             </div>
@@ -859,19 +858,5 @@
         display: grid;
         grid-template-rows: repeat(24, minmax(48px, auto));
         position: relative;
-    }
-
-    .day-grid {
-        display: grid;
-        grid-template-rows: repeat(24, minmax(48px, auto));
-        position: relative;
-        height: calc(24 * 48px);
-        overflow-y: auto;
-    }
-
-    .hour-slot {
-        position: relative;
-        min-height: 48px;
-        padding: 0;
     }
 </style> 

@@ -286,6 +286,7 @@
 						: 'bg-transparent'} p-2"
 					title="List View"
 					on:click={() => (viewMode = "list")}
+					aria-label="Switch to list view"
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -312,6 +313,7 @@
 						: 'bg-transparent'} p-2 ml-2"
 					title="Grid View"
 					on:click={() => (viewMode = "grid")}
+					aria-label="Switch to grid view"
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -324,10 +326,10 @@
 						stroke-linecap="round"
 						stroke-linejoin="round"
 					>
-						<rect x="3" y="3" width="7" height="7" />
-						<rect x="14" y="3" width="7" height="7" />
-						<rect x="14" y="14" width="7" height="7" />
-						<rect x="3" y="14" width="7" height="7" />
+						<rect x="3" y="3" width="7" height="7"></rect>
+						<rect x="14" y="3" width="7" height="7"></rect>
+						<rect x="14" y="14" width="7" height="7"></rect>
+						<rect x="3" y="14" width="7" height="7"></rect>
 					</svg>
 				</button>
 				<button
@@ -336,6 +338,7 @@
 						: 'bg-transparent'} p-2 ml-2"
 					title="Canvas View"
 					on:click={() => (viewMode = "canvas")}
+					aria-label="Switch to canvas view"
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -348,12 +351,12 @@
 						stroke-linecap="round"
 						stroke-linejoin="round"
 					>
-						<path d="M5 9l-3 3 3 3"/>
-						<path d="M9 5l3-3 3 3"/>
-						<path d="M9 19l3 3 3-3"/>
-						<path d="M19 9l3 3-3 3"/>
-						<path d="M2 12h20"/>
-						<path d="M12 2v20"/>
+						<path d="M5 9l-3 3 3 3"></path>
+						<path d="M9 5l3-3 3 3"></path>
+						<path d="M9 19l3 3 3-3"></path>
+						<path d="M19 9l3 3-3 3"></path>
+						<path d="M2 12h20"></path>
+						<path d="M12 2v20"></path>
 					</svg>
 				</button>
 			</div>
@@ -392,6 +395,7 @@
 				<button
 					class="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-full text-sm hover:bg-gray-500 transition-colors"
 					on:click={toggleSort}
+					aria-label="Toggle sort order"
 				>
 					Sort
 					<svg
@@ -406,7 +410,7 @@
 						stroke-linecap="round"
 						stroke-linejoin="round"
 					>
-						<path d="M12 5v14M19 12l-7 7-7-7"/>
+						<path d="M12 5v14M19 12l-7 7-7-7"></path>
 					</svg>
 				</button>
 			</div>
@@ -419,13 +423,11 @@
 						class="sr-only"
 						bind:checked={showCompleted}
 					/>
-					<div
-						class="w-10 h-6 bg-gray-600 rounded-full shadow-inner"
-					/>
+					<div class="w-10 h-6 bg-gray-600 rounded-full shadow-inner"></div>
 					<div
 						class="dot absolute w-4 h-4 bg-white rounded-full transition left-1 top-1"
 						class:translate-x-4={showCompleted}
-					/>
+					></div>
 				</div>
 				<div class="ml-3 text-sm font-medium text-white">
 					Show Completed
@@ -441,6 +443,7 @@
 							id={key}
 							class="w-full task-card relative text-left"
 							on:click|stopPropagation={() => handleTaskClick(key, quest)}
+							aria-label={`Open task: ${quest.title}`}
 						>
 							<div
 								class="p-3 rounded-lg transition-colors"
@@ -522,10 +525,20 @@
 												{/each}
 												{#if quest.participants.length > 3}
 													<div
-														class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300"
+														class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300 relative group"
 													>
-														+{quest.participants
-															.length - 3}
+														<span>+{quest.participants.length - 3}</span>
+														<div
+															class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10"
+														>
+															{quest.participants
+																.slice(3)
+																.map(
+																	(p) =>
+																		p.username
+																)
+																.join(", ")}
+														</div>
 													</div>
 												{/if}
 											</div>
@@ -567,6 +580,7 @@
 							id={key}
 							class="w-full md:w-4/12 task-card relative text-left"
 							on:click|stopPropagation={() => handleTaskClick(key, quest)}
+							aria-label={`Open task: ${quest.title}`}
 						>
 							<div class="p-2">
 								<div
@@ -678,12 +692,7 @@
 													<div
 														class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300 relative group"
 													>
-														<span
-															>+{quest
-																.participants
-																.length -
-																3}</span
-														>
+														<span>+{quest.participants.length - 3}</span>
 														<div
 															class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10"
 														>
@@ -716,6 +725,7 @@
 			<button
 				on:click={() => showTaskInput = true}
 				class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none"
+				aria-label="Add new task"
 			>
 				+
 			</button>
@@ -744,16 +754,19 @@
 		>
 			<div 
 				class="bg-black bg-opacity-50 w-full h-full flex items-center justify-center"
-				on:click|self={() => dialogElement?.close()}
+				role="presentation"
 			>
 				<div 
 					class="bg-gray-800 p-6 rounded-lg shadow-lg w-96" 
-					on:click|stopPropagation
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="task-input-title"
 				>
 					<div class="relative">
 						<button
 							on:click={() => (showTaskInput = false)}
 							class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
+							aria-label="Close task input dialog"
 						>
 							<svg
 								class="w-5 h-5"
@@ -766,14 +779,16 @@
 									stroke-linejoin="round"
 									stroke-width="2"
 									d="M6 18L18 6M6 6l12 12"
-								/>
+								></path>
 							</svg>
 						</button>
-						<h3 class="text-white text-lg font-bold mb-4">Add New Task</h3>
+						<h3 id="task-input-title" class="text-white text-lg font-bold mb-4">Add New Task</h3>
 					</div>
 					<div class="space-y-4">
 						<div>
+							<label for="task-title" class="sr-only">Task title</label>
 							<input
+								id="task-title"
 								type="text"
 								bind:value={newTask.title}
 								placeholder="Task title..."
@@ -781,15 +796,19 @@
 							/>
 						</div>
 						<div>
+							<label for="task-description" class="sr-only">Task description</label>
 							<textarea
+								id="task-description"
 								bind:value={newTask.description}
 								placeholder="Description..."
 								class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600 resize-none"
 								rows="3"
-							/>
+							></textarea>
 						</div>
 						<div>
+							<label for="task-category" class="sr-only">Task category</label>
 							<select
+								id="task-category"
 								bind:value={newTask.category}
 								class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white border-gray-600"
 							>
@@ -803,6 +822,7 @@
 							<button
 								on:click={() => showTaskInput = false}
 								class="px-4 py-2 text-sm rounded-md bg-gray-700 text-white hover:bg-gray-600"
+								aria-label="Cancel adding task"
 							>
 								Cancel
 							</button>
@@ -810,6 +830,7 @@
 								on:click={handleAddTask}
 								class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-500"
 								disabled={!newTask.title.trim()}
+								aria-label="Add new task"
 							>
 								Add Task
 							</button>

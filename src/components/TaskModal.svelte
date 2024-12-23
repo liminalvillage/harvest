@@ -471,6 +471,7 @@
                                 <button 
                                     class="text-gray-400 hover:text-red-400 transition-colors"
                                     on:click={() => updateQuest({ when: null, status: 'ongoing' })}
+                                    aria-label="Remove schedule"
                                 >
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -514,6 +515,7 @@
                                     <button 
                                         class="text-gray-400 hover:text-red-400 transition-colors"
                                         on:click={() => removeParticipant(participant.id)}
+                                        aria-label={`Remove participant ${participant.first_name}`}
                                     >
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />

@@ -236,7 +236,7 @@
 <form on:submit|preventDefault={handleSubmit} class="space-y-4">
     {#each Object.entries(currentSchema) as [fieldName, field]}
         <div class="form-field">
-            <label class="block text-sm font-medium mb-1 flex items-center gap-2">
+            <label class="block text-sm font-medium mb-1 flex items-center gap-2" for={fieldName}>
                 <span class={field.required ? 'text-blue-400' : 'text-gray-200'}>
                     {field.title || fieldName.replace(/_/g, ' ')}
                 </span>
@@ -250,10 +250,12 @@
                     </div>
                 {:else}
                     <select 
+                        id={fieldName}
                         bind:value={formData[fieldName]}
                         class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
                         required={field.required}
                         disabled={viewOnly}
+                        aria-label={field.title || fieldName.replace(/_/g, ' ')}
                     >
                         <option value="">Select {fieldName.replace(/_/g, ' ')}</option>
                         {#each field.enum || [] as value, i}
@@ -266,15 +268,17 @@
 
             {:else if field.type === 'array' && field.items?.enum}
                 <!-- Checkboxes for array of enums -->
-                <div class="space-y-2 p-2 bg-gray-700 rounded-lg border border-gray-600">
+                <div class="space-y-2 p-2 bg-gray-700 rounded-lg border border-gray-600" role="group" aria-label={field.title || fieldName.replace(/_/g, ' ')}>
                     {#each field.items.enum as value, i}
-                        <label class="flex items-center space-x-2 hover:bg-gray-600 p-2 rounded transition-colors">
+                        <label class="flex items-center space-x-2 hover:bg-gray-600 p-2 rounded transition-colors" for={`${fieldName}-${value}`}>
                             <input
+                                id={`${fieldName}-${value}`}
                                 type="checkbox"
                                 value={value}
                                 checked={Array.isArray(formData[fieldName]) && formData[fieldName]?.includes(value)}
                                 on:change={(e) => handleCheckboxInput(e, fieldName)}
                                 class="bg-gray-600 border-gray-500"
+                                aria-label={field.items.enumNames?.[i] || value}
                             />
                             <span class="text-sm text-gray-200">
                                 {field.items.enumNames?.[i] || value}
@@ -298,22 +302,25 @@
                     <!-- Tags input -->
                     <div class="space-y-2">
                         <input
+                            id={fieldName}
                             type="text"
                             placeholder="Type and press Enter or comma to add tags"
                             on:keydown={handleTagInput}
                             on:input={handleTagDirectInput}
                             bind:value={tagInputValue}
                             class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
+                            aria-label={`Add ${field.title || fieldName.replace(/_/g, ' ')}`}
                         />
-                        <div class="flex flex-wrap gap-2">
+                        <div class="flex flex-wrap gap-2" role="list" aria-label="Added tags">
                             {#if formData[fieldName]}
                                 {#each formData[fieldName] as tag}
-                                    <span class="bg-gray-600 text-white px-2 py-1 rounded-full text-sm flex items-center">
+                                    <span class="bg-gray-600 text-white px-2 py-1 rounded-full text-sm flex items-center" role="listitem">
                                         {tag}
                                         <button
                                             type="button"
                                             on:click={() => removeTag(tag)}
                                             class="ml-2 text-gray-400 hover:text-white"
+                                            aria-label={`Remove tag ${tag}`}
                                         >
                                             ×
                                         </button>
@@ -333,41 +340,51 @@
                     <!-- Input fields based on type -->
                     {#if getInputType(field) === 'datetime-local'}
                         <input
+                            id={fieldName}
                             type="datetime-local"
                             value={formData[fieldName] || ''}
                             on:input={(e) => handleInputChange(e, fieldName)}
                             class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
                             placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
+                            aria-label={field.title || fieldName.replace(/_/g, ' ')}
                         />
                     {:else if getInputType(field) === 'number'}
                         <input
+                            id={fieldName}
                             type="number"
                             value={formData[fieldName] || ''}
                             on:input={(e) => handleInputChange(e, fieldName)}
                             class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
                             placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
+                            aria-label={field.title || fieldName.replace(/_/g, ' ')}
                         />
                     {:else if getInputType(field) === 'checkbox'}
                         <input
+                            id={fieldName}
                             type="checkbox"
                             checked={formData[fieldName] || false}
                             on:change={(e) => handleCheckboxInput(e, fieldName)}
                             class="bg-gray-700 border-gray-600"
+                            aria-label={field.title || fieldName.replace(/_/g, ' ')}
                         />
                     {:else}
                         <input
+                            id={fieldName}
                             type="text"
                             value={formData[fieldName] || ''}
                             on:input={(e) => handleInputChange(e, fieldName)}
                             class="w-full bg-gray-700 text-white rounded-lg p-2 border border-gray-600"
                             placeholder={field.description || `Enter ${fieldName.replace(/_/g, ' ')}`}
+                            aria-label={field.title || fieldName.replace(/_/g, ' ')}
                         />
                     {/if}
                 {/if}
             {/if}
 
             {#if field.description}
-                <p class="mt-1 text-sm text-gray-400">{field.description}</p>
+                <p class="mt-1 text-sm text-gray-400" id={`${fieldName}-description`}>
+                    {field.description}
+                </p>
             {/if}
         </div>
     {/each}
