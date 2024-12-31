@@ -20,7 +20,7 @@
 		appreciation: string[];
 		location?: string;
 		ends?: string;
-		type: 'task' | 'quest';
+		type: 'task' | 'quest' | 'event';
 		position?: {
 			x: number;
 			y: number;
@@ -88,20 +88,36 @@
 	}
 
 	// Add this function near the top of the <script> section, after the imports
-	function getColorFromCategory(category: string) {
-		if (!category) return "#E5E7EB"; // Light gray (gray-200) for items without category
+	function getColorFromCategory(category: string, type: string = 'task') {
+		if (!category) {
+			// Default colors based on type
+			switch (type) {
+				case 'event':
+					return "hsl(280, 70%, 85%)"; // Purple for events
+				case 'quest':
+					return "hsl(200, 70%, 85%)"; // Blue for quests
+				default:
+					return "#E5E7EB"; // Gray for tasks
+			}
+		}
 
-		// Simple string hash function
+		// For items with categories, generate color but adjust based on type
 		let hash = 0;
 		for (let i = 0; i < category.length; i++) {
 			hash = (hash << 5) - hash + category.charCodeAt(i);
 			hash = hash & hash;
 		}
 
-		// Generate HSL color with consistent saturation and lightness
-		// Using hash to generate hue (0-360)
 		const hue = Math.abs(hash % 360);
-		return `hsl(${hue}, 70%, 85%)`; // Pastel colors with good contrast for text
+		// Adjust saturation and lightness based on type
+		switch (type) {
+			case 'event':
+				return `hsl(${hue}, 85%, 80%)`; // More saturated for events
+			case 'quest':
+				return `hsl(${hue}, 75%, 82%)`; // Slightly saturated for quests
+			default:
+				return `hsl(${hue}, 70%, 85%)`; // Original for tasks
+		}
 	}
 
 	// Add these new variables
@@ -119,8 +135,14 @@
 
 	// Filter quests based on selected category
 	$: filteredQuests = sortedQuests.filter(([_, quest]: any) => {
-		if (selectedCategory === "all") return true;
-		return quest.category === selectedCategory;
+		// First check category filter
+		if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
+		
+		// Then check if it's a valid type (task, quest, or event)
+		if (!['task', 'quest', 'event'].includes(quest.type)) return false;
+		
+		// Finally check status
+		return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
 	});
 
 	// Add this variable to track the selected task
@@ -435,7 +457,7 @@
 		{#if viewMode === "list"}
 			<div class="space-y-2">
 				{#each filteredQuests as [key, quest]}
-					{#if (quest.status === "ongoing" || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
+					{#if quest.status === "ongoing" || (showCompleted && quest.status === "completed")}
 						<button
 							id={key}
 							class="w-full task-card relative text-left"
@@ -444,10 +466,9 @@
 						>
 							<div
 								class="p-3 rounded-lg transition-colors"
-								style="background-color: {quest.status ===
-								'completed'
+								style="background-color: {quest.status === 'completed'
 									? '#9CA3AF'
-									: getColorFromCategory(quest.category)}; 
+									: getColorFromCategory(quest.category, quest.type)}; 
 									   opacity: {quest.status === 'completed' ? '0.6' : '1'}"
 							>
 								<div
@@ -455,8 +476,12 @@
 								>
 									<div class="flex-1 min-w-0">
 										<h3
-											class="text-base font-bold opacity-70 truncate"
+											class="text-base font-bold opacity-70 truncate flex items-center gap-2"
 										>
+											<span class="text-sm px-2 py-0.5 rounded-full bg-black/20">
+												{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : '✓'}
+												{quest.type}
+											</span>
 											{quest.title}
 										</h3>
 										{#if quest.description}
@@ -572,7 +597,7 @@
 		{:else}
 			<div class="flex flex-wrap">
 				{#each filteredQuests as [key, quest]}
-					{#if (quest.status === "ongoing"  || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
+					{#if quest.status === "ongoing" || (showCompleted && quest.status === "completed")}
 						<button
 							id={key}
 							class="w-full md:w-4/12 task-card relative text-left"
@@ -582,13 +607,10 @@
 							<div class="p-2">
 								<div
 									class="p-4 rounded-3xl overflow-hidden"
-									style="background-color: {quest.status ===
-									'completed'
+									style="background-color: {quest.status === 'completed'
 										? '#9CA3AF'
-										: getColorFromCategory(
-												quest.category
-										  )}; 
-										   opacity: {quest.status === 'completed' ? '0.6' : '1'}"
+										: getColorFromCategory(quest.category, quest.type)}; 
+									   opacity: {quest.status === 'completed' ? '0.6' : '1'}"
 								>
 									<div
 										class="flex items-center justify-between"
@@ -608,9 +630,11 @@
 										{/if}
 									</div>
 									<div class="text-center mb-4 mt-5">
-										<p
-											class="text-base font-bold opacity-70 truncate"
-										>
+										<span class="text-sm px-2 py-0.5 rounded-full bg-black/20 mb-2 inline-block">
+											{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : '✓'}
+											{quest.type}
+										</span>
+										<p class="text-base font-bold opacity-70 truncate">
 											{quest.title}
 										</p>
 										{#if quest.category}
