@@ -1,7 +1,7 @@
 <script>
 	import { data } from './data';
 	import { page } from '$app/stores';
-	import { sidebarOpen } from '../store.ts';
+	import { sidebarOpen } from '../store';
 
 	const style = {
 		title: `mx-4 text-sm whitespace-pre`,

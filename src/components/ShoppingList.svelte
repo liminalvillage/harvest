@@ -36,7 +36,7 @@
                 "shopping",
                 (newItem: object | string, key: string) => {
                     if (newItem) {
-                        store[key] = typeof newItem === 'string' ? JSON.parse(newItem) : newItem;
+                        store[key] = newItem;
                     } else {
                         delete store[key];
                     }

@@ -34,7 +34,7 @@
 		if (holosphere)
 			holosphere.subscribe(holonID, "tags", (tag, key) => {
 				if (tag) {
-					store[key] = JSON.parse(tag);
+					store[key] = tag;
 				} else {
 					delete store[key];
 					store = store;

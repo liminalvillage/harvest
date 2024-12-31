@@ -1,12 +1,15 @@
 <script lang="ts">
-    import { createEventDispatcher, getContext, onMount } from 'svelte';
+    import { createEventDispatcher,getContext, onMount } from 'svelte';
     import HoloSphere from 'holosphere';
     import { ID } from "../dashboard/store";
-    import { formatDate, formatTime } from '../utils/date.js';
     import Timeline from './Timeline.svelte';
 
+    interface CalendarEvents {
+        dateSelect: { date: Date; events: any[] };
+    }
+    const dispatch = createEventDispatcher<CalendarEvents>();
+
     const holosphere = getContext("holosphere") as HoloSphere;
-    const dispatch = createEventDispatcher();
 
     // Calendar state
     let currentDate = new Date();
@@ -22,7 +25,7 @@
     let tempEndTime: string;
     
     // View options: 'month', 'week', 'day'
-    let viewMode: 'month' | 'week' | 'day' = 'month';
+    let viewMode: 'grid' | 'list' | 'canvas' | 'month' | 'week' | 'day' = 'week';
     
     // Get calendar data for current month
     $: monthData = getMonthData(currentDate);
@@ -72,18 +75,10 @@
     onMount(() => {
         loadProfiles();
         loadTasks();
-        return () => {
-            if (unsubscribe) unsubscribe();
-        };
     });
 
     // Function to reload data when view changes
     function reloadData() {
-        if (unsubscribe) {
-            unsubscribe();
-            users = {};
-            profiles = {};
-        }
         loadProfiles();
         loadTasks();
     }
@@ -116,10 +111,10 @@
         
         try {
             // Subscribe to users
-            unsubscribe = holosphere.subscribe($ID, "users", async (newUser, key) => {
+            holosphere.subscribe($ID, "users", async (newUser, key) => {
                 if (!key) return; // Skip if no key
                 if (newUser) {
-                    const userData = typeof newUser === 'string' ? JSON.parse(newUser) : newUser;
+                    const userData =  newUser;
                     if (!userData?.id) return; // Skip if no user ID
                     users[key] = userData;
                     users = users; // Trigger reactivity
@@ -129,7 +124,7 @@
                         const profile = await holosphere.get(userData.id, 'profile', userData.id );
                         console.log("profile found:",profile)
                         if (profile) {
-                            profiles[key] = typeof profile === 'string' ? JSON.parse(profile) : profile;
+                            profiles[key] = profile;
                             profiles = profiles; // Trigger reactivity
                         }
                     } catch (error) {
@@ -320,8 +315,8 @@
         
         holosphere.subscribe($ID, 'quests', (newTask, key) => {
             if (newTask) {
-                const task = typeof newTask === 'string' ? JSON.parse(newTask) : newTask;
-                if (task.status === 'scheduled') {
+                const task = newTask;
+                if (task.when) {
                     tasks[key] = task;
                     tasks = tasks;
                 }
@@ -387,17 +382,17 @@
         const startTime = new Date(task.when);
         const endTime = task.ends ? new Date(task.ends) : new Date(startTime.getTime() + 60*60*1000);
         
-        const startHour = startTime.getHours();
+        const startHour = startTime.getHours() - 6; // Adjust for 6 AM start
         const startMinutes = startTime.getMinutes();
-        const endHour = endTime.getHours();
+        const endHour = endTime.getHours() - 6;
         const endMinutes = endTime.getMinutes();
         
-        const startRow = startHour + 1;
-        const endRow = endHour + (endMinutes > 0 ? 2 : 1);
+        const startRow = startHour + (startMinutes / 60); // Convert to decimal hours
+        const endRow = endHour + (endMinutes / 60);
         
         return {
-            gridRowStart: startRow,
-            gridRowEnd: endRow,
+            gridRowStart: Math.max(Math.floor(startRow) + 1, 1),
+            gridRowEnd: Math.min(Math.ceil(endRow) + 1, 19),
             startTime: `${startTime.getHours().toString().padStart(2, '0')}:${startTime.getMinutes().toString().padStart(2, '0')}`,
             endTime: `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`
         };
@@ -417,6 +412,17 @@
             clearInterval(currentTimeInterval);
         };
     });
+
+    // First, update the current time calculation to include minutes for smoother positioning
+    function getCurrentTimePosition() {
+        const hours = now.getHours() - 6; // Adjust for 6 AM start
+        const minutes = now.getMinutes();
+        const position = hours + (minutes / 60);
+        return {
+            position: Math.max(0, Math.min(position, 18)) * 48, // Multiply by row height (48px)
+            isVisible: now.getHours() >= 6 && now.getHours() < 24
+        };
+    }
 </script>
 
 <Timeline 
@@ -460,10 +466,10 @@
         </div>
         <div class="flex gap-2">
             <button 
-                class="px-4 py-2 rounded-lg {viewMode === 'month' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors"
-                on:click={() => handleViewModeChange('month')}
+                class="px-4 py-2 rounded-lg {viewMode === 'day' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors"
+                on:click={() => handleViewModeChange('day')}
             >
-                Month
+                Day
             </button>
             <button 
                 class="px-4 py-2 rounded-lg {viewMode === 'week' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors"
@@ -472,10 +478,10 @@
                 Week
             </button>
             <button 
-                class="px-4 py-2 rounded-lg {viewMode === 'day' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors"
-                on:click={() => handleViewModeChange('day')}
+                class="px-4 py-2 rounded-lg {viewMode === 'month' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors"
+                on:click={() => handleViewModeChange('month')}
             >
-                Day
+                Month
             </button>
         </div>
     </div>
@@ -559,13 +565,13 @@
                     </div>
                     
                     <div class="divide-y divide-gray-700">
-                        {#each Array(24) as _, i}
+                        {#each Array(18) as _, i}
                             <div 
                                 class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors"
                                 style="grid-row: {i + 1}"
                             >
                                 <div class="text-xs text-gray-500 group-hover:text-gray-400">
-                                    {i.toString().padStart(2, '0')}:00
+                                    {(i + 6).toString().padStart(2, '0')}:00
                                 </div>
                             </div>
                         {/each}
@@ -596,6 +602,26 @@
                             {/if}
                         {/each}
 
+                        {#if now.toDateString() === date.toDateString()}
+                            {@const timePosition = getCurrentTimePosition()}
+                            {#if timePosition.isVisible}
+                                <div 
+                                    class="absolute inset-x-0 z-30 pointer-events-none"
+                                    style="top: {timePosition.position}px;"
+                                >
+                                    <div class="relative flex items-center">
+                                        <div class="absolute right-full pr-2">
+                                            <span class="text-red-500 text-xs font-medium bg-gray-800 px-1 rounded">
+                                                {now.getHours().toString().padStart(2, '0')}:{now.getMinutes().toString().padStart(2, '0')}
+                                            </span>
+                                        </div>
+                                        <div class="absolute -left-1 w-2 h-2 bg-red-500 rounded-full"></div>
+                                        <div class="w-full h-px bg-gradient-to-r from-red-500 via-red-500/50 to-transparent"></div>
+                                    </div>
+                                </div>
+                            {/if}
+                        {/if}
+
                         {#each events[date.toDateString()] || [] as event}
                             <div 
                                 class="text-xs p-1 rounded bg-opacity-90 truncate mt-1"
@@ -623,18 +649,18 @@
             </div>
             
             <div class="divide-y divide-gray-700 relative">
-                {#each Array(24) as _, i}
+                {#each Array(18) as _, i}
                     <div 
                         class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors"
                         style="grid-row: {i + 1}"
                         on:click={() => {
                             const eventDate = new Date(currentDate);
-                            eventDate.setHours(i);
+                            eventDate.setHours(i + 6);
                             handleDateClick(eventDate);
                         }}
                     >
                         <div class="text-xs text-gray-500 group-hover:text-gray-400">
-                            {i.toString().padStart(2, '0')}:00
+                            {(i + 6).toString().padStart(2, '0')}:00
                         </div>
                     </div>
                 {/each}
@@ -698,19 +724,25 @@
                     {/each}
                 </div>
 
-                <!-- Current time indicator -->
+                <!-- Add current time indicator -->
                 {#if now.toDateString() === currentDate.toDateString()}
-                    {@const currentHour = now.getHours()}
-                    {@const currentMinute = now.getMinutes()}
-                    {@const position = currentHour + currentMinute / 60}
-                    <div 
-                        class="absolute left-0 right-0 border-t-2 border-red-500 z-30"
-                        style="top: {(position / 24) * 100}%"
-                    >
-                        <div class="absolute -left-16 -top-3 text-red-500 text-xs">
-                            {currentHour.toString().padStart(2, '0')}:{currentMinute.toString().padStart(2, '0')}
+                    {@const timePosition = getCurrentTimePosition()}
+                    {#if timePosition.isVisible}
+                        <div 
+                            class="absolute inset-x-0 z-30 pointer-events-none"
+                            style="top: {timePosition.position}px;"
+                        >
+                            <div class="relative flex items-center">
+                                <div class="absolute right-full pr-2">
+                                    <span class="text-red-500 text-xs font-medium bg-gray-800 px-1 rounded">
+                                        {now.getHours().toString().padStart(2, '0')}:{now.getMinutes().toString().padStart(2, '0')}
+                                    </span>
+                                </div>
+                                <div class="absolute -left-1 w-2 h-2 bg-red-500 rounded-full"></div>
+                                <div class="w-full h-px bg-gradient-to-r from-red-500 via-red-500/50 to-transparent"></div>
+                            </div>
                         </div>
-                    </div>
+                    {/if}
                 {/if}
             </div>
         </div>
@@ -852,11 +884,14 @@
 
     .divide-y > div {
         position: relative;
+        height: 48px;
     }
     
     .divide-y {
         display: grid;
-        grid-template-rows: repeat(24, minmax(48px, auto));
+        grid-template-rows: repeat(18, 48px);
         position: relative;
+        height: 864px; /* 18 rows * 48px */
+        overflow-y: auto;
     }
 </style> 

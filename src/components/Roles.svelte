@@ -2,7 +2,7 @@
 	// @ts-nocheck
 
 	import { onMount, getContext } from "svelte";
-	import { ID } from "../dashboard/store.ts";
+	import { ID } from "../dashboard/store";
 	import { browser } from "$app/environment";
 
 	import HoloSphere from "holosphere";
@@ -52,7 +52,7 @@
 			holosphere.subscribe(holonID, "roles", (newrole, key) => {
 				if (newrole) {
 					try {
-						store = { ...store, [key]: JSON.parse(newrole) };
+						store = { ...store, [key]: newrole };
 					} catch (e) {
 						console.error("Error parsing role:", e);
 					}
@@ -66,7 +66,7 @@
 			holosphere.subscribe(holonID, "users", (newUser, key) => {
 				if (newUser) {
 					try {
-						userStore[key] = JSON.parse(newUser);
+						userStore[key] = newUser;
 						userStore = userStore;
 					} catch (e) {
 						console.error("Error parsing user:", e);

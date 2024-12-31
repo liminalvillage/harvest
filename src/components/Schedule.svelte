@@ -16,7 +16,7 @@
 
 	onMount(async () => {
 		//const data = await holosphere.get(holonID, 'quests');
-		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
+		//quests = data.filter((quest) => (quest.status === 'ongoing') && (quest.type === 'task' || quest.type === 'quest'));
 		subscribe();
 	});
 
@@ -29,7 +29,7 @@
 		store = {};
 		holosphere.subscribe(holonID, 'quests', (newquest, key) => {
 			if (newquest) {
-				const parsedQuest = JSON.parse(newquest);
+				const parsedQuest = newquest;
 				// Updates the store with the new value
 				store[key] = parsedQuest;
 				store = store; // trigger reactivity
@@ -149,7 +149,7 @@
 			<div class="time start-2330">23:30</div>
 
 			{#each quests as [key, quest]}
-				{#if quest && quest.status === "scheduled" && isToday(quest)}
+				{#if quest && quest.when && isToday(quest)}
 					<div
 						id={key}
 						class="event stage-{getDay(quest)} start-{getStartTime(quest)} end-{getEndTime(quest)} length-4"

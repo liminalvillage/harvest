@@ -36,7 +36,7 @@
         if (holosphere) {
             holosphere.subscribe(holonId, "users", (newUser: any, key: string) => {
                 if (newUser) {
-                    const parsedUser = typeof newUser === "string" ? JSON.parse(newUser) : newUser;
+                    const parsedUser = newUser;
                     userStore = {
                         ...userStore,
                         [key]: parsedUser

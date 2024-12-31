@@ -26,7 +26,7 @@ export const data = [
 	{
 		title: 'Schedule',
 		icon: CreditsIcon,
-		link: '/schedule'
+		link: '/calendar'
 	},
 	{
 		title: 'Roles',

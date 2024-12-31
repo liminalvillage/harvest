@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, getContext } from "svelte";
-	import { ID } from "../dashboard/store.ts";
+	import { ID } from "../dashboard/store";
 	import HoloSphere from "holosphere";
 
 	let store = {};
@@ -28,10 +28,7 @@
 			console.log(holonID, tableName);
 			holosphere.subscribe(holonID, tableName, (newData, key) => {
 				if (newData) {
-					store[key] =
-						typeof newData === "string"
-							? JSON.parse(newData)
-							: newData;
+					store[key] = newData;
 				} else {
 					delete store[key];
 					store = store;
@@ -89,18 +86,6 @@
 		try {
 			const entry = store[key];
 			let parsedValue = editValue;
-
-			// Try to parse as JSON if it looks like an object or array
-			if (
-				editValue.trim().startsWith("{") ||
-				editValue.trim().startsWith("[")
-			) {
-				try {
-					parsedValue = JSON.parse(editValue);
-				} catch (e) {
-					// If parsing fails, use the string value
-				}
-			}
 
 			const updatedEntry = { ...entry, [field]: parsedValue };
 			await holosphere.put(holonID, selectedTable, updatedEntry);

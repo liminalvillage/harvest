@@ -68,7 +68,7 @@
       },
       "status": {
         "type": "string",
-        "enum": ["ongoing", "completed", "cancelled","scheduled"]
+        "enum": ["ongoing", "completed", "cancelled"]
       }
     },
     "required": ["id", "version", "chat", "initiator", "title", "picture", "document", "where", "date", "when", "completed", "participants", "appreciation", "stoppers", "type", "status"]

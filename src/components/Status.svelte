@@ -76,7 +76,7 @@
         if (holosphere) {
             holosphere.subscribe(holonID, "users", (newUser, key) => {
                 if (newUser) {
-                    store[key] = JSON.parse(newUser);
+                    store[key] = newUser;
                 } else {
                     delete store[key];
                     store = store;

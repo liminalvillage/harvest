@@ -51,7 +51,7 @@
 		holosphere.subscribe(holonID, "quests", (newquest, key) => {
 			if (newquest) {
 				// Updates the store with the new value
-				store[key] = JSON.parse(newquest);
+				store[key] = newquest;
 			} else {
 				// A key may contain a null value (if data has been deleted/set to null)
 				// if so, we remove the item from the store
@@ -128,7 +128,7 @@
 		// Filter ongoing and scheduled quests
 		const filteredQuests = quests.filter(
 			(quest) =>
-				quest.status === "ongoing" || quest.status === "scheduled"
+				quest.status === "ongoing"
 		);
 
 		// Sort quests by when property
@@ -266,7 +266,7 @@
 			<div class="time start-2330">23:30</div>
 
 			{#each quests as [key, quest]}
-				{#if quest && quest.status === "scheduled" && isToday(quest)}
+				{#if quest && quest.when && isToday(quest)}
 					<button 
 						type="button"
 						id={key}

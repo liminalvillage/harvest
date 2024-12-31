@@ -43,7 +43,7 @@
                 "checklists",
                 (newItem: string, key: string) => {
                     if (newItem) {
-                        checklists[key] = JSON.parse(newItem);
+                        checklists[key] = newItem;
                     } else {
                         delete checklists[key];
                     }

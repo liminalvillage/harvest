@@ -33,7 +33,7 @@
 			holosphere.subscribe(holonID, "announcements", (announce, key) => {
 				if (announce) {
 					// Updates the store with the new value
-					store[key] = JSON.parse(announce);
+					store[key] = announce;
 				} else {
 					// A key may contain a null value (if data has been deleted/set to null)
 					// if so, we remove the item from the store

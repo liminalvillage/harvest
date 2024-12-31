@@ -36,7 +36,7 @@
                 "proposals",
                 (newItem: string, key: string) => {
                     if (newItem) {
-                        proposals[key] = JSON.parse(newItem);
+                        proposals[key] =newItem;
                     } else {
                         delete proposals[key];
                     }

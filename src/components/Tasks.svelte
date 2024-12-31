@@ -2,7 +2,7 @@
 	
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
-	import { formatDate, formatTime } from "../utils/date.js";
+	import { formatDate, formatTime } from "../utils/date";
 	import HoloSphere from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
@@ -14,7 +14,7 @@
 		description?: string;
 		date?: string;
 		when?: string;
-		status: 'ongoing' | 'completed' | 'scheduled';
+		status: 'ongoing' | 'completed';
 		category?: string;
 		participants: Array<{ id: string; username: string }>;
 		appreciation: string[];
@@ -172,10 +172,7 @@
 				if (newquest) {
 					store = {
 						...store,
-						[key]:
-							typeof newquest === "string"
-								? JSON.parse(newquest)
-								: newquest,
+						[key]:newquest,
 					};
 				} else {
 					const { [key]: _, ...rest } = store;
@@ -189,7 +186,7 @@
 		// Filter ongoing and scheduled quests
 		const filteredQuests = quests.filter(
 			([_, quest]) =>
-				quest.status === "ongoing" || quest.status === "scheduled"
+				quest.status === "ongoing" 
 		);
 		
 		// Sort quests by date field, falling back to when if date doesn't exist
@@ -438,7 +435,7 @@
 		{#if viewMode === "list"}
 			<div class="space-y-2">
 				{#each filteredQuests as [key, quest]}
-					{#if (quest.status === "ongoing" || quest.status === "scheduled" || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
+					{#if (quest.status === "ongoing" || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
 						<button
 							id={key}
 							class="w-full task-card relative text-left"
@@ -575,7 +572,7 @@
 		{:else}
 			<div class="flex flex-wrap">
 				{#each filteredQuests as [key, quest]}
-					{#if (quest.status === "ongoing" || quest.status === "scheduled" || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
+					{#if (quest.status === "ongoing"  || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
 						<button
 							id={key}
 							class="w-full md:w-4/12 task-card relative text-left"

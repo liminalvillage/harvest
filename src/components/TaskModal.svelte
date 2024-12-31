@@ -53,7 +53,7 @@
         if (holosphere) {
             holosphere.subscribe(holonId, "users", (newUser: User | string | null, key: string) => {
                 if (newUser) {
-                    const parsedUser = typeof newUser === "string" ? JSON.parse(newUser) : newUser;
+                    const parsedUser = newUser;
                     userStore = {
                         ...userStore,
                         [key]: parsedUser
@@ -221,7 +221,6 @@
         
         await updateQuest({ 
             when: dateTime.toISOString(),
-            status: 'scheduled'
         });
         showDatePicker = false;
     }

@@ -2,7 +2,7 @@
 	// @ts-nocheck
 
 	import { onMount, getContext } from "svelte";
-	import { ID } from "../dashboard/store.ts";
+	import { ID } from "../dashboard/store";
 
 	import HoloSphere from "holosphere";
 	import Announcements from "./Announcements.svelte";
@@ -31,7 +31,7 @@
 		if (holosphere)
 			holosphere.subscribe(holonID, "quests", (newItem, key) => {
 				if (newItem) {
-					const parsedItem = JSON.parse(newItem);
+					const parsedItem = newItem;
 					parsedItem.key = key; // Add the key to the parsed item object
 					store[key] = parsedItem;
 				} else {

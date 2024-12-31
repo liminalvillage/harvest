@@ -1,7 +1,7 @@
 <script lang="ts">
 	// @ts-nocheck
 	import { onMount, getContext } from "svelte";
-	import { ID } from "../dashboard/store.ts";
+	import { ID } from "../dashboard/store";
 	import { formatDate, formatTime } from "../utils/date.js";
 	import HoloSphere from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
@@ -108,8 +108,7 @@
 		viewMode = localStorage.getItem("kanbanViewMode") || "grid";
 		showCompleted =
 			localStorage.getItem("kanbanShowCompleted") === "true" || false;
-		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
-
+		
 		// Add click outside listener
 		document.addEventListener("click", handleClickOutside);
 
@@ -128,10 +127,7 @@
 				if (newquest) {
 					store = {
 						...store,
-						[key]:
-							typeof newquest === "string"
-								? JSON.parse(newquest)
-								: newquest,
+						[key]: newquest,
 					};
 				} else {
 					const newStore = { ...store };
@@ -144,10 +140,7 @@
 				if (newUser) {
 					userStore = {
 						...userStore,
-						[key]:
-							typeof newUser === "string"
-								? JSON.parse(newUser)
-								: newUser,
+						[key]: newUser,
 					};
 				} else {
 					const newUserStore = { ...userStore };
@@ -162,7 +155,7 @@
 		// Filter ongoing and scheduled quests
 		const filteredQuests = quests.filter(
 			([_, quest]) =>
-				quest.status === "ongoing" || quest.status === "scheduled"
+				quest.status === "ongoing" 
 		);
 
 		// Sort quests by date field, falling back to when if date doesn't exist
@@ -416,7 +409,7 @@
 		{#if viewMode === "list"}
 			<div class="space-y-2">
 				{#each filteredQuests as [key, quest]}
-					{#if (quest.status === "ongoing" || quest.status === "scheduled" || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
+					{#if (quest.status === "ongoing"  || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
 						<div
 							id={key}
 							class="w-full task-card relative"
@@ -587,7 +580,7 @@
 		{:else}
 			<div class="flex flex-wrap">
 				{#each filteredQuests as [key, quest]}
-					{#if (quest.status === "ongoing" || quest.status === "scheduled" || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
+					{#if (quest.status === "ongoing" || (showCompleted && quest.status === "completed")) && (quest.type === "task" || quest.type === "quest")}
 						<div
 							id={key}
 							class="w-full md:w-4/12 task-card relative"

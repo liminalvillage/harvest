@@ -4,7 +4,7 @@
     import { page } from "$app/stores";
     import Announcements from "./Announcements.svelte";
     import HoloSphere from 'holosphere';
-    import Offers from "./Offers.svelte";
+
 
     // Initialize holosphere
     const holosphere = getContext("holosphere") as HoloSphere;

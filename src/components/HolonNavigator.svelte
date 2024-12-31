@@ -31,7 +31,7 @@
         if (holosphere) {
             holosphere.getGlobal('Holons', (newHolon, key) => {
                 if (newHolon) {
-                    const holon = typeof newHolon === 'string' ? JSON.parse(newHolon) : newHolon;
+                    const holon = newHolon;
                     
                     // Find existing circle or create new one
                     const existingCircle = holonCircles.find(circle => circle.key === key);

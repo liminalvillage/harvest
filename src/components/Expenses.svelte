@@ -42,7 +42,7 @@
                 "expenses",
                 (newItem: string, key: string) => {
                     if (newItem) {
-                        expenses[key] = JSON.parse(newItem);
+                        expenses[key] = newItem;
                     } else {
                         delete expenses[key];
                     }
@@ -61,7 +61,7 @@
                 "users",
                 (newUser, key) => {
                     if (newUser) {
-                        store[key] = JSON.parse(newUser);
+                        store[key] = newUser;
                     } else {
                         delete store[key];
                         store = store;
