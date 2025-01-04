@@ -5,7 +5,7 @@
 
 	let store = {};
 	let selectedTable = "quests";
-	let tables = ["quests", "roles", "offers", "announcements", "events","settings","profile"];
+	let tables = ["users","quests", "roles", "offers", "announcements", "events","settings","expenses","profile"];
 	let expandedFields = new Set();
 	let editingField = null;
 	let editValue = "";

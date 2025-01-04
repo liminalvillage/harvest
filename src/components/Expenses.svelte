@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
-    import type HoloSphere from "holosphere";
+    import HoloSphere from "holosphere";
 
     interface Expense {
         id: string;
@@ -10,7 +10,7 @@
         description: string;
         paidBy: string;
         splitWith: string[];
-        created: string;
+        date: string;
     }
 
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -18,7 +18,7 @@
     $: holonID = $ID;
     let expenses: Record<string, Expense> = {};
     let store: Record<string, any> = {};
-    let selectedCurrency = "usd";
+    let selectedCurrency = "euro";
     let creditMatrix: number[][] = [];
     
     // Get unique currencies from expenses
@@ -66,7 +66,7 @@
                         delete store[key];
                         store = store;
                     }
-                    users = Object.values(store).map(user => user.first_name);
+                    users = Object.values(store).map(user => user.username);
                     calculateCredits(selectedCurrency);
                 }
             );
@@ -81,7 +81,8 @@
         creditMatrix = Array(users.length).fill(0).map(() => Array(users.length).fill(0));
         
         Object.values(expenses).forEach(expense => {
-            if (expense.currency === currency) {
+            console.log(expense);
+            if (expense.currency.toLowerCase() === currency.toLowerCase()) {
                 const amountPerPerson = expense.amount / (expense.splitWith.length || 1);
                 const payerIndex = users.indexOf(expense.paidBy);
                 
@@ -105,14 +106,18 @@
     }
 
     function formatAmount(amount: number): string {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency',
-            currency: selectedCurrency.toUpperCase()
-        }).format(Math.abs(amount));
+        if (['EUR','USD', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'].includes(selectedCurrency.toUpperCase())) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: selectedCurrency.toUpperCase()
+            }).format(Math.abs(amount));
+        } else {
+            return Math.abs(amount).toFixed(2);
+        }
     }
 </script>
 
-<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
+<div class="w-full bg-gray-800 p-6 rounded-3xl">
     <div class="flex justify-between text-white items-center mb-8">
         <p class="text-2xl font-bold">Expenses</p>
         <select
@@ -126,27 +131,41 @@
     </div>
 
     <!-- Credits Table -->
-    <div class="overflow-x-auto">
-        <table class="w-full text-white">
-            <thead>
-                <tr>
-                    <th class="px-4 py-2 bg-gray-700">Owes ↓ / Is Owed →</th>
+    <div class="overflow-x-auto overflow-y-auto max-h-[70vh] rounded-lg border border-gray-700">
+        <table class="w-full text-white border-collapse">
+            <thead class="sticky top-0 z-20">
+                <tr class="border-b border-gray-700">
+                    <th class="sticky left-0 top-0 z-30 px-6 py-3 bg-gray-900 text-left text-sm font-semibold uppercase tracking-wider">Owes ↓ / Is Owed →</th>
                     {#each users as user}
-                        <th class="px-4 py-2 bg-gray-700">{user}</th>
+                        <th class="sticky top-0 px-3 py-3 bg-gray-900 text-sm font-semibold uppercase tracking-wider h-32 relative">
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <div class="transform -rotate-90 whitespace-nowrap">{user}</div>
+                            </div>
+                        </th>
                     {/each}
+                    <th class="sticky top-0 px-3 py-3 bg-gray-800 font-bold border-l border-gray-600 text-sm uppercase tracking-wider h-32 relative">
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <div class="transform -rotate-90 whitespace-nowrap">Balance</div>
+                        </div>
+                    </th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody class="divide-y divide-gray-700">
                 {#each users as user, rowIndex}
-                    <tr>
-                        <th class="px-4 py-2 bg-gray-700">{user}</th>
+                    <tr class="bg-gray-800 hover:bg-gray-750 transition-colors duration-150 ease-in-out {rowIndex % 2 === 0 ? 'bg-opacity-50' : 'bg-opacity-25'}">
+                        <th class="sticky left-0 z-10 px-6 py-4 text-left font-medium bg-gray-800 {rowIndex % 2 === 0 ? 'bg-opacity-50' : 'bg-opacity-25'} align-middle">{user}</th>
                         {#each creditMatrix[rowIndex] as credit, colIndex}
                             <td 
-                                class="px-4 py-2 text-center {credit > 0 ? 'text-green-400' : credit < 0 ? 'text-red-400' : 'text-gray-400'}"
+                                class="px-3 py-4 text-center font-medium whitespace-nowrap align-middle {credit > 0 ? 'text-green-400' : credit < 0 ? 'text-red-400' : 'text-gray-400'}"
                             >
-                                {credit !== 0 ? formatAmount(credit) : '-'}
+                                {credit !== 0 ? formatAmount(credit) : '—'}
                             </td>
                         {/each}
+                        <td 
+                            class="px-3 py-4 text-center font-bold whitespace-nowrap bg-gray-800 border-l border-gray-600 align-middle {creditMatrix[rowIndex].reduce((sum, val) => sum + val, 0) > 0 ? 'text-green-400' : creditMatrix[rowIndex].reduce((sum, val) => sum + val, 0) < 0 ? 'text-red-400' : 'text-gray-400'}"
+                        >
+                            {formatAmount(creditMatrix[rowIndex].reduce((sum, val) => sum + val, 0))}
+                        </td>
                     </tr>
                 {/each}
             </tbody>
@@ -157,7 +176,7 @@
     <div class="mt-8">
         <h3 class="text-xl font-bold text-white mb-4">Recent Expenses</h3>
         <div class="space-y-4">
-            {#each Object.values(expenses).filter(e => e.currency === selectedCurrency).sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime()) as expense}
+            {#each Object.values(expenses).filter(e => e.currency === selectedCurrency).sort((a, b) => new Date(parseInt(b.date)).getTime() - new Date(parseInt(a.date)).getTime()) as expense}
                 <div class="bg-gray-700 rounded-lg p-4">
                     <div class="flex justify-between items-start">
                         <div>
@@ -168,7 +187,7 @@
                         <div class="text-right">
                             <p class="text-xl font-bold text-white">{formatAmount(expense.amount)}</p>
                             <p class="text-sm text-gray-400">
-                                {new Date(expense.created).toLocaleDateString()}
+                                {new Date(parseInt(expense.date)).toLocaleDateString()}<br>{new Date(parseInt(expense.date)).toLocaleTimeString()}
                             </p>
                         </div>
                     </div>
