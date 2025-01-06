@@ -24,7 +24,7 @@
     // Get unique currencies from expenses
     $: currencies = [...new Set(Object.values(expenses).map(e => e.currency))];
     
-    $: users = Object.values(store).map(user => user.first_name);
+    $: users = Object.values(store)
     
     onMount(() => {
         ID.subscribe((value) => {
@@ -40,9 +40,14 @@
             holosphere.subscribe(
                 holonID,
                 "expenses",
-                (newItem: string, key: string) => {
+                (newItem: any, key: string) => {
                     if (newItem) {
-                        expenses[key] = newItem;
+                        try {
+                            const parsedExpense = typeof newItem === 'string' ? JSON.parse(newItem) : newItem;
+                            expenses[key] = parsedExpense as Expense;
+                        } catch (e) {
+                            console.error('Failed to parse expense:', e);
+                        }
                     } else {
                         delete expenses[key];
                     }
@@ -66,7 +71,7 @@
                         delete store[key];
                         store = store;
                     }
-                    users = Object.values(store).map(user => user.username);
+                    users = Object.values(store);
                     calculateCredits(selectedCurrency);
                 }
             );
@@ -84,10 +89,10 @@
             console.log(expense);
             if (expense.currency.toLowerCase() === currency.toLowerCase()) {
                 const amountPerPerson = expense.amount / (expense.splitWith.length || 1);
-                const payerIndex = users.indexOf(expense.paidBy);
+                const payerIndex = users.findIndex(user => user.id === expense.paidBy);
                 
                 expense.splitWith.forEach(member => {
-                    const memberIndex = users.indexOf(member);
+                    const memberIndex = users.findIndex(user => user.id === member);
                     if (memberIndex === -1 || payerIndex === -1) return;
                     
                     if (payerIndex !== memberIndex) {
@@ -132,14 +137,21 @@
 
     <!-- Credits Table -->
     <div class="overflow-x-auto overflow-y-auto max-h-[70vh] rounded-lg border border-gray-700">
-        <table class="w-full text-white border-collapse">
+        <table class="w-full text-white border-collapse relative">
             <thead class="sticky top-0 z-20">
                 <tr class="border-b border-gray-700">
-                    <th class="sticky left-0 top-0 z-30 px-6 py-3 bg-gray-900 text-left text-sm font-semibold uppercase tracking-wider">Owes ↓ / Is Owed →</th>
+                    <th class="sticky left-0 top-0 z-30 px-6 py-3 bg-gray-900 text-sm font-semibold uppercase tracking-wider">
+                        <div class="flex flex-col items-center gap-1">
+                            <span class="text-gray-400">Owes</span>
+                            <span class="text-lg">↓</span>
+                            <span class="text-gray-400">Is Owed</span>
+                            <span class="text-lg">→</span>
+                        </div>
+                    </th>
                     {#each users as user}
                         <th class="sticky top-0 px-3 py-3 bg-gray-900 text-sm font-semibold uppercase tracking-wider h-32 relative">
                             <div class="absolute inset-0 flex items-center justify-center">
-                                <div class="transform -rotate-90 whitespace-nowrap">{user}</div>
+                                <div class="transform -rotate-90 whitespace-nowrap">{user.first_name}</div>
                             </div>
                         </th>
                     {/each}
@@ -153,7 +165,7 @@
             <tbody class="divide-y divide-gray-700">
                 {#each users as user, rowIndex}
                     <tr class="bg-gray-800 hover:bg-gray-750 transition-colors duration-150 ease-in-out {rowIndex % 2 === 0 ? 'bg-opacity-50' : 'bg-opacity-25'}">
-                        <th class="sticky left-0 z-10 px-6 py-4 text-left font-medium bg-gray-800 {rowIndex % 2 === 0 ? 'bg-opacity-50' : 'bg-opacity-25'} align-middle">{user}</th>
+                        <th class="sticky left-0 z-10 px-6 py-4 text-left font-medium bg-gray-800 {rowIndex % 2 === 0 ? 'bg-opacity-50' : 'bg-opacity-25'} align-middle">{user.first_name}</th>
                         {#each creditMatrix[rowIndex] as credit, colIndex}
                             <td 
                                 class="px-3 py-4 text-center font-medium whitespace-nowrap align-middle {credit > 0 ? 'text-green-400' : credit < 0 ? 'text-red-400' : 'text-gray-400'}"
@@ -181,8 +193,8 @@
                     <div class="flex justify-between items-start">
                         <div>
                             <h4 class="text-lg font-semibold text-white">{expense.description}</h4>
-                            <p class="text-gray-300">Paid by {expense.paidBy}</p>
-                            <p class="text-sm text-gray-400">Split with: {expense.splitWith.join(', ')}</p>
+                            <p class="text-gray-300">Paid by {users.find(user => user.id === parseInt(expense.paidBy))?.first_name || expense.paidBy}</p>
+                            <p class="text-sm text-gray-400">Split with: {expense.splitWith.map(id => users.find(user => user.id === parseInt(id))?.first_name || id).join(', ')}</p>
                         </div>
                         <div class="text-right">
                             <p class="text-xl font-bold text-white">{formatAmount(expense.amount)}</p>

@@ -7,10 +7,11 @@ import TagsIcon from './icons/TagsIcon.svelte';
 import SettingsIcon from './icons/SettingsIcon.svelte';
 import DocumentationIcon from './icons/DocumentationIcon.svelte';
 import RolesIcon from './icons/RolesIcon.svelte';
-import OffersIcon from './icons/OffersIcon.svelte'; // Add this import
+import OffersIcon from './icons/OffersIcon.svelte';
 import DashboardIcon from './icons/DashboardIcon.svelte';
 import ShoppingIcon from './icons/ShoppingIcon.svelte';
 import ChecklistIcon from './icons/ChecklistIcon.svelte';
+import ExpensesIcon from './icons/ExpensesIcon.svelte';
 
 export const data = [
 	{
@@ -27,6 +28,11 @@ export const data = [
 		title: 'Schedule',
 		icon: CreditsIcon,
 		link: '/calendar'
+	},
+	{
+		title: 'Expenses',
+		icon: ExpensesIcon,
+		link: '/expenses'
 	},
 	{
 		title: 'Roles',
