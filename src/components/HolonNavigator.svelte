@@ -39,6 +39,30 @@
         .range(['#4B5563', '#1E40AF'])
         .interpolate(d3.interpolateHcl);
 
+    // Add zoom behavior variable
+    let zoomBehavior: d3.ZoomBehavior<SVGElement, unknown>;
+    let mainGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
+
+    function handleZoom(event: d3.D3ZoomEvent<SVGElement, unknown>) {
+        mainGroup.attr('transform', event.transform.toString());
+    }
+
+    function initializeZoom() {
+        zoomBehavior = d3.zoom<SVGElement, unknown>()
+            .scaleExtent([0.1, 10])
+            .on('zoom', handleZoom);
+
+        mainGroup = d3.select(svg).select('g');
+        d3.select(svg)
+            .call(zoomBehavior)
+            .call(zoomBehavior.transform, d3.zoomIdentity);
+
+        // Prevent default touch behaviors
+        d3.select(svg)
+            .on('touchstart', (event) => event.preventDefault())
+            .on('touchmove', (event) => event.preventDefault());
+    }
+
     function pack(data: HolonData) {
         return d3.pack<Holon>()
             .size([width, height])
@@ -80,6 +104,19 @@
         return { textSize, charLimit };
     }
 
+    function zoomToNode(d: d3.HierarchyCircularNode<Holon>) {
+        const scale = Math.min(width, height) / (d.r * 2.2);
+        const x = width / 2 - (d.x * scale);
+        const y = height / 2 - (d.y * scale);
+
+        d3.select(svg)
+            .transition()
+            .duration(750)
+            .call(zoomBehavior.transform, d3.zoomIdentity
+                .translate(x, y)
+                .scale(scale));
+    }
+
     function updateVisualization(holonsData: HolonData) {
         root = pack(holonsData);
         focus = root;
@@ -103,26 +140,23 @@
             .attr('r', d => d.r)
             .on('mouseover', function(this: SVGCircleElement) { 
                 d3.select(this).attr('stroke', '#fff');
-                // Show full name on hover
                 const d = d3.select(this).datum() as d3.HierarchyCircularNode<Holon>;
                 const text = svg.select(`text[data-key="${d.data.key}"]`);
                 text.text(d.data.name);
             })
             .on('mouseout', function(this: SVGCircleElement) { 
                 d3.select(this).attr('stroke', null);
-                // Restore truncated name
                 const d = d3.select(this).datum() as d3.HierarchyCircularNode<Holon>;
                 const text = svg.select(`text[data-key="${d.data.key}"]`);
                 const { textSize, charLimit } = calculateTextParams(d);
                 text.text(truncateText(d.data.name, charLimit));
             })
             .on('click', (event: MouseEvent, d: d3.HierarchyCircularNode<Holon>) => {
-                if (focus !== d) {
-                    zoom(event as unknown as d3.D3ZoomEvent<SVGElement, unknown>, d);
-                    event.stopPropagation();
-                    if (d.data.key) {
-                        dispatch('holonSelect', { key: d.data.key, holon: d.data });
-                    }
+                event.stopPropagation();
+                focus = d;
+                zoomToNode(d);
+                if (d.data.key) {
+                    dispatch('holonSelect', { key: d.data.key, holon: d.data });
                 }
             });
 
@@ -144,10 +178,19 @@
                 node.text(truncateText(d.data.name, charLimit));
             });
 
-        zoomTo([root.x, root.y, root.r * 2]);
+        // Initial view
+        const scale = width / (root.r * 2.2);
+        const x = width / 2 - (root.x * scale);
+        const y = height / 2 - (root.y * scale);
+        
+        d3.select(svg)
+            .call(zoomBehavior.transform, d3.zoomIdentity
+                .translate(x, y)
+                .scale(scale));
     }
 
     onMount(async () => {
+        initializeZoom();
         if (holosphere) {
             const holonsData: HolonData = { name: "", children: [] };
             const holonMap = new Map<string, Holon>();
@@ -217,6 +260,7 @@
 <style>
     svg {
         cursor: pointer;
+        touch-action: none; /* Prevent default touch behaviors */
     }
     
     text {
