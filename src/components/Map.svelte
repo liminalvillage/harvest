@@ -634,8 +634,8 @@
 		// Small delay to ensure container is ready
 		setTimeout(() => {
 			initializeMap();
-			// If we have a selected holon, zoom to it
-			if (lastSelectedHolonId) {
+			// Only zoom if we have a valid H3 index
+			if (lastSelectedHolonId && h3.isValidCell(lastSelectedHolonId)) {
 				updateSelectedHexagon(lastSelectedHolonId);
 			}
 		}, 100);
@@ -671,7 +671,7 @@
 </script>
 
 <div class="flex flex-wrap">
-    <div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
+    <div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl map-container">
         <div class="flex justify-between text-white items-center mb-8">
             <!-- View Toggle -->
             <div class="flex bg-gray-700 rounded-lg p-1">
@@ -699,7 +699,7 @@
             </div>
         </div>
 
-        <div class="relative rounded-3xl overflow-hidden">
+        <div class="view-content">
             {#if isLoading}
                 <div class="loading-overlay">
                     <div class="loading-spinner">Loading...</div>
@@ -709,14 +709,14 @@
             {#if activeView === 'map'}
                 <div 
                     bind:this={mapContainer} 
-                    class="map rounded-3xl"
+                    class="map"
                 >
                     {#if hexId}
                         <div class="hex-info">Selected Hexagon: {hexId}</div>
                     {/if}
                 </div>
             {:else}
-                <div class="holonic-view rounded-3xl">
+                <div class="holonic-view">
                     <HolonNavigator 
                         on:holonSelect={({ detail }) => {
                             hexId = detail.key;
@@ -740,8 +740,21 @@
 <style>
     .map, .holonic-view {
         width: 100%;
-        height: calc(100vh - 64px - 8rem);
+        height: 100%;
         position: relative;
+    }
+
+    .map-container {
+        height: calc(100vh - 64px - 2rem);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .view-content {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+        border-radius: 1.5rem;
     }
 
     .hex-info {
