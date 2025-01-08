@@ -10,7 +10,7 @@
 
 	import HoloSphere from 'holosphere';
 	import MapSidebar from "./MapSidebar.svelte";
-	import HolonNavigator from './HolonNavigator.svelte';
+	import HolonNavigator from './Navigator.svelte';
 
 	type LensType = 'quests' | 'needs' | 'offers' | 'communities' | 'organizations' | 'projects' | 'currencies' | 'people' | 'holons';
 

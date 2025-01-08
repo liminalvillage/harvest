@@ -61,7 +61,6 @@
 
     export let selectedLens: string;
     export let hexId: string | null;
-    export let activeView: 'map' | 'holonic';
     let holosphere = getContext('holosphere') as HoloSphere;
     let content: Record<string, any> | null = null;
     let subscription: { off: () => void } | null = null;

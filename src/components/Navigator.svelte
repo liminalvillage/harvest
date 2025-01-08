@@ -179,6 +179,9 @@
             .attr('pointer-events', 'none')
             .attr('x', d => d.x)
             .attr('y', d => d.y)
+            .style('font-family', 'system-ui, -apple-system, sans-serif')
+            .style('font-weight', '500')
+            .style('user-select', 'none')
             .each(function(d) {
                 const node = d3.select(this);
                 const { textSize, charLimit } = calculateTextParams(d);
@@ -278,20 +281,11 @@
         bind:this={svg}
         viewBox="0 0 {width} {height}"
         class="w-full h-full"
+        style="cursor: pointer; touch-action: none;"
     >
         <g />
     </svg>
 </div>
 
 <style>
-    svg {
-        cursor: pointer;
-        touch-action: none;
-    }
-    
-    text {
-        font-family: system-ui, -apple-system, sans-serif;
-        font-weight: 500;
-        user-select: none;
-    }
 </style> 
