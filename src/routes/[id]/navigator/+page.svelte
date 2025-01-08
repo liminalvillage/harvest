@@ -1,5 +1,5 @@
 <script lang="ts">
-    import HolonNavigator from '../../components/Navigator.svelte';
+    import HolonNavigator from '../../../components/Navigator.svelte';
 
     function handleHolonSelect(event) {
         const { key, holon } = event.detail;

@@ -68,30 +68,73 @@
     let formData: Record<string, any> = {};
     let viewingItem: Record<string, any> | null = null;
 
-    // Reset form state when hexId changes
+    // Add statistics interface
+    interface HolonStats {
+        total: number;
+        completed?: number;
+    }
+
+    let stats: Record<string, HolonStats> | null = null;
+
+    async function loadData(holonId: string, lens: string) {
+        if (!holonId || !lens) return;
+        
+        try {
+            // Get all items for this lens
+            const items = await holosphere.getAll(holonId, lens);
+            content = items;
+            
+            // Calculate statistics
+            if (items) {
+                stats = {
+                    [lens]: {
+                        total: Object.keys(items).length,
+                        completed: lens === 'quests' ? 
+                            Object.values(items).filter((q: any) => q.status === 'completed').length : 
+                            undefined
+                    }
+                };
+            } else {
+                stats = { [lens]: { total: 0 } };
+            }
+        } catch (error) {
+            console.error('Error loading data:', error);
+            content = null;
+            stats = null;
+        }
+    }
+
+    // Reset and load data when hexId or lens changes
     $: if (hexId) {
-        console.log('Hexagon changed to:', hexId);
+        console.log('ID or lens changed:', hexId, selectedLens);
         showForm = false;
         formData = {};
         viewingItem = null;
-        // Re-subscribe when hexId changes
-        if (selectedLens) {
-            unsubscribe();
-            subscribe();
-        }
+        loadData(hexId, selectedLens);
+    }
+
+    $: if (selectedLens && hexId) {
+        loadData(hexId, selectedLens);
     }
 
     function subscribe() {
         if (!hexId || !selectedLens) return;
         
         try {
-            const off = holosphere.subscribe(hexId, selectedLens, (data: any) => {
+            const off = holosphere.subscribe(hexId, selectedLens, async (data: any) => {
                 if (data) {
                     console.log('Data received:', data);
-                    content =  data;
+                    // Get all items for this lens
+                    const allData = await holosphere.getAll(hexId, selectedLens);
+                    content = allData;
                 } else {
                     content = null;
                 }
+            });
+            
+            // Initial data load
+            holosphere.getAll(hexId, selectedLens).then((data) => {
+                content = data;
             });
             
             if (typeof off === 'function') {
@@ -187,7 +230,8 @@
 </script>
 
 <div class="w-full lg:w-4/12 pl-4">
-    <div class="bg-gray-800 rounded-3xl p-6">
+    <div class="bg-gray-800 rounded-3xl p-6 sidebar-container">
+        <!-- Header -->
         <div class="flex justify-between text-white items-center mb-8">
             <div>
                 <p class="text-2xl font-bold">Details</p>
@@ -209,78 +253,114 @@
             </div>
         </div>
 
-        {#if showForm}
-            <div class="mb-6 p-4 bg-gray-700 rounded-lg transition-all">
-                {#key selectedLens}
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-white font-medium">
-                            {viewingItem ? 'View' : 'Add New'} {schemaOptions.find(opt => opt.value === selectedLens)?.label.split(' ').slice(1).join(' ')}
-                        </h3>
-                        <button 
-                            class="text-gray-400 hover:text-white"
-                            on:click={viewingItem ? closeView : toggleForm}
-                        >
-                            ×
-                        </button>
-                    </div>
-                    {#if selectedLens}
-                        <SchemaForm 
-                            schema={schemaOptions.find(opt => opt.value === selectedLens)?.schema || ''} 
-                            schemaDefinition={getSchemaForLens(selectedLens)}
-                            {hexId}
-                            initialData={viewingItem || formData}
-                            viewOnly={!!viewingItem}
-                            on:submit={handleFormSubmit}
-                        />
-                    {/if}
-                {/key}
-            </div>
-        {:else if content}
-            <div class="space-y-4">
-                {#if Array.isArray(content)}
-                    {#each content as item}
-                        <button 
-                            type="button"
-                            class="w-full text-left p-4 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"
-                            on:click={() => viewItem(item)}
-                        >
-                            <h4 class="font-medium text-white">{item.title || item.name}</h4>
-                            {#if item.description}
-                                <p class="text-gray-300 text-sm mt-1 line-clamp-2">{item.description}</p>
-                            {/if}
-                            {#if item.tags?.length}
-                                <div class="flex flex-wrap gap-2 mt-2">
-                                    {#each item.tags as tag}
-                                        <span class="text-xs bg-gray-600 text-white px-2 py-0.5 rounded-full">
-                                            {tag}
-                                        </span>
-                                    {/each}
-                                </div>
-                            {/if}
-                        </button>
-                    {/each}
-                {:else if content.title || content.name}
-                    <button
-                        type="button" 
-                        class="w-full text-left p-4 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"
-                        on:click={() => viewItem(content)}
-                    >
-                        <h4 class="font-medium text-white">{content.title || content.name}</h4>
-                        {#if content.description}
-                            <p class="text-gray-300 text-sm mt-1">{content.description}</p>
+        <!-- Statistics -->
+        {#if stats && stats[selectedLens]}
+            <div class="bg-gray-700 p-4 rounded-lg mb-6">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-gray-400 text-sm">Statistics</h3>
+                    <p class="text-white text-sm">
+                        {#if stats[selectedLens].completed !== undefined}
+                            {stats[selectedLens].completed} / {stats[selectedLens].total}
+                            <span class="text-gray-400 text-xs ml-1">Completed</span>
+                        {:else}
+                            {stats[selectedLens].total}
+                            <span class="text-gray-400 text-xs ml-1">Total</span>
                         {/if}
-                    </button>
-                {/if}
-            </div>
-        {:else}
-            <div class="text-white text-center py-8">
-                <p class="text-lg opacity-70">Select a hexagon on the map to view details</p>
+                    </p>
+                </div>
             </div>
         {/if}
+
+        <!-- Scrollable Content -->
+        <div class="scrollable-content">
+            {#if showForm}
+                <div class="p-4 bg-gray-700 rounded-lg transition-all">
+                    {#key selectedLens}
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-white font-medium">
+                                {viewingItem ? 'View' : 'Add New'} {schemaOptions.find(opt => opt.value === selectedLens)?.label.split(' ').slice(1).join(' ')}
+                            </h3>
+                            <button 
+                                class="text-gray-400 hover:text-white"
+                                on:click={viewingItem ? closeView : toggleForm}
+                            >
+                                ×
+                            </button>
+                        </div>
+                        {#if selectedLens}
+                            <SchemaForm 
+                                schema={schemaOptions.find(opt => opt.value === selectedLens)?.schema || ''} 
+                                schemaDefinition={getSchemaForLens(selectedLens)}
+                                {hexId}
+                                initialData={viewingItem || formData}
+                                viewOnly={!!viewingItem}
+                                on:submit={handleFormSubmit}
+                            />
+                        {/if}
+                    {/key}
+                </div>
+            {:else if content}
+                <div class="space-y-4">
+                    {#if typeof content === 'object'}
+                        {#each Object.entries(content) as [key, item]}
+                            <button 
+                                type="button"
+                                class="w-full text-left p-4 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"
+                                on:click={() => viewItem(item)}
+                            >
+                                <h4 class="font-medium text-white">{item.title || item.name}</h4>
+                                {#if item.description}
+                                    <p class="text-gray-300 text-sm mt-1 line-clamp-2">{item.description}</p>
+                                {/if}
+                                {#if item.tags?.length}
+                                    <div class="flex flex-wrap gap-2 mt-2">
+                                        {#each item.tags as tag}
+                                            <span class="text-xs bg-gray-600 text-white px-2 py-0.5 rounded-full">
+                                                {tag}
+                                            </span>
+                                        {/each}
+                                    </div>
+                                {/if}
+                            </button>
+                        {/each}
+                    {/if}
+                </div>
+            {:else}
+                <div class="text-white text-center py-8">
+                    <p class="text-lg opacity-70">Select a location to view details</p>
+                </div>
+            {/if}
+        </div>
     </div>
 </div>
 
 <style>
- 
+    .sidebar-container {
+        height: calc(100vh - 64px - 2rem);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .scrollable-content {
+        flex: 1;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+        padding-right: 0.5rem;
+        margin-right: -0.5rem;
+    }
+
+    .scrollable-content::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .scrollable-content::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .scrollable-content::-webkit-scrollbar-thumb {
+        background-color: rgba(255, 255, 255, 0.2);
+        border-radius: 3px;
+    }
 </style>
   

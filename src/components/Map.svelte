@@ -10,12 +10,14 @@
 
 	import HoloSphere from 'holosphere';
 	import MapSidebar from "./MapSidebar.svelte";
+	import HolonNavigator from './Navigator.svelte';
 
 	type LensType = 'quests' | 'needs' | 'offers' | 'communities' | 'organizations' | 'projects' | 'currencies' | 'people' | 'holons';
 
 	let holosphere = getContext('holosphere') as HoloSphere 
 
 	let mapContainer: HTMLElement;
+	let holonicContainer: HTMLElement;
 	let map: mapboxgl.Map;
 	let hexId: string;
 	export let selectedLens: LensType = 'quests';
@@ -107,119 +109,10 @@
 		const south = bounds.getSouth();
 		const north = bounds.getNorth();
 
-		
-
 		const currentZoom = map.getZoom();
-		const h3res = getResolution(currentZoom);
-		const h3resLower = Math.max(0, h3res + 1);
+		const currentResolution = getResolution(currentZoom);
 
-		function generateHexagons(resolution: number) {
-			let hexagons = new Set<string>();
-			for (let lat = south; lat <= north; lat += (north - south) / 20) {
-				for (let lng = west; lng <= east; lng += (east - west) / 20) {
-					hexagons.add(h3.latLngToCell(lat, lng, resolution));
-				}
-			}
-			return hexagons;
-		}
-
-		function hexagonsToFeatures(hexagons: Set<string>) {
-			return Array.from(hexagons)
-				.map((hexagon) => {
-					const boundary = h3.cellToBoundary(hexagon, true);
-					
-					// Check if the hexagon crosses the antimeridian by looking for large jumps
-					let needsNormalization = false;
-					for (let i = 0; i < boundary.length; i++) {
-						const j = (i + 1) % boundary.length;
-						const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
-						if (lngDiff > 180) {
-							needsNormalization = true;
-							break;
-						}
-					}
-
-					// If we need to normalize, shift coordinates that are on the wrong side
-					let normalizedBoundary = boundary;
-					if (needsNormalization) {
-						// Find the average longitude to determine which side to normalize to
-						const avgLng = boundary.reduce((sum, [_, lng]) => sum + lng, 0) / boundary.length;
-						normalizedBoundary = boundary.map(([lat, lng]) => {
-							if (avgLng < 0 && lng > 0) {
-								return [lat, lng - 360];
-							}
-							if (avgLng > 0 && lng < 0) {
-								return [lat, lng + 360];
-							}
-							return [lat, lng];
-						});
-					}
-
-					return {
-						type: "Feature" as const,
-						properties: { 
-							id: hexagon
-						},
-							geometry: {
-								type: "Polygon" as const,
-								coordinates: [normalizedBoundary],
-							},
-					};
-				});
-		}
-
-		function highlightHexagons(hexagons: Set<string>, color: string) {
-			const features = Array.from(hexagons).map((hexagon) => {
-				const boundary = h3.cellToBoundary(hexagon, true);
-				
-				// Check for antimeridian crossing
-				let needsNormalization = false;
-				for (let i = 0; i < boundary.length; i++) {
-					const j = (i + 1) % boundary.length;
-					const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
-					if (lngDiff > 180) {
-						needsNormalization = true;
-						break;
-					}
-				}
-
-				// Normalize if needed
-				let normalizedBoundary = boundary;
-				if (needsNormalization) {
-					const avgLng = boundary.reduce((sum, [_, lng]) => sum + lng, 0) / boundary.length;
-					normalizedBoundary = boundary.map(([lat, lng]) => {
-						if (avgLng < 0 && lng > 0) {
-							return [lat, lng - 360];
-						}
-						if (avgLng > 0 && lng < 0) {
-							return [lat, lng + 360];
-						}
-						return [lat, lng];
-					});
-				}
-
-				return {
-					type: "Feature" as const,
-					properties: { 
-						id: hexagon,
-						color: color
-					},
-					geometry: {
-						type: "Polygon" as const,
-						coordinates: [normalizedBoundary],
-					},
-				};
-			});
-
-			return {
-				type: "FeatureCollection" as const,
-				features: features,
-			};
-		}
-
-		const hexagons = generateHexagons(h3res);
-		const hexagonsLower = generateHexagons(h3resLower);
-
+		// Get highlighted hexes based on lens
 		let highlightedHexes = new Set<string>();
 		let highlightColor = '#088';
 
@@ -262,87 +155,258 @@
 				break;
 		}
 
-		// Update the regular hexagon grid
-		map.getSource("hexagon-grid")?.setData({
-			type: "FeatureCollection",
-			features: hexagonsToFeatures(hexagons),
-		});
+		// Filter highlighted hexes based on resolution
+		const visibleHighlightedHexes = new Set(
+			Array.from(highlightedHexes).filter(hex => {
+				const hexResolution = h3.getResolution(hex);
+				return currentResolution <= hexResolution;
+			})
+		);
 
-		map.getSource("hexagon-grid-lower")?.setData({
-			type: "FeatureCollection",
-			features: hexagonsToFeatures(hexagonsLower),
-		});
-
-		// Always update highlighted hexagons
-		if (map.getSource("highlighted-hexagons")) {
-			map.getSource("highlighted-hexagons").setData(
-					highlightHexagons(highlightedHexes, highlightColor)
+		// Update the highlighted hexagons if any are visible at current resolution
+		if (visibleHighlightedHexes.size > 0) {
+			map.getSource("highlighted-hexagons")?.setData(
+				highlightHexagons(visibleHighlightedHexes, highlightColor)
 			);
 		}
 
-		const features = hexagonsToFeatures(hexagons);
-		const featuresLower = hexagonsToFeatures(hexagonsLower);
+		const h3res = getResolution(currentZoom);
+		const h3resLower = Math.max(0, h3res + 1);
+
+		function generateHexagons(resolution: number) {
+			let hexagons = new Set<string>();
+			for (let lat = south; lat <= north; lat += (north - south) / 20) {
+				for (let lng = west; lng <= east; lng += (east - west) / 20) {
+					hexagons.add(h3.latLngToCell(lat, lng, resolution));
+				}
+			}
+			return hexagons;
+		}
+
+		function hexagonsToFeatures(hexagons: Set<string>) {
+			return Array.from(hexagons)
+				.flatMap((hexagon) => {
+					const boundary = h3.cellToBoundary(hexagon, true);
+					const [lat, lng] = h3.cellToLatLng(hexagon);
+					const [vertexLat, vertexLng] = boundary[0];
+					
+					// Check if the hexagon crosses the antimeridian by looking for large jumps
+					let needsNormalization = false;
+					for (let i = 0; i < boundary.length; i++) {
+						const j = (i + 1) % boundary.length;
+						const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
+						if (lngDiff > 180) {
+							needsNormalization = true;
+							break;
+						}
+					}
+
+					// If we need to normalize, shift coordinates that are on the wrong side
+					let normalizedBoundary = boundary;
+					if (needsNormalization) {
+						const avgLng = boundary.reduce((sum, [_, lng]) => sum + lng, 0) / boundary.length;
+						normalizedBoundary = boundary.map(([lat, lng]) => {
+							if (avgLng < 0 && lng > 0) {
+								return [lat, lng - 360];
+							}
+							if (avgLng > 0 && lng < 0) {
+								return [lat, lng + 360];
+							}
+							return [lat, lng];
+						});
+					}
+
+					return [
+						{
+							type: "Feature" as const,
+							properties: { 
+								id: hexagon
+							},
+							geometry: {
+								type: "Polygon" as const,
+								coordinates: [normalizedBoundary]
+							}
+						},
+						{
+							type: "Feature" as const,
+							properties: { 
+								id: hexagon,
+								center_lat: lat,
+								center_lng: lng,
+								vertex_lat: vertexLat,
+								vertex_lng: vertexLng
+							},
+							geometry: {
+								type: "Point" as const,
+								coordinates: [lng, lat]
+							}
+						}
+					];
+				});
+		}
+
+		function hexagonsToCenterFeatures(hexagons: Set<string>) {
+			return Array.from(hexagons)
+				.map((hexagon) => {
+					const [lat, lng] = h3.cellToLatLng(hexagon);
+					const boundary = h3.cellToBoundary(hexagon, true);
+					// Take the first vertex for radius calculation
+					const [vertexLat, vertexLng] = boundary[0];
+					
+					return {
+						type: "Feature" as const,
+						properties: { 
+							id: hexagon,
+							center_lat: lat,
+							center_lng: lng,
+							vertex_lat: vertexLat,
+							vertex_lng: vertexLng
+						},
+						geometry: {
+							type: "Point" as const,
+							coordinates: [lng, lat]
+						}
+					};
+				});
+		}
+
+		function highlightHexagons(hexagons: Set<string>, color: string) {
+			const features = Array.from(hexagons).flatMap((hexagon) => {
+				const boundary = h3.cellToBoundary(hexagon, true);
+				const [lat, lng] = h3.cellToLatLng(hexagon);
+				const hexSize = h3.getHexagonEdgeLengthAvg(h3.getResolution(hexagon), 'km') * 1000;
+				
+				// Check for antimeridian crossing
+				let needsNormalization = false;
+				for (let i = 0; i < boundary.length; i++) {
+					const j = (i + 1) % boundary.length;
+					const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
+					if (lngDiff > 180) {
+						needsNormalization = true;
+						break;
+					}
+				}
+
+				// Normalize if needed
+				let normalizedBoundary = boundary;
+				if (needsNormalization) {
+					const avgLng = boundary.reduce((sum, [_, lng]) => sum + lng, 0) / boundary.length;
+					normalizedBoundary = boundary.map(([lat, lng]) => {
+						if (avgLng < 0 && lng > 0) {
+							return [lat, lng - 360];
+						}
+						if (avgLng > 0 && lng < 0) {
+							return [lat, lng + 360];
+						}
+						return [lat, lng];
+					});
+				}
+
+				// Return both polygon and point features
+				return [
+					{
+						type: "Feature" as const,
+						properties: { 
+							id: hexagon,
+							color: color
+						},
+						geometry: {
+							type: "Polygon" as const,
+							coordinates: [normalizedBoundary],
+						}
+					},
+					{
+						type: "Feature" as const,
+						properties: { 
+							id: hexagon,
+							color: color,
+							radius: hexSize
+						},
+						geometry: {
+							type: "Point" as const,
+							coordinates: [lng, lat]
+						}
+					}
+				];
+			});
+
+			return {
+				type: "FeatureCollection" as const,
+				features: features
+			};
+		}
+
+		const hexagons = generateHexagons(h3res);
+		const hexagonsLower = generateHexagons(h3resLower);
 
 		map.getSource("hexagon-grid")?.setData({
 			type: "FeatureCollection",
-			features: features,
+			features: hexagonsToFeatures(hexagons)
 		});
 
 		map.getSource("hexagon-grid-lower")?.setData({
 			type: "FeatureCollection",
-			features: featuresLower,
+			features: hexagonsToFeatures(hexagonsLower)
 		});
 	}
 
 	function goToHex(hex: string) {
+		if (!isH3Cell(hex)) return;
+		
 		const [lat, lng] = h3.cellToLatLng(hex);
 		const resolution = h3.getResolution(hex);
 		const zoom = getZoomFromResolution(resolution);
-		if (hex.startsWith("8")) {
-			map.flyTo({
-				center: [lng, lat],
-				zoom: zoom,
+		
+		// First zoom to the location
+		map.flyTo({
+			center: [lng, lat],
+			zoom: zoom,
+		});
+
+		// After zooming, update the selected hexagon visualization
+		map.once('moveend', () => {
+			map.getSource("selected-hexagon")?.setData({
+				type: "Feature",
+				properties: {},
+				geometry: {
+					type: "Polygon",
+					coordinates: [h3.cellToBoundary(hex, true)],
+				},
 			});
-		}
+		});
 	}
 
 	function updateSelectedHexagon(hexId: string) {
 		const boundary = h3.cellToBoundary(hexId, true);
+		const [lat, lng] = h3.cellToLatLng(hexId);
+		const hexSize = h3.getHexagonEdgeLengthAvg(h3.getResolution(hexId), 'km') * 1000;
 		
-		// Check for antimeridian crossing
-		let needsNormalization = false;
-		for (let i = 0; i < boundary.length; i++) {
-			const j = (i + 1) % boundary.length;
-			const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
-			if (lngDiff > 180) {
-				needsNormalization = true;
-				break;
-			}
-		}
-
-		// Normalize if needed
-		let normalizedBoundary = boundary;
-		if (needsNormalization) {
-			const avgLng = boundary.reduce((sum, [_, lng]) => sum + lng, 0) / boundary.length;
-			normalizedBoundary = boundary.map(([lat, lng]) => {
-				if (avgLng < 0 && lng > 0) {
-					return [lat, lng - 360];
+		// Create both polygon and point features for the selected hexagon
+		const features = {
+			type: "FeatureCollection" as const,
+			features: [
+				{
+					type: "Feature",
+					properties: {},
+					geometry: {
+						type: "Polygon",
+						coordinates: [boundary]
+					}
+				},
+				{
+					type: "Feature",
+					properties: {
+						radius: hexSize
+					},
+					geometry: {
+						type: "Point",
+						coordinates: [lng, lat]
+					}
 				}
-				if (avgLng > 0 && lng < 0) {
-					return [lat, lng + 360];
-				}
-				return [lat, lng];
-			});
-		}
-
-		map.getSource("selected-hexagon")?.setData({
-			type: "Feature",
-			properties: {},
-			geometry: {
-				type: "Polygon",
-				coordinates: [normalizedBoundary],
-			},
-		});
+			]
+		};
+		
+		map.getSource("selected-hexagon")?.setData(features);
 		
 		dispatch('holonChange', { id: hexId });
 		
@@ -357,8 +421,52 @@
 		moveTimeout = setTimeout(fn, delay) as unknown as number;
 	}
 
-	// Update the map move handler to refresh subscriptions
+	let lastResolution: number;
+
+	function clearHexagons() {
+		// Clear selected hexagon
+		map.getSource("selected-hexagon")?.setData({
+			type: "Feature",
+			properties: {},
+			geometry: {
+				type: "Point",
+				coordinates: [0, 0]
+			}
+		});
+
+		// Clear highlighted hexagons
+		map.getSource("highlighted-hexagons")?.setData({
+			type: "FeatureCollection",
+			features: []
+		});
+	}
+
 	function handleMapMove() {
+		const currentZoom = map.getZoom();
+		const currentResolution = getResolution(currentZoom);
+
+		// Check if we've crossed a resolution boundary
+		if (lastResolution !== undefined && lastResolution !== currentResolution) {
+			clearHexagons();
+			
+			// If we have a selected hexagon, check if we should reapply it
+			if (hexId) {
+				const hexResolution = h3.getResolution(hexId);
+				if (currentResolution <= hexResolution) {
+					const boundary = h3.cellToBoundary(hexId, true);
+					map.getSource("selected-hexagon")?.setData({
+						type: "Feature",
+						properties: {},
+						geometry: {
+							type: "Polygon",
+							coordinates: [boundary],
+						},
+					});
+				}
+			}
+		}
+		lastResolution = currentResolution;
+
 		// Render hexes immediately for smooth visual feedback
 		if (selectedLens) renderHexes(map, selectedLens);
 		
@@ -441,10 +549,9 @@
 		const subscriptions = holoSubscriptions.get(lens);
 		if (subscriptions) {
 			// Clear all subscriptions for this lens
-			for (const [hex, subscription] of subscriptions.entries()) {
-				// Unsubscribe from Gun DB
-				if (holosphere.gun) {
-					holosphere.gun.get(hex).get(lens).map().off();
+			for (const [_, subscription] of subscriptions.entries()) {
+				if (subscription && typeof subscription.off === 'function') {
+					subscription.off();
 				}
 			}
 			holoSubscriptions.delete(lens);
@@ -452,162 +559,326 @@
 		}
 	}
 
+	let activeView: 'map' | 'holonic' = 'map';
+	let mapInitialized = false;
+
+	function initializeMap() {
+		if (mapInitialized || !browser) return;
+		
+		mapboxgl.accessToken = "pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
+		map = new mapboxgl.Map({
+			container: mapContainer,
+			style: "mapbox://styles/mapbox/satellite-streets-v12",
+			center: [13.7364963,42.8917537],
+			zoom: 5,
+			projection: "globe",
+			renderWorldCopies: false,
+		});
+
+		// Add geocoder (search box)
+		const geocoder = new MapboxGeocoder({
+			accessToken: mapboxgl.accessToken,
+			mapboxgl: mapboxgl,
+			marker: false,
+			placeholder: "Search for a location",
+		});
+
+		// Add geolocate control
+		const geolocate = new mapboxgl.GeolocateControl({
+			positionOptions: {
+				enableHighAccuracy: true,
+			},
+			trackUserLocation: true,
+			showUserHeading: true,
+		});
+
+		map.addControl(geocoder, "top-right");
+		map.addControl(geolocate, "top-right");
+
+		map.on("style.load", () => {
+			map.setFog({
+				color: "rgb(186, 210, 235)",
+				"high-color": "rgb(36, 92, 223)",
+				"horizon-blend": 0.02,
+				"space-color": "rgb(11, 11, 25)",
+				"star-intensity": 0.6,
+			});
+		});
+
+		map.on("load", () => {
+			console.log("Map loaded");
+			map.addSource("hexagon-grid", {
+				type: "geojson",
+				data: { type: "FeatureCollection", features: [] }
+			});
+
+			// Base hexagon grid layers
+			map.addLayer({
+				id: "hexagon-grid-outline-layer",
+				type: "line",
+				source: "hexagon-grid",
+				paint: {
+					"line-color": "#fff",
+					"line-width": 1,
+					"line-opacity": 0.6
+				}
+			});
+
+			// Base hexagon grid circle layer
+			map.addLayer({
+				id: "hexagon-grid-circle-layer",
+				type: "circle",
+				source: "hexagon-grid",
+				paint: {
+					"circle-color": "#fff",
+					"circle-opacity": 0.6,
+					"circle-stroke-width": 1,
+					"circle-stroke-color": "#fff",
+					"circle-stroke-opacity": 0.6,
+					"circle-radius": [
+						"interpolate",
+						["exponential", 2],
+						["zoom"],
+						0, 2,
+						22, 100
+					]
+				}
+			});
+
+			// Lower resolution grid layers
+			map.addSource("hexagon-grid-lower", {
+				type: "geojson",
+				data: { type: "FeatureCollection", features: [] }
+			});
+
+			map.addLayer({
+				id: "hexagon-grid-lower-outline-layer",
+				type: "line",
+				source: "hexagon-grid-lower",
+				paint: {
+					"line-color": "#aaa",
+					"line-width": 0.5,
+					"line-opacity": 0.4
+				}
+			});
+
+			// Lower resolution grid circle layer
+			map.addLayer({
+				id: "hexagon-grid-lower-circle-layer",
+				type: "circle",
+				source: "hexagon-grid-lower",
+				paint: {
+					"circle-color": "#aaa",
+					"circle-opacity": 0.4,
+					"circle-stroke-width": 0.5,
+					"circle-stroke-color": "#aaa",
+					"circle-stroke-opacity": 0.4,
+					"circle-radius": [
+						"interpolate",
+						["exponential", 2],
+						["zoom"],
+						0, 1,
+						22, 50
+					]
+				}
+			});
+
+			// Highlighted hexagons layers
+			map.addSource("highlighted-hexagons", {
+				type: "geojson",
+				data: {
+					type: "FeatureCollection",
+					features: []
+				}
+			});
+
+			// Add highlighted hexagon fill FIRST
+			map.addLayer({
+				id: "highlighted-hexagons-fill-layer",
+				type: "fill",
+				source: "highlighted-hexagons",
+				paint: {
+					"fill-color": ["get", "color"],
+					"fill-opacity": 0.6
+				}
+			});
+
+			// Then add the outline
+			map.addLayer({
+				id: "highlighted-hexagons-outline-layer",
+				type: "line",
+				source: "highlighted-hexagons",
+				paint: {
+					"line-color": ["get", "color"],
+					"line-width": 2,
+					"line-opacity": 0.8
+				}
+			});
+
+			// Highlighted hexagons circle layer
+			map.addLayer({
+				id: "highlighted-hexagons-circle-layer",
+				type: "circle",
+				source: "highlighted-hexagons",
+				paint: {
+					"circle-color": ["get", "color"],
+					"circle-opacity": 0.6,
+					"circle-stroke-width": 2,
+					"circle-stroke-color": ["get", "color"],
+					"circle-stroke-opacity": 0.8,
+					"circle-radius": [
+						"interpolate",
+						["exponential", 2],
+						["zoom"],
+						0, 2,
+						22, 100
+					]
+				}
+			});
+
+			// Selected hexagon layers
+			map.addSource("selected-hexagon", {
+				type: "geojson",
+				data: {
+					type: "Feature",
+					properties: {},
+					geometry: { type: "Polygon", coordinates: [[]] }
+				}
+			});
+
+			// Add selected hexagon fill FIRST
+			map.addLayer({
+				id: "selected-hexagon-fill-layer",
+				type: "fill",
+				source: "selected-hexagon",
+				paint: {
+					"fill-color": "#088",
+					"fill-opacity": 0.6
+				}
+			});
+
+			// Then add the outline
+			map.addLayer({
+				id: "selected-hexagon-outline-layer",
+				type: "line",
+				source: "selected-hexagon",
+				paint: {
+					"line-color": "#088",
+					"line-width": 2,
+					"line-opacity": 0.8
+				}
+			});
+
+			// Selected hexagon circle layer
+			map.addLayer({
+				id: "selected-hexagon-circle-layer",
+				type: "circle",
+				source: "selected-hexagon",
+				paint: {
+					"circle-color": "#088",
+					"circle-opacity": 0.6,
+					"circle-stroke-width": 2,
+					"circle-stroke-color": "#088",
+					"circle-stroke-opacity": 0.8,
+					"circle-radius": [
+						"interpolate",
+						["exponential", 2],
+						["zoom"],
+						0, 2,
+						22, 100
+					]
+				}
+			});
+
+			// Initial subscription to default lens
+			subscribeToLens(selectedLens);
+			renderHexes(map, selectedLens);
+			mapInitialized = true;
+		});
+
+		// Update these event handlers to maintain subscriptions
+		map.on("move", handleMapMove);
+		map.on("zoom", handleMapMove);
+
+		map.on("click", async (e: mapboxgl.MapMouseEvent) => {
+			console.log("Map clicked", e.lngLat);
+			const { lng, lat } = e.lngLat;
+			const zoom = map.getZoom();
+			const resolution = getResolution(zoom);
+			const newHexId = h3.latLngToCell(lat, lng, resolution);
+			console.log("Hexagon ID:", newHexId);
+			
+			// Only update if it's a valid H3 cell
+			if (isH3Cell(newHexId)) {
+				hexId = newHexId;
+				updateSelectedHexagon(newHexId);
+			}
+
+			// Log lens data for the clicked hexagon
+			try {
+				const data = await holosphere.getAll(newHexId, selectedLens);
+				console.log(`${selectedLens} data for hexagon ${newHexId}:`, data);
+			} catch (error) {
+				console.error(`Error fetching ${selectedLens} data:`, error);
+			}
+		});
+	}
+
 	onMount(() => {
 		if (browser) {
 			// Add a small delay to ensure container is properly sized
-			setTimeout(() => {
-				mapboxgl.accessToken =
-					"pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
-				map = new mapboxgl.Map({
-					container: mapContainer,
-					style: "mapbox://styles/mapbox/satellite-streets-v12",
-					center: [13.7364963,42.8917537],
-					zoom: 5,
-					projection: "globe",
-					renderWorldCopies: false,
-					//maxBounds: [[-180, -90], [180, 90]]  // Changed to strict bounds
-				});
-
-				// Add geocoder (search box)
-				const geocoder = new MapboxGeocoder({
-					accessToken: mapboxgl.accessToken,
-					mapboxgl: mapboxgl,
-						marker: false,
-						placeholder: "Search for a location",
-				});
-
-				// Add geolocate control
-				const geolocate = new mapboxgl.GeolocateControl({
-					positionOptions: {
-						enableHighAccuracy: true,
-					},
-					trackUserLocation: true,
-					showUserHeading: true,
-				});
-
-				map.addControl(geocoder, "top-right");
-				map.addControl(geolocate, "top-right");
-
-				map.on("style.load", () => {
-					map.setFog({
-						color: "rgb(186, 210, 235)",
-						"high-color": "rgb(36, 92, 223)",
-						"horizon-blend": 0.02,
-						"space-color": "rgb(11, 11, 25)",
-						"star-intensity": 0.6,
-					});
-				});
-
-				map.on("load", () => {
-					console.log("Map loaded");
-					map.addSource("hexagon-grid", {
-						type: "geojson",
-						data: { type: "FeatureCollection", features: [] },
-					});
-
-					map.addLayer({
-						id: "hexagon-grid-layer",
-						type: "line",
-						source: "hexagon-grid",
-						layout: {},
-						paint: {
-							"line-color": "#fff",
-							"line-width": 3,
-						},
-					});
-
-					map.addSource("hexagon-grid-lower", {
-						type: "geojson",
-						data: { type: "FeatureCollection", features: [] },
-					});
-
-					map.addLayer({
-						id: "hexagon-grid-lower-layer",
-						type: "line",
-						source: "hexagon-grid-lower",
-						layout: {},
-						paint: {
-							"line-color": "#aaa",
-							"line-width": 1,
-						},
-					});
-
-					map.addSource("selected-hexagon", {
-						type: "geojson",
-						data: {
-							type: "Feature",
-							properties: {},  // Add this line
-							geometry: { type: "Polygon", coordinates: [[]] },
-						},
-					});
-
-					map.addLayer({
-						id: "selected-hexagon-layer",
-						type: "fill",
-						source: "selected-hexagon",
-						layout: {},
-						paint: {
-							"fill-color": "#088",
-							"fill-opacity": 0.4,
-							"fill-outline-color": "#000",
-						},
-					});
-
-					map.addSource("highlighted-hexagons", {
-						type: "geojson",
-						data: {
-							type: "FeatureCollection",
-							features: []
-						}
-					});
-
-					map.addLayer({
-						id: "highlighted-hexagons-layer",
-						type: "fill",
-						source: "highlighted-hexagons",
-						layout: {},
-						paint: {
-							"fill-color": ["get", "color"],
-							"fill-opacity": 0.4,
-							"fill-outline-color": "#000"
-						}
-					});
-
-					// Initial subscription to default lens
-					subscribeToLens(selectedLens);
-					renderHexes(map, selectedLens);
-				});
-
-				// Update these event handlers to maintain subscriptions
-				map.on("move", handleMapMove);
-				map.on("zoom", handleMapMove);
-
-				map.on("click", async (e: mapboxgl.MapMouseEvent) => {
-					console.log("Map clicked", e.lngLat);
-					const { lng, lat } = e.lngLat;
-					const zoom = map.getZoom();
-					const resolution = getResolution(zoom);
-					hexId = h3.latLngToCell(lat, lng, resolution);
-					console.log("Hexagon ID:", hexId);
-					updateSelectedHexagon(hexId);
-
-					// Log lens data for the clicked hexagon
-					try {
-						const data = await holosphere.getAll(hexId, selectedLens);
-						console.log(`${selectedLens} data for hexagon ${hexId}:`, data);
-					} catch (error) {
-						console.error(`Error fetching ${selectedLens} data:`, error);
-					}
-				});
-			}, 100);
+			setTimeout(initializeMap, 100);
 		}
 	});
 
-	// Subscribe to changes in the ID store
-	$: if (map && $ID && $ID !== hexId) {
+	// Add cleanup function for map
+	function cleanupMap() {
+		if (map) {
+			map.remove();
+			map = null;
+			mapInitialized = false;
+		}
+	}
+
+	let lastSelectedHolonId: string | null = null;
+
+	// Add function to detect holon type
+	function isH3Cell(id: string): boolean {
+		try {
+			return h3.isValidCell(id);
+		} catch {
+			return false;
+		}
+	}
+
+	// Update view change handler
+	$: if (activeView === 'map') {
+		// Small delay to ensure container is ready
+		setTimeout(() => {
+			initializeMap();
+			// Only zoom if we have a valid H3 index
+			if (hexId && isH3Cell(hexId)) {
+				updateSelectedHexagon(hexId);
+			}
+		}, 100);
+	} else {
+		cleanupMap();
+	}
+
+	// Update ID store subscription
+	$: if ($ID && $ID !== hexId) {
 		hexId = $ID;
+		// Automatically switch view based on ID type
+		if (isH3Cell($ID)) {
+			activeView = 'map';
+		} else {
+			activeView = 'holonic';
+		}
 		dispatch('holonChange', { id: $ID });
-		updateSelectedHexagon($ID);
+		// Only update map if we're in map view and it's a valid H3 cell
+		if (activeView === 'map' && map && isH3Cell($ID)) {
+			updateSelectedHexagon($ID);
+		}
 	}
 
 	// Update the lens selection reactive statement
@@ -623,8 +894,9 @@
 		renderHexes(map, selectedLens);
 	}
 
-	// Clean up subscriptions on component destruction
+	// Update onDestroy to include map cleanup
 	onDestroy(() => {
+		cleanupMap();
 		for (const [lens, subscriptions] of holoSubscriptions.entries()) {
 			for (const subscription of subscriptions.values()) {
 				if (subscription && typeof subscription.off === 'function') {
@@ -637,12 +909,24 @@
 </script>
 
 <div class="flex flex-wrap">
-    <div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
+    <div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl map-container">
         <div class="flex justify-between text-white items-center mb-8">
-            <div>
-                <p class="text-2xl font-bold">Map</p>
-                <p class="text-lg mt-1">Explore your local area</p>
+            <!-- View Toggle -->
+            <div class="flex bg-gray-700 rounded-lg p-1">
+                <button 
+                    class="px-4 py-2 rounded-lg transition-colors {activeView === 'map' ? 'bg-gray-600 text-white' : 'text-gray-300 hover:text-white'}"
+                    on:click={() => activeView = 'map'}
+                >
+                    Map View
+                </button>
+                <button 
+                    class="px-4 py-2 rounded-lg transition-colors {activeView === 'holonic' ? 'bg-gray-600 text-white' : 'text-gray-300 hover:text-white'}"
+                    on:click={() => activeView = 'holonic'}
+                >
+                    Holonic View
+                </button>
             </div>
+            <!-- Lens Selector (show in both views) -->
             <div class="lens-selector">
                 <label for="lens-select">Lens:</label>
                 <select id="lens-select" bind:value={selectedLens}>
@@ -653,15 +937,32 @@
             </div>
         </div>
 
-        <div class="relative rounded-3xl overflow-hidden">
+        <div class="view-content">
             {#if isLoading}
                 <div class="loading-overlay">
                     <div class="loading-spinner">Loading...</div>
                 </div>
             {/if}
-            <div bind:this={mapContainer} class="map rounded-3xl"></div>
-            {#if hexId}
-                <div class="hex-info">Selected Hexagon: {hexId}</div>
+            
+            {#if activeView === 'map'}
+                <div 
+                    bind:this={mapContainer} 
+                    class="map"
+                >
+                    {#if hexId}
+                        <div class="hex-info">Selected Hexagon: {hexId}</div>
+                    {/if}
+                </div>
+            {:else}
+                <div class="holonic-view">
+                    <HolonNavigator 
+                        on:holonSelect={({ detail }) => {
+                            hexId = detail.key;
+                            ID.set(detail.key);
+                            dispatch('holonChange', { id: detail.key });
+                        }}
+                    />
+                </div>
             {/if}
         </div>
     </div>
@@ -669,92 +970,102 @@
     <MapSidebar 
         {selectedLens}
         {hexId}
+        {activeView}
         on:holonChange
     />
 </div>
 
 <style>
-	/* .map-container {
-		position: relative;
-		width: 100%;
-		height: 100%;
-		min-height: calc(100vh - 64px - 2rem);
-	} */
+    .map, .holonic-view {
+        width: 100%;
+        height: 100%;
+        position: relative;
+    }
 
-	.map {
-		position: relative;
-		width: 100%;
-		height: calc(100vh - 64px - 8rem);
-		flex: 1;
-	}
+    .map-container {
+        height: calc(100vh - 64px - 2rem);
+        display: flex;
+        flex-direction: column;
+    }
 
-	.hex-info {
-		position: absolute;
-		bottom: 10px;
-		left: 10px;
-		background-color: rgba(31, 41, 55, 0.8);
-		color: white;
-		padding: 5px 10px;
-		border-radius: 9999px;
-		font-size: 14px;
-		z-index: 1;
-	}
+    .view-content {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+        border-radius: 1.5rem;
+    }
 
-	:global(.mapboxgl-ctrl-top-right) {
-		top: 10px !important;
-		right: 10px !important;
-	}
+    .hex-info {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background-color: rgba(31, 41, 55, 0.8);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 9999px;
+        font-size: 14px;
+        z-index: 1;
+    }
 
-	:global(.mapboxgl-ctrl-geocoder) {
-		min-width: 250px;
-	}
+    :global(.mapboxgl-ctrl-top-right) {
+        top: 10px !important;
+        right: 10px !important;
+    }
 
-	.lens-selector {
-		background-color: transparent;
-		padding: 0;
-		box-shadow: none;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
+    :global(.mapboxgl-ctrl-geocoder) {
+        min-width: 250px;
+    }
 
-	.lens-selector label {
-		font-size: 14px;
-		font-weight: 500;
-		color: white;
-	}
+    .lens-selector {
+        background-color: transparent;
+        padding: 0;
+        box-shadow: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
 
-	.lens-selector select {
-		padding: 5px 10px;
-		border: 1px solid rgba(255, 255, 255, 0.2);
-		border-radius: 9999px;
-		font-size: 14px;
-		background-color: rgba(255, 255, 255, 0.1);
-		color: white;
-		cursor: pointer;
-		min-width: 120px;
-	}
+    .lens-selector label {
+        font-size: 14px;
+        font-weight: 500;
+        color: white;
+    }
 
-	.loading-overlay {
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background: rgba(31, 41, 55, 0.7);
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		z-index: 1000;
-		border-radius: 1.5rem;
-	}
+    .lens-selector select {
+        padding: 5px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 9999px;
+        font-size: 14px;
+        background-color: rgba(255, 255, 255, 0.1);
+        color: white;
+        cursor: pointer;
+        min-width: 120px;
+    }
 
-	.loading-spinner {
-		background: rgba(31, 41, 55, 0.9);
-		color: white;
-		padding: 1rem;
-		border-radius: 0.5rem;
-	}
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(31, 41, 55, 0.7);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+        border-radius: 1.5rem;
+    }
+
+    .loading-spinner {
+        background: rgba(31, 41, 55, 0.9);
+        color: white;
+        padding: 1rem;
+        border-radius: 0.5rem;
+    }
+
+    .holonic-view {
+        background-color: rgb(17, 24, 39);
+    }
 </style>
 
 
