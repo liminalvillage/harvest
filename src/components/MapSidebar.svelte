@@ -61,6 +61,7 @@
 
     export let selectedLens: string;
     export let hexId: string | null;
+    export let activeView: 'map' | 'holonic';
     let holosphere = getContext('holosphere') as HoloSphere;
     let content: Record<string, any> | null = null;
     let subscription: { off: () => void } | null = null;
@@ -68,16 +69,59 @@
     let formData: Record<string, any> = {};
     let viewingItem: Record<string, any> | null = null;
 
+    // Add statistics interface
+    interface HolonStats {
+        quests: number;
+        completedQuests: number;
+        users: number;
+        expenses: number;
+        roles: number;
+        announcements: number;
+    }
+
+    let stats: HolonStats | null = null;
+
+    async function loadHolonStats(holonId: string) {
+        stats = null;
+        try {
+            const [quests, users, expenses, roles, announcements] = await Promise.all([
+                holosphere.getAll(holonId, 'quests'),
+                holosphere.getAll(holonId, 'users'),
+                holosphere.getAll(holonId, 'expenses'),
+                holosphere.getAll(holonId, 'roles'),
+                holosphere.getAll(holonId, 'announcements')
+            ]);
+
+            stats = {
+                quests: Object.keys(quests || {}).length,
+                completedQuests: Object.values(quests || {}).filter((q: any) => q.status === 'completed').length,
+                users: Object.keys(users || {}).length,
+                expenses: Object.keys(expenses || {}).length,
+                roles: Object.keys(roles || {}).length,
+                announcements: Object.keys(announcements || {}).length
+            };
+        } catch (error) {
+            console.error('Error loading holon stats:', error);
+        }
+    }
+
     // Reset form state when hexId changes
     $: if (hexId) {
         console.log('Hexagon changed to:', hexId);
         showForm = false;
         formData = {};
         viewingItem = null;
-        // Re-subscribe when hexId changes
-        if (selectedLens) {
-            unsubscribe();
-            subscribe();
+        stats = null;  // Reset stats when hexId changes
+        
+        if (activeView === 'map') {
+            // Only subscribe to lens data in map view
+            if (selectedLens) {
+                unsubscribe();
+                subscribe();
+            }
+        } else {
+            // Only load holon stats in holonic view
+            loadHolonStats(hexId);
         }
     }
 
@@ -194,7 +238,7 @@
                 <p class="text-lg mt-1">View and edit content</p>
             </div>
             <div>
-                {#if selectedLens}
+                {#if selectedLens && !stats}
                     <button
                         class="px-3 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors flex items-center gap-2"
                         on:click={toggleForm}
@@ -208,6 +252,32 @@
                 {/if}
             </div>
         </div>
+
+        {#if stats}
+            <div class="grid grid-cols-2 gap-4 mb-8">
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-gray-400 text-sm mb-1">Tasks</h3>
+                    <p class="text-white text-xl font-semibold">{stats.completedQuests} / {stats.quests}</p>
+                    <p class="text-gray-400 text-xs">Completed / Total</p>
+                </div>
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-gray-400 text-sm mb-1">Users</h3>
+                    <p class="text-white text-xl font-semibold">{stats.users}</p>
+                </div>
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-gray-400 text-sm mb-1">Expenses</h3>
+                    <p class="text-white text-xl font-semibold">{stats.expenses}</p>
+                </div>
+                <div class="bg-gray-700 p-4 rounded-lg">
+                    <h3 class="text-gray-400 text-sm mb-1">Roles</h3>
+                    <p class="text-white text-xl font-semibold">{stats.roles}</p>
+                </div>
+                <div class="bg-gray-700 p-4 rounded-lg col-span-2">
+                    <h3 class="text-gray-400 text-sm mb-1">Announcements</h3>
+                    <p class="text-white text-xl font-semibold">{stats.announcements}</p>
+                </div>
+            </div>
+        {/if}
 
         {#if showForm}
             <div class="mb-6 p-4 bg-gray-700 rounded-lg transition-all">
@@ -235,7 +305,7 @@
                     {/if}
                 {/key}
             </div>
-        {:else if content}
+        {:else if content && !stats}
             <div class="space-y-4">
                 {#if Array.isArray(content)}
                     {#each content as item}
@@ -272,7 +342,7 @@
                     </button>
                 {/if}
             </div>
-        {:else}
+        {:else if !stats}
             <div class="text-white text-center py-8">
                 <p class="text-lg opacity-70">Select a hexagon on the map to view details</p>
             </div>

@@ -10,12 +10,14 @@
 
 	import HoloSphere from 'holosphere';
 	import MapSidebar from "./MapSidebar.svelte";
+	import HolonNavigator from './HolonNavigator.svelte';
 
 	type LensType = 'quests' | 'needs' | 'offers' | 'communities' | 'organizations' | 'projects' | 'currencies' | 'people' | 'holons';
 
 	let holosphere = getContext('holosphere') as HoloSphere 
 
 	let mapContainer: HTMLElement;
+	let holonicContainer: HTMLElement;
 	let map: mapboxgl.Map;
 	let hexId: string;
 	export let selectedLens: LensType = 'quests';
@@ -441,10 +443,9 @@
 		const subscriptions = holoSubscriptions.get(lens);
 		if (subscriptions) {
 			// Clear all subscriptions for this lens
-			for (const [hex, subscription] of subscriptions.entries()) {
-				// Unsubscribe from Gun DB
-				if (holosphere.gun) {
-					holosphere.gun.get(hex).get(lens).map().off();
+			for (const [_, subscription] of subscriptions.entries()) {
+				if (subscription && typeof subscription.off === 'function') {
+					subscription.off();
 				}
 			}
 			holoSubscriptions.delete(lens);
@@ -452,156 +453,179 @@
 		}
 	}
 
+	let activeView: 'map' | 'holonic' = 'map';
+	let mapInitialized = false;
+
+	function initializeMap() {
+		if (mapInitialized || !browser) return;
+		
+		mapboxgl.accessToken = "pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
+		map = new mapboxgl.Map({
+			container: mapContainer,
+			style: "mapbox://styles/mapbox/satellite-streets-v12",
+			center: [13.7364963,42.8917537],
+			zoom: 5,
+			projection: "globe",
+			renderWorldCopies: false,
+		});
+
+		// Add geocoder (search box)
+		const geocoder = new MapboxGeocoder({
+			accessToken: mapboxgl.accessToken,
+			mapboxgl: mapboxgl,
+			marker: false,
+			placeholder: "Search for a location",
+		});
+
+		// Add geolocate control
+		const geolocate = new mapboxgl.GeolocateControl({
+			positionOptions: {
+				enableHighAccuracy: true,
+			},
+			trackUserLocation: true,
+			showUserHeading: true,
+		});
+
+		map.addControl(geocoder, "top-right");
+		map.addControl(geolocate, "top-right");
+
+		map.on("style.load", () => {
+			map.setFog({
+				color: "rgb(186, 210, 235)",
+				"high-color": "rgb(36, 92, 223)",
+				"horizon-blend": 0.02,
+				"space-color": "rgb(11, 11, 25)",
+				"star-intensity": 0.6,
+			});
+		});
+
+		map.on("load", () => {
+			console.log("Map loaded");
+			map.addSource("hexagon-grid", {
+				type: "geojson",
+				data: { type: "FeatureCollection", features: [] },
+			});
+
+			map.addLayer({
+				id: "hexagon-grid-layer",
+				type: "line",
+				source: "hexagon-grid",
+				layout: {},
+				paint: {
+					"line-color": "#fff",
+					"line-width": 3,
+				},
+			});
+
+			map.addSource("hexagon-grid-lower", {
+				type: "geojson",
+				data: { type: "FeatureCollection", features: [] },
+			});
+
+			map.addLayer({
+				id: "hexagon-grid-lower-layer",
+				type: "line",
+				source: "hexagon-grid-lower",
+				layout: {},
+				paint: {
+					"line-color": "#aaa",
+					"line-width": 1,
+				},
+			});
+
+			map.addSource("selected-hexagon", {
+				type: "geojson",
+				data: {
+					type: "Feature",
+					properties: {},
+					geometry: { type: "Polygon", coordinates: [[]] },
+				},
+			});
+
+			map.addLayer({
+				id: "selected-hexagon-layer",
+				type: "fill",
+				source: "selected-hexagon",
+				layout: {},
+				paint: {
+					"fill-color": "#088",
+					"fill-opacity": 0.4,
+					"fill-outline-color": "#000",
+				},
+			});
+
+			map.addSource("highlighted-hexagons", {
+				type: "geojson",
+				data: {
+					type: "FeatureCollection",
+					features: []
+				}
+			});
+
+			map.addLayer({
+				id: "highlighted-hexagons-layer",
+				type: "fill",
+				source: "highlighted-hexagons",
+				layout: {},
+				paint: {
+					"fill-color": ["get", "color"],
+					"fill-opacity": 0.4,
+					"fill-outline-color": "#000"
+				}
+			});
+
+			// Initial subscription to default lens
+			subscribeToLens(selectedLens);
+			renderHexes(map, selectedLens);
+			mapInitialized = true;
+		});
+
+		// Update these event handlers to maintain subscriptions
+		map.on("move", handleMapMove);
+		map.on("zoom", handleMapMove);
+
+		map.on("click", async (e: mapboxgl.MapMouseEvent) => {
+			console.log("Map clicked", e.lngLat);
+			const { lng, lat } = e.lngLat;
+			const zoom = map.getZoom();
+			const resolution = getResolution(zoom);
+			hexId = h3.latLngToCell(lat, lng, resolution);
+			console.log("Hexagon ID:", hexId);
+			updateSelectedHexagon(hexId);
+
+			// Log lens data for the clicked hexagon
+			try {
+				const data = await holosphere.getAll(hexId, selectedLens);
+				console.log(`${selectedLens} data for hexagon ${hexId}:`, data);
+			} catch (error) {
+				console.error(`Error fetching ${selectedLens} data:`, error);
+			}
+		});
+	}
+
 	onMount(() => {
 		if (browser) {
 			// Add a small delay to ensure container is properly sized
-			setTimeout(() => {
-				mapboxgl.accessToken =
-					"pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
-				map = new mapboxgl.Map({
-					container: mapContainer,
-					style: "mapbox://styles/mapbox/satellite-streets-v12",
-					center: [13.7364963,42.8917537],
-					zoom: 5,
-					projection: "globe",
-					renderWorldCopies: false,
-					//maxBounds: [[-180, -90], [180, 90]]  // Changed to strict bounds
-				});
-
-				// Add geocoder (search box)
-				const geocoder = new MapboxGeocoder({
-					accessToken: mapboxgl.accessToken,
-					mapboxgl: mapboxgl,
-						marker: false,
-						placeholder: "Search for a location",
-				});
-
-				// Add geolocate control
-				const geolocate = new mapboxgl.GeolocateControl({
-					positionOptions: {
-						enableHighAccuracy: true,
-					},
-					trackUserLocation: true,
-					showUserHeading: true,
-				});
-
-				map.addControl(geocoder, "top-right");
-				map.addControl(geolocate, "top-right");
-
-				map.on("style.load", () => {
-					map.setFog({
-						color: "rgb(186, 210, 235)",
-						"high-color": "rgb(36, 92, 223)",
-						"horizon-blend": 0.02,
-						"space-color": "rgb(11, 11, 25)",
-						"star-intensity": 0.6,
-					});
-				});
-
-				map.on("load", () => {
-					console.log("Map loaded");
-					map.addSource("hexagon-grid", {
-						type: "geojson",
-						data: { type: "FeatureCollection", features: [] },
-					});
-
-					map.addLayer({
-						id: "hexagon-grid-layer",
-						type: "line",
-						source: "hexagon-grid",
-						layout: {},
-						paint: {
-							"line-color": "#fff",
-							"line-width": 3,
-						},
-					});
-
-					map.addSource("hexagon-grid-lower", {
-						type: "geojson",
-						data: { type: "FeatureCollection", features: [] },
-					});
-
-					map.addLayer({
-						id: "hexagon-grid-lower-layer",
-						type: "line",
-						source: "hexagon-grid-lower",
-						layout: {},
-						paint: {
-							"line-color": "#aaa",
-							"line-width": 1,
-						},
-					});
-
-					map.addSource("selected-hexagon", {
-						type: "geojson",
-						data: {
-							type: "Feature",
-							properties: {},  // Add this line
-							geometry: { type: "Polygon", coordinates: [[]] },
-						},
-					});
-
-					map.addLayer({
-						id: "selected-hexagon-layer",
-						type: "fill",
-						source: "selected-hexagon",
-						layout: {},
-						paint: {
-							"fill-color": "#088",
-							"fill-opacity": 0.4,
-							"fill-outline-color": "#000",
-						},
-					});
-
-					map.addSource("highlighted-hexagons", {
-						type: "geojson",
-						data: {
-							type: "FeatureCollection",
-							features: []
-						}
-					});
-
-					map.addLayer({
-						id: "highlighted-hexagons-layer",
-						type: "fill",
-						source: "highlighted-hexagons",
-						layout: {},
-						paint: {
-							"fill-color": ["get", "color"],
-							"fill-opacity": 0.4,
-							"fill-outline-color": "#000"
-						}
-					});
-
-					// Initial subscription to default lens
-					subscribeToLens(selectedLens);
-					renderHexes(map, selectedLens);
-				});
-
-				// Update these event handlers to maintain subscriptions
-				map.on("move", handleMapMove);
-				map.on("zoom", handleMapMove);
-
-				map.on("click", async (e: mapboxgl.MapMouseEvent) => {
-					console.log("Map clicked", e.lngLat);
-					const { lng, lat } = e.lngLat;
-					const zoom = map.getZoom();
-					const resolution = getResolution(zoom);
-					hexId = h3.latLngToCell(lat, lng, resolution);
-					console.log("Hexagon ID:", hexId);
-					updateSelectedHexagon(hexId);
-
-					// Log lens data for the clicked hexagon
-					try {
-						const data = await holosphere.getAll(hexId, selectedLens);
-						console.log(`${selectedLens} data for hexagon ${hexId}:`, data);
-					} catch (error) {
-						console.error(`Error fetching ${selectedLens} data:`, error);
-					}
-				});
-			}, 100);
+			setTimeout(initializeMap, 100);
 		}
 	});
+
+	// Add cleanup function for map
+	function cleanupMap() {
+		if (map) {
+			map.remove();
+			map = null;
+			mapInitialized = false;
+		}
+	}
+
+	// Watch for view changes
+	$: if (activeView === 'map') {
+		// Small delay to ensure container is ready
+		setTimeout(initializeMap, 100);
+	} else {
+		cleanupMap();
+	}
 
 	// Subscribe to changes in the ID store
 	$: if (map && $ID && $ID !== hexId) {
@@ -623,8 +647,9 @@
 		renderHexes(map, selectedLens);
 	}
 
-	// Clean up subscriptions on component destruction
+	// Update onDestroy to include map cleanup
 	onDestroy(() => {
+		cleanupMap();
 		for (const [lens, subscriptions] of holoSubscriptions.entries()) {
 			for (const subscription of subscriptions.values()) {
 				if (subscription && typeof subscription.off === 'function') {
@@ -639,18 +664,32 @@
 <div class="flex flex-wrap">
     <div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
         <div class="flex justify-between text-white items-center mb-8">
-            <div>
-                <p class="text-2xl font-bold">Map</p>
-                <p class="text-lg mt-1">Explore your local area</p>
+            <!-- View Toggle -->
+            <div class="flex bg-gray-700 rounded-lg p-1">
+                <button 
+                    class="px-4 py-2 rounded-lg transition-colors {activeView === 'map' ? 'bg-gray-600 text-white' : 'text-gray-300 hover:text-white'}"
+                    on:click={() => activeView = 'map'}
+                >
+                    Map View
+                </button>
+                <button 
+                    class="px-4 py-2 rounded-lg transition-colors {activeView === 'holonic' ? 'bg-gray-600 text-white' : 'text-gray-300 hover:text-white'}"
+                    on:click={() => activeView = 'holonic'}
+                >
+                    Holonic View
+                </button>
             </div>
-            <div class="lens-selector">
-                <label for="lens-select">Lens:</label>
-                <select id="lens-select" bind:value={selectedLens}>
-                    {#each lensOptions as option}
-                        <option value={option.value}>{option.label}</option>
-                    {/each}
-                </select>
-            </div>
+            <!-- Lens Selector (only show for map view) -->
+            {#if activeView === 'map'}
+                <div class="lens-selector">
+                    <label for="lens-select">Lens:</label>
+                    <select id="lens-select" bind:value={selectedLens}>
+                        {#each lensOptions as option}
+                            <option value={option.value}>{option.label}</option>
+                        {/each}
+                    </select>
+                </div>
+            {/if}
         </div>
 
         <div class="relative rounded-3xl overflow-hidden">
@@ -659,9 +698,26 @@
                     <div class="loading-spinner">Loading...</div>
                 </div>
             {/if}
-            <div bind:this={mapContainer} class="map rounded-3xl"></div>
-            {#if hexId}
-                <div class="hex-info">Selected Hexagon: {hexId}</div>
+            
+            {#if activeView === 'map'}
+                <div 
+                    bind:this={mapContainer} 
+                    class="map rounded-3xl"
+                >
+                    {#if hexId}
+                        <div class="hex-info">Selected Hexagon: {hexId}</div>
+                    {/if}
+                </div>
+            {:else}
+                <div class="holonic-view rounded-3xl">
+                    <HolonNavigator 
+                        on:holonSelect={({ detail }) => {
+                            hexId = detail.key;
+                            ID.set(detail.key);
+                            dispatch('holonChange', { id: detail.key });
+                        }}
+                    />
+                </div>
             {/if}
         </div>
     </div>
@@ -669,92 +725,89 @@
     <MapSidebar 
         {selectedLens}
         {hexId}
+        {activeView}
         on:holonChange
     />
 </div>
 
 <style>
-	/* .map-container {
-		position: relative;
-		width: 100%;
-		height: 100%;
-		min-height: calc(100vh - 64px - 2rem);
-	} */
+    .map, .holonic-view {
+        width: 100%;
+        height: calc(100vh - 64px - 8rem);
+        position: relative;
+    }
 
-	.map {
-		position: relative;
-		width: 100%;
-		height: calc(100vh - 64px - 8rem);
-		flex: 1;
-	}
+    .hex-info {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background-color: rgba(31, 41, 55, 0.8);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 9999px;
+        font-size: 14px;
+        z-index: 1;
+    }
 
-	.hex-info {
-		position: absolute;
-		bottom: 10px;
-		left: 10px;
-		background-color: rgba(31, 41, 55, 0.8);
-		color: white;
-		padding: 5px 10px;
-		border-radius: 9999px;
-		font-size: 14px;
-		z-index: 1;
-	}
+    :global(.mapboxgl-ctrl-top-right) {
+        top: 10px !important;
+        right: 10px !important;
+    }
 
-	:global(.mapboxgl-ctrl-top-right) {
-		top: 10px !important;
-		right: 10px !important;
-	}
+    :global(.mapboxgl-ctrl-geocoder) {
+        min-width: 250px;
+    }
 
-	:global(.mapboxgl-ctrl-geocoder) {
-		min-width: 250px;
-	}
+    .lens-selector {
+        background-color: transparent;
+        padding: 0;
+        box-shadow: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
 
-	.lens-selector {
-		background-color: transparent;
-		padding: 0;
-		box-shadow: none;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
+    .lens-selector label {
+        font-size: 14px;
+        font-weight: 500;
+        color: white;
+    }
 
-	.lens-selector label {
-		font-size: 14px;
-		font-weight: 500;
-		color: white;
-	}
+    .lens-selector select {
+        padding: 5px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 9999px;
+        font-size: 14px;
+        background-color: rgba(255, 255, 255, 0.1);
+        color: white;
+        cursor: pointer;
+        min-width: 120px;
+    }
 
-	.lens-selector select {
-		padding: 5px 10px;
-		border: 1px solid rgba(255, 255, 255, 0.2);
-		border-radius: 9999px;
-		font-size: 14px;
-		background-color: rgba(255, 255, 255, 0.1);
-		color: white;
-		cursor: pointer;
-		min-width: 120px;
-	}
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(31, 41, 55, 0.7);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+        border-radius: 1.5rem;
+    }
 
-	.loading-overlay {
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background: rgba(31, 41, 55, 0.7);
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		z-index: 1000;
-		border-radius: 1.5rem;
-	}
+    .loading-spinner {
+        background: rgba(31, 41, 55, 0.9);
+        color: white;
+        padding: 1rem;
+        border-radius: 0.5rem;
+    }
 
-	.loading-spinner {
-		background: rgba(31, 41, 55, 0.9);
-		color: white;
-		padding: 1rem;
-		border-radius: 0.5rem;
-	}
+    .holonic-view {
+        background-color: rgb(17, 24, 39);
+    }
 </style>
 
 
