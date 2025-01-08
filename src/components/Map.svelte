@@ -297,12 +297,28 @@
 	}
 
 	function goToHex(hex: string) {
+		if (!isH3Cell(hex)) return;
+		
 		const [lat, lng] = h3.cellToLatLng(hex);
 		const resolution = h3.getResolution(hex);
 		const zoom = getZoomFromResolution(resolution);
+		
+		// First zoom to the location
 		map.flyTo({
 			center: [lng, lat],
 			zoom: zoom,
+		});
+
+		// After zooming, update the selected hexagon visualization
+		map.once('moveend', () => {
+			map.getSource("selected-hexagon")?.setData({
+				type: "Feature",
+				properties: {},
+				geometry: {
+					type: "Polygon",
+					coordinates: [h3.cellToBoundary(hex, true)],
+				},
+			});
 		});
 	}
 
@@ -587,14 +603,19 @@
 			const { lng, lat } = e.lngLat;
 			const zoom = map.getZoom();
 			const resolution = getResolution(zoom);
-			hexId = h3.latLngToCell(lat, lng, resolution);
-			console.log("Hexagon ID:", hexId);
-			updateSelectedHexagon(hexId);
+			const newHexId = h3.latLngToCell(lat, lng, resolution);
+			console.log("Hexagon ID:", newHexId);
+			
+			// Only update if it's a valid H3 cell
+			if (isH3Cell(newHexId)) {
+				hexId = newHexId;
+				updateSelectedHexagon(newHexId);
+			}
 
 			// Log lens data for the clicked hexagon
 			try {
-				const data = await holosphere.getAll(hexId, selectedLens);
-				console.log(`${selectedLens} data for hexagon ${hexId}:`, data);
+				const data = await holosphere.getAll(newHexId, selectedLens);
+				console.log(`${selectedLens} data for hexagon ${newHexId}:`, data);
 			} catch (error) {
 				console.error(`Error fetching ${selectedLens} data:`, error);
 			}
@@ -619,28 +640,43 @@
 
 	let lastSelectedHolonId: string | null = null;
 
-	// Subscribe to changes in the ID store
-	$: if ($ID && $ID !== hexId) {
-		hexId = $ID;
-		lastSelectedHolonId = $ID;
-		dispatch('holonChange', { id: $ID });
-		if (activeView === 'map' && map) {
-			updateSelectedHexagon($ID);
+	// Add function to detect holon type
+	function isH3Cell(id: string): boolean {
+		try {
+			return h3.isValidCell(id);
+		} catch {
+			return false;
 		}
 	}
 
-	// Handle view changes
+	// Update view change handler
 	$: if (activeView === 'map') {
 		// Small delay to ensure container is ready
 		setTimeout(() => {
 			initializeMap();
 			// Only zoom if we have a valid H3 index
-			if (lastSelectedHolonId && h3.isValidCell(lastSelectedHolonId)) {
-				updateSelectedHexagon(lastSelectedHolonId);
+			if (hexId && isH3Cell(hexId)) {
+				updateSelectedHexagon(hexId);
 			}
 		}, 100);
 	} else {
 		cleanupMap();
+	}
+
+	// Update ID store subscription
+	$: if ($ID && $ID !== hexId) {
+		hexId = $ID;
+		// Automatically switch view based on ID type
+		if (isH3Cell($ID)) {
+			activeView = 'map';
+		} else {
+			activeView = 'holonic';
+		}
+		dispatch('holonChange', { id: $ID });
+		// Only update map if we're in map view and it's a valid H3 cell
+		if (activeView === 'map' && map && isH3Cell($ID)) {
+			updateSelectedHexagon($ID);
+		}
 	}
 
 	// Update the lens selection reactive statement
