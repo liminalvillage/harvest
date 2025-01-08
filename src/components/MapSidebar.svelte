@@ -71,71 +71,71 @@
 
     // Add statistics interface
     interface HolonStats {
-        quests: number;
-        completedQuests: number;
-        users: number;
-        expenses: number;
-        roles: number;
-        announcements: number;
+        total: number;
+        completed?: number;
     }
 
-    let stats: HolonStats | null = null;
+    let stats: Record<string, HolonStats> | null = null;
 
-    async function loadHolonStats(holonId: string) {
-        stats = null;
+    async function loadData(holonId: string, lens: string) {
+        if (!holonId || !lens) return;
+        
         try {
-            const [quests, users, expenses, roles, announcements] = await Promise.all([
-                holosphere.getAll(holonId, 'quests'),
-                holosphere.getAll(holonId, 'users'),
-                holosphere.getAll(holonId, 'expenses'),
-                holosphere.getAll(holonId, 'roles'),
-                holosphere.getAll(holonId, 'announcements')
-            ]);
-
-            stats = {
-                quests: Object.keys(quests || {}).length,
-                completedQuests: Object.values(quests || {}).filter((q: any) => q.status === 'completed').length,
-                users: Object.keys(users || {}).length,
-                expenses: Object.keys(expenses || {}).length,
-                roles: Object.keys(roles || {}).length,
-                announcements: Object.keys(announcements || {}).length
-            };
+            // Get all items for this lens
+            const items = await holosphere.getAll(holonId, lens);
+            content = items;
+            
+            // Calculate statistics
+            if (items) {
+                stats = {
+                    [lens]: {
+                        total: Object.keys(items).length,
+                        completed: lens === 'quests' ? 
+                            Object.values(items).filter((q: any) => q.status === 'completed').length : 
+                            undefined
+                    }
+                };
+            } else {
+                stats = { [lens]: { total: 0 } };
+            }
         } catch (error) {
-            console.error('Error loading holon stats:', error);
+            console.error('Error loading data:', error);
+            content = null;
+            stats = null;
         }
     }
 
-    // Reset form state when hexId changes
+    // Reset and load data when hexId or lens changes
     $: if (hexId) {
-        console.log('Hexagon changed to:', hexId);
+        console.log('ID or lens changed:', hexId, selectedLens);
         showForm = false;
         formData = {};
         viewingItem = null;
-        stats = null;  // Reset stats when hexId changes
-        
-        if (activeView === 'map') {
-            // Only subscribe to lens data in map view
-            if (selectedLens) {
-                unsubscribe();
-                subscribe();
-            }
-        } else {
-            // Only load holon stats in holonic view
-            loadHolonStats(hexId);
-        }
+        loadData(hexId, selectedLens);
+    }
+
+    $: if (selectedLens && hexId) {
+        loadData(hexId, selectedLens);
     }
 
     function subscribe() {
         if (!hexId || !selectedLens) return;
         
         try {
-            const off = holosphere.subscribe(hexId, selectedLens, (data: any) => {
+            const off = holosphere.subscribe(hexId, selectedLens, async (data: any) => {
                 if (data) {
                     console.log('Data received:', data);
-                    content =  data;
+                    // Get all items for this lens
+                    const allData = await holosphere.getAll(hexId, selectedLens);
+                    content = allData;
                 } else {
                     content = null;
                 }
+            });
+            
+            // Initial data load
+            holosphere.getAll(hexId, selectedLens).then((data) => {
+                content = data;
             });
             
             if (typeof off === 'function') {
@@ -238,7 +238,7 @@
                 <p class="text-lg mt-1">View and edit content</p>
             </div>
             <div>
-                {#if selectedLens && !stats}
+                {#if selectedLens}
                     <button
                         class="px-3 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors flex items-center gap-2"
                         on:click={toggleForm}
@@ -253,28 +253,19 @@
             </div>
         </div>
 
-        {#if stats}
-            <div class="grid grid-cols-2 gap-4 mb-8">
-                <div class="bg-gray-700 p-4 rounded-lg">
-                    <h3 class="text-gray-400 text-sm mb-1">Tasks</h3>
-                    <p class="text-white text-xl font-semibold">{stats.completedQuests} / {stats.quests}</p>
-                    <p class="text-gray-400 text-xs">Completed / Total</p>
-                </div>
-                <div class="bg-gray-700 p-4 rounded-lg">
-                    <h3 class="text-gray-400 text-sm mb-1">Users</h3>
-                    <p class="text-white text-xl font-semibold">{stats.users}</p>
-                </div>
-                <div class="bg-gray-700 p-4 rounded-lg">
-                    <h3 class="text-gray-400 text-sm mb-1">Expenses</h3>
-                    <p class="text-white text-xl font-semibold">{stats.expenses}</p>
-                </div>
-                <div class="bg-gray-700 p-4 rounded-lg">
-                    <h3 class="text-gray-400 text-sm mb-1">Roles</h3>
-                    <p class="text-white text-xl font-semibold">{stats.roles}</p>
-                </div>
-                <div class="bg-gray-700 p-4 rounded-lg col-span-2">
-                    <h3 class="text-gray-400 text-sm mb-1">Announcements</h3>
-                    <p class="text-white text-xl font-semibold">{stats.announcements}</p>
+        {#if stats && stats[selectedLens]}
+            <div class="bg-gray-700 p-4 rounded-lg mb-6">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-gray-400 text-sm">Statistics</h3>
+                    <p class="text-white text-sm">
+                        {#if stats[selectedLens].completed !== undefined}
+                            {stats[selectedLens].completed} / {stats[selectedLens].total}
+                            <span class="text-gray-400 text-xs ml-1">Completed</span>
+                        {:else}
+                            {stats[selectedLens].total}
+                            <span class="text-gray-400 text-xs ml-1">Total</span>
+                        {/if}
+                    </p>
                 </div>
             </div>
         {/if}
@@ -305,10 +296,10 @@
                     {/if}
                 {/key}
             </div>
-        {:else if content && !stats}
+        {:else if content}
             <div class="space-y-4">
-                {#if Array.isArray(content)}
-                    {#each content as item}
+                {#if typeof content === 'object'}
+                    {#each Object.entries(content) as [key, item]}
                         <button 
                             type="button"
                             class="w-full text-left p-4 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"
@@ -329,22 +320,11 @@
                             {/if}
                         </button>
                     {/each}
-                {:else if content.title || content.name}
-                    <button
-                        type="button" 
-                        class="w-full text-left p-4 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"
-                        on:click={() => viewItem(content)}
-                    >
-                        <h4 class="font-medium text-white">{content.title || content.name}</h4>
-                        {#if content.description}
-                            <p class="text-gray-300 text-sm mt-1">{content.description}</p>
-                        {/if}
-                    </button>
                 {/if}
             </div>
-        {:else if !stats}
+        {:else}
             <div class="text-white text-center py-8">
-                <p class="text-lg opacity-70">Select a hexagon on the map to view details</p>
+                <p class="text-lg opacity-70">Select a location to view details</p>
             </div>
         {/if}
     </div>

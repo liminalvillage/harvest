@@ -3,8 +3,6 @@
     import HoloSphere from 'holosphere';
     import * as d3 from 'd3';
     import { ID } from "../dashboard/store";
-    import { goto } from "$app/navigation";
-    import { page } from "$app/stores";
 
     interface Holon {
         name: string;
@@ -22,13 +20,6 @@
         children: Holon[];
     }
 
-    interface FolderData {
-        name: string;
-        type: string;
-        icon: string;
-        items: any[];
-    }
-
     const holosphere = getContext("holosphere") as HoloSphere;
     const dispatch = createEventDispatcher();
 
@@ -42,22 +33,6 @@
     let root: d3.HierarchyCircularNode<Holon>;
     let focus: d3.HierarchyCircularNode<Holon>;
     let view: [number, number, number];
-
-    // Side panel state
-    let selectedHolon: Holon | null = null;
-    let selectedFolder: string | null = null;
-    let folderItems: any[] = [];
-    let loading = false;
-
-    // Available folders
-    const folders: FolderData[] = [
-        { name: "Quests", type: "quests", icon: "📋", items: [] },
-        { name: "Expenses", type: "expenses", icon: "💰", items: [] },
-        { name: "Users", type: "users", icon: "��", items: [] },
-        { name: "Roles", type: "roles", icon: "��", items: [] },
-        { name: "Announcements", type: "announcements", icon: "📢", items: [] },
-        { name: "Tags", type: "tags", icon: "��️", items: [] }
-    ];
 
     // Color scale for different depths
     const color = d3.scaleLinear<string>()
@@ -208,40 +183,21 @@
                 .scale(scale));
     }
 
-    async function loadFolderItems(holon: Holon, folderType: string) {
-        loading = true;
-        selectedFolder = folderType;
-        folderItems = [];
-
-        try {
-            const items = await holosphere.getAll(holon.key!, folderType);
-            folderItems = Object.entries(items || {}).map(([key, value]) => ({
-                key,
-                ...value
-            }));
-        } catch (error) {
-            console.error(`Error loading ${folderType}:`, error);
-        } finally {
-            loading = false;
-        }
-    }
-
     function handleHolonClick(d: d3.HierarchyCircularNode<Holon>) {
         event.stopPropagation();
         focus = d;
         zoomToNode(d);
         if (d.data.key) {
-            // Just dispatch the event, let the parent handle navigation
             dispatch('holonSelect', { key: d.data.key, holon: d.data });
         }
     }
 
-    function handleBackClick() {
-        if (selectedFolder) {
-            selectedFolder = null;
-            folderItems = [];
-        } else {
-            selectedHolon = null;
+    // Add reactive statement to handle ID changes
+    $: if ($ID) {
+        const holon = root?.descendants().find(d => d.data.key === $ID);
+        if (holon) {
+            focus = holon;
+            zoomToNode(holon);
         }
     }
 

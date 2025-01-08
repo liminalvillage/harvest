@@ -300,12 +300,10 @@
 		const [lat, lng] = h3.cellToLatLng(hex);
 		const resolution = h3.getResolution(hex);
 		const zoom = getZoomFromResolution(resolution);
-		if (hex.startsWith("8")) {
-			map.flyTo({
-				center: [lng, lat],
-				zoom: zoom,
-			});
-		}
+		map.flyTo({
+			center: [lng, lat],
+			zoom: zoom,
+		});
 	}
 
 	function updateSelectedHexagon(hexId: string) {
@@ -619,19 +617,30 @@
 		}
 	}
 
-	// Watch for view changes
-	$: if (activeView === 'map') {
-		// Small delay to ensure container is ready
-		setTimeout(initializeMap, 100);
-	} else {
-		cleanupMap();
-	}
+	let lastSelectedHolonId: string | null = null;
 
 	// Subscribe to changes in the ID store
-	$: if (map && $ID && $ID !== hexId) {
+	$: if ($ID && $ID !== hexId) {
 		hexId = $ID;
+		lastSelectedHolonId = $ID;
 		dispatch('holonChange', { id: $ID });
-		updateSelectedHexagon($ID);
+		if (activeView === 'map' && map) {
+			updateSelectedHexagon($ID);
+		}
+	}
+
+	// Handle view changes
+	$: if (activeView === 'map') {
+		// Small delay to ensure container is ready
+		setTimeout(() => {
+			initializeMap();
+			// If we have a selected holon, zoom to it
+			if (lastSelectedHolonId) {
+				updateSelectedHexagon(lastSelectedHolonId);
+			}
+		}, 100);
+	} else {
+		cleanupMap();
 	}
 
 	// Update the lens selection reactive statement
@@ -679,17 +688,15 @@
                     Holonic View
                 </button>
             </div>
-            <!-- Lens Selector (only show for map view) -->
-            {#if activeView === 'map'}
-                <div class="lens-selector">
-                    <label for="lens-select">Lens:</label>
-                    <select id="lens-select" bind:value={selectedLens}>
-                        {#each lensOptions as option}
-                            <option value={option.value}>{option.label}</option>
-                        {/each}
-                    </select>
-                </div>
-            {/if}
+            <!-- Lens Selector (show in both views) -->
+            <div class="lens-selector">
+                <label for="lens-select">Lens:</label>
+                <select id="lens-select" bind:value={selectedLens}>
+                    {#each lensOptions as option}
+                        <option value={option.value}>{option.label}</option>
+                    {/each}
+                </select>
+            </div>
         </div>
 
         <div class="relative rounded-3xl overflow-hidden">
