@@ -109,119 +109,10 @@
 		const south = bounds.getSouth();
 		const north = bounds.getNorth();
 
-		
-
 		const currentZoom = map.getZoom();
-		const h3res = getResolution(currentZoom);
-		const h3resLower = Math.max(0, h3res + 1);
+		const currentResolution = getResolution(currentZoom);
 
-		function generateHexagons(resolution: number) {
-			let hexagons = new Set<string>();
-			for (let lat = south; lat <= north; lat += (north - south) / 20) {
-				for (let lng = west; lng <= east; lng += (east - west) / 20) {
-					hexagons.add(h3.latLngToCell(lat, lng, resolution));
-				}
-			}
-			return hexagons;
-		}
-
-		function hexagonsToFeatures(hexagons: Set<string>) {
-			return Array.from(hexagons)
-				.map((hexagon) => {
-					const boundary = h3.cellToBoundary(hexagon, true);
-					
-					// Check if the hexagon crosses the antimeridian by looking for large jumps
-					let needsNormalization = false;
-					for (let i = 0; i < boundary.length; i++) {
-						const j = (i + 1) % boundary.length;
-						const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
-						if (lngDiff > 180) {
-							needsNormalization = true;
-							break;
-						}
-					}
-
-					// If we need to normalize, shift coordinates that are on the wrong side
-					let normalizedBoundary = boundary;
-					if (needsNormalization) {
-						// Find the average longitude to determine which side to normalize to
-						const avgLng = boundary.reduce((sum, [_, lng]) => sum + lng, 0) / boundary.length;
-						normalizedBoundary = boundary.map(([lat, lng]) => {
-							if (avgLng < 0 && lng > 0) {
-								return [lat, lng - 360];
-							}
-							if (avgLng > 0 && lng < 0) {
-								return [lat, lng + 360];
-							}
-							return [lat, lng];
-						});
-					}
-
-					return {
-						type: "Feature" as const,
-						properties: { 
-							id: hexagon
-						},
-							geometry: {
-								type: "Polygon" as const,
-								coordinates: [normalizedBoundary],
-							},
-					};
-				});
-		}
-
-		function highlightHexagons(hexagons: Set<string>, color: string) {
-			const features = Array.from(hexagons).map((hexagon) => {
-				const boundary = h3.cellToBoundary(hexagon, true);
-				
-				// Check for antimeridian crossing
-				let needsNormalization = false;
-				for (let i = 0; i < boundary.length; i++) {
-					const j = (i + 1) % boundary.length;
-					const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
-					if (lngDiff > 180) {
-						needsNormalization = true;
-						break;
-					}
-				}
-
-				// Normalize if needed
-				let normalizedBoundary = boundary;
-				if (needsNormalization) {
-					const avgLng = boundary.reduce((sum, [_, lng]) => sum + lng, 0) / boundary.length;
-					normalizedBoundary = boundary.map(([lat, lng]) => {
-						if (avgLng < 0 && lng > 0) {
-							return [lat, lng - 360];
-						}
-						if (avgLng > 0 && lng < 0) {
-							return [lat, lng + 360];
-						}
-						return [lat, lng];
-					});
-				}
-
-				return {
-					type: "Feature" as const,
-					properties: { 
-						id: hexagon,
-						color: color
-					},
-					geometry: {
-						type: "Polygon" as const,
-						coordinates: [normalizedBoundary],
-					},
-				};
-			});
-
-			return {
-				type: "FeatureCollection" as const,
-				features: features,
-			};
-		}
-
-		const hexagons = generateHexagons(h3res);
-		const hexagonsLower = generateHexagons(h3resLower);
-
+		// Get highlighted hexes based on lens
 		let highlightedHexes = new Set<string>();
 		let highlightColor = '#088';
 
@@ -264,35 +155,198 @@
 				break;
 		}
 
-		// Update the regular hexagon grid
-		map.getSource("hexagon-grid")?.setData({
-			type: "FeatureCollection",
-			features: hexagonsToFeatures(hexagons),
-		});
+		// Filter highlighted hexes based on resolution
+		const visibleHighlightedHexes = new Set(
+			Array.from(highlightedHexes).filter(hex => {
+				const hexResolution = h3.getResolution(hex);
+				return currentResolution <= hexResolution;
+			})
+		);
 
-		map.getSource("hexagon-grid-lower")?.setData({
-			type: "FeatureCollection",
-			features: hexagonsToFeatures(hexagonsLower),
-		});
-
-		// Always update highlighted hexagons
-		if (map.getSource("highlighted-hexagons")) {
-			map.getSource("highlighted-hexagons").setData(
-					highlightHexagons(highlightedHexes, highlightColor)
+		// Update the highlighted hexagons if any are visible at current resolution
+		if (visibleHighlightedHexes.size > 0) {
+			map.getSource("highlighted-hexagons")?.setData(
+				highlightHexagons(visibleHighlightedHexes, highlightColor)
 			);
 		}
 
-		const features = hexagonsToFeatures(hexagons);
-		const featuresLower = hexagonsToFeatures(hexagonsLower);
+		const h3res = getResolution(currentZoom);
+		const h3resLower = Math.max(0, h3res + 1);
+
+		function generateHexagons(resolution: number) {
+			let hexagons = new Set<string>();
+			for (let lat = south; lat <= north; lat += (north - south) / 20) {
+				for (let lng = west; lng <= east; lng += (east - west) / 20) {
+					hexagons.add(h3.latLngToCell(lat, lng, resolution));
+				}
+			}
+			return hexagons;
+		}
+
+		function hexagonsToFeatures(hexagons: Set<string>) {
+			return Array.from(hexagons)
+				.flatMap((hexagon) => {
+					const boundary = h3.cellToBoundary(hexagon, true);
+					const [lat, lng] = h3.cellToLatLng(hexagon);
+					const [vertexLat, vertexLng] = boundary[0];
+					
+					// Check if the hexagon crosses the antimeridian by looking for large jumps
+					let needsNormalization = false;
+					for (let i = 0; i < boundary.length; i++) {
+						const j = (i + 1) % boundary.length;
+						const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
+						if (lngDiff > 180) {
+							needsNormalization = true;
+							break;
+						}
+					}
+
+					// If we need to normalize, shift coordinates that are on the wrong side
+					let normalizedBoundary = boundary;
+					if (needsNormalization) {
+						const avgLng = boundary.reduce((sum, [_, lng]) => sum + lng, 0) / boundary.length;
+						normalizedBoundary = boundary.map(([lat, lng]) => {
+							if (avgLng < 0 && lng > 0) {
+								return [lat, lng - 360];
+							}
+							if (avgLng > 0 && lng < 0) {
+								return [lat, lng + 360];
+							}
+							return [lat, lng];
+						});
+					}
+
+					return [
+						{
+							type: "Feature" as const,
+							properties: { 
+								id: hexagon
+							},
+							geometry: {
+								type: "Polygon" as const,
+								coordinates: [normalizedBoundary]
+							}
+						},
+						{
+							type: "Feature" as const,
+							properties: { 
+								id: hexagon,
+								center_lat: lat,
+								center_lng: lng,
+								vertex_lat: vertexLat,
+								vertex_lng: vertexLng
+							},
+							geometry: {
+								type: "Point" as const,
+								coordinates: [lng, lat]
+							}
+						}
+					];
+				});
+		}
+
+		function hexagonsToCenterFeatures(hexagons: Set<string>) {
+			return Array.from(hexagons)
+				.map((hexagon) => {
+					const [lat, lng] = h3.cellToLatLng(hexagon);
+					const boundary = h3.cellToBoundary(hexagon, true);
+					// Take the first vertex for radius calculation
+					const [vertexLat, vertexLng] = boundary[0];
+					
+					return {
+						type: "Feature" as const,
+						properties: { 
+							id: hexagon,
+							center_lat: lat,
+							center_lng: lng,
+							vertex_lat: vertexLat,
+							vertex_lng: vertexLng
+						},
+						geometry: {
+							type: "Point" as const,
+							coordinates: [lng, lat]
+						}
+					};
+				});
+		}
+
+		function highlightHexagons(hexagons: Set<string>, color: string) {
+			const features = Array.from(hexagons).flatMap((hexagon) => {
+				const boundary = h3.cellToBoundary(hexagon, true);
+				const [lat, lng] = h3.cellToLatLng(hexagon);
+				const hexSize = h3.getHexagonEdgeLengthAvg(h3.getResolution(hexagon), 'km') * 1000;
+				
+				// Check for antimeridian crossing
+				let needsNormalization = false;
+				for (let i = 0; i < boundary.length; i++) {
+					const j = (i + 1) % boundary.length;
+					const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
+					if (lngDiff > 180) {
+						needsNormalization = true;
+						break;
+					}
+				}
+
+				// Normalize if needed
+				let normalizedBoundary = boundary;
+				if (needsNormalization) {
+					const avgLng = boundary.reduce((sum, [_, lng]) => sum + lng, 0) / boundary.length;
+					normalizedBoundary = boundary.map(([lat, lng]) => {
+						if (avgLng < 0 && lng > 0) {
+							return [lat, lng - 360];
+						}
+						if (avgLng > 0 && lng < 0) {
+							return [lat, lng + 360];
+						}
+						return [lat, lng];
+					});
+				}
+
+				// Return both polygon and point features
+				return [
+					{
+						type: "Feature" as const,
+						properties: { 
+							id: hexagon,
+							color: color
+						},
+						geometry: {
+							type: "Polygon" as const,
+							coordinates: [normalizedBoundary],
+						}
+					},
+					{
+						type: "Feature" as const,
+						properties: { 
+							id: hexagon,
+							color: color,
+							radius: hexSize
+						},
+						geometry: {
+							type: "Point" as const,
+							coordinates: [lng, lat]
+						}
+					}
+				];
+			});
+
+			return {
+				type: "FeatureCollection" as const,
+				features: features
+			};
+		}
+
+		const hexagons = generateHexagons(h3res);
+		const hexagonsLower = generateHexagons(h3resLower);
 
 		map.getSource("hexagon-grid")?.setData({
 			type: "FeatureCollection",
-			features: features,
+			features: hexagonsToFeatures(hexagons)
 		});
 
 		map.getSource("hexagon-grid-lower")?.setData({
 			type: "FeatureCollection",
-			features: featuresLower,
+			features: hexagonsToFeatures(hexagonsLower)
 		});
 	}
 
@@ -324,41 +378,35 @@
 
 	function updateSelectedHexagon(hexId: string) {
 		const boundary = h3.cellToBoundary(hexId, true);
+		const [lat, lng] = h3.cellToLatLng(hexId);
+		const hexSize = h3.getHexagonEdgeLengthAvg(h3.getResolution(hexId), 'km') * 1000;
 		
-		// Check for antimeridian crossing
-		let needsNormalization = false;
-		for (let i = 0; i < boundary.length; i++) {
-			const j = (i + 1) % boundary.length;
-			const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
-			if (lngDiff > 180) {
-				needsNormalization = true;
-				break;
-			}
-		}
-
-		// Normalize if needed
-		let normalizedBoundary = boundary;
-		if (needsNormalization) {
-			const avgLng = boundary.reduce((sum, [_, lng]) => sum + lng, 0) / boundary.length;
-			normalizedBoundary = boundary.map(([lat, lng]) => {
-				if (avgLng < 0 && lng > 0) {
-					return [lat, lng - 360];
+		// Create both polygon and point features for the selected hexagon
+		const features = {
+			type: "FeatureCollection" as const,
+			features: [
+				{
+					type: "Feature",
+					properties: {},
+					geometry: {
+						type: "Polygon",
+						coordinates: [boundary]
+					}
+				},
+				{
+					type: "Feature",
+					properties: {
+						radius: hexSize
+					},
+					geometry: {
+						type: "Point",
+						coordinates: [lng, lat]
+					}
 				}
-				if (avgLng > 0 && lng < 0) {
-					return [lat, lng + 360];
-				}
-				return [lat, lng];
-			});
-		}
-
-		map.getSource("selected-hexagon")?.setData({
-			type: "Feature",
-			properties: {},
-			geometry: {
-				type: "Polygon",
-				coordinates: [normalizedBoundary],
-			},
-		});
+			]
+		};
+		
+		map.getSource("selected-hexagon")?.setData(features);
 		
 		dispatch('holonChange', { id: hexId });
 		
@@ -373,8 +421,52 @@
 		moveTimeout = setTimeout(fn, delay) as unknown as number;
 	}
 
-	// Update the map move handler to refresh subscriptions
+	let lastResolution: number;
+
+	function clearHexagons() {
+		// Clear selected hexagon
+		map.getSource("selected-hexagon")?.setData({
+			type: "Feature",
+			properties: {},
+			geometry: {
+				type: "Point",
+				coordinates: [0, 0]
+			}
+		});
+
+		// Clear highlighted hexagons
+		map.getSource("highlighted-hexagons")?.setData({
+			type: "FeatureCollection",
+			features: []
+		});
+	}
+
 	function handleMapMove() {
+		const currentZoom = map.getZoom();
+		const currentResolution = getResolution(currentZoom);
+
+		// Check if we've crossed a resolution boundary
+		if (lastResolution !== undefined && lastResolution !== currentResolution) {
+			clearHexagons();
+			
+			// If we have a selected hexagon, check if we should reapply it
+			if (hexId) {
+				const hexResolution = h3.getResolution(hexId);
+				if (currentResolution <= hexResolution) {
+					const boundary = h3.cellToBoundary(hexId, true);
+					map.getSource("selected-hexagon")?.setData({
+						type: "Feature",
+						properties: {},
+						geometry: {
+							type: "Polygon",
+							coordinates: [boundary],
+						},
+					});
+				}
+			}
+		}
+		lastResolution = currentResolution;
+
 		// Render hexes immediately for smooth visual feedback
 		if (selectedLens) renderHexes(map, selectedLens);
 		
@@ -517,57 +609,81 @@
 			console.log("Map loaded");
 			map.addSource("hexagon-grid", {
 				type: "geojson",
-				data: { type: "FeatureCollection", features: [] },
+				data: { type: "FeatureCollection", features: [] }
 			});
 
+			// Base hexagon grid layers
 			map.addLayer({
-				id: "hexagon-grid-layer",
+				id: "hexagon-grid-outline-layer",
 				type: "line",
 				source: "hexagon-grid",
-				layout: {},
 				paint: {
 					"line-color": "#fff",
-					"line-width": 3,
-				},
+					"line-width": 1,
+					"line-opacity": 0.6
+				}
 			});
 
+			// Base hexagon grid circle layer
+			map.addLayer({
+				id: "hexagon-grid-circle-layer",
+				type: "circle",
+				source: "hexagon-grid",
+				paint: {
+					"circle-color": "#fff",
+					"circle-opacity": 0.6,
+					"circle-stroke-width": 1,
+					"circle-stroke-color": "#fff",
+					"circle-stroke-opacity": 0.6,
+					"circle-radius": [
+						"interpolate",
+						["exponential", 2],
+						["zoom"],
+						0, 2,
+						22, 100
+					]
+				}
+			});
+
+			// Lower resolution grid layers
 			map.addSource("hexagon-grid-lower", {
 				type: "geojson",
-				data: { type: "FeatureCollection", features: [] },
+				data: { type: "FeatureCollection", features: [] }
 			});
 
 			map.addLayer({
-				id: "hexagon-grid-lower-layer",
+				id: "hexagon-grid-lower-outline-layer",
 				type: "line",
 				source: "hexagon-grid-lower",
-				layout: {},
 				paint: {
 					"line-color": "#aaa",
-					"line-width": 1,
-				},
+					"line-width": 0.5,
+					"line-opacity": 0.4
+				}
 			});
 
-			map.addSource("selected-hexagon", {
-				type: "geojson",
-				data: {
-					type: "Feature",
-					properties: {},
-					geometry: { type: "Polygon", coordinates: [[]] },
-				},
-			});
-
+			// Lower resolution grid circle layer
 			map.addLayer({
-				id: "selected-hexagon-layer",
-				type: "fill",
-				source: "selected-hexagon",
-				layout: {},
+				id: "hexagon-grid-lower-circle-layer",
+				type: "circle",
+				source: "hexagon-grid-lower",
 				paint: {
-					"fill-color": "#088",
-					"fill-opacity": 0.4,
-					"fill-outline-color": "#000",
-				},
+					"circle-color": "#aaa",
+					"circle-opacity": 0.4,
+					"circle-stroke-width": 0.5,
+					"circle-stroke-color": "#aaa",
+					"circle-stroke-opacity": 0.4,
+					"circle-radius": [
+						"interpolate",
+						["exponential", 2],
+						["zoom"],
+						0, 1,
+						22, 50
+					]
+				}
 			});
 
+			// Highlighted hexagons layers
 			map.addSource("highlighted-hexagons", {
 				type: "geojson",
 				data: {
@@ -576,15 +692,101 @@
 				}
 			});
 
+			// Add highlighted hexagon fill FIRST
 			map.addLayer({
-				id: "highlighted-hexagons-layer",
+				id: "highlighted-hexagons-fill-layer",
 				type: "fill",
 				source: "highlighted-hexagons",
-				layout: {},
 				paint: {
 					"fill-color": ["get", "color"],
-					"fill-opacity": 0.4,
-					"fill-outline-color": "#000"
+					"fill-opacity": 0.6
+				}
+			});
+
+			// Then add the outline
+			map.addLayer({
+				id: "highlighted-hexagons-outline-layer",
+				type: "line",
+				source: "highlighted-hexagons",
+				paint: {
+					"line-color": ["get", "color"],
+					"line-width": 2,
+					"line-opacity": 0.8
+				}
+			});
+
+			// Highlighted hexagons circle layer
+			map.addLayer({
+				id: "highlighted-hexagons-circle-layer",
+				type: "circle",
+				source: "highlighted-hexagons",
+				paint: {
+					"circle-color": ["get", "color"],
+					"circle-opacity": 0.6,
+					"circle-stroke-width": 2,
+					"circle-stroke-color": ["get", "color"],
+					"circle-stroke-opacity": 0.8,
+					"circle-radius": [
+						"interpolate",
+						["exponential", 2],
+						["zoom"],
+						0, 2,
+						22, 100
+					]
+				}
+			});
+
+			// Selected hexagon layers
+			map.addSource("selected-hexagon", {
+				type: "geojson",
+				data: {
+					type: "Feature",
+					properties: {},
+					geometry: { type: "Polygon", coordinates: [[]] }
+				}
+			});
+
+			// Add selected hexagon fill FIRST
+			map.addLayer({
+				id: "selected-hexagon-fill-layer",
+				type: "fill",
+				source: "selected-hexagon",
+				paint: {
+					"fill-color": "#088",
+					"fill-opacity": 0.6
+				}
+			});
+
+			// Then add the outline
+			map.addLayer({
+				id: "selected-hexagon-outline-layer",
+				type: "line",
+				source: "selected-hexagon",
+				paint: {
+					"line-color": "#088",
+					"line-width": 2,
+					"line-opacity": 0.8
+				}
+			});
+
+			// Selected hexagon circle layer
+			map.addLayer({
+				id: "selected-hexagon-circle-layer",
+				type: "circle",
+				source: "selected-hexagon",
+				paint: {
+					"circle-color": "#088",
+					"circle-opacity": 0.6,
+					"circle-stroke-width": 2,
+					"circle-stroke-color": "#088",
+					"circle-stroke-opacity": 0.8,
+					"circle-radius": [
+						"interpolate",
+						["exponential", 2],
+						["zoom"],
+						0, 2,
+						22, 100
+					]
 				}
 			});
 

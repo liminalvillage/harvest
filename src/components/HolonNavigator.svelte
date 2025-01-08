@@ -138,17 +138,31 @@
             .attr('pointer-events', 'all')
             .attr('cx', d => d.x)
             .attr('cy', d => d.y)
-            .attr('r', d => d.r)
+            .attr('r', d => d.data.key === $ID ? d.r * 1.1 : d.r)
+            .attr('stroke', d => d.data.key === $ID ? '#ffffff' : '#fff')
+            .attr('stroke-width', d => d.data.key === $ID ? '3' : '1')
             .on('mouseover', function(this: SVGCircleElement) { 
-                d3.select(this).attr('stroke', '#fff');
                 const d = d3.select(this).datum() as d3.HierarchyCircularNode<Holon>;
+                if (d.data.key !== $ID) {
+                    d3.select(this)
+                        .attr('stroke-width', '3');
+                }
                 const text = svg.select(`text[data-key="${d.data.key}"]`);
-                text.text(d.data.name);
+                text
+                    .text(d.data.name)
+                    .attr('fill', '#ffffff')
+                    .style('text-shadow', '0 0 3px rgba(0,0,0,0.5)');
             })
             .on('mouseout', function(this: SVGCircleElement) { 
-                d3.select(this).attr('stroke', null);
                 const d = d3.select(this).datum() as d3.HierarchyCircularNode<Holon>;
+                if (d.data.key !== $ID) {
+                    d3.select(this)
+                        .attr('stroke-width', '1');
+                }
                 const text = svg.select(`text[data-key="${d.data.key}"]`);
+                text
+                    .attr('fill', 'white')
+                    .style('text-shadow', 'none');
                 const { textSize, charLimit } = calculateTextParams(d);
                 text.text(truncateText(d.data.name, charLimit));
             })

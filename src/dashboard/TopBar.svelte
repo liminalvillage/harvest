@@ -71,7 +71,7 @@
 	async function fetchHolonName(id: string) {
 		try {
 			const settings = await holosphere.getAll(id, 'settings');
-			if (settings?.[0]?.name) {
+			if (settings && settings.length > 0 && settings[0].name) {
 				currentHolonName = settings[0].name;
 			} else {
 				currentHolonName = undefined;
@@ -249,6 +249,14 @@
 		align-items: center;
 		width: 100%;
 	}
+	/* Add styles for the holon name in the top bar */
+	.flex-shrink-0 {
+		z-index: 102;
+		background-color: #1f2937;
+		padding: 0.5rem;
+		border-radius: 0.5rem;
+		margin-right: 1rem;
+	}
 </style>
 
 <header class="h-20 items-center relative z-10">
@@ -268,8 +276,7 @@
 			<div class="container flex left-0 relative w-3/4">
 				{#if currentHolonName}
 					<div class="flex items-center mr-4 flex-shrink-0">
-						<div class="w-5 h-5 border-2 border-white rounded-full mr-2 opacity-90"></div>
-						<span class="text-gray-300 text-lg whitespace-nowrap">
+						<span class="text-white text-xl font-medium whitespace-nowrap">
 							{currentHolonName}
 						</span>
 					</div>
