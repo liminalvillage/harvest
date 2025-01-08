@@ -1,237 +1,227 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount } from 'svelte';
     import HoloSphere from 'holosphere';
- 
+    import * as d3 from 'd3';
+
+    interface Holon {
+        name: string;
+        members?: string[];
+        color?: string;
+        description?: string;
+        value?: number;
+        key?: string;
+        children?: Holon[];
+        parent?: string;
+    }
+
+    interface HolonData {
+        name: string;
+        children: Holon[];
+    }
 
     const holosphere = getContext("holosphere") as HoloSphere;
     const dispatch = createEventDispatcher();
 
     // Canvas and interaction state
-    let canvas: HTMLElement;
-    let container: HTMLElement;
+    let svg: SVGElement;
     let viewContainer: HTMLElement;
-    let isDragging = false;
-    let draggedHolon: { key: string; holon: any; x: number; y: number; radius: number; } | null = null;
-    let offset = { x: 0, y: 0 };
-    let zoom = 1;
-    let pan = { x: 0, y: 0 };
-    let startPan = { x: 0, y: 0 };
-    let isPanning = false;
+    let width = 900;
+    let height = 600;
 
-    // Canvas dimensions
-    const CANVAS_WIDTH = 3000;
-    const CANVAS_HEIGHT = 3000;
-    const INITIAL_OFFSET = { x: CANVAS_WIDTH / 4, y: CANVAS_HEIGHT / 4 };
+    // D3 visualization state
+    let root: d3.HierarchyCircularNode<Holon>;
+    let focus: d3.HierarchyCircularNode<Holon>;
+    let view: [number, number, number];
 
-    // Holon circles data
-    let holonCircles: { key: string; holon: any; x: number; y: number; radius: number; }[] = [];
-    
-    // Subscribe to holons
+    // Color scale for different depths
+    const color = d3.scaleLinear<string>()
+        .domain([0, 5])
+        .range(['#4B5563', '#1E40AF'])
+        .interpolate(d3.interpolateHcl);
+
+    function pack(data: HolonData) {
+        return d3.pack<Holon>()
+            .size([width, height])
+            .padding(3)
+            (d3.hierarchy<Holon>(data)
+                .sum(d => d.value || 0)
+                .sort((a, b) => (b.value || 0) - (a.value || 0)));
+    }
+
+    function zoomTo(v: [number, number, number]) {
+        const k = width / v[2];
+        view = v;
+
+        const node = d3.select(svg).select<SVGGElement>('g');
+        node.attr("transform", `translate(${width/2},${height/2}) scale(${k}) translate(${-v[0]},${-v[1]})`);
+    }
+
+    function zoom(event: d3.D3ZoomEvent<SVGElement, unknown>, d: d3.HierarchyCircularNode<Holon>) {
+        focus = d;
+
+        const transition = d3.select(svg)
+            .select('g')
+            .transition()
+            .duration(event.sourceEvent?.altKey ? 7500 : 750)
+            .tween("zoom", () => {
+                const i = d3.interpolateZoom(view, [focus.x, focus.y, focus.r * 2]);
+                return (t: number) => zoomTo(i(t));
+            });
+    }
+
+    function truncateText(text: string, maxLength: number): string {
+        return text.length > maxLength ? text.slice(0, maxLength - 3) + '...' : text;
+    }
+
+    function calculateTextParams(d: d3.HierarchyCircularNode<Holon>) {
+        const depthScaling = Math.max(0.5, 1 - d.depth * 0.2);
+        const textSize = Math.min(d.r / 5 * depthScaling, 12);
+        const charLimit = Math.max(3, Math.floor(d.r * 3.0 / textSize));
+        return { textSize, charLimit };
+    }
+
+    function updateVisualization(holonsData: HolonData) {
+        root = pack(holonsData);
+        focus = root;
+        
+        const svg = d3.select('svg g');
+        
+        // Clear existing circles
+        svg.selectAll('circle').remove();
+        svg.selectAll('text').remove();
+
+        // Add circles
+        const node = svg
+            .selectAll<SVGCircleElement, d3.HierarchyCircularNode<Holon>>('circle')
+            .data(root.descendants())
+            .join('circle')
+            .attr('fill', d => d.children ? color(d.depth) : d.data.color || '#4B5563')
+            .attr('fill-opacity', 0.8)
+            .attr('pointer-events', 'all')
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y)
+            .attr('r', d => d.r)
+            .on('mouseover', function(this: SVGCircleElement) { 
+                d3.select(this).attr('stroke', '#fff');
+                // Show full name on hover
+                const d = d3.select(this).datum() as d3.HierarchyCircularNode<Holon>;
+                const text = svg.select(`text[data-key="${d.data.key}"]`);
+                text.text(d.data.name);
+            })
+            .on('mouseout', function(this: SVGCircleElement) { 
+                d3.select(this).attr('stroke', null);
+                // Restore truncated name
+                const d = d3.select(this).datum() as d3.HierarchyCircularNode<Holon>;
+                const text = svg.select(`text[data-key="${d.data.key}"]`);
+                const { textSize, charLimit } = calculateTextParams(d);
+                text.text(truncateText(d.data.name, charLimit));
+            })
+            .on('click', (event: MouseEvent, d: d3.HierarchyCircularNode<Holon>) => {
+                if (focus !== d) {
+                    zoom(event as unknown as d3.D3ZoomEvent<SVGElement, unknown>, d);
+                    event.stopPropagation();
+                    if (d.data.key) {
+                        dispatch('holonSelect', { key: d.data.key, holon: d.data });
+                    }
+                }
+            });
+
+        // Add labels
+        svg.selectAll<SVGTextElement, d3.HierarchyCircularNode<Holon>>('text')
+            .data(root.descendants())
+            .join('text')
+            .attr('text-anchor', 'middle')
+            .attr('data-key', d => d.data.key || '')
+            .attr('dominant-baseline', 'middle')
+            .attr('fill', 'white')
+            .attr('pointer-events', 'none')
+            .attr('x', d => d.x)
+            .attr('y', d => d.y)
+            .each(function(d) {
+                const node = d3.select(this);
+                const { textSize, charLimit } = calculateTextParams(d);
+                node.style('font-size', `${textSize}px`);
+                node.text(truncateText(d.data.name, charLimit));
+            });
+
+        zoomTo([root.x, root.y, root.r * 2]);
+    }
+
     onMount(async () => {
         if (holosphere) {
-            holosphere.getGlobal('Holons', (newHolon, key) => {
+            const holonsData: HolonData = { name: "", children: [] };
+            const holonMap = new Map<string, Holon>();
+            
+            // @ts-ignore - Accessing private property for now
+            holosphere.gun.get('Holons').map().on((newHolon: Holon, key: string) => {
+                console.log('Found holon:', key, newHolon);
                 if (newHolon) {
-                    const holon = newHolon;
-                    
-                    // Find existing circle or create new one
-                    const existingCircle = holonCircles.find(circle => circle.key === key);
-                    if (existingCircle) {
-                        existingCircle.holon = holon;
-                    } else {
-                        // Position new holons in a spiral pattern
-                        const index = holonCircles.length;
-                        const angle = index * 0.5;
-                        const radius = 200 + index * 50;
-                        holonCircles = [...holonCircles, {
+                    // @ts-ignore - Accessing private property for now
+                    holosphere.gun.get('Holons').get(key).get('settings').get(key).on((settings: any) => {
+                        if (!settings) return;
+                        settings = JSON.parse(settings);
+                        
+                        // Create or update the holon in our map
+                        const existingHolon = holonMap.get(key);
+                        const updatedHolon: Holon = {
                             key,
-                            holon,
-                            x: INITIAL_OFFSET.x + Math.cos(angle) * radius,
-                            y: INITIAL_OFFSET.y + Math.sin(angle) * radius,
-                            radius: 100 + (holon.members?.length || 0) * 10 // Size based on member count
-                        }];
-                    }
-                } else {
-                    holonCircles = holonCircles.filter(circle => circle.key !== key);
+                            name: settings.name || key,
+                            value: 30,
+                            color: settings.color || '#4B5563',
+                            description: settings.description,
+                            children: existingHolon?.children || [],
+                            parent: settings.parent
+                        };
+                        holonMap.set(key, updatedHolon);
+
+                        // Rebuild the tree structure
+                        holonsData.children = Array.from(holonMap.values()).filter(holon => !holon.parent);
+                        
+                        // Assign children
+                        holonMap.forEach((holon) => {
+                            if (holon.parent && holonMap.has(holon.parent)) {
+                                const parentHolon = holonMap.get(holon.parent);
+                                if (parentHolon) {
+                                    parentHolon.children = parentHolon.children || [];
+                                    if (!parentHolon.children.find(child => child.key === holon.key)) {
+                                        parentHolon.children.push(holon);
+                                    }
+                                }
+                            }
+                        });
+
+                        console.log('Updated holons data:', JSON.stringify(holonsData, null, 2));
+                        updateVisualization(holonsData);
+                    });
                 }
             });
         }
     });
-
-    // Mouse interaction handlers
-    function handleMouseDown(event: MouseEvent, circle: typeof holonCircles[0] | null = null) {
-        event.preventDefault();
-        event.stopPropagation();
-        
-        if (event.button === 1 || event.button === 2 || !circle) {
-            isPanning = true;
-            startPan = { x: event.clientX - pan.x, y: event.clientY - pan.y };
-            return;
-        }
-
-        if (event.button === 0 && circle) {
-            isDragging = true;
-            draggedHolon = circle;
-            
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = (event.clientX - rect.left - pan.x) / zoom;
-            const mouseY = (event.clientY - rect.top - pan.y) / zoom;
-            
-            offset = {
-                x: mouseX - circle.x,
-                y: mouseY - circle.y
-            };
-        }
-    }
-
-    function handleMouseMove(event: MouseEvent) {
-        event.preventDefault();
-        event.stopPropagation();
-        
-        if (isPanning && viewContainer) {
-            const newPan = {
-                x: (event.clientX - startPan.x),
-                y: (event.clientY - startPan.y)
-            };
-            
-            pan = {
-                x: Math.min(Math.max(newPan.x, -CANVAS_WIDTH + viewContainer.clientWidth), 0),
-                y: Math.min(Math.max(newPan.y, -CANVAS_HEIGHT + viewContainer.clientHeight), 0)
-            };
-            return;
-        }
-
-        if (!isDragging || !draggedHolon || !canvas) return;
-
-        const rect = canvas.getBoundingClientRect();
-        const mouseX = (event.clientX - rect.left - pan.x) / zoom;
-        const mouseY = (event.clientY - rect.top - pan.y) / zoom;
-        const newX = mouseX - offset.x;
-        const newY = mouseY - offset.y;
-
-        holonCircles = holonCircles.map(circle => 
-            circle.key === draggedHolon?.key 
-                ? { 
-                    ...circle, 
-                    x: Math.min(Math.max(newX, circle.radius), CANVAS_WIDTH - circle.radius),
-                    y: Math.min(Math.max(newY, circle.radius), CANVAS_HEIGHT - circle.radius)
-                }
-                : circle
-        );
-    }
-
-    function handleMouseUp() {
-        isDragging = false;
-        draggedHolon = null;
-        isPanning = false;
-    }
-
-    function handleWheel(event: WheelEvent) {
-        event.preventDefault();
-        
-        if (event.ctrlKey || event.metaKey) {
-            const rect = viewContainer.getBoundingClientRect();
-            const mouseX = event.clientX - rect.left;
-            const mouseY = event.clientY - rect.top;
-
-            const canvasX = (mouseX - pan.x) / zoom;
-            const canvasY = (mouseY - pan.y) / zoom;
-
-            const zoomFactor = event.deltaY > 0 ? 0.95 : 1.05;
-            zoom = Math.min(Math.max(0.25, zoom * zoomFactor), 2);
-
-            pan = {
-                x: mouseX - (canvasX * zoom),
-                y: mouseY - (canvasY * zoom)
-            };
-
-            const rect2 = viewContainer.getBoundingClientRect();
-            pan = {
-                x: Math.min(Math.max(pan.x, -CANVAS_WIDTH * zoom + rect2.width), 0),
-                y: Math.min(Math.max(pan.y, -CANVAS_HEIGHT * zoom + rect2.height), 0)
-            };
-        } else {
-            pan = {
-                x: Math.min(Math.max(pan.x - event.deltaX, -CANVAS_WIDTH * zoom + viewContainer.clientWidth), 0),
-                y: Math.min(Math.max(pan.y - event.deltaY, -CANVAS_HEIGHT * zoom + viewContainer.clientHeight), 0)
-            };
-        }
-    }
-
-    // Handle holon selection
-    function handleHolonClick(key: string, holon: any) {
-        dispatch('holonSelect', { key, holon });
-    }
 </script>
 
 <div 
     class="w-full h-[600px] relative overflow-hidden bg-gray-900 rounded-lg"
-    class:cursor-grab={!isDragging && !isPanning}
-    class:cursor-grabbing={(isDragging || isPanning)}
     bind:this={viewContainer}
-    on:mousedown|preventDefault|stopPropagation={(e) => handleMouseDown(e)}
-    on:contextmenu|preventDefault
+    bind:clientWidth={width}
+    bind:clientHeight={height}
 >
-    <div 
-        bind:this={canvas}
-        class="absolute w-full h-full"
-        style="width: {CANVAS_WIDTH}px; height: {CANVAS_HEIGHT}px; transform: translate({pan.x}px, {pan.y}px) scale({zoom}); transform-origin: 0 0;"
+    <svg 
+        bind:this={svg}
+        viewBox="0 0 {width} {height}"
+        class="w-full h-full"
     >
-        <!-- Grid background -->
-        <div class="absolute inset-0 grid-background"></div>
-
-        <!-- Holon circles -->
-        {#each holonCircles as circle}
-            <div
-                class="absolute holon-circle transition-transform"
-                class:cursor-move={!isDragging}
-                class:cursor-grabbing={isDragging && draggedHolon?.key === circle.key}
-                style="left: {circle.x}px; top: {circle.y}px; width: {circle.radius * 2}px; height: {circle.radius * 2}px; transform: translate(-50%, -50%);"
-                on:mousedown|stopPropagation={(e) => handleMouseDown(e, circle)}
-                on:click|stopPropagation={() => handleHolonClick(circle.key, circle.holon)}
-            >
-                <div 
-                    class="w-full h-full rounded-full flex items-center justify-center text-center p-4 bg-opacity-90 border-2"
-                    style="background-color: {circle.holon.color || '#4B5563'}; border-color: {circle.holon.color || '#4B5563'}"
-                >
-                    <div class="text-white">
-                        <h3 class="font-bold text-lg mb-2">{circle.holon.name}</h3>
-                        <p class="text-sm opacity-80">Members: {circle.holon.members?.length || 0}</p>
-                        {#if circle.holon.description}
-                            <p class="text-sm opacity-80 mt-1 line-clamp-2">{circle.holon.description}</p>
-                        {/if}
-                    </div>
-                </div>
-            </div>
-        {/each}
-    </div>
+        <g />
+    </svg>
 </div>
 
 <style>
-    .grid-background {
-        background-image: 
-            linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-        background-size: 40px 40px;
-    }
-
-    .holon-circle {
-        transition: transform 0.2s ease;
-    }
-
-    .cursor-move {
-        user-select: none;
-    }
-
-    div {
-        scrollbar-width: none;
-        -ms-overflow-style: none;
+    svg {
+        cursor: pointer;
     }
     
-    div::-webkit-scrollbar {
-        display: none;
-    }
-
-    :global(.holon-circle *) {
-        transform: translateZ(0);
+    text {
+        font-family: system-ui, -apple-system, sans-serif;
+        font-weight: 500;
+        user-select: none;
     }
 </style> 
