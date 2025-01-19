@@ -117,17 +117,24 @@
         viewingItem = null;
         store = {};
         unsubscribe();
-        subscribe();
+        setupSubscription();
     }
 
-    function subscribe() {
+    async function setupSubscription() {
         if (!hexId || !selectedLens) return;
         
         try {
-            console.log('Subscribing to:', hexId, selectedLens);
+            console.log('Setting up subscription for:', hexId, selectedLens);
+            
+            // First load initial data
+            const initialData = await holosphere.getAll(hexId, selectedLens);
+            store = initialData || {};
+            content = store;
+            
+            // Then set up subscription for updates
             const off = holosphere.subscribe(hexId, selectedLens, async (data: any, key: string) => {
                 if (data) {
-                    console.log('Subscription data received:', data, 'for key:', key);
+                    console.log('Subscription update received:', data, 'for key:', key);
                     // Update just this item in the store
                     store = { 
                         ...store, 
@@ -144,18 +151,11 @@
                 }
             });
             
-            // Initial data load
-            holosphere.getAll(hexId, selectedLens).then((data) => {
-                console.log('Initial subscription data:', data);
-                store = data || {};
-                content = store;
-            });
-            
             if (typeof off === 'function') {
                 subscription = { off };
             }
         } catch (error) {
-            console.error('Error subscribing:', error);
+            console.error('Error in setupSubscription:', error);
             store = {};
             content = null;
         }
@@ -166,7 +166,6 @@
             if (subscription?.off) {
                 subscription.off();
                 subscription = null;
-                content = null;
             }
         } catch (error) {
             console.error('Error unsubscribing:', error);
