@@ -6,8 +6,9 @@
   <title>Welcome to the holonic dashboard</title>
 </svelte:head>
 
-<div class="bg-gray-900 h-screen overflow-hidden flex items-center justify-center p-4">
-  <div class="max-w-2xl w-full bg-gray-800 rounded-lg shadow-xl p-8 text-gray-100">
+<div class="relative bg-gray-900 h-screen overflow-hidden flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-10" style="background-image: url('/background.png');"></div>
+  <div class="relative max-w-2xl w-full bg-gray-800/90 rounded-lg shadow-xl p-8 text-gray-100">
     <div class="flex items-center space-x-3 mb-8">
       <svg class="text-3xl text-white" xmlns="http://www.w3.org/2000/svg" width="40" height="24" viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2"/>
@@ -18,7 +19,7 @@
     
     <div class="space-y-6">
       <p class="text-gray-300">
-        This tool helps you visualize, navigateand interact with your holons.
+        This tool helps you visualize, navigate and interact with your holons.
       </p>
 
       <div class="bg-gray-700/50 border border-gray-600 rounded-md p-6">
