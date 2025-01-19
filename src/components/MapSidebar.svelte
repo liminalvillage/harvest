@@ -67,6 +67,7 @@
     let showForm = false;
     let formData: Record<string, any> = {};
     let viewingItem: Record<string, any> | null = null;
+    let store: Record<string, any> = {};
 
     // Add statistics interface
     interface HolonStats {
@@ -82,10 +83,13 @@
         try {
             // Get all items for this lens
             const items = await holosphere.getAll(holonId, lens);
-            content = items;
+            console.log('loadData received:', items);
+            store = items || {};
+            content = store;
             
             // Calculate statistics
             if (items) {
+                console.log('Number of items:', Object.keys(items).length);
                 stats = {
                     [lens]: {
                         total: Object.keys(items).length,
@@ -99,42 +103,52 @@
             }
         } catch (error) {
             console.error('Error loading data:', error);
+            store = {};
             content = null;
             stats = null;
         }
     }
 
     // Reset and load data when hexId or lens changes
-    $: if (hexId) {
+    $: if (hexId && selectedLens) {
         console.log('ID or lens changed:', hexId, selectedLens);
         showForm = false;
         formData = {};
         viewingItem = null;
-        loadData(hexId, selectedLens);
-    }
-
-    $: if (selectedLens && hexId) {
-        loadData(hexId, selectedLens);
+        store = {};
+        unsubscribe();
+        subscribe();
     }
 
     function subscribe() {
         if (!hexId || !selectedLens) return;
         
         try {
-            const off = holosphere.subscribe(hexId, selectedLens, async (data: any) => {
+            console.log('Subscribing to:', hexId, selectedLens);
+            const off = holosphere.subscribe(hexId, selectedLens, async (data: any, key: string) => {
                 if (data) {
-                    console.log('Data received:', data);
-                    // Get all items for this lens
-                    const allData = await holosphere.getAll(hexId, selectedLens);
-                    content = allData;
+                    console.log('Subscription data received:', data, 'for key:', key);
+                    // Update just this item in the store
+                    store = { 
+                        ...store, 
+                        [key]: data 
+                    };
+                    content = store;
                 } else {
-                    content = null;
+                    // Remove this item from store
+                    if (store && key) {
+                        const { [key]: removed, ...rest } = store;
+                        store = rest;
+                        content = store;
+                    }
                 }
             });
             
             // Initial data load
             holosphere.getAll(hexId, selectedLens).then((data) => {
-                content = data;
+                console.log('Initial subscription data:', data);
+                store = data || {};
+                content = store;
             });
             
             if (typeof off === 'function') {
@@ -142,6 +156,7 @@
             }
         } catch (error) {
             console.error('Error subscribing:', error);
+            store = {};
             content = null;
         }
     }
@@ -301,7 +316,7 @@
                 </div>
             {:else if content}
                 <div class="space-y-4">
-                    {#if typeof content === 'object'}
+                    {#if typeof content === 'object' && content !== null}
                         {#each Object.entries(content) as [key, item]}
                             <button 
                                 type="button"
