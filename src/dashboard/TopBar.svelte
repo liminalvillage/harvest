@@ -26,10 +26,10 @@
 		if (storedHolonID) {
 			ID.set(storedHolonID);
 		} else {
-			showToast = true;
+			ID.set('demo');
 		}
 
-		// Load previous holons from localStorage
+		// Load previous holons from localStorage only in browser
 		if (browser) {
 			const stored = localStorage.getItem('previousHolons');
 			if (stored) {
@@ -86,13 +86,17 @@
 	$: if ($ID) {
 		showToast = false;
 		holonID = $ID;
-		updateRoute($ID);
+		
+		// Only update route if not at root URL
+		if ($page.url.pathname !== '/') {
+			updateRoute($ID);
+		}
 		
 		// Fetch the name whenever ID changes
 		fetchHolonName($ID);
 		
 		// Add to previous holons if it doesn't start with 8
-		if (!$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
+		if (browser && !$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
 			const newHolon: HolonInfo = { id: $ID };
 			previousHolons = [...previousHolons, newHolon];
 			localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
@@ -100,17 +104,22 @@
 			// Then try to fetch and update its name in the previous holons list
 			holosphere.getAll($ID, 'settings').then((settings: any) => {
 				if (settings && settings[0] && settings[0].name) {
-						previousHolons = previousHolons.map(holon => 
-							holon.id === $ID 
-								? { ...holon, name: settings[0].name }
-								: holon
-						);
+					previousHolons = previousHolons.map(holon => 
+						holon.id === $ID 
+							? { ...holon, name: settings[0].name }
+							: holon
+					);
+					if (browser) {
 						localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+					}
 				}
 			}).catch((error: Error) => {
 				console.error(`Error fetching name for holon ${$ID}:`, error);
 			});
 		}
+	} else {
+		// If ID becomes undefined or empty, set it to demo
+		ID.set('demo');
 	}
 
 	function selectPreviousHolon(holon: HolonInfo) {
@@ -119,14 +128,40 @@
 	}
 
 	function updateRoute(id: string) {
+		// Don't redirect if we're at the root URL
+		if ($page.url.pathname === '/') {
+			return;
+		}
+
 		let currentPath = $page.url.pathname.split('/').pop();
+		
+		// If no ID is provided, redirect to demo
+		if (!id && currentPath && currentPath !== '') {
+			if (browser) {
+				goto(`/demo/${currentPath}`);
+			}
+			return;
+		}
+
 		if (currentPath === holonID) currentPath = 'dashboard';
-		goto(`/${id ? id : 'holonid'}/${currentPath}`);
+		
+		// Show landing page when switching TO demo holon FROM another holon
+		if (id === 'demo' && browser && holonID !== '' && holonID !== 'demo') {
+			if (currentPath !== '') {
+				goto('/?from=demo');
+				return;
+			}
+		}
+
+		if (browser) {
+			goto(`/${id || 'demo'}/${currentPath}`);
+		}
 	}
 
 	function handleInput(event: Event) {
 		const target = event.target as HTMLInputElement;
-		ID.set(target.value);
+		// If input is empty or undefined, set to demo
+		ID.set(target.value || 'demo');
 		showDropdown = false;
 	}
 

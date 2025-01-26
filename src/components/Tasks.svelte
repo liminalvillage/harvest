@@ -7,6 +7,7 @@
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
 	import CanvasView from "./CanvasView.svelte";
+	import { writable } from 'svelte/store';
 
 	interface Quest {
 		id: string;
@@ -38,12 +39,13 @@
 	let store: Store = {};
 	$: quests = Object.entries(store);
 
-	// Add near the top of the script section, after the interface definitions
-	let viewMode: 'grid' | 'list' | 'canvas';
+	// Fix viewMode initialization
+	let viewMode: 'list' | 'canvas' = 'list';
 
-	// Initialize viewMode from localStorage or default to 'grid'
+	// Initialize viewMode to 'list' by default
 	if (typeof window !== 'undefined') {
-		viewMode = localStorage.getItem('taskViewMode') as 'grid' | 'list' | 'canvas' || 'grid';
+		const storedViewMode = localStorage.getItem('taskViewMode');
+		viewMode = (storedViewMode === 'list' || storedViewMode === 'canvas') ? storedViewMode : 'list';
 	}
 
 	// Add a reactive statement to save viewMode changes
@@ -88,7 +90,7 @@
 	}
 
 	// Add this function near the top of the <script> section, after the imports
-	function getColorFromCategory(category: string, type: string = 'task') {
+	function getColorFromCategory(category: string | undefined, type: string = 'task') {
 		if (!category) {
 			// Default colors based on type
 			switch (type) {
@@ -152,13 +154,21 @@
 	let sortField: 'x' | 'y' = 'x';
 	let sortDirection: 'asc' | 'desc' = 'desc';
 
-	// Simplify the sorting logic
+	// Add a store to track updates
+	const updateTrigger = writable(0);
+
+	// Update the sorting logic to be more precise
 	$: sortedQuests = quests.sort(([_, a], [__, b]) => {
 		const posA = a.position?.[sortField] ?? 0;
 		const posB = b.position?.[sortField] ?? 0;
-		return sortDirection === 'desc'
-			? posB - posA
-			: posA - posB
+		return sortDirection === 'desc' ? posB - posA : posA - posB;
+	});
+
+	// Update filtered quests to react to sort changes
+	$: filteredQuests = sortedQuests.filter(([_, quest]) => {
+		if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
+		if (!['task', 'quest', 'event'].includes(quest.type)) return false;
+		return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
 	});
 
 	// Modify the toggle function to handle both field and direction
@@ -178,7 +188,7 @@
 			subscribe();
 		});
 
-		viewMode = localStorage.getItem("kanbanViewMode") || "grid";
+		viewMode = localStorage.getItem("kanbanViewMode") || "list";
 		showCompleted =
 			localStorage.getItem("kanbanShowCompleted") === "true" || false;
 		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
@@ -221,8 +231,8 @@
 		return sortedQuests;
 	}
 
-	// Replace the showDropdown click handler with this
-	function handleTaskClick(key, quest) {
+	// Fix handleTaskClick type
+	function handleTaskClick(key: string, quest: Quest) {
 		if (!key) {
 			console.error("Cannot select task: missing key");
 			return;
@@ -254,6 +264,107 @@
 		holosphere.put(holonID, "quests", task);
 		showTaskInput = false;
 	}
+
+	// Add drag and drop state
+	const dragState = writable<{
+		dragging: boolean;
+		draggedId: string | null;
+		dragOverId: string | null;
+	}>({
+		dragging: false,
+		draggedId: null,
+		dragOverId: null
+	});
+
+	// Add drag and drop handlers
+	function handleDragStart(event: DragEvent, key: string) {
+		event.dataTransfer?.setData('text/plain', key);
+		dragState.set({
+			dragging: true,
+			draggedId: key,
+			dragOverId: null
+		});
+	}
+
+	function handleDragOver(event: DragEvent, key: string) {
+		event.preventDefault();
+		dragState.update(state => ({
+			...state,
+			dragOverId: key
+		}));
+	}
+
+	function handleDragEnd() {
+		dragState.set({
+			dragging: false,
+			draggedId: null,
+			dragOverId: null
+		});
+	}
+
+	async function handleDrop(event: DragEvent, targetKey: string) {
+		event.preventDefault();
+		const sourceKey = event.dataTransfer?.getData('text/plain') || '';
+		if (!sourceKey || sourceKey === targetKey) return;
+
+		// Find the indices in the sorted and filtered list
+		const sourceIndex = filteredQuests.findIndex(([key]) => key === sourceKey);
+		const targetIndex = filteredQuests.findIndex(([key]) => key === targetKey);
+		if (sourceIndex === -1 || targetIndex === -1) return;
+
+		// Get the quests in their sorted order
+		const targetQuest = filteredQuests[targetIndex][1];
+		const prevQuest = targetIndex > 0 ? filteredQuests[targetIndex - 1][1] : null;
+		const nextQuest = targetIndex < filteredQuests.length - 1 ? filteredQuests[targetIndex + 1][1] : null;
+		const sourceQuest = filteredQuests[sourceIndex][1];
+
+		// Calculate new position based on current sort field
+		const currentPosition = sourceQuest.position || { x: 0, y: 0 };
+		let newPosition = { ...currentPosition };
+
+		// Get the positions for calculation
+		const targetPos = targetQuest.position?.[sortField] ?? 0;
+		const prevPos = prevQuest?.position?.[sortField] ?? (targetPos - 2000);
+		const nextPos = nextQuest?.position?.[sortField] ?? (targetPos + 2000);
+
+		// Calculate the new position value
+		let newValue;
+		if (targetIndex === 0) {
+			// Dropping at the start
+			newValue = targetPos - 1000;
+		} else if (targetIndex === filteredQuests.length - 1) {
+			// Dropping at the end
+			newValue = targetPos + 1000;
+		} else if (sourceIndex < targetIndex) {
+			// Moving down - position after target
+			newValue = targetPos + (nextPos - targetPos) / 2;
+		} else {
+			// Moving up - position before target
+			newValue = prevPos + (targetPos - prevPos) / 2;
+		}
+
+		// Update only the sorted field, preserve the other coordinate
+		newPosition[sortField] = newValue;
+
+		// Update the quest in holosphere
+		const updatedQuest = {
+			...sourceQuest,
+			position: newPosition
+		};
+
+		// Update in holosphere and force a store update to trigger re-render
+		store = {
+			...store,
+			[sourceKey]: updatedQuest
+		};
+		await holosphere.put(holonID, `quests/${sourceKey}`, updatedQuest);
+		
+		handleDragEnd();
+	}
+
+	// Add dialog element reference
+	let dialogElement: HTMLDialogElement;
+	let open = false;
 </script>
 
 <div class="flex flex-wrap">
@@ -327,31 +438,6 @@
 					</svg>
 				</button>
 				<button
-					class="text-white {viewMode === 'grid'
-						? 'bg-gray-700'
-						: 'bg-transparent'} p-2 ml-2"
-					title="Grid View"
-					on:click={() => (viewMode = "grid")}
-					aria-label="Switch to grid view"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="20"
-						height="20"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<rect x="3" y="3" width="7" height="7"></rect>
-						<rect x="14" y="3" width="7" height="7"></rect>
-						<rect x="14" y="14" width="7" height="7"></rect>
-						<rect x="3" y="14" width="7" height="7"></rect>
-					</svg>
-				</button>
-				<button
 					class="text-white {viewMode === 'canvas'
 						? 'bg-gray-700'
 						: 'bg-transparent'} p-2 ml-2"
@@ -381,12 +467,12 @@
 			</div>
 		</div>
 
-		<div class="flex justify-end mb-4 items-center gap-4">
+		<div class="flex flex-col sm:flex-row sm:justify-end mb-4 items-center gap-4">
 			<!-- Category Filter -->
-			<div class="relative">
+			<div class="relative w-full sm:w-auto">
 				<select
 					bind:value={selectedCategory}
-					class="appearance-none bg-gray-600 text-white px-4 py-1.5 pr-8 rounded-full cursor-pointer text-sm"
+					class="w-full sm:w-auto appearance-none bg-gray-600 text-white px-4 py-1.5 pr-8 rounded-full cursor-pointer text-sm"
 				>
 					{#each categories as category}
 						<option value={category}>
@@ -409,8 +495,8 @@
 				</div>
 			</div>
 
-			<!-- Replace the two buttons with a single button -->
-			<div class="flex gap-2">
+			<div class="flex w-full sm:w-auto justify-between sm:justify-end items-center gap-4">
+				<!-- Sort Button -->
 				<button
 					class="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-full text-sm hover:bg-gray-500 transition-colors"
 					on:click={toggleSort}
@@ -432,29 +518,36 @@
 						<path d="M12 5v14M19 12l-7 7-7-7"></path>
 					</svg>
 				</button>
-			</div>
 
-			<!-- Show Completed Toggle -->
-			<label class="flex items-center cursor-pointer">
-				<div class="relative">
-					<input
-						type="checkbox"
-						class="sr-only"
-						bind:checked={showCompleted}
-					/>
-					<div class="w-10 h-6 bg-gray-600 rounded-full shadow-inner"></div>
-					<div
-						class="dot absolute w-4 h-4 bg-white rounded-full transition left-1 top-1"
-						class:translate-x-4={showCompleted}
-					></div>
-				</div>
-				<div class="ml-3 text-sm font-medium text-white">
-					Show Completed
-				</div>
-			</label>
+				<!-- Show Completed Toggle -->
+				<label class="flex items-center cursor-pointer">
+					<div class="relative">
+						<input
+							type="checkbox"
+							class="sr-only"
+							bind:checked={showCompleted}
+						/>
+						<div class="w-10 h-6 bg-gray-600 rounded-full shadow-inner"></div>
+						<div
+							class="dot absolute w-4 h-4 bg-white rounded-full transition left-1 top-1"
+							class:translate-x-4={showCompleted}
+						></div>
+					</div>
+					<div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
+						Show Completed
+					</div>
+				</label>
+			</div>
 		</div>
 
-		{#if viewMode === "list"}
+		{#if viewMode === "canvas"}
+			<CanvasView
+				{filteredQuests}
+				{holonID}
+				{showCompleted}
+				on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
+			/>
+		{:else}
 			<div class="space-y-2">
 				{#each filteredQuests as [key, quest]}
 					{#if quest.status === "ongoing" || (showCompleted && quest.status === "completed")}
@@ -462,7 +555,14 @@
 							id={key}
 							class="w-full task-card relative text-left"
 							on:click|stopPropagation={() => handleTaskClick(key, quest)}
+							draggable="true"
+							on:dragstart={(e) => handleDragStart(e, key)}
+							on:dragover={(e) => handleDragOver(e, key)}
+							on:drop={(e) => handleDrop(e, key)}
+							on:dragend={handleDragEnd}
 							aria-label={`Open task: ${quest.title}`}
+							class:dragging={$dragState.draggedId === key}
+							class:drag-over={$dragState.dragOverId === key}
 						>
 							<div
 								class="p-3 rounded-lg transition-colors"
@@ -579,160 +679,6 @@
 											class="opacity-70 font-bold text-base"
 										>
 											👍 {quest.appreciation.length}
-										</div>
-									</div>
-								</div>
-							</div>
-						</button>
-					{/if}
-				{/each}
-			</div>
-		{:else if viewMode === "canvas"}
-			<CanvasView
-				{filteredQuests}
-				{holonID}
-				{showCompleted}
-				on:taskClick={handleTaskClick}
-			/>
-		{:else}
-			<div class="flex flex-wrap">
-				{#each filteredQuests as [key, quest]}
-					{#if quest.status === "ongoing" || (showCompleted && quest.status === "completed")}
-						<button
-							id={key}
-							class="w-full md:w-4/12 task-card relative text-left"
-							on:click|stopPropagation={() => handleTaskClick(key, quest)}
-							aria-label={`Open task: ${quest.title}`}
-						>
-							<div class="p-2">
-								<div
-									class="p-4 rounded-3xl overflow-hidden"
-									style="background-color: {quest.status === 'completed'
-										? '#9CA3AF'
-										: getColorFromCategory(quest.category, quest.type)}; 
-									   opacity: {quest.status === 'completed' ? '0.6' : '1'}"
-								>
-									<div
-										class="flex items-center justify-between"
-									>
-										{#if quest.when}
-											<span
-												class="text-sm whitespace-nowrap"
-											>
-												{formatDate(quest.when) +
-													" @ " +
-													formatTime(quest.when)}
-												{#if quest.ends}- {formatTime(
-														quest.ends
-													)}
-												{/if}
-											</span>
-										{/if}
-									</div>
-									<div class="text-center mb-4 mt-5">
-										<span class="text-sm px-2 py-0.5 rounded-full bg-black/20 mb-2 inline-block">
-											{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : '✓'}
-											{quest.type}
-										</span>
-										<p class="text-base font-bold opacity-70 truncate">
-											{quest.title}
-										</p>
-										{#if quest.category}
-											<p class="text-sm opacity-70 mt-1">
-												<span
-													class="inline-flex items-center justify-center"
-												>
-													<svg
-														class="w-4 h-4 mr-1"
-														viewBox="0 0 24 24"
-														fill="currentColor"
-													>
-														<path
-															d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"
-														/>
-													</svg>
-													{quest.category}
-												</span>
-											</p>
-										{/if}
-									</div>
-									{#if quest.description}
-										<div
-											class="text-sm opacity-70 mb-4 line-clamp-2"
-										>
-											{quest.description}
-										</div>
-									{/if}
-									{#if quest.location}
-										<div
-											class="text-sm opacity-70 mb-4 truncate"
-										>
-											{quest.location
-												.split(",")
-												.map((loc, i) => {
-													if (i === 0) {
-														return loc;
-													} else {
-														return loc.trim();
-													}
-												})
-												.join(", ")}
-										</div>
-									{/if}
-
-									<div
-										class="flex justify-between pt-4 relative"
-									>
-										<div
-											class="flex flex-col overflow-hidden"
-										>
-											<span
-												class="opacity-70 font-bold text-base whitespace-nowrap mb-1"
-											>
-												🙋‍♂️ {quest.participants
-													?.length || 0}
-											</span>
-											<div
-												class="flex -space-x-2 relative group"
-											>
-												{#each (quest.participants || []).slice(0, 3) as participant}
-													<div class="relative">
-														<img
-															class="w-6 h-6 rounded-full border-2 border-gray-300"
-															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
-															alt={participant.username}
-														/>
-														<div
-															class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10"
-														>
-															{participant.username}
-														</div>
-													</div>
-												{/each}
-												{#if (quest.participants || []).length > 3}
-													<div
-														class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300 relative group"
-													>
-														<span>+{quest.participants.length - 3}</span>
-														<div
-															class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10"
-														>
-															{quest.participants
-																.slice(3)
-																.map(
-																	(p) =>
-																		p.username
-																)
-																.join(", ")}
-														</div>
-													</div>
-												{/if}
-											</div>
-										</div>
-										<div
-											class="opacity-70 font-bold text-base whitespace-nowrap"
-										>
-											👍 {quest.appreciation?.length || 0}
 										</div>
 									</div>
 								</div>
@@ -874,6 +820,29 @@
 
 	.task-card {
 		position: relative;
+		transition: transform 0.2s ease;
+		cursor: grab;
+	}
+
+	.task-card.dragging {
+		opacity: 0.5;
+		cursor: grabbing;
+		z-index: 10;
+	}
+
+	.task-card.drag-over {
+		transform: translateY(10px);
+	}
+
+	.task-card.drag-over::before {
+		content: '';
+		position: absolute;
+		top: -5px;
+		left: 0;
+		right: 0;
+		height: 2px;
+		background-color: #4F46E5;
+		border-radius: 2px;
 	}
 
 	@keyframes slideDown {

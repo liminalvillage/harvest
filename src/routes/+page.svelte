@@ -1,5 +1,19 @@
 <script lang="ts">
   import 'tailwindcss/tailwind.css';
+  import { browser } from '$app/environment';
+  import { page } from '$app/stores';
+  import { ID } from '../dashboard/store';
+
+  // Reset the ID when landing on the root page
+  if (browser && $page.url.pathname === '/') {
+    ID.set('');
+  }
+
+  function handleDemoClick() {
+    if (browser) {
+      localStorage.setItem('hasSeenDemoLanding', 'true');
+    }
+  }
 </script>
 
 <svelte:head>
@@ -36,9 +50,19 @@
           </li>
           <li class="flex items-center space-x-2">
             <span>Check out our</span>
-            <a href="/demo" class="text-blue-400 hover:text-blue-300 transition-colors font-medium">demo holon</a>
+            <a href="/demo/dashboard" on:click={handleDemoClick} class="text-blue-400 hover:text-blue-300 transition-colors font-medium">demo holon</a>
           </li>
         </ol>
+      </div>
+
+      <div class="flex justify-center">
+        <a 
+          href="/demo/dashboard" 
+          on:click={handleDemoClick}
+          class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-center"
+        >
+          Continue to Demo Dashboard
+        </a>
       </div>
 
       <div class="flex items-center justify-center pt-4">

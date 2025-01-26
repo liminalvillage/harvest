@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { setContext } from 'svelte';
-	import HoloSphere from "holosphere"
+	import HoloSphere from 'holosphere';
 	import Layout from '../dashboard/Layout.svelte';
 
     let environmentName: string =
