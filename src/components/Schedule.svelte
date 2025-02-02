@@ -14,60 +14,92 @@
 	let store: Record<string, Quest> = {};
 	$: quests = Object.entries(store);
 
-	onMount(async () => {
-		//const data = await holosphere.get(holonID, 'quests');
-		//quests = data.filter((quest) => (quest.status === 'ongoing') && (quest.type === 'task' || quest.type === 'quest'));
-		subscribe();
-	});
+	let unsubscribe: () => void;
+	let questsUnsubscribe: () => void;
 
-	ID.subscribe((value) => {
-		holonID = value;
-		subscribe();
+	// Add Quest interface at the top of the script
+	interface Quest {
+		id: string;
+		title: string;
+		description?: string;
+		when?: string;
+		ends?: string;
+		status: 'ongoing' | 'completed';
+		type: 'task' | 'quest' | 'event';
+		participants: Array<{ id: string; username: string }>;
+		location?: string;
+		end?: string;
+	}
+
+	onMount(() => {
+		// Subscribe to ID changes
+		unsubscribe = ID.subscribe((value) => {
+			holonID = value;
+			if (questsUnsubscribe) {
+				questsUnsubscribe(); // Clean up old subscription
+			}
+			subscribe(); // Set up new subscription
+		});
+
+		return () => {
+			// Clean up subscriptions on component unmount
+			if (unsubscribe) unsubscribe();
+			if (questsUnsubscribe) questsUnsubscribe();
+		};
 	});
 
 	function subscribe() {
+		if (!holosphere || !holonID) return;
+		
+		// Clear existing store
 		store = {};
-		holosphere.subscribe(holonID, 'quests', (newquest, key) => {
-			if (newquest) {
-				const parsedQuest = newquest;
-				// Updates the store with the new value
-				store[key] = parsedQuest;
-				store = store; // trigger reactivity
-				
-			} else {
-				// A key may contain a null value (if data has been deleted/set to null)
-				// if so, we remove the item from the store
-				delete store[key];
-				store = store; // trigger reactivity
+		
+		try {
+			const off = holosphere.subscribe(holonID, 'quests', (newquest: Quest | null, key: string) => {
+				if (newquest) {
+					store = { ...store, [key]: newquest };
+				} else {
+					const { [key]: _, ...rest } = store;
+					store = rest;
+				}
+			});
+
+			if (typeof off === 'function') {
+				if (questsUnsubscribe) {
+					questsUnsubscribe(); // Clean up any existing subscription
+				}
+				questsUnsubscribe = off;
 			}
-		});
+		} catch (error) {
+			console.error('Error setting up quest subscription:', error);
+		}
 	}
 
-	function getStartTime(quest) {
-		const date = new Date(quest.when);
+	function getStartTime(quest: Quest): string {
+		const date = new Date(quest.when || '');
 		let hours = date.getHours();
-		let minutes = date.getMinutes();
-		minutes = minutes < 10 ? (minutes = `0${minutes}`) : minutes;
+		let minutes: string | number = date.getMinutes();
+		minutes = minutes < 10 ? `0${minutes}` : minutes;
 		return `${hours}${minutes}`;
 	}
 
-	function getEndTime(quest) {
+	function getEndTime(quest: Quest): string {
 		if (!quest.ends) {
-			const date = new Date(quest.when);
+			const date = new Date(quest.when || '');
 			let hours = date.getHours();
-			let minutes = date.getMinutes();
-			minutes = minutes < 10 ? (minutes = `0${minutes}`) : minutes;
+			let minutes: string | number = date.getMinutes();
+			minutes = minutes < 10 ? `0${minutes}` : minutes;
 			return `${hours + 1}${minutes}`;
 		} else {
 			const date = new Date(quest.ends);
 			let hours = date.getHours();
-			let minutes = date.getMinutes();
-			minutes = minutes < 10 ? (minutes = `0${minutes}`) : minutes;
+			let minutes: string | number = date.getMinutes();
+			minutes = minutes < 10 ? `0${minutes}` : minutes;
 			return `${hours}${minutes}`;
 		}
 	}
 
-	function isToday(quest) {
+	function isToday(quest: Quest): boolean {
 		if (!quest || !quest.when) return false;
 		
 		const today = new Date();
@@ -80,27 +112,27 @@
 		);
 	}
 
-	function isTomorrow(quest) {
+	function isTomorrow(quest: Quest): boolean {
 		const today = new Date();
-		const date = new Date(quest.when);
+		const date = new Date(quest.when || '');
 		return date.getDate() === today.getDate() + 1;
 	}
 
-	function getDay(quest) {
+	function getDay(quest: Quest): string {
 		const today = new Date();
-		const date = new Date(quest.when);
+		const date = new Date(quest.when || '');
 		if (date.getDate() < today.getDate()) return 'past';
 		if (date.getDate() === today.getDate()) return 'today';
 		if (date.getDate() === today.getDate() + 1) return 'tomorrow';
-		if (date.getDate() > today.getDate() + 1) return 'future';
+		return 'future';
 	}
 
-	function getLength(quest) {
+	function getLength(quest: Quest): number {
 		if (!quest.when) return 0;
 		if (!quest.ends) return 1;
 		const start = new Date(quest.when);
-		const end = new Date(quest.end);
-		const diff = end - start;
+		const end = new Date(quest.ends);
+		const diff = end.getTime() - start.getTime();
 		const minutes = Math.floor(diff / 60000);
 		const length = minutes / 30;
 		return length;

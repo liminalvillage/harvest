@@ -128,58 +128,60 @@
         const newStatus = quest.status === 'completed' ? 'ongoing' : 'completed';
         console.log('New status will be:', newStatus);
         
-        if (newStatus === 'completed') {
-            try {
-                // Track initiator action only if initiator exists
-                if (quest.initiator?.id) {
-                    console.log('Fetching initiator data...');
-                    const initiatorData = await holosphere.get(holonId, 'users', quest.initiator.id);
-                    console.log('Initiator data:', initiatorData);
-                    
-                    if (initiatorData) {
-                        await holosphere.put(holonId, 'users', {
-                            ...initiatorData,
-                            initiated: [...(initiatorData.initiated || []), quest.title],
-                            actions: [...(initiatorData.actions || []), {
-                                type: 'initiated',
-                                action: quest.title,
-                                amount: 0,
-                                timestamp: new Date()
-                            }]
-                        });
-                    }
-                }
-
-                // Track participant completions
-                if (quest.participants) {
-                    console.log('Updating participant data...');
-                    for (const participant of quest.participants) {
-                        const userData = await holosphere.get(holonId, 'users', participant.id);
-                        if (userData) {
-                            await holosphere.put(holonId, 'users', {
-                                ...userData,
-                                completed: [...(userData.completed || []), quest.title],
-                                actions: [...(userData.actions || []), {
-                                    type: 'completed',
-                                    action: quest.title,
-                                    amount: 0,
-                                    timestamp: new Date()
-                                }]
-                            });
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Error updating user data:', error);
-            }
-        }
-        
         try {
+            // Update quest status first
             console.log('Updating quest status to:', newStatus);
             await updateQuest({ status: newStatus }, true);
             console.log('Quest status updated successfully');
+
+            // Only update user stats if marking as completed
+            if (newStatus === 'completed') {
+                // Update user stats in the background
+                updateUserStats().catch(error => {
+                    console.error('Error updating user stats:', error);
+                });
+            }
         } catch (error) {
             console.error('Error updating quest status:', error);
+        }
+    }
+
+    // Separate function to handle user stats updates
+    async function updateUserStats() {
+        // Track initiator action only if initiator exists
+        if (quest.initiator?.id) {
+            const initiatorData = await holosphere.get(holonId, 'users', quest.initiator.id);
+            if (initiatorData) {
+                await holosphere.put(holonId, 'users', {
+                    ...initiatorData,
+                    initiated: [...(initiatorData.initiated || []), quest.title],
+                    actions: [...(initiatorData.actions || []), {
+                        type: 'initiated',
+                        action: quest.title,
+                        amount: 0,
+                        timestamp: new Date()
+                    }]
+                });
+            }
+        }
+
+        // Track participant completions
+        if (quest.participants) {
+            for (const participant of quest.participants) {
+                const userData = await holosphere.get(holonId, 'users', participant.id);
+                if (userData) {
+                    await holosphere.put(holonId, 'users', {
+                        ...userData,
+                        completed: [...(userData.completed || []), quest.title],
+                        actions: [...(userData.actions || []), {
+                            type: 'completed',
+                            action: quest.title,
+                            amount: 0,
+                            timestamp: new Date()
+                        }]
+                    });
+                }
+            }
         }
     }
 

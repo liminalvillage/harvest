@@ -74,12 +74,32 @@
 		appreciation: []
 	};
 
+	let unsubscribe: () => void;
+	let questsUnsubscribe: () => void;
+
 	onMount(() => {
 		// Subscribe to ID changes
-		ID.subscribe((value: string) => {
+		unsubscribe = ID.subscribe((value) => {
 			holonID = value;
-			subscribe();
+			if (questsUnsubscribe) {
+				questsUnsubscribe(); // Clean up old subscription
+			}
+			subscribe(); // Set up new subscription
 		});
+
+		// Load saved preferences
+		const savedViewMode = localStorage.getItem("kanbanViewMode");
+		if (savedViewMode === 'list' || savedViewMode === 'canvas') {
+			viewMode = savedViewMode;
+		}
+		
+		showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
+
+		return () => {
+			// Clean up subscriptions on component unmount
+			if (unsubscribe) unsubscribe();
+			if (questsUnsubscribe) questsUnsubscribe();
+		};
 	});
 
 	// Create separate reactive statements for localStorage updates
@@ -144,19 +164,26 @@
 	// Add a store to track updates
 	const updateTrigger = writable(0);
 
-	// Update the sorting logic to be more precise
-	$: sortedQuests = quests.sort(([_, a], [__, b]) => {
-		const posA = a.position?.[sortField] ?? 0;
-		const posB = b.position?.[sortField] ?? 0;
-		return sortDirection === 'desc' ? posB - posA : posA - posB;
-	});
+	// Declare all reactive variables at the top
+	let sortedQuests: [string, Quest][] = [];
+	let filteredQuests: [string, Quest][] = [];
 
-	// Update filtered quests to react to sort changes
-	$: filteredQuests = sortedQuests.filter(([_, quest]) => {
-		if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
-		if (!['task', 'quest', 'event'].includes(quest.type)) return false;
-		return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
-	});
+	// Cache the filtered and sorted results to prevent unnecessary recalculations
+	$: {
+		const filtered = quests.filter(([_, quest]) => {
+			if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
+			if (!['task', 'quest', 'event'].includes(quest.type)) return false;
+			return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
+		});
+
+		sortedQuests = filtered.sort(([_, a], [__, b]) => {
+			const posA = a.position?.[sortField] ?? 0;
+			const posB = b.position?.[sortField] ?? 0;
+			return sortDirection === 'desc' ? posB - posA : posA - posB;
+		});
+
+		filteredQuests = sortedQuests;
+	}
 
 	// Modify the toggle function to handle both field and direction
 	function toggleSort() {
@@ -168,54 +195,33 @@
 		}
 	}
 
-	onMount(async () => {
-		// Fetch all quests from holon
-		ID.subscribe((value) => {
-			holonID = value;
-			subscribe();
-		});
-
-		viewMode = localStorage.getItem("kanbanViewMode") || "list";
-		showCompleted =
-			localStorage.getItem("kanbanShowCompleted") === "true" || false;
-		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
-	});
-
-	$: update(holonID);
-
 	function subscribe() {
+		if (!holosphere || !holonID) return;
+		
+		// Clear existing store
 		store = {};
-
-		if (holosphere) {
-			holosphere.subscribe(holonID, "quests", (newquest, key) => {
+		
+		try {
+			const off = holosphere.subscribe(holonID, "quests", (newquest, key) => {
 				if (newquest) {
-					store = {
-						...store,
-						[key]:newquest,
-					};
+					// Update store immutably without triggering unnecessary rerenders
+					store = { ...store, [key]: newquest };
 				} else {
+					// Remove item without triggering unnecessary rerenders
 					const { [key]: _, ...rest } = store;
 					store = rest;
 				}
 			});
+
+			if (typeof off === 'function') {
+				if (questsUnsubscribe) {
+					questsUnsubscribe(); // Clean up any existing subscription
+				}
+				questsUnsubscribe = off;
+			}
+		} catch (error) {
+			console.error('Error setting up quest subscription:', error);
 		}
-	}
-
-	function update(holonID: string) {
-		// Filter ongoing and scheduled quests
-		const filteredQuests = quests.filter(
-			([_, quest]) =>
-				quest.status === "ongoing" 
-		);
-		
-		// Sort quests by date field, falling back to when if date doesn't exist
-		const sortedQuests = filteredQuests.sort(([_, a], [__, b]) => {
-			const dateA = new Date(a.date || a.when || 0);
-			const dateB = new Date(b.date || b.when || 0);
-			return dateB.getTime() - dateA.getTime(); // Newest first
-		});
-
-		return sortedQuests;
 	}
 
 	// Fix handleTaskClick type
