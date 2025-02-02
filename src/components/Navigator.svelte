@@ -70,7 +70,13 @@
             .padding(3)
             (d3.hierarchy<Holon>(data)
                 .sum(d => d.value || 0)
-                .sort((a, b) => (b.value || 0) - (a.value || 0)));
+                .sort((a, b) => {
+                    // First sort by name
+                    const nameCompare = (a.data.name || '').localeCompare(b.data.name || '');
+                    if (nameCompare !== 0) return nameCompare;
+                    // If names are equal, then sort by value
+                    return (b.value || 0) - (a.value || 0);
+                }));
     }
 
     function zoomTo(v: [number, number, number]) {

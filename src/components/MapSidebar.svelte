@@ -134,7 +134,6 @@
             // Then set up subscription for updates
             const off = holosphere.subscribe(hexId, selectedLens, async (data: any, key: string) => {
                 if (data) {
-                    console.log('Subscription update received:', data, 'for key:', key);
                     // Update just this item in the store
                     store = { 
                         ...store, 

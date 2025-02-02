@@ -134,19 +134,6 @@
 				.map((quest: any) => quest.category)
 		),
 	];
-
-	// Filter quests based on selected category
-	$: filteredQuests = sortedQuests.filter(([_, quest]: any) => {
-		// First check category filter
-		if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
-		
-		// Then check if it's a valid type (task, quest, or event)
-		if (!['task', 'quest', 'event'].includes(quest.type)) return false;
-		
-		// Finally check status
-		return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
-	});
-
 	// Add this variable to track the selected task
 	let selectedTask: any = null;
 
