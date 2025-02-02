@@ -233,8 +233,15 @@
 	}
 
 	// Update the handleAddTask function
-	function handleAddTask() {
+	async function handleAddTask() {
 		if (!newTask.title.trim()) return;
+
+		// Get current user data
+		const userData = await holosphere.get(holonID, 'users', holonID);
+		if (!userData) {
+			console.error('Cannot create task: user data not found');
+			return;
+		}
 
 		const task = {
 			...newTask,
@@ -242,6 +249,12 @@
 			title: newTask.title.trim(),
 			description: newTask.description?.trim(),
 			created: new Date().toISOString(),
+			initiator: {
+				id: holonID,
+				username: userData.username,
+				first_name: userData.first_name,
+				last_name: userData.last_name
+			},
 			position: {  // Add default position for canvas view
 				x: Math.random() * 800,
 				y: Math.random() * 600

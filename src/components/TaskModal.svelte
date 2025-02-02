@@ -124,41 +124,63 @@
     }
 
     async function completeQuest() {
+        console.log('completeQuest called, current status:', quest.status);
         const newStatus = quest.status === 'completed' ? 'ongoing' : 'completed';
+        console.log('New status will be:', newStatus);
         
         if (newStatus === 'completed') {
-            // Track initiator action
-            const initiatorData = await holosphere.get(holonId, 'users', quest.initiator.id);
-            await holosphere.put(holonId, 'users', {
-                ...initiatorData,
-                initiated: [...(initiatorData.initiated || []), quest.title],
-                actions: [...(initiatorData.actions || []), {
-                    type: 'initiated',
-                    action: quest.title,
-                    amount: 0,
-                    timestamp: new Date()
-                }]
-            });
-
-            // Track participant completions
-            if (quest.participants) {
-                for (const participant of quest.participants) {
-                    const userData = await holosphere.get(holonId, 'users', participant.id);
-                    await holosphere.put(holonId, 'users', {
-                        ...userData,
-                        completed: [...(userData.completed || []), quest.title],
-                        actions: [...(userData.actions || []), {
-                            type: 'completed',
-                            action: quest.title,
-                            amount: 0,
-                            timestamp: new Date()
-                        }]
-                    });
+            try {
+                // Track initiator action only if initiator exists
+                if (quest.initiator?.id) {
+                    console.log('Fetching initiator data...');
+                    const initiatorData = await holosphere.get(holonId, 'users', quest.initiator.id);
+                    console.log('Initiator data:', initiatorData);
+                    
+                    if (initiatorData) {
+                        await holosphere.put(holonId, 'users', {
+                            ...initiatorData,
+                            initiated: [...(initiatorData.initiated || []), quest.title],
+                            actions: [...(initiatorData.actions || []), {
+                                type: 'initiated',
+                                action: quest.title,
+                                amount: 0,
+                                timestamp: new Date()
+                            }]
+                        });
+                    }
                 }
+
+                // Track participant completions
+                if (quest.participants) {
+                    console.log('Updating participant data...');
+                    for (const participant of quest.participants) {
+                        const userData = await holosphere.get(holonId, 'users', participant.id);
+                        if (userData) {
+                            await holosphere.put(holonId, 'users', {
+                                ...userData,
+                                completed: [...(userData.completed || []), quest.title],
+                                actions: [...(userData.actions || []), {
+                                    type: 'completed',
+                                    action: quest.title,
+                                    amount: 0,
+                                    timestamp: new Date()
+                                }]
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating user data:', error);
             }
         }
         
-        await updateQuest({ status: newStatus }, true);
+        try {
+            console.log('Updating quest status to:', newStatus);
+            await updateQuest({ status: newStatus }, true);
+            console.log('Quest status updated successfully');
+        } catch (error) {
+            console.error('Error updating quest status:', error);
+        }
     }
 
     async function toggleParticipant(userId: string) {
