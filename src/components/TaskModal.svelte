@@ -98,6 +98,11 @@
         if (confirm('Are you sure you want to delete this task?')) {
             try {
                 await holosphere.delete(holonId, 'quests', questId);
+                
+                // Update local store immediately
+                const currentStore = await holosphere.get(holonId, 'quests') || {};
+                delete currentStore[questId];
+                
                 dispatch('close', { deleted: true, questId });
             } catch (error) {
                 console.error('Error deleting quest:', error);
@@ -370,6 +375,7 @@
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
+        on:click|stopPropagation
     >
         <div class="p-6">
             <!-- Header -->

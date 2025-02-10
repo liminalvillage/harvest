@@ -58,9 +58,14 @@
             });
     }
 
+    let dragStartPosition = { x: 0, y: 0 };
+    const DRAG_THRESHOLD = 3; // pixels
+
     function handleMouseDown(event: MouseEvent, card: typeof questCards[0] | null = null) {
         event.preventDefault();
         event.stopPropagation();
+        
+        dragStartPosition = { x: event.clientX, y: event.clientY };
         
         if (event.button === 1 || event.button === 2 || !card) {
             isPanning = true;
@@ -68,14 +73,15 @@
                 x: event.clientX - pan.x, 
                 y: event.clientY - pan.y 
             };
+            draggedCard = null;
             return;
         }
 
         if (event.button === 0 && card) {
-            isDragging = true;
             draggedCard = card;
+            isDragging = false;
             
-            const rect = canvas.getBoundingClientRect();
+            const rect = viewContainer.getBoundingClientRect();
             const mouseX = (event.clientX - rect.left - pan.x) / zoom;
             const mouseY = (event.clientY - rect.top - pan.y) / zoom;
             
@@ -83,71 +89,75 @@
                 x: mouseX - card.x,
                 y: mouseY - card.y
             };
+
+            // Add global event listeners
+            window.addEventListener('mousemove', handleGlobalMouseMove);
+            window.addEventListener('mouseup', handleGlobalMouseUp);
         }
     }
 
-    function handleMouseMove(event: MouseEvent) {
-        event.preventDefault();
-        event.stopPropagation();
-        
-        if (isPanning && viewContainer) {
-            const newPan = {
-                x: (event.clientX - startPan.x),
-                y: (event.clientY - startPan.y)
-            };
+    function handleGlobalMouseMove(event: MouseEvent) {
+        if (draggedCard) {
+            event.preventDefault();
             
-            // Constrain panning
-            pan = {
-                x: Math.min(Math.max(newPan.x, -CANVAS_WIDTH + viewContainer.clientWidth), 0),
-                y: Math.min(Math.max(newPan.y, -CANVAS_HEIGHT + viewContainer.clientHeight), 0)
-            };
-            return;
+            const dx = event.clientX - dragStartPosition.x;
+            const dy = event.clientY - dragStartPosition.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (!isDragging && distance > DRAG_THRESHOLD) {
+                isDragging = true;
+            }
+
+            if (isDragging) {
+                const rect = viewContainer.getBoundingClientRect();
+                const mouseX = (event.clientX - rect.left - pan.x) / zoom;
+                const mouseY = (event.clientY - rect.top - pan.y) / zoom;
+                
+                questCards = questCards.map(card => 
+                    card.key === draggedCard?.key 
+                        ? { 
+                            ...card, 
+                            x: Math.min(Math.max(mouseX - offset.x, 0), CANVAS_WIDTH - 300),
+                            y: Math.min(Math.max(mouseY - offset.y, 0), CANVAS_HEIGHT - 200)
+                        }
+                        : card
+                );
+            }
         }
-
-        if (!isDragging || !draggedCard || !canvas) return;
-
-        const rect = canvas.getBoundingClientRect();
-        const mouseX = (event.clientX - rect.left - pan.x) / zoom;
-        const mouseY = (event.clientY - rect.top - pan.y) / zoom;
-        const newX = mouseX - offset.x;
-        const newY = mouseY - offset.y;
-
-        questCards = questCards.map(card => 
-            card.key === draggedCard?.key 
-                ? { 
-                    ...card, 
-                    x: Math.min(Math.max(newX, 0), CANVAS_WIDTH - 300),
-                    y: Math.min(Math.max(newY, 0), CANVAS_HEIGHT - 200)
-                }
-                : card
-        );
     }
 
-    function handleMouseUp(event: MouseEvent) {
-        event.preventDefault();
-        event.stopPropagation();
-        
-        const wasDragging = isDragging;
-        const draggedCardCopy = draggedCard;
-        
-        // Reset states first
-        isDragging = false;
-        draggedCard = null;
-        isPanning = false;
-        
-        // Then handle the update
-        if (wasDragging && draggedCardCopy) {
-            const card = questCards.find(c => c.key === draggedCardCopy?.key);
-            if (card) {
-                const updatedQuest = { 
-                    ...card.quest,
-                    position: { x: card.x, y: card.y } 
-                };
-                
-                holosphere.put(holonID, 'quests', {
-                    ...updatedQuest,
-                    id: card.key
-                }).catch(error => console.error('Error updating quest position:', error));
+    function handleGlobalMouseUp(event: MouseEvent) {
+        if (draggedCard) {
+            event.preventDefault();
+            
+            const wasDragging = isDragging;
+            const draggedCardCopy = draggedCard;
+            
+            // Reset states
+            isDragging = false;
+            draggedCard = null;
+            
+            // Remove global event listeners
+            window.removeEventListener('mousemove', handleGlobalMouseMove);
+            window.removeEventListener('mouseup', handleGlobalMouseUp);
+            
+            if (!wasDragging) {
+                // If we didn't drag, treat it as a click
+                dispatch('taskClick', { key: draggedCardCopy.key, quest: draggedCardCopy.quest });
+            } else {
+                // Update position in database
+                const card = questCards.find(c => c.key === draggedCardCopy?.key);
+                if (card) {
+                    const updatedQuest = { 
+                        ...card.quest,
+                        position: { x: card.x, y: card.y } 
+                    };
+                    
+                    holosphere.put(holonID, 'quests', {
+                        ...updatedQuest,
+                        id: card.key
+                    }).catch(error => console.error('Error updating quest position:', error));
+                }
             }
         }
     }
@@ -329,20 +339,6 @@
     onMount(() => {
         if (!canvas || !viewContainer) return;
 
-        const handleGlobalMouseMove = (e: MouseEvent) => {
-            if (isDragging || isPanning) {
-                handleMouseMove(e);
-            }
-        };
-        
-        const handleGlobalMouseUp = (e: MouseEvent) => {
-            if (isDragging || isPanning) {
-                handleMouseUp(e);
-            }
-        };
-        
-        window.addEventListener('mousemove', handleGlobalMouseMove, { passive: false });
-        window.addEventListener('mouseup', handleGlobalMouseUp, { passive: false });
         viewContainer.addEventListener('wheel', handleWheel, { passive: false });
 
         // Only center the view if there's no saved state
@@ -367,8 +363,6 @@
         document.addEventListener('MSFullscreenChange', handleFullscreenChange);
 
         return () => {
-            window.removeEventListener('mousemove', handleGlobalMouseMove);
-            window.removeEventListener('mouseup', handleGlobalMouseUp);
             viewContainer?.removeEventListener('wheel', handleWheel);
             document.removeEventListener('fullscreenchange', handleFullscreenChange);
             document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
@@ -410,7 +404,26 @@
     class:cursor-grab={!isDragging && !isPanning}
     class:cursor-grabbing={(isDragging || isPanning)}
     bind:this={viewContainer}
-    on:mousedown|preventDefault|stopPropagation={(e) => handleMouseDown(e)}
+    on:mousedown={(e) => {
+        const taskCard = (e.target as HTMLElement).closest('.task-card');
+        if (!taskCard) {
+            e.preventDefault();
+            e.stopPropagation();
+            handleMouseDown(e);
+        }
+    }}
+    on:mousemove={(e) => {
+        if (isDragging || isPanning) {
+            e.preventDefault();
+            handleGlobalMouseMove(e);
+        }
+    }}
+    on:mouseup={(e) => {
+        if (isDragging || isPanning || draggedCard) {
+            e.preventDefault();
+            handleGlobalMouseUp(e);
+        }
+    }}
     on:touchstart|preventDefault={handleTouchStart}
     on:touchmove|preventDefault={handleTouchMove}
     on:touchend|preventDefault={handleTouchEnd}
@@ -448,11 +461,11 @@
                 class:cursor-move={!isDragging}
                 class:cursor-grabbing={isDragging && draggedCard?.key === card.key}
                 style="left: {card.x}px; top: {card.y}px; transform: scale(1); transform-origin: top left;"
-                on:mousedown|stopPropagation={(e) => handleMouseDown(e, card)}
+                on:mousedown|preventDefault|stopPropagation={(e) => handleMouseDown(e, card)}
                 role="presentation"
             >
                 <div 
-                    class="w-64 p-4 rounded-xl shadow-lg border-2 bg-opacity-90"
+                    class="w-64 p-4 rounded-xl shadow-lg border-2 bg-opacity-90 pointer-events-none"
                     style="background-color: {card.quest.status === 'completed' ? 
                         'rgba(34, 197, 94, 0.95)' : 
                         card.quest.category ? 
