@@ -25,7 +25,7 @@
 		"format": "prettier --plugin-search-dir . --write ."
 	},
 	"devDependencies": {
-		"@sveltejs/adapter-netlify":"4.4.2"
+		"@sveltejs/adapter-netlify":"4.4.2",
 		"@sveltejs/kit": "^2.4.0",
 		"@sveltejs/vite-plugin-svelte": "^5.0.1",
 		"@tsconfig/svelte": "^5.0.4",
