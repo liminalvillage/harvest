@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { createEventDispatcher, getContext, onMount } from 'svelte';
+    import { createEventDispatcher, getContext, onMount, onDestroy } from 'svelte';
     import HoloSphere from 'holosphere';
     import * as d3 from 'd3';
     import { ID } from "../dashboard/store";
@@ -43,6 +43,14 @@
     // Add zoom behavior variable
     let zoomBehavior: d3.ZoomBehavior<SVGElement, unknown>;
     let mainGroup: d3.Selection<SVGGElement, unknown>;
+
+    // Add an array to track subscriptions with proper typing
+    interface GunSubscription {
+        path: string;
+        off: Function;
+    }
+    
+    let gunSubscriptions: GunSubscription[] = [];
 
     function handleZoom(event: d3.D3ZoomEvent<SVGElement, unknown>) {
         mainGroup.attr('transform', event.transform.toString());
@@ -201,7 +209,11 @@
     }
 
     function handleHolonClick(d: d3.HierarchyCircularNode<Holon>) {
-        event.stopPropagation();
+        // Use proper event handling
+        const e = window.event;
+        if (e) {
+            e.stopPropagation();
+        }
         focus = d;
         zoomToNode(d);
         if (d.data.key) {
@@ -225,11 +237,11 @@
             const holonMap = new Map<string, Holon>();
             
             // @ts-ignore - Accessing private property for now
-            holosphere.gun.get('Holons').map().on((newHolon: Holon, key: string) => {
+            const holonsSubscription = holosphere.gun.get('Holons').map().on((newHolon: Holon, key: string) => {
                 console.log('Found holon:', key, newHolon);
                 if (newHolon) {
                     // @ts-ignore - Accessing private property for now
-                    holosphere.gun.get('Holons').get(key).get('settings').get(key).on((settings: any) => {
+                    const settingsSubscription = holosphere.gun.get('Holons').get(key).get('settings').get(key).on((settings: any) => {
                         if (!settings) return;
                         settings = JSON.parse(settings);
                         
@@ -265,8 +277,46 @@
                         console.log('Updated holons data:', JSON.stringify(holonsData, null, 2));
                         updateVisualization(holonsData);
                     });
+                    
+                    // Store the subscription for cleanup
+                    if (typeof settingsSubscription.off === 'function') {
+                        gunSubscriptions.push({ path: 'settings', off: settingsSubscription.off });
+                    }
                 }
             });
+            
+            // Store the main subscription for cleanup
+            if (typeof holonsSubscription.off === 'function') {
+                gunSubscriptions.push({ path: 'holons', off: holonsSubscription.off });
+            }
+        }
+    });
+
+    // Add onDestroy to clean up all subscriptions and D3 resources
+    onDestroy(() => {
+        // Clean up Gun subscriptions
+        if (gunSubscriptions.length > 0) {
+            console.log('Cleaning up Gun subscriptions');
+            gunSubscriptions.forEach(sub => {
+                sub.off();
+            });
+            gunSubscriptions = [];
+        }
+        
+        // Clean up D3 resources
+        if (svg) {
+            // Remove event listeners
+            d3.select(svg)
+                .on('touchstart', null)
+                .on('touchmove', null);
+                
+            if (zoomBehavior) {
+                // Type casting to fix the issue with on('.zoom', null)
+                (d3.select(svg) as any).on('.zoom', null);
+            }
+            
+            // Clear all SVG elements
+            d3.select(svg).selectAll('*').remove();
         }
     });
 </script>
