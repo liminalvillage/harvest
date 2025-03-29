@@ -896,15 +896,40 @@
 
 	// Update onDestroy to include map cleanup
 	onDestroy(() => {
+		// Ensure proper cleanup and unsubscription
+		if (map) {
+			// Remove event listeners
+			map.off('move', handleMapMove);
+			map.off('zoom', handleMapMove);
+			map.off('click');
+		}
+		
+		// Clear all timeouts
+		if (moveTimeout) {
+			clearTimeout(moveTimeout);
+		}
+		
+		// Complete map cleanup
 		cleanupMap();
+		
+		// Properly unsubscribe from all subscriptions
 		for (const [lens, subscriptions] of holoSubscriptions.entries()) {
-			for (const subscription of subscriptions.values()) {
+			for (const [hexId, subscription] of subscriptions.entries()) {
 				if (subscription && typeof subscription.off === 'function') {
-					subscription.off();
+					try {
+						subscription.off();
+					} catch (e) {
+						console.error(`Error unsubscribing from ${lens} for ${hexId}:`, e);
+					}
 				}
 			}
 		}
 		holoSubscriptions.clear();
+		
+		// Clear all lens data to free memory
+		Object.keys(lensData).forEach(key => {
+			lensData[key as LensType].clear();
+		});
 	});
 </script>
 

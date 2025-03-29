@@ -42,15 +42,7 @@
 
     // Add zoom behavior variable
     let zoomBehavior: d3.ZoomBehavior<SVGElement, unknown>;
-    let mainGroup: d3.Selection<SVGGElement, unknown>;
-
-    // Add an array to track subscriptions with proper typing
-    interface GunSubscription {
-        path: string;
-        off: Function;
-    }
-    
-    let gunSubscriptions: GunSubscription[] = [];
+    let mainGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
 
     function handleZoom(event: d3.D3ZoomEvent<SVGElement, unknown>) {
         mainGroup.attr('transform', event.transform.toString());
@@ -230,6 +222,10 @@
         }
     }
 
+    // Store subscription functions directly
+    let holonsSubscription: any;
+    let settingsSubscriptions: Map<string, any> = new Map();
+
     onMount(async () => {
         initializeZoom();
         if (holosphere) {
@@ -237,7 +233,7 @@
             const holonMap = new Map<string, Holon>();
             
             // @ts-ignore - Accessing private property for now
-            const holonsSubscription = holosphere.gun.get('Holons').map().on((newHolon: Holon, key: string) => {
+            holonsSubscription = holosphere.gun.get('Holons').map().on((newHolon: Holon, key: string) => {
                 console.log('Found holon:', key, newHolon);
                 if (newHolon) {
                     // @ts-ignore - Accessing private property for now
@@ -279,29 +275,26 @@
                     });
                     
                     // Store the subscription for cleanup
-                    if (typeof settingsSubscription.off === 'function') {
-                        gunSubscriptions.push({ path: 'settings', off: settingsSubscription.off });
-                    }
+                    settingsSubscriptions.set(key, settingsSubscription);
                 }
             });
-            
-            // Store the main subscription for cleanup
-            if (typeof holonsSubscription.off === 'function') {
-                gunSubscriptions.push({ path: 'holons', off: holonsSubscription.off });
-            }
         }
     });
 
     // Add onDestroy to clean up all subscriptions and D3 resources
     onDestroy(() => {
         // Clean up Gun subscriptions
-        if (gunSubscriptions.length > 0) {
-            console.log('Cleaning up Gun subscriptions');
-            gunSubscriptions.forEach(sub => {
-                sub.off();
-            });
-            gunSubscriptions = [];
+        if (holonsSubscription && typeof holonsSubscription.off === 'function') {
+            holonsSubscription.off();
         }
+        
+        // Clean up settings subscriptions
+        settingsSubscriptions.forEach(sub => {
+            if (sub && typeof sub.off === 'function') {
+                sub.off();
+            }
+        });
+        settingsSubscriptions.clear();
         
         // Clean up D3 resources
         if (svg) {

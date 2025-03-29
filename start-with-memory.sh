@@ -9,7 +9,7 @@ export NODE_OPTIONS="--max-old-space-size=4096"
 # Run your application using the appropriate command
 # For development
 echo "Starting application with increased memory limit (4GB)"
-npm run dev
+yarn dev
 
 # For production build, uncomment the following line and comment the dev line above
-# npm run build && npm run preview 
+# yarn build && yarn preview 

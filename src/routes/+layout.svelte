@@ -9,23 +9,8 @@
 	console.log(import.meta.env.VITE_LOCAL_MODE)
     console.log("Environment:", environmentName)
 	
-	// Create holosphere instance at the root level with memory management settings
-	const holosphere = new HoloSphere(environmentName, false, null, {
-		opt: {
-			peers: ['https://gun.holons.io/gun'],
-			axe: false,
-			// Add memory management configuration
-			localStorage: false, // Use memory storage instead of localStorage
-			memory: {
-				limit: 500 * 1024 * 1024, // Set memory limit to 500MB
-				check: 30 * 1000 // Check memory usage every 30 seconds
-			},
-			radisk: false, // Disable radisk persistence to reduce memory usage
-			radmem: true, // Use in-memory radix storage
-			disableWebRTC: true, // Disable WebRTC to reduce connections and memory usage
-			disablePing: true, // Disable ping to reduce network activity
-		}
-	});
+	// Create holosphere instance with default configuration
+	const holosphere = new HoloSphere(environmentName);
 	
 	// Periodically check for garbage collection opportunities
 	const gcInterval = setInterval(() => {
@@ -51,11 +36,6 @@
 	// Clean up on destroy
 	onDestroy(() => {
 		clearInterval(gcInterval);
-		
-		// Close Holosphere connection when the app is destroyed
-		if (holosphere && typeof holosphere.close === 'function') {
-			holosphere.close();
-		}
 	});
 </script>
 
