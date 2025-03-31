@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onDestroy, getContext } from "svelte";
+    import { onDestroy, onMount, getContext } from "svelte";
     import { formatDate, formatTime } from "../utils/date";
     import type { Writable } from "svelte/store";
     import { ID } from "../dashboard/store";
@@ -61,6 +61,8 @@
 
     export let selectedLens: string;
     export let hexId: string | null;
+    export let activeView: 'map' | 'holonic';
+    
     let holosphere = getContext('holosphere') as HoloSphere;
     let content: Record<string, any> | null = null;
     let subscription: { off: () => void } | null = null;
@@ -68,6 +70,12 @@
     let formData: Record<string, any> = {};
     let viewingItem: Record<string, any> | null = null;
     let store: Record<string, any> = {};
+    let lastView: 'map' | 'holonic' = 'map';
+    let lastHexId: string | null = null;
+    let lastLens: string | null = null;
+    
+    // Track if we already have an active subscription for this hexId and lens
+    let activeSubscriptionKey: string | null = null;
 
     // Add statistics interface
     interface HolonStats {
@@ -109,66 +117,173 @@
         }
     }
 
-    // Reset and load data when hexId or lens changes
-    $: if (hexId && selectedLens) {
-        console.log('ID or lens changed:', hexId, selectedLens);
-        showForm = false;
-        formData = {};
-        viewingItem = null;
-        store = {};
-        unsubscribe();
-        setupSubscription();
+    // Create a unique key for this combination of hexId and lens
+    function getSubscriptionKey(id: string | null, lens: string | null): string | null {
+        if (!id || !lens) return null;
+        return `${id}-${lens}`;
     }
 
-    async function setupSubscription() {
-        if (!hexId || !selectedLens) return;
+    // Only set up a new subscription if the hexId or lens changes
+    // Ignore view changes (map/navigator) if the hexId and lens stay the same
+    $: {
+        const newKey = getSubscriptionKey(hexId, selectedLens);
+        const currentKey = activeSubscriptionKey;
+        
+        // Only update if we have a new valid hexId/lens combination or we don't have an active subscription
+        if (newKey && (newKey !== currentKey || !subscription)) {
+            console.log('[MapSidebar] Subscription key changed:', currentKey, '->', newKey);
+            
+            // Clean up existing subscription
+            unsubscribe();
+            
+            // Set up new subscription
+            if (hexId && selectedLens) {
+                setupSubscription(hexId, selectedLens);
+                // Update the active subscription key
+                activeSubscriptionKey = newKey;
+            }
+        }
+        
+        // Just track the view change without affecting subscriptions
+        if (activeView !== lastView) {
+            console.log('[MapSidebar] View changed from', lastView, 'to', activeView, '- keeping same data');
+            lastView = activeView;
+        }
+        
+        // Track the last hexId and lens for debugging
+        lastHexId = hexId;
+        lastLens = selectedLens;
+    }
+
+    async function setupSubscription(holonId: string, lens: string) {
+        if (!holonId || !lens) return;
         
         try {
-            console.log('Setting up subscription for:', hexId, selectedLens);
+            console.log('[MapSidebar] Setting up subscription for:', holonId, lens, 'in view:', activeView);
             
-            // First load initial data
-            const initialData = await holosphere.getAll(hexId, selectedLens);
-            store = initialData || {};
-            content = store;
+            // First make sure we're starting with a clean state
+            store = {};
+            content = null;
+            showForm = false;
+            formData = {};
+            viewingItem = null;
             
-            // Then set up subscription for updates
-            const off = holosphere.subscribe(hexId, selectedLens, async (data: any, key: string) => {
+            // Load initial data - only use this once, don't mix with subscription updates
+            const initialData = await holosphere.getAll(holonId, lens);
+            if (initialData) {
+                console.log('[MapSidebar] Initial data contains', Object.keys(initialData).length, 'items');
+                
+                // Set store to initial data
+                store = {...initialData};
+                content = store;
+                
+                // Calculate statistics from initial data
+                stats = {
+                    [lens]: {
+                        total: Object.keys(store).length,
+                        completed: lens === 'quests' ? 
+                            Object.values(store).filter((q: any) => q.status === 'completed').length : 
+                            undefined
+                    }
+                };
+            }
+            
+            // Keep a map of keys we've seen in the initial data to prevent duplicates
+            const processedKeys = new Set(Object.keys(initialData || {}));
+            
+            // Then set up subscription for updates - only process new items not in initial data
+            const off = holosphere.subscribe(holonId, lens, async (data: any, key?: string) => {
+                if (!key) return; // Skip if no key
+                
                 if (data) {
-                    console.log('Subscription update received:', data, 'for key:', key);
-                    // Update just this item in the store
+                    // Skip this update if it was already in the initial data
+                    if (processedKeys.has(key)) {
+                        console.log('[MapSidebar] Skipping duplicate key from subscription:', key);
+                        return;
+                    }
+                    
+                    processedKeys.add(key);
+                    console.log('[MapSidebar] Adding new item from subscription:', key);
+                    
+                    // Update the store with new data
                     store = { 
                         ...store, 
                         [key]: data 
                     };
                     content = store;
+                    
+                    // Update statistics
+                    if (stats && stats[lens]) {
+                        stats = {
+                            [lens]: {
+                                total: stats[lens].total + 1,
+                                completed: lens === 'quests' ? 
+                                    (stats[lens].completed || 0) + (data.status === 'completed' ? 1 : 0) : 
+                                    stats[lens].completed
+                            }
+                        };
+                    }
+                    
+                    // Debug
+                    console.log('[MapSidebar] Store now contains', Object.keys(store).length, 'items');
                 } else {
-                    // Remove this item from store
-                    if (store && key) {
+                    // Remove this item from store if it exists
+                    if (store[key]) {
+                        // Remove from processed keys
+                        processedKeys.delete(key);
+                        
+                        // Create new store without this item
                         const { [key]: removed, ...rest } = store;
                         store = rest;
                         content = store;
+                        
+                        // Update statistics
+                        if (stats && stats[lens]) {
+                            stats = {
+                                [lens]: {
+                                    total: Math.max(0, stats[lens].total - 1),
+                                    completed: lens === 'quests' && removed.status === 'completed' ? 
+                                        Math.max(0, (stats[lens].completed || 0) - 1) : 
+                                        stats[lens].completed
+                                }
+                            };
+                        }
                     }
                 }
             });
             
             if (typeof off === 'function') {
                 subscription = { off };
+                console.log('[MapSidebar] Subscription set up successfully for', holonId, lens);
             }
         } catch (error) {
-            console.error('Error in setupSubscription:', error);
+            console.error('[MapSidebar] Error in setupSubscription:', error);
             store = {};
             content = null;
+            stats = null;
+            
+            // Clear the active subscription key
+            activeSubscriptionKey = null;
         }
     }
 
     function unsubscribe() {
         try {
             if (subscription?.off) {
+                console.log('[MapSidebar] Unsubscribing from current subscription');
                 subscription.off();
                 subscription = null;
+                
+                // Clear the store and content to ensure we don't display stale data
+                store = {};
+                content = null;
+                stats = null;
+                
+                // Clear the active subscription key
+                activeSubscriptionKey = null;
             }
         } catch (error) {
-            console.error('Error unsubscribing:', error);
+            console.error('[MapSidebar] Error unsubscribing:', error);
         }
     }
 
@@ -218,8 +333,6 @@
         return `hsl(${hue}, 70%, 85%)`; // Pastel colors with good contrast for text
     }
 
-  
-
     function getSchemaForLens(lens: string): Record<string, any> | null {
         const schemaName = schemaOptions.find(opt => opt.value === lens)?.schema;
         return schemaName ? schemas[schemaName] : null;
@@ -237,6 +350,14 @@
         showForm = false;
     }
 
+    // Set up initial subscription on mount
+    onMount(() => {
+        if (hexId && selectedLens) {
+            setupSubscription(hexId, selectedLens);
+        }
+    });
+
+    // Make sure to clean up on destroy
     onDestroy(() => {
         unsubscribe();
     });
@@ -273,9 +394,8 @@
                 <div class="flex justify-between items-center">
                     <h3 class="text-gray-400 text-sm">Statistics</h3>
                     <p class="text-white text-sm">
-                        {#if stats[selectedLens].completed !== undefined}
-                            {stats[selectedLens].completed} / {stats[selectedLens].total}
-                            <span class="text-gray-400 text-xs ml-1">Completed</span>
+                        {#if selectedLens === 'quests' && stats[selectedLens].total > 0}
+                            {stats[selectedLens].total - (stats[selectedLens].completed || 0)} active / {stats[selectedLens].total} total
                         {:else}
                             {stats[selectedLens].total}
                             <span class="text-gray-400 text-xs ml-1">Total</span>
@@ -316,7 +436,24 @@
             {:else if content}
                 <div class="space-y-4">
                     {#if typeof content === 'object' && content !== null}
-                        {#each Object.entries(content) as [key, item]}
+                        {#each Object.entries(content)
+                            .filter(([key, item]) => 
+                                // Filter out null items
+                                item !== null && 
+                                // Filter out completed tasks if it's the quests lens
+                                !(selectedLens === 'quests' && item.status === 'completed')
+                            )
+                            .sort((a, b) => {
+                                // Sort by date if available (newest first)
+                                if (a[1].date && b[1].date) {
+                                    return new Date(b[1].date).getTime() - new Date(a[1].date).getTime();
+                                }
+                                // Sort by name/title if no date
+                                const aName = a[1].name || a[1].title || '';
+                                const bName = b[1].name || b[1].title || '';
+                                return aName.localeCompare(bName);
+                            })
+                            as [key, item]}
                             <button 
                                 type="button"
                                 class="w-full text-left p-4 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"

@@ -105,99 +105,132 @@
         return { textSize, charLimit };
     }
 
+    // Type-safe wrapper around zoomBehavior.transform
+    function safeDSetTransform(selection: any, transform: any) {
+        // This is a safer way to call the transform method
+        if (selection && transform && zoomBehavior) {
+            try {
+                // Use as any to bypass type checking
+                (selection as any).call(zoomBehavior.transform, transform);
+            } catch (e) {
+                console.error("Error applying zoom transform:", e);
+            }
+        }
+    }
+
     function zoomToNode(d: d3.HierarchyCircularNode<Holon>) {
         const scale = Math.min(width, height) / (d.r * 2.2);
         const x = width / 2 - (d.x * scale);
         const y = height / 2 - (d.y * scale);
 
-        d3.select(svg)
-            .transition()
-            .duration(750)
-            .call(zoomBehavior.transform, d3.zoomIdentity
-                .translate(x, y)
-                .scale(scale));
+        safeDSetTransform(
+            d3.select(svg).transition().duration(750),
+            d3.zoomIdentity.translate(x, y).scale(scale)
+        );
     }
 
     function updateVisualization(holonsData: HolonData) {
-        root = pack(holonsData);
-        focus = root;
-        
-        const svg = d3.select('svg g');
-        
-        // Clear existing circles
-        svg.selectAll('circle').remove();
-        svg.selectAll('text').remove();
+        try {
+            root = pack(holonsData);
+            focus = root;
+            
+            const svg = d3.select('svg g');
+            
+            // Clear existing circles
+            svg.selectAll('circle').remove();
+            svg.selectAll('text').remove();
 
-        // Add circles
-        const node = svg
-            .selectAll<SVGCircleElement, d3.HierarchyCircularNode<Holon>>('circle')
-            .data(root.descendants())
-            .join('circle')
-            .attr('fill', d => d.children ? color(d.depth) : d.data.color || '#4B5563')
-            .attr('fill-opacity', 0.8)
-            .attr('pointer-events', 'all')
-            .attr('cx', d => d.x)
-            .attr('cy', d => d.y)
-            .attr('r', d => d.data.key === $ID ? d.r * 1.1 : d.r)
-            .attr('stroke', d => d.data.key === $ID ? '#ffffff' : '#fff')
-            .attr('stroke-width', d => d.data.key === $ID ? '3' : '1')
-            .on('mouseover', function(this: SVGCircleElement) { 
-                const d = d3.select(this).datum() as d3.HierarchyCircularNode<Holon>;
-                if (d.data.key !== $ID) {
-                    d3.select(this)
-                        .attr('stroke-width', '3');
+            // Add circles
+            const node = svg
+                .selectAll<SVGCircleElement, d3.HierarchyCircularNode<Holon>>('circle')
+                .data(root.descendants())
+                .join('circle')
+                .attr('fill', d => d.children ? color(d.depth) : d.data.color || '#4B5563')
+                .attr('fill-opacity', 0.8)
+                .attr('pointer-events', 'all')
+                .attr('cx', d => d.x)
+                .attr('cy', d => d.y)
+                .attr('r', d => d.data.key === $ID ? d.r * 1.1 : d.r)
+                .attr('stroke', d => d.data.key === $ID ? '#ffffff' : '#fff')
+                .attr('stroke-width', d => d.data.key === $ID ? '3' : '1')
+                .on('mouseover', function(this: SVGCircleElement) { 
+                    const d = d3.select(this).datum() as d3.HierarchyCircularNode<Holon>;
+                    if (d.data.key !== $ID) {
+                        d3.select(this)
+                            .attr('stroke-width', '3');
+                    }
+                    const text = svg.select(`text[data-key="${d.data.key}"]`);
+                    text
+                        .text(d.data.name)
+                        .attr('fill', '#ffffff')
+                        .style('text-shadow', '0 0 3px rgba(0,0,0,0.5)');
+                })
+                .on('mouseout', function(this: SVGCircleElement) { 
+                    const d = d3.select(this).datum() as d3.HierarchyCircularNode<Holon>;
+                    if (d.data.key !== $ID) {
+                        d3.select(this)
+                            .attr('stroke-width', '1');
+                    }
+                    const text = svg.select(`text[data-key="${d.data.key}"]`);
+                    text
+                        .attr('fill', 'white')
+                        .style('text-shadow', 'none');
+                    const { textSize, charLimit } = calculateTextParams(d);
+                    text.text(truncateText(d.data.name, charLimit));
+                })
+                .on('click', (event: MouseEvent, d: d3.HierarchyCircularNode<Holon>) => handleHolonClick(d));
+
+            // Add labels
+            svg.selectAll<SVGTextElement, d3.HierarchyCircularNode<Holon>>('text')
+                .data(root.descendants())
+                .join('text')
+                .attr('text-anchor', 'middle')
+                .attr('data-key', d => d.data.key || '')
+                .attr('dominant-baseline', 'middle')
+                .attr('fill', 'white')
+                .attr('pointer-events', 'none')
+                .attr('x', d => d.x)
+                .attr('y', d => d.y)
+                .style('font-family', 'system-ui, -apple-system, sans-serif')
+                .style('font-weight', '500')
+                .style('user-select', 'none')
+                .each(function(d) {
+                    const node = d3.select(this);
+                    const { textSize, charLimit } = calculateTextParams(d);
+                    node.style('font-size', `${textSize}px`);
+                    node.text(truncateText(d.data.name, charLimit));
+                });
+
+            // Initial view
+            const scale = width / (root.r * 2.2);
+            const x = width / 2 - (root.x * scale);
+            const y = height / 2 - (root.y * scale);
+            
+            // Get the SVG element directly without trying to call select on a selection
+            if (zoomBehavior) {
+                try {
+                    // Use type assertion to help TypeScript understand the node type
+                    const svgNode = svg.node();
+                    if (svgNode) {
+                        const ownerSVG = (svgNode as SVGElement).ownerSVGElement;
+                        if (ownerSVG) {
+                            d3.select(ownerSVG)
+                                .call(zoomBehavior.transform as any, 
+                                    d3.zoomIdentity.translate(x, y).scale(scale));
+                        } else {
+                            // Fallback to selecting the svg directly
+                            d3.select('svg')
+                                .call(zoomBehavior.transform as any, 
+                                    d3.zoomIdentity.translate(x, y).scale(scale));
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error applying transform:", e);
                 }
-                const text = svg.select(`text[data-key="${d.data.key}"]`);
-                text
-                    .text(d.data.name)
-                    .attr('fill', '#ffffff')
-                    .style('text-shadow', '0 0 3px rgba(0,0,0,0.5)');
-            })
-            .on('mouseout', function(this: SVGCircleElement) { 
-                const d = d3.select(this).datum() as d3.HierarchyCircularNode<Holon>;
-                if (d.data.key !== $ID) {
-                    d3.select(this)
-                        .attr('stroke-width', '1');
-                }
-                const text = svg.select(`text[data-key="${d.data.key}"]`);
-                text
-                    .attr('fill', 'white')
-                    .style('text-shadow', 'none');
-                const { textSize, charLimit } = calculateTextParams(d);
-                text.text(truncateText(d.data.name, charLimit));
-            })
-            .on('click', (event: MouseEvent, d: d3.HierarchyCircularNode<Holon>) => handleHolonClick(d));
-
-        // Add labels
-        svg.selectAll<SVGTextElement, d3.HierarchyCircularNode<Holon>>('text')
-            .data(root.descendants())
-            .join('text')
-            .attr('text-anchor', 'middle')
-            .attr('data-key', d => d.data.key || '')
-            .attr('dominant-baseline', 'middle')
-            .attr('fill', 'white')
-            .attr('pointer-events', 'none')
-            .attr('x', d => d.x)
-            .attr('y', d => d.y)
-            .style('font-family', 'system-ui, -apple-system, sans-serif')
-            .style('font-weight', '500')
-            .style('user-select', 'none')
-            .each(function(d) {
-                const node = d3.select(this);
-                const { textSize, charLimit } = calculateTextParams(d);
-                node.style('font-size', `${textSize}px`);
-                node.text(truncateText(d.data.name, charLimit));
-            });
-
-        // Initial view
-        const scale = width / (root.r * 2.2);
-        const x = width / 2 - (root.x * scale);
-        const y = height / 2 - (root.y * scale);
-        
-        d3.select(svg)
-            .call(zoomBehavior.transform, d3.zoomIdentity
-                .translate(x, y)
-                .scale(scale));
+            }
+        } catch (error) {
+            console.error("Error in updateVisualization:", error);
+        }
     }
 
     function handleHolonClick(d: d3.HierarchyCircularNode<Holon>) {
@@ -225,10 +258,43 @@
     // Store subscription functions directly
     let holonsSubscription: any;
     let settingsSubscriptions: Map<string, any> = new Map();
+    
+    // Create a function to clean up all subscriptions
+    function cleanupSubscriptions() {
+        console.log("Cleaning up Navigator subscriptions");
+        
+        // Clean up holons subscription
+        if (holonsSubscription && typeof holonsSubscription.off === 'function') {
+            try {
+                holonsSubscription.off();
+                holonsSubscription = null;
+            } catch (e) {
+                console.error("Error cleaning up holons subscription:", e);
+            }
+        }
+        
+        // Clean up settings subscriptions
+        if (settingsSubscriptions.size > 0) {
+            settingsSubscriptions.forEach((sub, key) => {
+                if (sub && typeof sub.off === 'function') {
+                    try {
+                        sub.off();
+                    } catch (e) {
+                        console.error(`Error cleaning up settings subscription for ${key}:`, e);
+                    }
+                }
+            });
+            settingsSubscriptions.clear();
+        }
+    }
 
     onMount(async () => {
         initializeZoom();
         if (holosphere) {
+            // Start with clean subscriptions
+            cleanupSubscriptions();
+            
+            // Create fresh data structures
             const holonsData: HolonData = { name: "", children: [] };
             const holonMap = new Map<string, Holon>();
             
@@ -236,42 +302,66 @@
             holonsSubscription = holosphere.gun.get('Holons').map().on((newHolon: Holon, key: string) => {
                 console.log('Found holon:', key, newHolon);
                 if (newHolon) {
+                    // Clean up any existing subscription for this key
+                    if (settingsSubscriptions.has(key)) {
+                        const existingSub = settingsSubscriptions.get(key);
+                        if (existingSub && typeof existingSub.off === 'function') {
+                            existingSub.off();
+                        }
+                        settingsSubscriptions.delete(key);
+                    }
+                    
                     // @ts-ignore - Accessing private property for now
                     const settingsSubscription = holosphere.gun.get('Holons').get(key).get('settings').get(key).on((settings: any) => {
                         if (!settings) return;
-                        settings = JSON.parse(settings);
                         
-                        // Create or update the holon in our map
-                        const existingHolon = holonMap.get(key);
-                        const updatedHolon: Holon = {
-                            key,
-                            name: settings.name || key,
-                            value: 30,
-                            color: settings.color || '#4B5563',
-                            description: settings.description,
-                            children: existingHolon?.children || [],
-                            parent: settings.parent
-                        };
-                        holonMap.set(key, updatedHolon);
+                        try {
+                            // Parse settings safely
+                            let parsedSettings;
+                            try {
+                                parsedSettings = JSON.parse(settings);
+                            } catch (e) {
+                                console.error("Error parsing settings:", e);
+                                return;
+                            }
+                            
+                            // Create or update the holon in our map
+                            const existingHolon = holonMap.get(key);
+                            const updatedHolon: Holon = {
+                                key,
+                                name: parsedSettings.name || key,
+                                value: 30,
+                                color: parsedSettings.color || '#4B5563',
+                                description: parsedSettings.description,
+                                children: existingHolon?.children || [],
+                                parent: parsedSettings.parent
+                            };
+                            holonMap.set(key, updatedHolon);
 
-                        // Rebuild the tree structure
-                        holonsData.children = Array.from(holonMap.values()).filter(holon => !holon.parent);
-                        
-                        // Assign children
-                        holonMap.forEach((holon) => {
-                            if (holon.parent && holonMap.has(holon.parent)) {
-                                const parentHolon = holonMap.get(holon.parent);
-                                if (parentHolon) {
-                                    parentHolon.children = parentHolon.children || [];
-                                    if (!parentHolon.children.find(child => child.key === holon.key)) {
-                                        parentHolon.children.push(holon);
+                            // Rebuild the tree structure - start fresh each time
+                            holonsData.children = Array.from(holonMap.values())
+                                .filter(holon => !holon.parent);
+                            
+                            // Assign children
+                            holonMap.forEach((holon) => {
+                                if (holon.parent && holonMap.has(holon.parent)) {
+                                    const parentHolon = holonMap.get(holon.parent);
+                                    if (parentHolon) {
+                                        // Start with a fresh children array each time
+                                        parentHolon.children = parentHolon.children || [];
+                                        // Ensure no duplicates
+                                        if (!parentHolon.children.find(child => child.key === holon.key)) {
+                                            parentHolon.children.push(holon);
+                                        }
                                     }
                                 }
-                            }
-                        });
+                            });
 
-                        console.log('Updated holons data:', JSON.stringify(holonsData, null, 2));
-                        updateVisualization(holonsData);
+                            console.log('Updated holons data');
+                            updateVisualization(holonsData);
+                        } catch (e) {
+                            console.error("Error processing holon data:", e);
+                        }
                     });
                     
                     // Store the subscription for cleanup
@@ -284,32 +374,33 @@
     // Add onDestroy to clean up all subscriptions and D3 resources
     onDestroy(() => {
         // Clean up Gun subscriptions
-        if (holonsSubscription && typeof holonsSubscription.off === 'function') {
-            holonsSubscription.off();
-        }
-        
-        // Clean up settings subscriptions
-        settingsSubscriptions.forEach(sub => {
-            if (sub && typeof sub.off === 'function') {
-                sub.off();
-            }
-        });
-        settingsSubscriptions.clear();
+        cleanupSubscriptions();
         
         // Clean up D3 resources
         if (svg) {
-            // Remove event listeners
-            d3.select(svg)
-                .on('touchstart', null)
-                .on('touchmove', null);
+            try {
+                // Remove event listeners
+                d3.select(svg)
+                    .on('touchstart', null)
+                    .on('touchmove', null);
                 
-            if (zoomBehavior) {
-                // Type casting to fix the issue with on('.zoom', null)
-                (d3.select(svg) as any).on('.zoom', null);
+                // Clean up zoom behavior - check if it exists first
+                if (typeof zoomBehavior !== 'undefined') {
+                    try {
+                        // Remove zoom listeners
+                        d3.select(svg).on('.zoom', null);
+                    } catch (e) {
+                        console.error("Error removing zoom listeners:", e);
+                    }
+                }
+                
+                // Clear all SVG elements
+                d3.select(svg).selectAll('*').remove();
+                
+                console.log('D3 resources cleaned up');
+            } catch (e) {
+                console.error('Error cleaning up D3 resources:', e);
             }
-            
-            // Clear all SVG elements
-            d3.select(svg).selectAll('*').remove();
         }
     });
 </script>

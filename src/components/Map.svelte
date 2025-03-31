@@ -504,6 +504,8 @@
 			}
 		}
 
+		console.log(`[Map] Subscribing to ${lens} for ${hexagons.size} hexagons`);
+
 		// Get existing subscriptions for this lens
 		const existingSubscriptions = holoSubscriptions.get(lens) || new Map();
 		const newSubscriptions = new Map();
@@ -516,7 +518,7 @@
 				continue;
 			}
 			
-			const subscription = holosphere.subscribe(hex, lens, (data: any, key: string) => {
+			const subscription = holosphere.subscribe(hex, lens, (data: any, key?: string) => {
 				try {
 					if (data) {
 						// Type assertion since we know lens is a valid LensType
@@ -525,7 +527,7 @@
 						renderHexes(map, selectedLens);
 					}
 				} catch (error) {
-					console.error(`Error processing subscription data for ${hex}:`, error);
+					console.error(`[Map] Error processing subscription data for ${hex}:`, error);
 				}
 			});
 			
@@ -533,11 +535,20 @@
 		}
 		
 		// Clean up old subscriptions that are no longer in view
-		// for (const [hex, subscription] of existingSubscriptions) {
-		// 	if (!newSubscriptions.has(hex)) {
-		// 		subscription.off();
-		// 	}
-		// }
+		for (const [hex, subscription] of existingSubscriptions) {
+			if (!newSubscriptions.has(hex)) {
+				if (subscription && typeof subscription.off === 'function') {
+					try {
+						console.log(`[Map] Unsubscribing from ${lens} for hexagon ${hex}`);
+						subscription.off();
+					} catch (e) {
+						console.error(`[Map] Error unsubscribing from ${lens} for ${hex}:`, e);
+					}
+				}
+				// Also remove it from the lens data
+				lensData[lens as LensType].delete(hex);
+			}
+		}
 		
 		holoSubscriptions.set(lens, newSubscriptions);
 		
@@ -546,12 +557,17 @@
 	}
 
 	function unsubscribeFromLens(lens: LensType) {
+		console.log(`[Map] Unsubscribing from lens ${lens}`);
 		const subscriptions = holoSubscriptions.get(lens);
 		if (subscriptions) {
 			// Clear all subscriptions for this lens
-			for (const [_, subscription] of subscriptions.entries()) {
+			for (const [hexId, subscription] of subscriptions.entries()) {
 				if (subscription && typeof subscription.off === 'function') {
-					subscription.off();
+					try {
+						subscription.off();
+					} catch (e) {
+						console.error(`[Map] Error unsubscribing from ${lens} for ${hexId}:`, e);
+					}
 				}
 			}
 			holoSubscriptions.delete(lens);
