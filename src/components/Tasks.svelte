@@ -782,10 +782,8 @@
 				{#each filteredQuests as [key, quest]}
 					{#if quest.status === "ongoing" || (showCompleted && quest.status === "completed")}
 						<button
-							id={key}
-							class="w-full task-card relative text-left"
+							type="button"
 							on:click|stopPropagation={() => handleTaskClick(key, quest)}
-							draggable="true"
 							on:dragstart={(e) => handleDragStart(e, key)}
 							on:dragover={(e) => handleDragOver(e, key)}
 							on:drop={(e) => handleDrop(e, key)}
@@ -793,6 +791,7 @@
 							aria-label={`Open task: ${quest.title}`}
 							class:dragging={$dragState.draggedId === key}
 							class:drag-over={$dragState.dragOverId === key}
+							class="w-full task-card relative text-left bg-transparent border-none p-0 m-0 cursor-pointer"
 						>
 							<div
 								class="p-3 rounded-lg transition-colors"
@@ -935,7 +934,6 @@
 	{#if showTaskInput}
 		<div 
 			class="fixed inset-0 z-50 overflow-auto bg-black bg-opacity-50 flex items-center justify-center"
-			on:click|self={hideDialog}
 			role="dialog"
 			aria-modal="true"
 		>
@@ -946,6 +944,11 @@
 			>
 				<button
 					on:click={hideDialog}
+					on:keydown={(e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							hideDialog();
+						}
+					}}
 					class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
 					aria-label="Close task input dialog"
 				>
