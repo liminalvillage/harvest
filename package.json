@@ -54,7 +54,7 @@
 		"@mapbox/search-js-web": "^1.0.0-beta.21",
 		"d3": "^7.9.0",
 		"fontawesome": "^5.6.3",
-		"holosphere": "1.1.4",
+		"holosphere": "1.1.3",
 		"lune": "^0.4.0",
 		"mapbox-gl": "^3.7.0",
 		"sass": "^1.77.6",
