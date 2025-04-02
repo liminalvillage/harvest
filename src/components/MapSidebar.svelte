@@ -60,7 +60,6 @@
  
 
     export let selectedLens: string;
-    export let hexId: string | null;
     export let activeView: 'map' | 'holonic';
     
     let holosphere = getContext('holosphere') as HoloSphere;
@@ -71,10 +70,9 @@
     let viewingItem: Record<string, any> | null = null;
     let store: Record<string, any> = {};
     let lastView: 'map' | 'holonic' = 'map';
-    let lastHexId: string | null = null;
     let lastLens: string | null = null;
     
-    // Track if we already have an active subscription for this hexId and lens
+    // Track if we already have an active subscription for this ID and lens
     let activeSubscriptionKey: string | null = null;
 
     // Add statistics interface
@@ -117,28 +115,31 @@
         }
     }
 
-    // Create a unique key for this combination of hexId and lens
+    // Create a unique key for this combination of ID and lens
     function getSubscriptionKey(id: string | null, lens: string | null): string | null {
         if (!id || !lens) return null;
         return `${id}-${lens}`;
     }
 
-    // Only set up a new subscription if the hexId or lens changes
-    // Ignore view changes (map/navigator) if the hexId and lens stay the same
+    // Only set up a new subscription if the ID or lens changes
+    // Ignore view changes (map/navigator) if the ID and lens stay the same
     $: {
-        const newKey = getSubscriptionKey(hexId, selectedLens);
+        const newKey = getSubscriptionKey($ID, selectedLens);
         const currentKey = activeSubscriptionKey;
         
-        // Only update if we have a new valid hexId/lens combination or we don't have an active subscription
+        // Always unsubscribe when ID changes, even if we don't have a new subscription yet
+        if ($ID !== (currentKey?.split('-')[0] || null)) {
+            console.log('[MapSidebar] Holon ID changed, unsubscribing from previous holon');
+            unsubscribe();
+        }
+        
+        // Only set up new subscription if we have a new valid ID/lens combination
         if (newKey && (newKey !== currentKey || !subscription)) {
             console.log('[MapSidebar] Subscription key changed:', currentKey, '->', newKey);
             
-            // Clean up existing subscription
-            unsubscribe();
-            
             // Set up new subscription
-            if (hexId && selectedLens) {
-                setupSubscription(hexId, selectedLens);
+            if ($ID && selectedLens) {
+                setupSubscription($ID, selectedLens);
                 // Update the active subscription key
                 activeSubscriptionKey = newKey;
             }
@@ -150,8 +151,7 @@
             lastView = activeView;
         }
         
-        // Track the last hexId and lens for debugging
-        lastHexId = hexId;
+        // Track the last lens for debugging
         lastLens = selectedLens;
     }
 
@@ -168,42 +168,12 @@
             formData = {};
             viewingItem = null;
             
-            // Load initial data - only use this once, don't mix with subscription updates
-            const initialData = await holosphere.getAll(holonId, lens);
-            if (initialData) {
-                console.log('[MapSidebar] Initial data contains', Object.keys(initialData).length, 'items');
-                
-                // Set store to initial data
-                store = {...initialData};
-                content = store;
-                
-                // Calculate statistics from initial data
-                stats = {
-                    [lens]: {
-                        total: Object.keys(store).length,
-                        completed: lens === 'quests' ? 
-                            Object.values(store).filter((q: any) => q.status === 'completed').length : 
-                            undefined
-                    }
-                };
-            }
-            
-            // Keep a map of keys we've seen in the initial data to prevent duplicates
-            const processedKeys = new Set(Object.keys(initialData || {}));
-            
-            // Then set up subscription for updates - only process new items not in initial data
+            // Set up subscription for updates
             const off = holosphere.subscribe(holonId, lens, async (data: any, key?: string) => {
                 if (!key) return; // Skip if no key
                 
                 if (data) {
-                    // Skip this update if it was already in the initial data
-                    if (processedKeys.has(key)) {
-                        console.log('[MapSidebar] Skipping duplicate key from subscription:', key);
-                        return;
-                    }
-                    
-                    processedKeys.add(key);
-                    console.log('[MapSidebar] Adding new item from subscription:', key);
+                    console.log('[MapSidebar] Received item from subscription:', key);
                     
                     // Update the store with new data
                     store = { 
@@ -216,10 +186,17 @@
                     if (stats && stats[lens]) {
                         stats = {
                             [lens]: {
-                                total: stats[lens].total + 1,
+                                total: Object.keys(store).length,
                                 completed: lens === 'quests' ? 
-                                    (stats[lens].completed || 0) + (data.status === 'completed' ? 1 : 0) : 
-                                    stats[lens].completed
+                                    Object.values(store).filter((q: any) => q.status === 'completed').length : 
+                                    undefined
+                            }
+                        };
+                    } else {
+                        stats = {
+                            [lens]: {
+                                total: 1,
+                                completed: lens === 'quests' && data.status === 'completed' ? 1 : undefined
                             }
                         };
                     }
@@ -229,9 +206,6 @@
                 } else {
                     // Remove this item from store if it exists
                     if (store[key]) {
-                        // Remove from processed keys
-                        processedKeys.delete(key);
-                        
                         // Create new store without this item
                         const { [key]: removed, ...rest } = store;
                         store = rest;
@@ -241,10 +215,10 @@
                         if (stats && stats[lens]) {
                             stats = {
                                 [lens]: {
-                                    total: Math.max(0, stats[lens].total - 1),
-                                    completed: lens === 'quests' && removed.status === 'completed' ? 
-                                        Math.max(0, (stats[lens].completed || 0) - 1) : 
-                                        stats[lens].completed
+                                    total: Math.max(0, Object.keys(store).length),
+                                    completed: lens === 'quests' ? 
+                                        Object.values(store).filter((q: any) => q.status === 'completed').length : 
+                                        undefined
                                 }
                             };
                         }
@@ -299,14 +273,14 @@
     async function handleFormSubmit(event: CustomEvent) {
         const newFormData = event.detail;
         
-        if (!hexId) {
-            console.error('No hexagon selected');
+        if (!$ID) {
+            console.error('No holon selected');
             return;
         }
 
         try {
             const updatedContent = { ...newFormData };
-            await holosphere.put(hexId, selectedLens, updatedContent);
+            await holosphere.put($ID, selectedLens, updatedContent);
             
             showForm = false;
             formData = {};
@@ -352,8 +326,8 @@
 
     // Set up initial subscription on mount
     onMount(() => {
-        if (hexId && selectedLens) {
-            setupSubscription(hexId, selectedLens);
+        if ($ID && selectedLens) {
+            setupSubscription($ID, selectedLens);
         }
     });
 
@@ -425,7 +399,7 @@
                             <SchemaForm 
                                 schema={schemaOptions.find(opt => opt.value === selectedLens)?.schema || ''} 
                                 schemaDefinition={getSchemaForLens(selectedLens)}
-                                {hexId}
+                                {ID}
                                 initialData={viewingItem || formData}
                                 viewOnly={!!viewingItem}
                                 on:submit={handleFormSubmit}
