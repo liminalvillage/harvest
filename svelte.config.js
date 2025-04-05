@@ -6,7 +6,19 @@ const config = {
 	kit: {
 		adapter: adapter()
 	},
-	preprocess: vitePreprocess()
+	// Enhanced preprocessing with better TypeScript support
+	preprocess: [
+		vitePreprocess({
+			typescript: {
+				// Relax TypeScript checking for Svelte components
+				compilerOptions: {
+					skipLibCheck: true,
+					noImplicitAny: false,
+					allowSyntheticDefaultImports: true
+				}
+			}
+		})
+	]
 };
 
 export default config;

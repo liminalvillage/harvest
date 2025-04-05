@@ -1,6 +1,7 @@
 {
 	"name": "harvest",
 	"version": "1.0.0",
+	"private": true,
 	"author": {
 		"name": "Roberto Valenti"
 	},
@@ -30,10 +31,10 @@
 		"@sveltejs/vite-plugin-svelte": "^5.0.1",
 		"@tsconfig/svelte": "^5.0.4",
 		"@types/d3": "^7.4.3",
-		"@typescript-eslint/eslint-plugin": "^5.45.0",
-		"@typescript-eslint/parser": "^5.45.0",
+		"@typescript-eslint/eslint-plugin": "^6.21.0",
+		"@typescript-eslint/parser": "^6.21.0",
 		"autoprefixer": "^10.4.20",
-		"eslint": "^9.0.0",
+		"eslint": "^8.57.0",
 		"eslint-config-prettier": "^9.0.0",
 		"eslint-plugin-svelte": "^2.24.0",
 		"eslint-plugin-tailwindcss": "^3.18.0",
