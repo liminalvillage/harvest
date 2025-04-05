@@ -17,7 +17,12 @@
 		when?: string;
 		status: 'ongoing' | 'completed';
 		category?: string;
-		participants: Array<{ id: string; username: string }>;
+		participants: Array<{ 
+			id: string; 
+			username: string;
+			firstName?: string;
+			lastName?: string;
+		}>;
 		appreciation: string[];
 		location?: string;
 		ends?: string;
@@ -39,29 +44,13 @@
 	let store: Store = {};
 	$: quests = Object.entries(store);
 
-	// Fix viewMode initialization
+	// Initialize with safe defaults
 	let viewMode: 'list' | 'canvas' = 'list';
-
-	// Initialize viewMode to 'list' by default
-	if (typeof window !== 'undefined') {
-		const storedViewMode = localStorage.getItem('taskViewMode');
-		viewMode = (storedViewMode === 'list' || storedViewMode === 'canvas') ? storedViewMode : 'list';
-	}
-
-	// Add a reactive statement to save viewMode changes
-	$: if (typeof window !== 'undefined') {
-		localStorage.setItem('taskViewMode', viewMode);
-	}
+	let showCompleted = false;
+	let sortedQuests: [string, Quest][] = [];
+	let filteredQuests: [string, Quest][] = [];
 
 	// Initialize preferences with default values
-	let showCompleted = false;
-
-	// Load preferences immediately if we're in the browser
-	if (typeof window !== 'undefined') {
-		showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
-	}
-
-	// Add these variables after the existing let declarations
 	let showTaskInput = false;
 	let newTask: Quest = {
 		id: generateId(),
@@ -74,55 +63,150 @@
 		appreciation: []
 	};
 
+	let questsUnsubscribe: (() => void) | undefined;
+
+	// Add initialization state tracking
+	let isInitialized = false;
+	let isSubscribed = false;
+
+	// Add subscription state tracking
+	let subscriptionState = {
+		currentHolonID: null as string | null,
+		batchTimeout: null as NodeJS.Timeout | null,
+		pendingUpdates: new Map<string, Quest>()
+	};
+
+	// Add debounce helper
+	function debounce(func: Function, wait: number) {
+		let timeout: NodeJS.Timeout;
+		return function executedFunction(...args: any[]) {
+			const later = () => {
+				clearTimeout(timeout);
+				func(...args);
+			};
+			clearTimeout(timeout);
+			timeout = setTimeout(later, wait);
+		};
+	}
+
+	// Add throttled store updates
+	const updateStore = debounce((newStore: Store) => {
+		store = newStore;
+		quests = Object.entries(store);
+	}, 100);
+
+	// Modify the subscribe function to use batched updates
+	function subscribe() {
+		if (!holosphere || !holonID) return;
+		
+		// Don't resubscribe if already subscribed to this holon
+		if (subscriptionState.currentHolonID === holonID) return;
+		
+		// Clear existing store and subscription
+		if (questsUnsubscribe) {
+			questsUnsubscribe();
+			questsUnsubscribe = undefined;
+		}
+		
+		store = {};
+		quests = [];
+		
+		try {
+			// Update subscription state
+			subscriptionState.currentHolonID = holonID;
+			subscriptionState.pendingUpdates.clear();
+			
+			const off = holosphere.subscribe(holonID, "quests", (newquest, key) => {
+				// Queue update instead of updating immediately
+				if (newquest) {
+					subscriptionState.pendingUpdates.set(key, newquest);
+				} else {
+					subscriptionState.pendingUpdates.delete(key);
+				}
+				
+				// Schedule batch update
+				if (subscriptionState.batchTimeout) {
+					clearTimeout(subscriptionState.batchTimeout);
+				}
+				
+				subscriptionState.batchTimeout = setTimeout(() => {
+					const newStore = { ...store };
+					
+					// Apply all pending updates
+					subscriptionState.pendingUpdates.forEach((quest, questKey) => {
+						newStore[questKey] = quest;
+					});
+					
+					// Clear pending updates
+					subscriptionState.pendingUpdates.clear();
+					
+					// Update store once for all changes
+					store = newStore;
+					quests = Object.entries(store);
+				}, 100); // Batch updates every 100ms
+			});
+
+			if (typeof off === 'function') {
+				questsUnsubscribe = off;
+			}
+		} catch (error) {
+			console.error('Error setting up quest subscription:', error);
+			subscriptionState.currentHolonID = null;
+			questsUnsubscribe = undefined;
+		}
+	}
+
+	// Modify onMount to handle subscription cleanup
 	onMount(() => {
-		// Subscribe to ID changes
-		ID.subscribe((value: string) => {
+		let mounted = true;
+		
+		// Set up ID subscription only once
+		const idSubscription = ID.subscribe((value) => {
+			if (!mounted || !value || value === subscriptionState.currentHolonID) return;
 			holonID = value;
 			subscribe();
 		});
+
+		// Load preferences
+		try {
+			const storedViewMode = localStorage.getItem('taskViewMode');
+			if (storedViewMode === 'list' || storedViewMode === 'canvas') {
+				viewMode = storedViewMode;
+			}
+			showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
+		} catch (error) {
+			console.error('Error loading preferences:', error);
+			viewMode = 'list';
+			showCompleted = false;
+		}
+
+		return () => {
+			mounted = false;
+			if (idSubscription) idSubscription();
+			if (questsUnsubscribe) questsUnsubscribe();
+			if (subscriptionState.batchTimeout) {
+				clearTimeout(subscriptionState.batchTimeout);
+			}
+			subscriptionState.pendingUpdates.clear();
+			subscriptionState.currentHolonID = null;
+		};
 	});
 
-	// Create separate reactive statements for localStorage updates
+	// Modify the reactive statements to be more efficient
 	$: {
 		if (typeof window !== 'undefined') {
-			localStorage.setItem("kanbanShowCompleted", showCompleted.toString());
+			debounce(() => {
+				try {
+					localStorage.setItem('taskViewMode', viewMode);
+					localStorage.setItem("kanbanShowCompleted", showCompleted.toString());
+				} catch (error) {
+					console.error('Error saving preferences:', error);
+				}
+			}, 100)();
 		}
 	}
 
-	// Add this function near the top of the <script> section, after the imports
-	function getColorFromCategory(category: string | undefined, type: string = 'task') {
-		if (!category) {
-			// Default colors based on type
-			switch (type) {
-				case 'event':
-					return "hsl(280, 70%, 85%)"; // Purple for events
-				case 'quest':
-					return "hsl(200, 70%, 85%)"; // Blue for quests
-				default:
-					return "#E5E7EB"; // Gray for tasks
-			}
-		}
-
-		// For items with categories, generate color but adjust based on type
-		let hash = 0;
-		for (let i = 0; i < category.length; i++) {
-			hash = (hash << 5) - hash + category.charCodeAt(i);
-			hash = hash & hash;
-		}
-
-		const hue = Math.abs(hash % 360);
-		// Adjust saturation and lightness based on type
-		switch (type) {
-			case 'event':
-				return `hsl(${hue}, 85%, 80%)`; // More saturated for events
-			case 'quest':
-				return `hsl(${hue}, 75%, 82%)`; // Slightly saturated for quests
-			default:
-				return `hsl(${hue}, 70%, 85%)`; // Original for tasks
-		}
-	}
-
-	// Add these new variables
+	// Add these variables after the existing let declarations
 	let selectedCategory = "all";
 
 	// Compute unique categories from quests
@@ -134,19 +218,6 @@
 				.map((quest: any) => quest.category)
 		),
 	];
-
-	// Filter quests based on selected category
-	$: filteredQuests = sortedQuests.filter(([_, quest]: any) => {
-		// First check category filter
-		if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
-		
-		// Then check if it's a valid type (task, quest, or event)
-		if (!['task', 'quest', 'event'].includes(quest.type)) return false;
-		
-		// Finally check status
-		return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
-	});
-
 	// Add this variable to track the selected task
 	let selectedTask: any = null;
 
@@ -157,19 +228,50 @@
 	// Add a store to track updates
 	const updateTrigger = writable(0);
 
-	// Update the sorting logic to be more precise
-	$: sortedQuests = quests.sort(([_, a], [__, b]) => {
-		const posA = a.position?.[sortField] ?? 0;
-		const posB = b.position?.[sortField] ?? 0;
-		return sortDirection === 'desc' ? posB - posA : posA - posB;
-	});
+	// Add this helper function for position normalization with 100px spacing
+	function normalizePositions(tasks: [string, Quest][]) {
+		const POSITION_STEP = 100; // Change to 100px spacing
+		return tasks.map(([key, task], index) => {
+			const normalizedPosition = {
+				x: sortField === 'x' 
+					? (sortDirection === 'desc' ? (tasks.length - index) : (index + 1)) * POSITION_STEP 
+					: (task.position?.x ?? POSITION_STEP),
+				y: sortField === 'y' 
+					? (sortDirection === 'desc' ? (tasks.length - index) : (index + 1)) * POSITION_STEP 
+					: (task.position?.y ?? POSITION_STEP)
+			};
+			return [key, { ...task, position: normalizedPosition }] as [string, Quest];
+		});
+	}
 
-	// Update filtered quests to react to sort changes
-	$: filteredQuests = sortedQuests.filter(([_, quest]) => {
-		if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
-		if (!['task', 'quest', 'event'].includes(quest.type)) return false;
-		return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
-	});
+	// Modify the reactive statement for sorting
+	$: {
+		const filtered = quests.filter(([_, quest]) => {
+			if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
+			if (!['task', 'quest', 'event'].includes(quest.type)) return false;
+			return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
+		});
+
+		// Sort by position
+		sortedQuests = filtered.sort(([_, a], [__, b]) => {
+			const posA = a.position?.[sortField] ?? 0;
+			const posB = b.position?.[sortField] ?? 0;
+			return sortDirection === 'desc' ? posB - posA : posA - posB;
+		});
+
+		// Normalize positions if needed
+		if (sortedQuests.some(([_, quest]) => !quest.position)) {
+			sortedQuests = normalizePositions(sortedQuests);
+			// Update positions in holosphere
+			sortedQuests.forEach(([key, quest]) => {
+				if (holosphere && holonID) {
+					holosphere.put(holonID, `quests/${key}`, quest).catch(console.error);
+				}
+			});
+		}
+
+		filteredQuests = sortedQuests;
+	}
 
 	// Modify the toggle function to handle both field and direction
 	function toggleSort() {
@@ -179,56 +281,6 @@
 			sortDirection = 'desc';
 			sortField = sortField === 'x' ? 'y' : 'x';
 		}
-	}
-
-	onMount(async () => {
-		// Fetch all quests from holon
-		ID.subscribe((value) => {
-			holonID = value;
-			subscribe();
-		});
-
-		viewMode = localStorage.getItem("kanbanViewMode") || "list";
-		showCompleted =
-			localStorage.getItem("kanbanShowCompleted") === "true" || false;
-		//quests = data.filter((quest) => (quest.status === 'ongoing' || quest.status === 'scheduled') && (quest.type === 'task' || quest.type === 'quest'));
-	});
-
-	$: update(holonID);
-
-	function subscribe() {
-		store = {};
-
-		if (holosphere) {
-			holosphere.subscribe(holonID, "quests", (newquest, key) => {
-				if (newquest) {
-					store = {
-						...store,
-						[key]:newquest,
-					};
-				} else {
-					const { [key]: _, ...rest } = store;
-					store = rest;
-				}
-			});
-		}
-	}
-
-	function update(holonID: string) {
-		// Filter ongoing and scheduled quests
-		const filteredQuests = quests.filter(
-			([_, quest]) =>
-				quest.status === "ongoing" 
-		);
-		
-		// Sort quests by date field, falling back to when if date doesn't exist
-		const sortedQuests = filteredQuests.sort(([_, a], [__, b]) => {
-			const dateA = new Date(a.date || a.when || 0);
-			const dateB = new Date(b.date || b.when || 0);
-			return dateB.getTime() - dateA.getTime(); // Newest first
-		});
-
-		return sortedQuests;
 	}
 
 	// Fix handleTaskClick type
@@ -242,27 +294,78 @@
 
 	// Add this helper function after the existing functions
 	function generateId() {
-		return ''+ Date.now() + Math.random().toString(36).substr(2, 9);
+		return ''+ Date.now();
 	}
 
-	// Update the handleAddTask function
-	function handleAddTask() {
-		if (!newTask.title.trim()) return;
+	// Modify handleAddTask to use 100px spacing
+	async function handleAddTask() {
+		if (!holosphere || !holonID || !newTask.title.trim()) return;
 
-		const task = {
-			...newTask,
-			id: generateId(), // Add unique id
-			title: newTask.title.trim(),
-			description: newTask.description?.trim(),
-			created: new Date().toISOString(),
-			position: {  // Add default position for canvas view
-				x: Math.random() * 800,
-				y: Math.random() * 600
+		try {
+			const userData = await holosphere.get(holonID, 'users', holonID);
+			if (!userData) throw new Error('User data not found');
+
+			// Get the current top position based on sort order
+			const POSITION_STEP = 100; // Change to 100px spacing
+			let newPosition;
+
+			// If there are existing tasks, position the new one based on sort direction
+			if (sortedQuests.length > 0) {
+				const firstTask = sortedQuests[0][1];
+				const firstPosition = firstTask.position?.[sortField] ?? POSITION_STEP;
+				
+				// Calculate new position based on sort direction
+				const positionOffset = sortDirection === 'desc' ? POSITION_STEP : -POSITION_STEP;
+				
+				newPosition = {
+					x: sortField === 'x' 
+						? firstPosition + positionOffset 
+						: (firstTask.position?.x ?? POSITION_STEP),
+					y: sortField === 'y' 
+						? firstPosition + positionOffset 
+						: (firstTask.position?.y ?? POSITION_STEP)
+				};
+			} else {
+				// If no tasks exist, start with base position
+				newPosition = {
+					x: POSITION_STEP,
+					y: POSITION_STEP
+				};
 			}
-		};
 
-		holosphere.put(holonID, "quests", task);
-		showTaskInput = false;
+			const task = {
+				...newTask,
+				initiator: {
+					id: holonID,
+					username: userData.username,
+					firstName: userData.first_name,
+					lastName: userData.last_name
+				},
+				created: new Date().toISOString(),
+				position: newPosition
+			};
+
+			// Add the task to holosphere
+			await holosphere.put(holonID, 'quests', task);
+
+			// Reset form and close dialog
+			showTaskInput = false;
+			newTask = {
+				id: generateId(),
+				title: '',
+				description: '',
+				category: '',
+				status: 'ongoing',
+				type: 'task',
+				participants: [],
+				appreciation: []
+			};
+
+			// Force update
+			updateTrigger.update(n => n + 1);
+		} catch (error) {
+			console.error('Error adding task:', error);
+		}
 	}
 
 	// Add drag and drop state
@@ -302,76 +405,208 @@
 		});
 	}
 
+	// Modify handleDrop to use 100px spacing
 	async function handleDrop(event: DragEvent, targetKey: string) {
 		event.preventDefault();
 		const sourceKey = event.dataTransfer?.getData('text/plain') || '';
 		if (!sourceKey || sourceKey === targetKey) return;
 
-		// Find the indices in the sorted and filtered list
 		const sourceIndex = filteredQuests.findIndex(([key]) => key === sourceKey);
 		const targetIndex = filteredQuests.findIndex(([key]) => key === targetKey);
 		if (sourceIndex === -1 || targetIndex === -1) return;
 
-		// Get the quests in their sorted order
-		const targetQuest = filteredQuests[targetIndex][1];
-		const prevQuest = targetIndex > 0 ? filteredQuests[targetIndex - 1][1] : null;
-		const nextQuest = targetIndex < filteredQuests.length - 1 ? filteredQuests[targetIndex + 1][1] : null;
+		const POSITION_STEP = 100; // Change to 100px spacing
 		const sourceQuest = filteredQuests[sourceIndex][1];
+		const targetQuest = filteredQuests[targetIndex][1];
 
-		// Calculate new position based on current sort field
-		const currentPosition = sourceQuest.position || { x: 0, y: 0 };
-		let newPosition = { ...currentPosition };
+		try {
+			// Calculate new position based on surrounding tasks and sort direction
+			let newPosition;
+			
+			if ((sourceIndex > targetIndex && sortDirection === 'asc') || 
+				(sourceIndex < targetIndex && sortDirection === 'desc')) {
+				// Moving task up in ascending or down in descending
+				const prevTask = targetIndex > 0 ? filteredQuests[targetIndex - 1][1] : null;
+				const prevPos = prevTask?.position?.[sortField] ?? 
+					(sortDirection === 'desc' ? (targetQuest.position?.[sortField] ?? 0) + POSITION_STEP : (targetQuest.position?.[sortField] ?? 0) - POSITION_STEP);
+				const targetPos = targetQuest.position?.[sortField] ?? POSITION_STEP;
+				
+				// Position between prev and target
+				const newPos = prevTask 
+					? prevPos + (targetPos - prevPos) / 2 
+					: targetPos + (sortDirection === 'desc' ? POSITION_STEP : -POSITION_STEP);
 
-		// Get the positions for calculation
-		const targetPos = targetQuest.position?.[sortField] ?? 0;
-		const prevPos = prevQuest?.position?.[sortField] ?? (targetPos - 2000);
-		const nextPos = nextQuest?.position?.[sortField] ?? (targetPos + 2000);
+				newPosition = {
+					x: sortField === 'x' ? newPos : sourceQuest.position?.x ?? POSITION_STEP,
+					y: sortField === 'y' ? newPos : sourceQuest.position?.y ?? POSITION_STEP
+				};
+			} else {
+				// Moving task down in ascending or up in descending
+				const nextTask = targetIndex < filteredQuests.length - 1 
+					? filteredQuests[targetIndex + 1][1] 
+					: null;
+				const targetPos = targetQuest.position?.[sortField] ?? POSITION_STEP;
+				const nextPos = nextTask?.position?.[sortField] ?? 
+					(sortDirection === 'desc' ? targetPos - POSITION_STEP : targetPos + POSITION_STEP);
+				
+				// Position between target and next
+				const newPos = nextTask 
+					? targetPos + (nextPos - targetPos) / 2 
+					: targetPos + (sortDirection === 'desc' ? -POSITION_STEP : POSITION_STEP);
 
-		// Calculate the new position value
-		let newValue;
-		if (targetIndex === 0) {
-			// Dropping at the start
-			newValue = targetPos - 1000;
-		} else if (targetIndex === filteredQuests.length - 1) {
-			// Dropping at the end
-			newValue = targetPos + 1000;
-		} else if (sourceIndex < targetIndex) {
-			// Moving down - position after target
-			newValue = targetPos + (nextPos - targetPos) / 2;
-		} else {
-			// Moving up - position before target
-			newValue = prevPos + (targetPos - prevPos) / 2;
+				newPosition = {
+					x: sortField === 'x' ? newPos : sourceQuest.position?.x ?? POSITION_STEP,
+					y: sortField === 'y' ? newPos : sourceQuest.position?.y ?? POSITION_STEP
+				};
+			}
+
+			const updatedQuest = {
+				...sourceQuest,
+				position: newPosition
+			};
+
+			// Save to holosphere
+			await holosphere.put(holonID, `quests/${sourceKey}`, updatedQuest);
+
+			// Update local store
+			store = {
+				...store,
+				[sourceKey]: updatedQuest
+			};
+
+			// Check if positions need normalization
+			const positions = filteredQuests.map(([_, q]) => q.position?.[sortField] ?? 0);
+			const minDiff = Math.min(...positions.slice(1).map((pos, i) => Math.abs(pos - positions[i])));
+			
+			if (minDiff < POSITION_STEP / 2) { // Adjust normalization threshold
+				// Normalize all positions
+				const normalized = filteredQuests.map(([key, quest], index) => {
+					const normalizedPos = sortDirection === 'desc' 
+						? (filteredQuests.length - index) * POSITION_STEP 
+						: (index + 1) * POSITION_STEP;
+					
+					return {
+						key,
+						quest: {
+							...quest,
+							position: {
+								x: sortField === 'x' ? normalizedPos : quest.position?.x ?? POSITION_STEP,
+								y: sortField === 'y' ? normalizedPos : quest.position?.y ?? POSITION_STEP
+							}
+						}
+					};
+				});
+
+				// Save all normalized positions
+				await Promise.all(
+					normalized.map(({ key, quest }) => 
+						holosphere.put(holonID, `quests/${key}`, quest)
+					)
+				);
+
+				// Update local store with normalized positions
+				store = normalized.reduce((acc, { key, quest }) => ({
+					...acc,
+					[key]: quest
+				}), {});
+			}
+		} catch (error) {
+			console.error('Error updating quest position:', error);
 		}
-
-		// Update only the sorted field, preserve the other coordinate
-		newPosition[sortField] = newValue;
-
-		// Update the quest in holosphere
-		const updatedQuest = {
-			...sourceQuest,
-			position: newPosition
-		};
-
-		// Update in holosphere and force a store update to trigger re-render
-		store = {
-			...store,
-			[sourceKey]: updatedQuest
-		};
-		await holosphere.put(holonID, `quests/${sourceKey}`, updatedQuest);
 		
 		handleDragEnd();
 	}
 
-	// Add dialog element reference
-	let dialogElement: HTMLDialogElement;
-	let open = false;
+	// Simplify show/hide functions
+	function showDialog() {
+		showTaskInput = true;
+	}
+
+	function hideDialog() {
+		showTaskInput = false;
+		// Reset the newTask object when closing
+		newTask = {
+			id: generateId(),
+			title: '',
+			description: '',
+			category: '',
+			status: 'ongoing',
+			type: 'task',
+			participants: [],
+			appreciation: []
+		};
+	}
+
+	// Add onMount to initialize the dialog
+	onMount(() => {
+		if (showTaskInput) {
+			showDialog();
+		}
+		return () => {
+			if (showTaskInput) {
+				hideDialog();
+			}
+		};
+	});
+
+	// Add color category function
+	function getColorFromCategory(category: string | undefined, type: string = 'task') {
+		if (!category) {
+			// Default colors based on type
+			switch (type) {
+				case 'event':
+					return "hsl(280, 70%, 85%)"; // Purple for events
+				case 'quest':
+					return "hsl(200, 70%, 85%)"; // Blue for quests
+				default:
+					return "#E5E7EB"; // Gray for tasks
+			}
+		}
+
+		// For items with categories, generate color but adjust based on type
+		let hash = 0;
+		for (let i = 0; i < category.length; i++) {
+			hash = (hash << 5) - hash + category.charCodeAt(i);
+			hash = hash & hash;
+		}
+
+		const hue = Math.abs(hash % 360);
+		// Adjust saturation and lightness based on type
+		switch (type) {
+			case 'event':
+				return `hsl(${hue}, 85%, 80%)`; // More saturated for events
+			case 'quest':
+				return `hsl(${hue}, 75%, 82%)`; // Slightly saturated for quests
+			default:
+				return `hsl(${hue}, 70%, 85%)`; // Original for tasks
+		}
+	}
+
+	// Add this function to handle task deletion
+	function handleTaskDeleted(event: CustomEvent) {
+		if (event.detail?.deleted && event.detail?.questId) {
+			// Update local store immediately
+			const { [event.detail.questId]: _, ...rest } = store;
+			store = rest;
+			quests = Object.entries(store);
+		}
+		// Always set selectedTask to null when modal closes
+		selectedTask = null;
+	}
 </script>
 
 <div class="flex flex-wrap">
 	<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
 		<div class="flex justify-between text-white items-center mb-8">
-			<div>
+			<div class="flex items-center gap-4">
 				<p class="text-lg mt-1">Tasks Today</p>
+				<button
+					on:click={showDialog}
+					class="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-xl font-bold flex items-center justify-center focus:outline-none transition-colors"
+					aria-label="Add new task"
+				>
+					+
+				</button>
 			</div>
 			<p class="">{new Date().toDateString()}</p>
 		</div>
@@ -534,7 +769,8 @@
 						></div>
 					</div>
 					<div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
-						Show Completed
+						<span class="hidden sm:inline">Show Completed</span>
+						<span class="sm:hidden" aria-label="Show completed tasks">✓</span>
 					</div>
 				</label>
 			</div>
@@ -578,7 +814,7 @@
 										<h3
 											class="text-base font-bold opacity-70 truncate flex items-center gap-2"
 										>
-											<span class="text-sm px-2 py-0.5 rounded-full bg-black/20">
+											<span class="hidden sm:inline-block text-sm px-2 py-0.5 rounded-full bg-black/20">
 												{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : '✓'}
 												{quest.type}
 											</span>
@@ -592,7 +828,7 @@
 											</p>
 										{/if}
 										{#if quest.category}
-											<p class="text-sm opacity-70 mt-1">
+											<p class="hidden sm:block text-sm opacity-70 mt-1">
 												<span
 													class="inline-flex items-center"
 												>
@@ -611,9 +847,7 @@
 										{/if}
 									</div>
 
-									<div
-										class="flex items-center gap-4 text-sm whitespace-nowrap"
-									>
+									<div class="flex items-center gap-4 text-sm whitespace-nowrap">
 										{#if quest.location}
 											<div class="opacity-70">
 												📍 {quest.location.split(
@@ -623,44 +857,26 @@
 										{/if}
 
 										<div class="flex items-center gap-1">
-											<span
-												class="opacity-70 font-bold text-base"
-												>🙋‍♂️ {quest.participants
-													.length}</span
-											>
+											<span class="opacity-70">🙋‍♂️</span>
 											<div
 												class="flex -space-x-2 relative group"
+												title={quest.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}
 											>
 												{#each quest.participants.slice(0, 3) as participant}
 													<div class="relative">
 														<img
 															class="w-6 h-6 rounded-full border-2 border-gray-300"
 															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
-															alt={participant.username}
+															alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
 														/>
-														<div
-															class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10"
-														>
-															{participant.username}
-														</div>
 													</div>
 												{/each}
 												{#if quest.participants.length > 3}
 													<div
 														class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300 relative group"
+														title={quest.participants.slice(3).map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}
 													>
 														<span>+{quest.participants.length - 3}</span>
-														<div
-															class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10"
-														>
-															{quest.participants
-																.slice(3)
-																.map(
-																	(p) =>
-																		p.username
-																)
-																.join(", ")}
-														</div>
 													</div>
 												{/if}
 											</div>
@@ -675,11 +891,14 @@
 											</div>
 										{/if}
 
-										<div
-											class="opacity-70 font-bold text-base"
-										>
-											👍 {quest.appreciation.length}
-										</div>
+										{#if quest.appreciation.length > 0}
+											<div
+												class="opacity-70 font-bold text-base cursor-help"
+												title={`${quest.appreciation.length} appreciations`}
+											>
+												👍
+											</div>
+										{/if}
 									</div>
 								</div>
 							</div>
@@ -688,16 +907,6 @@
 				{/each}
 			</div>
 		{/if}
-		<div class="flex justify-center mt-4">
-			<button
-				on:click={() => showTaskInput = true}
-				class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none"
-				aria-label="Add new task"
-			>
-				+
-			</button>
-		</div>
-	
 	</div>
 	<Schedule />
 
@@ -706,106 +915,106 @@
 			quest={selectedTask.quest}
 			questId={selectedTask.key}
 			holonId={holonID}
-			on:close={() => (selectedTask = null)}
+			on:close={handleTaskDeleted}
 		/>
 	{/if}
 
 	
-	<!-- Add Task Modal -->
+	<!-- Replace dialog with div modal -->
 	{#if showTaskInput}
-		<dialog
-			class="bg-transparent w-full h-full fixed inset-0 z-50"
-			bind:this={dialogElement}
-			on:close={() => showTaskInput = false}
-			{open}
+		<div 
+			class="fixed inset-0 z-50 overflow-auto bg-black bg-opacity-50 flex items-center justify-center"
+			on:click|self={hideDialog}
+			role="dialog"
+			aria-modal="true"
 		>
 			<div 
-				class="bg-black bg-opacity-50 w-full h-full flex items-center justify-center"
-				role="presentation"
+				class="bg-gray-800 p-6 rounded-lg shadow-lg w-96 relative"
+				role="dialog"
+				aria-labelledby="task-input-title"
 			>
-				<div 
-					class="bg-gray-800 p-6 rounded-lg shadow-lg w-96" 
-					role="dialog"
-					aria-modal="true"
-					aria-labelledby="task-input-title"
+				<button
+					on:click={hideDialog}
+					class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
+					aria-label="Close task input dialog"
 				>
-					<div class="relative">
-						<button
-							on:click={() => (showTaskInput = false)}
-							class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
-							aria-label="Close task input dialog"
+					<svg
+						class="w-5 h-5"
+						fill="none"
+						stroke="currentColor"
+						viewBox="0 0 24 24"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M6 18L18 6M6 6l12 12"
+						></path>
+					</svg>
+				</button>
+				<h3 id="task-input-title" class="text-white text-lg font-bold mb-4">Add New Task</h3>
+				<form 
+					on:submit|preventDefault={async (e) => {
+						await handleAddTask();
+						hideDialog();
+					}}
+					class="space-y-4"
+				>
+					<div>
+						<label for="task-title" class="sr-only">Task title</label>
+						<input
+							id="task-title"
+							type="text"
+							bind:value={newTask.title}
+							placeholder="Task title..."
+							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
+							required
+						/>
+					</div>
+					<div>
+						<label for="task-description" class="sr-only">Task description</label>
+						<textarea
+							id="task-description"
+							bind:value={newTask.description}
+							placeholder="Description..."
+							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600 resize-none"
+							rows="3"
+						></textarea>
+					</div>
+					<div>
+						<label for="task-category" class="sr-only">Task category</label>
+						<select
+							id="task-category"
+							bind:value={newTask.category}
+							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white border-gray-600"
 						>
-							<svg
-								class="w-5 h-5"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M6 18L18 6M6 6l12 12"
-								></path>
-							</svg>
+							<option value="">Select category...</option>
+							{#each categories.filter(cat => cat !== 'all') as category}
+								<option value={category}>{category}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="flex justify-end gap-2">
+						<button
+							type="button"
+							on:click={hideDialog}
+							class="px-4 py-2 text-sm rounded-md bg-gray-700 text-white hover:bg-gray-600"
+							aria-label="Cancel adding task"
+						>
+							Cancel
 						</button>
-						<h3 id="task-input-title" class="text-white text-lg font-bold mb-4">Add New Task</h3>
+						<button
+							type="submit"
+							class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+							disabled={!newTask.title.trim()}
+							aria-label="Add new task"
+						>
+							Add Task
+						</button>
 					</div>
-					<div class="space-y-4">
-						<div>
-							<label for="task-title" class="sr-only">Task title</label>
-							<input
-								id="task-title"
-								type="text"
-								bind:value={newTask.title}
-								placeholder="Task title..."
-								class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
-							/>
-						</div>
-						<div>
-							<label for="task-description" class="sr-only">Task description</label>
-							<textarea
-								id="task-description"
-								bind:value={newTask.description}
-								placeholder="Description..."
-								class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600 resize-none"
-								rows="3"
-							></textarea>
-						</div>
-						<div>
-							<label for="task-category" class="sr-only">Task category</label>
-							<select
-								id="task-category"
-								bind:value={newTask.category}
-								class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white border-gray-600"
-							>
-								<option value="">Select category...</option>
-								{#each categories.filter(cat => cat !== 'all') as category}
-									<option value={category}>{category}</option>
-								{/each}
-							</select>
-						</div>
-						<div class="flex justify-end gap-2">
-							<button
-								on:click={() => showTaskInput = false}
-								class="px-4 py-2 text-sm rounded-md bg-gray-700 text-white hover:bg-gray-600"
-								aria-label="Cancel adding task"
-							>
-								Cancel
-							</button>
-							<button
-								on:click={handleAddTask}
-								class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-500"
-								disabled={!newTask.title.trim()}
-								aria-label="Add new task"
-							>
-								Add Task
-							</button>
-						</div>
-					</div>
-				</div>
+				</form>
 			</div>
-		</dialog>
+		</div>
 	{/if}
 </div>
 

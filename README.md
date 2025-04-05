@@ -47,3 +47,35 @@ yarn
 ```bash
 yarn dev
 ```
+
+## Memory Management
+
+When working with large holonic networks, memory usage can be significant due to the amount of data being processed and visualized. If you encounter "JavaScript heap out of memory" errors, you can use the provided script to start the application with increased memory limits.
+
+### Using the Memory-Optimized Startup Script
+
+We've included a script that increases Node.js memory limits:
+
+```bash
+# Make the script executable (only needed once)
+chmod +x start-with-memory.sh
+
+# Run the application with increased memory limits
+./start-with-memory.sh
+```
+
+### Manual Memory Configuration
+
+You can also set the memory limits manually:
+
+```bash
+# Set Node.js memory limit to 4GB
+export NODE_OPTIONS="--max-old-space-size=4096" 
+yarn dev
+```
+
+### Additional Memory Optimization Tips
+
+1. If you're not actively using certain visualizations, switch to a different view to reduce memory usage
+2. The application implements automatic memory optimization for long-running sessions
+3. For production deployments, consider setting appropriate memory limits based on your server specifications
