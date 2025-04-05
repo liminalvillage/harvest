@@ -5,7 +5,18 @@
 
 	let store: Record<string, any> = {};
 	let selectedTable = "quests";
-	let tables = ["users","quests", "roles", "offers", "announcements", "events","settings","expenses","profile"];
+	let tables = [
+		{ value: "quests", label: "Tasks" },
+		{ value: "needs", label: "Local Needs" },
+		{ value: "offers", label: "Offers" },
+		{ value: "communities", label: "Communities" },
+		{ value: "organizations", label: "Organizations" },
+		{ value: "events", label: "Events" },
+		{ value: "users", label: "People" },
+		{ value: "settings", label: "Settings" },
+		{ value: "expenses", label: "Expenses" },
+		{ value: "profile", label: "Profile" }
+	];
 	let expandedFields = new Set();
 	let editingField: string | null = null;
 	let editValue = "";
@@ -16,6 +27,7 @@
 	let isAddingNewEntry = false;
 	let newEntryJson = "{\n  \n}";
 	let newEntryKey = "";
+	let showTableInfo = false;
 
 	$: holonID = $ID;
 	$: entries = Object.entries(store);
@@ -248,15 +260,48 @@
 		<div class="flex justify-between text-white items-center mb-8">
 			<div class="flex items-center gap-4">
 				<p class="text-2xl font-bold">Database Explorer</p>
-				<select
-					class="bg-gray-700 text-white rounded-md px-2 py-1"
-					bind:value={selectedTable}
-					on:change={() => handleTableChange(selectedTable)}
-				>
-					{#each tables as table}
-						<option value={table}>{table}</option>
-					{/each}
-				</select>
+				<div class="lens-control">
+					<label for="table-select" class="lens-label">Table:</label>
+					<select
+						id="table-select"
+						class="lens-select"
+						bind:value={selectedTable}
+						on:change={() => handleTableChange(selectedTable)}
+						aria-label="Select table type"
+					>
+						{#each tables as table}
+							<option value={table.value}>{table.label}</option>
+						{/each}
+					</select>
+					<button 
+						class="info-button" 
+						aria-label="Table information"
+						on:mouseenter={() => showTableInfo = true}
+						on:mouseleave={() => showTableInfo = false}
+					>
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
+							<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" />
+						</svg>
+					</button>
+					
+					{#if showTableInfo}
+						<div class="info-tooltip">
+							<p>Tables store different types of data in the database:</p>
+							<ul>
+								<li><strong>Tasks:</strong> Active tasks and quests</li>
+								<li><strong>Local Needs:</strong> Community needs and requests</li>
+								<li><strong>Offers:</strong> Available resources and services</li>
+								<li><strong>Communities:</strong> Active local groups</li>
+								<li><strong>Organizations:</strong> Registered organizations</li>
+								<li><strong>Events:</strong> Scheduled activities</li>
+								<li><strong>People:</strong> User profiles and accounts</li>
+								<li><strong>Settings:</strong> System configuration</li>
+								<li><strong>Expenses:</strong> Financial records</li>
+								<li><strong>Profile:</strong> Personal information</li>
+							</ul>
+						</div>
+					{/if}
+				</div>
 				<button
 					class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md flex items-center gap-2"
 					on:click={exportTableData}
@@ -583,5 +628,94 @@
 
 	textarea {
 		font-family: monospace;
+	}
+
+	.lens-control {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 0 8px;
+		min-height: 36px;
+		background: white;
+		border-radius: 4px;
+		box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+		white-space: nowrap;
+	}
+
+	.lens-label {
+		color: #333;
+		font-weight: 500;
+		font-size: 14px;
+		white-space: nowrap;
+	}
+
+	.lens-select {
+		appearance: none;
+		background: transparent;
+		color: #333;
+		border: none;
+		padding: 4px 24px 4px 8px;
+		font-size: 14px;
+		cursor: pointer;
+		min-width: 120px;
+	}
+
+	.info-button {
+		background: none;
+		border: none;
+		padding: 4px;
+		color: #666;
+		cursor: pointer;
+		transition: color 0.2s;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.info-button:hover {
+		color: #333;
+	}
+
+	.info-tooltip {
+		position: absolute;
+		top: calc(100% + 8px);
+		left: 0;
+		background: white;
+		border-radius: 4px;
+		box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+		padding: 12px;
+		width: 280px;
+		font-size: 13px;
+		color: #333;
+		z-index: 1000;
+	}
+
+	.info-tooltip::before {
+		content: '';
+		position: absolute;
+		top: -6px;
+		left: 50%;
+		width: 12px;
+		height: 12px;
+		background: white;
+		transform: rotate(45deg) translateX(-50%);
+		box-shadow: -2px -2px 4px rgba(0,0,0,0.05);
+	}
+
+	.info-tooltip p {
+		margin: 0 0 8px 0;
+	}
+
+	.info-tooltip ul {
+		margin: 0;
+		padding-left: 16px;
+	}
+
+	.info-tooltip li {
+		margin: 4px 0;
+	}
+
+	.info-tooltip strong {
+		color: #000;
 	}
 </style>

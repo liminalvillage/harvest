@@ -27,6 +27,7 @@
 	let isDragging = false;
 	let dragOffset = { x: 0, y: 0 };
 	let lastSidebarPosition: { x: number, y: number } | null = null;
+	let showLensInfo = false;
 	let lensData: Record<LensType, Set<string>> = {
 		quests: new Set<string>(),
 		needs: new Set<string>(),
@@ -452,7 +453,32 @@
 		// No need to implement this function as the isLoading variable is no longer used
 	}
 
-	// Replace subscription model with simple data fetching
+	// Update the lens selection to use fetch instead of subscribe
+	$: if (map && selectedLens) {
+		// Add a console log to track lens changes
+		console.log(`[Map] Lens selection triggered: ${selectedLens}`);
+		
+		// Clear only the highlighted hexagons visually
+		map.getSource("highlighted-hexagons")?.setData({
+			type: "FeatureCollection",
+			features: []
+		});
+		
+		// Cancel any existing fetch timeout
+		clearMoveTimeout();
+		
+		// Schedule a fetch after a short delay
+		moveTimeout = window.setTimeout(() => {
+			console.log(`[Map] Fetching data for lens: ${selectedLens}`);
+			// Clear only the previous lens data before fetching new data
+			lensData[selectedLens] = new Set<string>();
+			fetchLensData(selectedLens);
+		}, 500);
+		
+		// Don't render hexes immediately since we just cleared the visual data
+		// The fetchLensData call will trigger a render when it has new data
+	}
+
 	function fetchLensData(lens: string) {
 		// Implement throttling
 		const now = Date.now();
@@ -506,7 +532,7 @@
 		let fetchesInProgress = 0;
 		let fetchesCompleted = 0;
 		
-		// When all fetches are done, hide the loading indicator
+		// When all fetches are done, update the display
 		const checkAllFetchesComplete = () => {
 			fetchesCompleted++;
 			if (fetchesCompleted === fetchesInProgress) {
@@ -516,6 +542,7 @@
 					lensData[currentLens as LensType] = hexagonsWithContent;
 					
 					// Render the updated hexes
+					console.log(`[Map] Rendering ${hexagonsWithContent.size} hexagons for ${currentLens}`);
 					renderHexes(map, currentLens);
 					
 					console.log(`[Map] Found ${hexagonsWithContent.size} hexagons with ${currentLens} data (${fetchesCompleted}/${fetchesInProgress} fetches)`);
@@ -539,7 +566,6 @@
 					console.log(`[Map Debug] Retrieved ${items?.length || 0} items for hexagon: ${hex}, lens: ${lens}`);
 					if (items && items.length > 0) {
 						console.log(`[Map Debug] Adding hexagon with content: ${hex}`);
-						// Always add the hexagon to show highlights - temporary fix
 						hexagonsWithContent.add(hex);
 					}
 					checkAllFetchesComplete();
@@ -906,37 +932,8 @@
 			const newHexId = h3.latLngToCell(lat, lng, resolution);
 			console.log("Hexagon ID:", newHexId);
 			
-			// Only calculate a new position if we don't have a saved one
-			if (!lastSidebarPosition) {
-				// Calculate sidebar position based on click point
-				const point = e.point;
-				const mapRect = mapContainer.getBoundingClientRect();
-				
-				// Calculate the initial width for the sidebar
-				const sidebarWidth = Math.min(400, mapRect.width * 0.4); // 40% of map width up to 400px max
-				const sidebarHeight = Math.min(500, mapRect.height * 0.7); // 70% of map height up to 500px max
-				
-				// Calculate position relative to the map (not the page)
-				let posX, posY;
-				
-				// Position the sidebar to avoid going off-screen
-				// Place it to the right of the click  if there's room, otherwise to the left
-				if (point.x + sidebarWidth + 20 < mapRect.width) {
-					// Enough room to the right
-					posX = point.x + 20; // 20px offset from click point
-				} else {
-					// Place to the left
-					posX = Math.max(point.x - sidebarWidth - 20, 10); // 20px offset left, minimum 10px from left edge
-				}
-				
-				// Position vertically - try to center it on the click point
-				posY = Math.max(10, Math.min(mapRect.height - sidebarHeight - 10, point.y - (sidebarHeight / 2)));
-				
-				// Update the sidebar position
-				sidebarPosition = { x: posX, y: posY };
-				// Store this as the last position
-				lastSidebarPosition = { ...sidebarPosition };
-			}
+			// Update sidebar position
+			updateSidebarPosition();
 			
 			// Only update if it's a valid H3 cell
 			if (isH3Cell(newHexId)) {
@@ -953,6 +950,23 @@
 					console.error(`Error fetching ${selectedLens} data:`, error);
 				});
 		});
+	}
+
+	// Update the sidebar position calculation
+	function updateSidebarPosition() {
+		if (mapContainer) {
+			const mapRect = mapContainer.getBoundingClientRect();
+			const geolocateControl = mapContainer.querySelector('.mapboxgl-ctrl-geolocate');
+			
+			if (geolocateControl) {
+				const geoRect = geolocateControl.getBoundingClientRect();
+				sidebarPosition = {
+					x: mapRect.width - 420, // 400px width + 20px margin
+					y: geoRect.bottom + 20 // Position below geolocate with some margin
+				};
+				lastSidebarPosition = { ...sidebarPosition };
+			}
+		}
 	}
 
 	// Function to make sure the sidebar position is within map bounds
@@ -1093,24 +1107,6 @@
 		}
 	}
 
-	// Update the lens selection to use fetch instead of subscribe
-	$: if (map && selectedLens) {
-		// Add a console log to track lens changes
-		console.log(`[Map] Lens selection triggered: ${selectedLens}`);
-		
-		// Cancel any existing fetch timeout
-		clearMoveTimeout();
-		
-		// Schedule a fetch after a short delay
-		moveTimeout = window.setTimeout(() => {
-			console.log(`[Map] Fetching data for lens: ${selectedLens}`);
-			fetchLensData(selectedLens);
-		}, 500);
-		
-		// Always render hexes with existing data for immediate feedback
-		renderHexes(map, selectedLens);
-	}
-
 	// Watch for visibility changes
 	$: if (isVisible) {
 		// Initialize or re-initialize map when becoming visible
@@ -1244,8 +1240,10 @@
 
 	<!-- Lens Selector -->
 	<div class="lens-selector">
-		<div class="mapboxgl-ctrl mapboxgl-ctrl-group">
+		<div class="lens-control">
+			<label for="lens-select" class="lens-label">Lens:</label>
 			<select 
+				id="lens-select"
 				bind:value={selectedLens}
 				class="lens-select"
 				aria-label="Select lens type"
@@ -1254,11 +1252,33 @@
 					<option value={option.value}>{option.label}</option>
 				{/each}
 			</select>
-			<div class="select-arrow">
+			<button 
+				class="info-button" 
+				aria-label="Lens information"
+				on:mouseenter={() => showLensInfo = true}
+				on:mouseleave={() => showLensInfo = false}
+			>
 				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-					<path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+					<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" />
 				</svg>
-			</div>
+			</button>
+			
+			{#if showLensInfo}
+				<div class="info-tooltip">
+					<p>Lenses filter the map to show different types of data:</p>
+					<ul>
+						<li><strong>Tasks:</strong> View active tasks and quests</li>
+						<li><strong>Local Needs:</strong> Community needs and requests</li>
+						<li><strong>Offers:</strong> Available resources and services</li>
+						<li><strong>Communities:</strong> Active local groups</li>
+						<li><strong>Organizations:</strong> Registered organizations</li>
+						<li><strong>Projects:</strong> Ongoing initiatives</li>
+						<li><strong>Currencies:</strong> Local exchange systems</li>
+						<li><strong>People:</strong> Community members</li>
+						<li><strong>Holons:</strong> Nested organizational units</li>
+					</ul>
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -1268,17 +1288,9 @@
 			class="sidebar-overlay"
 			style="left: {sidebarPosition.x}px; top: {sidebarPosition.y}px;"
 		>
-			<div class="sidebar-header" 
-				on:mousedown={handleDragStart}
-				role="button"
-				tabindex="0"
-				on:keydown={e => e.key === 'Enter' && handleDragStart(e)}
-			>
+			<div class="sidebar-header">
 				<div class="flex items-center">
-					<svg class="drag-handle mr-2" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-						<path d="M5 9H19M5 15H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-					</svg>
-					<span class="text-white font-medium cursor-move">Hexagon {hexId}</span>
+					<span class="text-white font-medium">Hexagon {hexId}</span>
 				</div>
 				<button 
 					class="text-gray-300 hover:text-white" 
@@ -1323,8 +1335,8 @@
 	/* Sidebar overlay styles */
 	.sidebar-overlay {
 		position: absolute;
-		width: min(400px, 40vw);
-		max-height: 90vh;
+		width: 400px;
+		max-height: calc(90vh - 120px); /* Account for top controls */
 		background-color: #1f2937;
 		border-radius: 0.75rem;
 		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
@@ -1341,17 +1353,6 @@
 		padding: 0.75rem 1rem;
 		background-color: #111827;
 		border-bottom: 1px solid #374151;
-		cursor: move; /* Indicate draggable */
-		user-select: none; /* Prevent text selection during drag */
-	}
-
-	.sidebar-header .drag-handle {
-		color: #9ca3af; /* gray-400 */
-		cursor: grab;
-	}
-	
-	.sidebar-header:active .drag-handle {
-		cursor: grabbing;
 	}
 
 	.sidebar-header button {
@@ -1369,21 +1370,49 @@
 		max-height: 70vh;
 	}
 
-	:global(.mapboxgl-ctrl-top-right) {
-		top: 10px !important;
-		right: 10px !important;
+	.custom-control-container {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		z-index: 2;
+		display: flex;
+		gap: 10px;
+		background: white;
+		padding: 10px;
+		border-radius: 4px;
+		box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
 	}
 
-	:global(.mapboxgl-ctrl-geocoder) {
-		min-width: 250px;
+	.lens-container {
+		display: flex;
+		align-items: center;
 	}
 
-	/* Lens selector styling */
 	.lens-selector {
 		position: absolute;
 		top: 10px;
-		right: 320px; /* Position to the left of the search box */
+		left: 50%;
+		transform: translateX(-50%);
 		z-index: 10;
+	}
+
+	.lens-control {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 0 8px;
+		min-height: 36px;
+		background: white;
+		border-radius: 4px;
+		box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+		white-space: nowrap;
+	}
+
+	.lens-label {
+		color: #333;
+		font-weight: 500;
+		font-size: 14px;
+		white-space: nowrap;
 	}
 
 	.lens-select {
@@ -1391,19 +1420,79 @@
 		background: transparent;
 		color: #333;
 		border: none;
-		padding: 7px 30px 7px 10px;
+		padding: 4px 24px 4px 8px;
 		font-size: 14px;
 		cursor: pointer;
-		width: 100%;
+		min-width: 120px;
 	}
 
 	.select-arrow {
 		position: absolute;
-		right: 8px;
+		right: 36px;
 		top: 50%;
 		transform: translateY(-50%);
 		pointer-events: none;
 		color: #333;
+	}
+
+	.info-button {
+		background: none;
+		border: none;
+		padding: 4px;
+		color: #666;
+		cursor: pointer;
+		transition: color 0.2s;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.info-button:hover {
+		color: #333;
+	}
+
+	.info-tooltip {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		background: white;
+		border-radius: 4px;
+		box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+		padding: 12px;
+		width: 280px;
+		font-size: 13px;
+		color: #333;
+		z-index: 1000;
+		transform: translateX(50%); /* Center the tooltip */
+	}
+
+	.info-tooltip::before {
+		content: '';
+		position: absolute;
+		top: -6px;
+		right: 50%;
+		width: 12px;
+		height: 12px;
+		background: white;
+		transform: rotate(45deg);
+		box-shadow: -2px -2px 4px rgba(0,0,0,0.05);
+	}
+
+	.info-tooltip p {
+		margin: 0 0 8px 0;
+	}
+
+	.info-tooltip ul {
+		margin: 0;
+		padding-left: 16px;
+	}
+
+	.info-tooltip li {
+		margin: 4px 0;
+	}
+
+	.info-tooltip strong {
+		color: #000;
 	}
 
 	.mapboxgl-ctrl.mapboxgl-ctrl-group {
@@ -1414,6 +1503,50 @@
 
 	select:focus {
 		outline: none;
+	}
+
+	:global(.mapboxgl-ctrl-geocoder) {
+		min-width: 250px !important;
+		width: auto !important;
+		max-width: 360px !important;
+		font-size: 14px !important;
+		line-height: 20px !important;
+		box-shadow: 0 0 0 2px rgba(0,0,0,0.1) !important;
+	}
+
+	:global(.mapboxgl-ctrl-geocoder input[type='text']) {
+		height: 36px !important;
+		padding: 6px 35px !important;
+	}
+
+	:global(.mapboxgl-ctrl-geocoder--icon) {
+		top: 8px !important;
+	}
+
+	:global(.mapboxgl-ctrl-geocoder--button) {
+		top: 3px !important;
+	}
+
+	/* Ensure geolocate control doesn't overlap */
+	:global(.mapboxgl-ctrl-top-right) {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+	}
+
+	/* Ensure proper spacing between controls */
+	:global(.mapboxgl-ctrl-top-right .mapboxgl-ctrl) {
+		margin: 10px 10px 0 0;
+	}
+
+	/* Ensure the geocoder doesn't wrap */
+	:global(.mapboxgl-ctrl-geocoder.mapboxgl-ctrl) {
+		margin-top: 10px !important;
+	}
+
+	/* Ensure the geolocate control appears below */
+	:global(.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate) {
+		margin-top: 10px !important;
 	}
 </style>
 
