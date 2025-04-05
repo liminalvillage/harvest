@@ -2,13 +2,16 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import type HoloSphere from "holosphere";
+    import ProposalChart from './ProposalChart.svelte';
 
     interface Proposal {
         id: string;
+        type: string;
         title: string;
         description: string;
-        agrees: string[];  // Array of user IDs who agreed
-        created: string;
+        participants: string[];  // Array of user IDs who agreed
+        stoppers: string[];  // Array of user IDs who blocked
+        date: number;  // Unix timestamp
         creator: string;
     }
 
@@ -16,10 +19,21 @@
     
     $: holonID = $ID;
     let proposals: Record<string, Proposal> = {};
+    let selectedProposal: Proposal | null = null;
+    let showModal = false;
     
-    // Computed property to sort proposals by agreement count
+    // Computed property to sort proposals by date and then agreement count
     $: sortedProposals = Object.values(proposals)
-        .sort((a, b) => b.agrees.length - a.agrees.length);
+        .filter(p => p.type === "proposal")
+        .sort((a, b) => {
+            // Sort by date descending (newest first)
+            const dateComparison = b.date - a.date;
+            // If dates are equal, sort by participant count
+            if (dateComparison === 0) {
+                return b.participants.length - a.participants.length;
+            }
+            return dateComparison;
+        });
 
     onMount(() => {
         ID.subscribe((value) => {
@@ -33,10 +47,12 @@
         if (holosphere) {
             holosphere.subscribe(
                 holonID,
-                "proposals",
-                (newItem: string, key: string) => {
+                "quests",
+                (newItem: Proposal, key: string) => {
                     if (newItem) {
-                        proposals[key] =newItem;
+                        if (newItem.type === "proposal") {
+                            proposals[key] = newItem;
+                        }
                     } else {
                         delete proposals[key];
                     }
@@ -49,14 +65,38 @@
     function addProposal(title: string, description: string): void {
         const newProposal: Proposal = {
             id: crypto.randomUUID(),
+            type: "proposal",
             title,
             description,
-            agrees: [],
-            created: new Date().toISOString(),
+            participants: [],
+            stoppers: [],
+            date: Math.floor(Date.now() / 1000), // Current Unix timestamp
             creator: "Dashboard User", // You might want to get the actual user
         };
         
-        holosphere.put(holonID, "proposals", newProposal);
+        holosphere.put(holonID, "quests", newProposal);
+    }
+
+    function toggleBlock(proposalId: string): void {
+        const proposal = proposals[proposalId];
+        if (!proposal) return;
+
+        const userId = "current-user"; // Replace with actual user ID
+        const updatedProposal = { ...proposal };
+        
+        if (!updatedProposal.stoppers) {
+            updatedProposal.stoppers = [];
+        }
+        
+        if (updatedProposal.stoppers.includes(userId)) {
+            updatedProposal.stoppers = updatedProposal.stoppers.filter(id => id !== userId);
+        } else {
+            updatedProposal.stoppers = [...updatedProposal.stoppers, userId];
+            // Remove from participants if blocking
+            updatedProposal.participants = updatedProposal.participants.filter(id => id !== userId);
+        }
+        
+        holosphere.put(holonID, "quests", updatedProposal);
     }
 
     function toggleAgree(proposalId: string): void {
@@ -66,13 +106,17 @@
         const userId = "current-user"; // Replace with actual user ID
         const updatedProposal = { ...proposal };
         
-        if (proposal.agrees.includes(userId)) {
-            updatedProposal.agrees = proposal.agrees.filter(id => id !== userId);
+        if (proposal.participants.includes(userId)) {
+            updatedProposal.participants = proposal.participants.filter(id => id !== userId);
         } else {
-            updatedProposal.agrees = [...proposal.agrees, userId];
+            updatedProposal.participants = [...proposal.participants, userId];
+            // Remove from stoppers if agreeing
+            if (updatedProposal.stoppers) {
+                updatedProposal.stoppers = updatedProposal.stoppers.filter(id => id !== userId);
+            }
         }
         
-        holosphere.put(holonID, "proposals", updatedProposal);
+        holosphere.put(holonID, "quests", updatedProposal);
     }
 
     let showAddDialog = false;
@@ -89,7 +133,7 @@
     }
 </script>
 
-<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
+<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl ml-0">
     <div class="flex justify-between text-white items-center mb-8">
         <p class="text-2xl font-bold">Proposals</p>
         <button
@@ -100,30 +144,57 @@
         </button>
     </div>
 
-    <div class="space-y-4">
+    <ProposalChart 
+        proposals={Object.values(proposals)} 
+        quorum={5}
+    />
+
+    <div class="space-y-4 mt-8">
         {#each sortedProposals as proposal}
-            <div class="bg-gray-700 rounded-lg p-4">
+            <div 
+                class="bg-gray-700 rounded-lg p-4 cursor-pointer hover:bg-gray-600 transition-colors"
+                on:click={() => {
+                    selectedProposal = proposal;
+                    showModal = true;
+                }}
+            >
                 <div class="flex justify-between items-start mb-2">
                     <h3 class="text-lg font-semibold text-white">{proposal.title}</h3>
-                    <button
-                        on:click={() => toggleAgree(proposal.id)}
-                        class="px-3 py-1 rounded-full {proposal.agrees.includes('current-user') 
-                            ? 'bg-green-600 hover:bg-green-700' 
-                            : 'bg-gray-600 hover:bg-gray-500'} text-white text-sm"
-                    >
-                        {proposal.agrees.includes('current-user') ? 'Agreed' : 'Agree'}
-                    </button>
+                    <div class="flex space-x-2">
+                        <button
+                            on:click|stopPropagation={() => toggleBlock(proposal.id)}
+                            class="px-3 py-1 rounded-full {proposal.stoppers?.includes('current-user') 
+                                ? 'bg-red-600 hover:bg-red-700' 
+                                : 'bg-gray-600 hover:bg-gray-500'} text-white text-sm"
+                        >
+                            {proposal.stoppers?.includes('current-user') ? 'Blocked' : 'Block'}
+                        </button>
+                        <button
+                            on:click|stopPropagation={() => toggleAgree(proposal.id)}
+                            class="px-3 py-1 rounded-full {proposal.participants.includes('current-user') 
+                                ? 'bg-green-600 hover:bg-green-700' 
+                                : 'bg-gray-600 hover:bg-gray-500'} text-white text-sm"
+                            disabled={proposal.stoppers?.includes('current-user')}
+                        >
+                            {proposal.participants.includes('current-user') ? 'Agreed' : 'Agree'}
+                        </button>
+                    </div>
                 </div>
                 <p class="text-gray-300 mb-3">{proposal.description}</p>
                 <div class="w-full bg-gray-600 rounded-full h-2.5">
                     <div
-                        class="bg-blue-600 h-2.5 rounded-full"
-                        style="width: {(proposal.agrees.length / 10) * 100}%"
+                        class="bg-{proposal.stoppers?.length ? 'red' : 'blue'}-600 h-2.5 rounded-full"
+                        style="width: {(proposal.participants.length / 10) * 100}%"
                     ></div>
                 </div>
                 <div class="flex justify-between text-sm text-gray-400 mt-2">
-                    <span>{proposal.agrees.length} agreements</span>
-                    <span>Created {new Date(proposal.created).toLocaleDateString()}</span>
+                    <div class="space-x-4">
+                        <span>{proposal.participants.length} agreements</span>
+                        {#if proposal.stoppers?.length}
+                            <span class="text-red-400">{proposal.stoppers.length} stoppers</span>
+                        {/if}
+                    </div>
+                    <span>Created {new Date(proposal.date).toLocaleDateString()}</span>
                 </div>
             </div>
         {/each}

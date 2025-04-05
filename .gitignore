@@ -13,3 +13,4 @@ yarn-error.log
 radata*
 *.lock
 package-lock.json
+radata/*

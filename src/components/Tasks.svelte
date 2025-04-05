@@ -17,7 +17,12 @@
 		when?: string;
 		status: 'ongoing' | 'completed';
 		category?: string;
-		participants: Array<{ id: string; username: string }>;
+		participants: Array<{ 
+			id: string; 
+			username: string;
+			firstName?: string;
+			lastName?: string;
+		}>;
 		appreciation: string[];
 		location?: string;
 		ends?: string;
@@ -289,7 +294,7 @@
 
 	// Add this helper function after the existing functions
 	function generateId() {
-		return ''+ Date.now() + Math.random().toString(36).substr(2, 9);
+		return ''+ Date.now();
 	}
 
 	// Modify handleAddTask to use 100px spacing
@@ -764,7 +769,8 @@
 						></div>
 					</div>
 					<div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
-						Show Completed
+						<span class="hidden sm:inline">Show Completed</span>
+						<span class="sm:hidden" aria-label="Show completed tasks">✓</span>
 					</div>
 				</label>
 			</div>
@@ -808,7 +814,7 @@
 										<h3
 											class="text-base font-bold opacity-70 truncate flex items-center gap-2"
 										>
-											<span class="text-sm px-2 py-0.5 rounded-full bg-black/20">
+											<span class="hidden sm:inline-block text-sm px-2 py-0.5 rounded-full bg-black/20">
 												{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : '✓'}
 												{quest.type}
 											</span>
@@ -822,7 +828,7 @@
 											</p>
 										{/if}
 										{#if quest.category}
-											<p class="text-sm opacity-70 mt-1">
+											<p class="hidden sm:block text-sm opacity-70 mt-1">
 												<span
 													class="inline-flex items-center"
 												>
@@ -841,9 +847,7 @@
 										{/if}
 									</div>
 
-									<div
-										class="flex items-center gap-4 text-sm whitespace-nowrap"
-									>
+									<div class="flex items-center gap-4 text-sm whitespace-nowrap">
 										{#if quest.location}
 											<div class="opacity-70">
 												📍 {quest.location.split(
@@ -853,44 +857,26 @@
 										{/if}
 
 										<div class="flex items-center gap-1">
-											<span
-												class="opacity-70 font-bold text-base"
-												>🙋‍♂️ {quest.participants
-													.length}</span
-											>
+											<span class="opacity-70">🙋‍♂️</span>
 											<div
 												class="flex -space-x-2 relative group"
+												title={quest.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}
 											>
 												{#each quest.participants.slice(0, 3) as participant}
 													<div class="relative">
 														<img
 															class="w-6 h-6 rounded-full border-2 border-gray-300"
 															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
-															alt={participant.username}
+															alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
 														/>
-														<div
-															class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10"
-														>
-															{participant.username}
-														</div>
 													</div>
 												{/each}
 												{#if quest.participants.length > 3}
 													<div
 														class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300 relative group"
+														title={quest.participants.slice(3).map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}
 													>
 														<span>+{quest.participants.length - 3}</span>
-														<div
-															class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10"
-														>
-															{quest.participants
-																.slice(3)
-																.map(
-																	(p) =>
-																		p.username
-																)
-																.join(", ")}
-														</div>
 													</div>
 												{/if}
 											</div>
@@ -905,11 +891,14 @@
 											</div>
 										{/if}
 
-										<div
-											class="opacity-70 font-bold text-base"
-										>
-											👍 {quest.appreciation.length}
-										</div>
+										{#if quest.appreciation.length > 0}
+											<div
+												class="opacity-70 font-bold text-base cursor-help"
+												title={`${quest.appreciation.length} appreciations`}
+											>
+												👍
+											</div>
+										{/if}
 									</div>
 								</div>
 							</div>
