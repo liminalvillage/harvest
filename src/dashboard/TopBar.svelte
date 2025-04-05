@@ -20,6 +20,9 @@
 	let showToast = false;
 	let showDropdown = false;
 	let previousHolons: HolonInfo[] = [];
+	let filteredHolons: HolonInfo[] = [];
+	let inputValue: string = '';
+	let isEditing: boolean = false;
 
 	onMount(() => {
 		const storedHolonID = $page.params.id;
@@ -124,15 +127,46 @@
 		goto(`/${id ? id : 'holonid'}/${currentPath}`);
 	}
 
+	// Add filtering function
+	function filterHolons(value: string) {
+		inputValue = value;
+		if (!value.trim()) {
+			filteredHolons = previousHolons;
+			return;
+		}
+		
+		const searchTerm = value.toLowerCase();
+		filteredHolons = previousHolons.filter(holon => 
+			holon.id.toLowerCase().includes(searchTerm) || 
+			(holon.name && holon.name.toLowerCase().includes(searchTerm))
+		);
+	}
+
 	function handleInput(event: Event) {
 		const target = event.target as HTMLInputElement;
-		ID.set(target.value);
+		if (target.value.trim()) {
+			ID.set(target.value);
+		}
 		showDropdown = false;
+		inputValue = '';
+		isEditing = false;
+		filteredHolons = previousHolons;
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter') {
 			handleInput(event);
+		}
+	}
+
+	// Initialize filtered holons
+	$: filteredHolons = previousHolons;
+
+	// Update holonID when store changes
+	$: if ($ID) {
+		holonID = $ID;
+		if (!isEditing) {
+			inputValue = holonID;
 		}
 	}
 
@@ -289,13 +323,21 @@
 							class="bg-gray-800 block leading-normal pl-12 py-1.5 pr-4 ring-opacity-90 rounded-2xl text-gray-400 w-full focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
 							placeholder="Holon ID"
 							on:keydown={handleKeydown}
+							on:input={(e) => {
+								isEditing = true;
+								filterHolons(e.currentTarget.value);
+							}}
 							on:blur={handleInput}
-							on:focus={() => showDropdown = true}
-							value={holonID}
+							on:focus={() => {
+								showDropdown = true;
+								isEditing = true;
+								filterHolons(inputValue);
+							}}
+							value={inputValue}
 						/>
-						{#if showDropdown && previousHolons.length > 0}
+						{#if showDropdown && filteredHolons.length > 0}
 							<div class="dropdown">
-								{#each previousHolons as holon}
+								{#each filteredHolons as holon}
 									<div 
 										class="dropdown-item"
 										role="button"

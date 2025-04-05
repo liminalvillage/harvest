@@ -1287,6 +1287,7 @@
 		<div 
 			class="sidebar-overlay"
 			style="left: {sidebarPosition.x}px; top: {sidebarPosition.y}px;"
+			on:mousedown={handleDragStart}
 		>
 			<div class="sidebar-header">
 				<div class="flex items-center">
@@ -1344,6 +1345,7 @@
 		z-index: 1000;
 		display: flex;
 		flex-direction: column;
+		cursor: move; /* Add cursor style */
 	}
 
 	.sidebar-header {
