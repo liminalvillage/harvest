@@ -76,26 +76,13 @@
 		pendingUpdates: new Map<string, Quest>()
 	};
 
-	// Add debounce helper
-	function debounce(func: Function, wait: number) {
-		let timeout: NodeJS.Timeout;
-		return function executedFunction(...args: any[]) {
-			const later = () => {
-				clearTimeout(timeout);
-				func(...args);
-			};
-			clearTimeout(timeout);
-			timeout = setTimeout(later, wait);
-		};
-	}
-
-	// Add throttled store updates
-	const updateStore = debounce((newStore: Store) => {
+	// Remove debounce helper and throttled store updates
+	function updateStore(newStore: Store) {
 		store = newStore;
 		quests = Object.entries(store);
-	}, 100);
+	}
 
-	// Modify the subscribe function to use batched updates
+	// Modify the subscribe function to use immediate updates
 	function subscribe() {
 		if (!holosphere || !holonID) return;
 		
@@ -114,36 +101,17 @@
 		try {
 			// Update subscription state
 			subscriptionState.currentHolonID = holonID;
-			subscriptionState.pendingUpdates.clear();
 			
-			const off = holosphere.subscribe(holonID, "quests", (newquest, key) => {
-				// Queue update instead of updating immediately
-				if (newquest) {
-					subscriptionState.pendingUpdates.set(key, newquest);
-				} else {
-					subscriptionState.pendingUpdates.delete(key);
+			const off = holosphere.subscribe(holonID, "quests", (newquest: Quest | null, key?: string) => {
+				// Update store immediately
+				const newStore = { ...store };
+				if (newquest && key) {
+					newStore[key] = newquest;
+				} else if (key) {
+					delete newStore[key];
 				}
-				
-				// Schedule batch update
-				if (subscriptionState.batchTimeout) {
-					clearTimeout(subscriptionState.batchTimeout);
-				}
-				
-				subscriptionState.batchTimeout = setTimeout(() => {
-					const newStore = { ...store };
-					
-					// Apply all pending updates
-					subscriptionState.pendingUpdates.forEach((quest, questKey) => {
-						newStore[questKey] = quest;
-					});
-					
-					// Clear pending updates
-					subscriptionState.pendingUpdates.clear();
-					
-					// Update store once for all changes
-					store = newStore;
-					quests = Object.entries(store);
-				}, 100); // Batch updates every 100ms
+				store = newStore;
+				quests = Object.entries(store);
 			});
 
 			if (typeof off === 'function') {
@@ -195,14 +163,11 @@
 	// Modify the reactive statements to be more efficient
 	$: {
 		if (typeof window !== 'undefined') {
-			debounce(() => {
-				try {
-					localStorage.setItem('taskViewMode', viewMode);
-					localStorage.setItem("kanbanShowCompleted", showCompleted.toString());
-				} catch (error) {
-					console.error('Error saving preferences:', error);
-				}
-			}, 100)();
+			try {
+				localStorage.setItem('taskViewMode', viewMode);
+			} catch (error) {
+				console.error('Error saving view mode:', error);
+			}
 		}
 	}
 
