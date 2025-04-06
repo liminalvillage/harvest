@@ -23,6 +23,7 @@
 	let filteredHolons: HolonInfo[] = [];
 	let inputValue: string = '';
 	let isEditing: boolean = false;
+	let blurTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	onMount(() => {
 		const storedHolonID = $page.params.id;
@@ -117,8 +118,12 @@
 	}
 
 	function selectPreviousHolon(holon: HolonInfo) {
+		if (blurTimeout) clearTimeout(blurTimeout);
+		
 		ID.set(holon.id);
+		isEditing = false;
 		showDropdown = false;
+		filterHolons('');
 	}
 
 	function updateRoute(id: string) {
@@ -127,10 +132,8 @@
 		goto(`/${id ? id : 'holonid'}/${currentPath}`);
 	}
 
-	// Add filtering function
 	function filterHolons(value: string) {
-		inputValue = value;
-		if (!value.trim()) {
+		if (!value || !value.trim()) {
 			filteredHolons = previousHolons;
 			return;
 		}
@@ -142,32 +145,56 @@
 		);
 	}
 
-	function handleInput(event: Event) {
-		const target = event.target as HTMLInputElement;
-		if (target.value.trim()) {
-			ID.set(target.value);
-		}
-		showDropdown = false;
-		inputValue = '';
-		isEditing = false;
-		filteredHolons = previousHolons;
+	function handleBlur() {
+		blurTimeout = setTimeout(() => {
+			if (isEditing) {
+				if (inputValue.trim() && inputValue !== $ID) {
+					ID.set(inputValue.trim());
+				} else if (!inputValue.trim()) {
+					inputValue = $ID || '';
+				}
+				isEditing = false;
+			}
+			showDropdown = false;
+			filterHolons('');
+		}, 150);
+	}
+
+	function handleFocus() {
+		if (blurTimeout) clearTimeout(blurTimeout);
+		showDropdown = true;
+		isEditing = true;
+		filterHolons(inputValue);
+	}
+
+	function handleInput() {
+		isEditing = true;
+		filterHolons(inputValue);
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter') {
-			handleInput(event);
+			event.preventDefault();
+			if (blurTimeout) clearTimeout(blurTimeout);
+
+			if (inputValue.trim() && inputValue !== $ID) {
+				ID.set(inputValue.trim());
+			} else if (!inputValue.trim()) {
+				inputValue = $ID || '';
+			}
+			isEditing = false;
+			showDropdown = false;
+			(event.target as HTMLElement).blur();
 		}
 	}
 
 	// Initialize filtered holons
 	$: filteredHolons = previousHolons;
 
-	// Update holonID when store changes
-	$: if ($ID) {
+	// Update inputValue from store *only* when not editing
+	$: if ($ID && !isEditing) {
 		holonID = $ID;
-		if (!isEditing) {
-			inputValue = holonID;
-		}
+		inputValue = $ID;
 	}
 
 	function toggleAutoTransition() {
@@ -322,18 +349,11 @@
 							type="text"
 							class="bg-gray-800 block leading-normal pl-12 py-1.5 pr-4 ring-opacity-90 rounded-2xl text-gray-400 w-full focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
 							placeholder="Holon ID"
+							bind:value={inputValue}
 							on:keydown={handleKeydown}
-							on:input={(e) => {
-								isEditing = true;
-								filterHolons(e.currentTarget.value);
-							}}
-							on:blur={handleInput}
-							on:focus={() => {
-								showDropdown = true;
-								isEditing = true;
-								filterHolons(inputValue);
-							}}
-							value={inputValue}
+							on:input={handleInput}
+							on:blur={handleBlur}
+							on:focus={handleFocus}
 						/>
 						{#if showDropdown && filteredHolons.length > 0}
 							<div class="dropdown">

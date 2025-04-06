@@ -13,6 +13,9 @@
         last_name?: string;
         picture?: string;
         username: string;
+        actions?: Array<any>;
+        initiated?: Array<string>;
+        completed?: Array<string>;
     }
 
     interface UserStore {
@@ -52,25 +55,6 @@
     onMount(() => {
         document.addEventListener("click", handleClickOutside);
 
-        if (holosphere) {
-            holosphere.subscribe(
-                holonId,
-                "users",
-                (newUser: User | string | null, key: string) => {
-                    if (newUser) {
-                        const parsedUser = newUser;
-                        userStore = {
-                            ...userStore,
-                            [key]: parsedUser,
-                        };
-                    } else {
-                        const { [key]: _, ...rest } = userStore;
-                        userStore = rest;
-                    }
-                },
-            );
-        }
-
         return () => {
             document.removeEventListener("click", handleClickOutside);
         };
@@ -79,6 +63,30 @@
     const dispatch = createEventDispatcher();
     let showAddParticipants = false;
     let showDropdown = false;
+
+    async function fetchUsersAndShowDropdown() {
+        if (!holosphere) {
+            console.error("Cannot fetch users: holosphere is not available");
+            return;
+        }
+        try {
+            // Assuming holosphere.getAll returns an object like { [userId: string]: User }
+            const allUsers = await holosphere.getAll(holonId, "users"); 
+            if (allUsers && typeof allUsers === 'object') {
+                // Basic validation: ensure fetched data is an object (can be refined)
+                userStore = allUsers as UserStore; // Update the store with all fetched users
+                console.log("Fetched and updated userStore:", userStore);
+            } else {
+                console.warn("Fetched users data is not in the expected format:", allUsers);
+                userStore = {}; // Clear store if fetch fails or format is wrong
+            }
+        } catch (error) {
+            console.error("Error fetching users:", error);
+            userStore = {}; // Clear store on error
+        }
+        // Only show dropdown after attempting to fetch
+        showDropdown = true; 
+    }
 
     async function updateQuest(updates: any, shouldClose = false) {
         if (!holosphere) {
@@ -151,11 +159,11 @@
                     await holosphere.put(holonId, "users", {
                         ...initiatorData,
                         initiated: [
-                            ...(initiatorData.initiated || []),
+                            ...(Array.isArray(initiatorData.initiated) ? initiatorData.initiated : []),
                             quest.title,
                         ],
                         actions: [
-                            ...(initiatorData.actions || []),
+                            ...(Array.isArray(initiatorData.actions) ? initiatorData.actions : []),
                             {
                                 type: "initiated",
                                 action: quest.title,
@@ -175,11 +183,15 @@
                         "users",
                         participant.id,
                     );
+                    if (!userData) {
+                        console.error(`User data not found for participant ID: ${participant.id}`);
+                        continue;
+                    }
                     await holosphere.put(holonId, "users", {
                         ...userData,
-                        completed: [...(userData.completed || []), quest.title],
+                        completed: [...(Array.isArray(userData.completed) ? userData.completed : []), quest.title],
                         actions: [
-                            ...(userData.actions || []),
+                            ...(Array.isArray(userData.actions) ? userData.actions : []),
                             {
                                 type: "completed",
                                 action: quest.title,
@@ -232,7 +244,7 @@
             ...userData,
             id: user.id,
             actions: [
-                ...userData.actions,
+                ...(Array.isArray(userData.actions) ? userData.actions : []),
                 {
                     type: "joined",
                     action: quest.title,
@@ -404,6 +416,18 @@
         } else if (event.key === "Escape") {
             tempTitle = quest.title;
             editingTitle = false;
+        }
+    }
+
+    // Reactive logging for dropdown state
+    $: {
+        if (showDropdown) {
+            const availableUsers = Object.entries(userStore).filter(([userId]) => !isUserParticipant(userId));
+            const allUsers = Object.entries(userStore);
+            console.log("Dropdown Opened - User Store:", JSON.parse(JSON.stringify(userStore))); // Clone for clean logging
+            console.log("Dropdown Opened - Quest Participants:", JSON.parse(JSON.stringify(quest.participants || []))); // Clone
+            console.log("Dropdown Opened - All Users in Store:", allUsers);
+            console.log("Dropdown Opened - Available Users (Filtered):", availableUsers);
         }
     }
 </script>
@@ -645,10 +669,10 @@
                         </h3>
                         <button
                             class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm"
-                            on:click|stopPropagation={() =>
-                                (showDropdown = !showDropdown)}
+                            on:click|stopPropagation={fetchUsersAndShowDropdown}
+                            disabled={!holosphere}
                         >
-                            {showDropdown ? "Cancel" : "+ Add Participant"}
+                            + Add Participant
                         </button>
                     </div>
 
@@ -701,17 +725,19 @@
 
                     <!-- User Dropdown -->
                     {#if showDropdown}
+                        {@const availableUsers = Object.entries(userStore).filter(([userId]) => !isUserParticipant(userId))}
+                        {@const allUsers = Object.entries(userStore)}
                         <div
                             class="bg-gray-700 rounded-lg overflow-hidden mt-2 user-dropdown border border-gray-600"
                         >
-                            {#each Object.entries(userStore).filter(([userId]) => !isUserParticipant(userId)) as [userId, user]}
+                            {#each availableUsers as [userId, user]}
                                 <button
                                     class="w-full text-left px-4 py-2 transition-colors flex items-center gap-2 hover:bg-gray-600 text-gray-200"
                                     on:click|stopPropagation={() =>
                                         toggleParticipant(userId)}
                                 >
                                     <img
-                                        src={`https://gun.holons.io/getavatar?user_id=${userId}`}
+                                        src={`https://gun.holons.io/getavatar?user_id=${user.id}`}
                                         alt={user.first_name}
                                         class="w-6 h-6 rounded-full"
                                     />
@@ -721,7 +747,7 @@
                                     >
                                 </button>
                             {/each}
-                            {#if Object.entries(userStore).filter(([userId]) => !isUserParticipant(userId)).length === 0}
+                            {#if availableUsers.length === 0}
                                 <div class="px-4 py-2 text-gray-400 text-sm">
                                     No more users available
                                 </div>
