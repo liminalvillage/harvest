@@ -214,30 +214,30 @@
 					const boundary = h3.cellToBoundary(hexagon, true);
 					const [lat, lng] = h3.cellToLatLng(hexagon);
 					const [vertexLat, vertexLng] = boundary[0];
-					
+					const centerLng = lng; // Use center longitude for reference
+
 					// Check if the hexagon crosses the antimeridian by looking for large jumps
 					let needsNormalization = false;
 					for (let i = 0; i < boundary.length; i++) {
 						const j = (i + 1) % boundary.length;
-						const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
+						const lngDiff = Math.abs(boundary[i][0] - boundary[j][0]);
 						if (lngDiff > 180) {
 							needsNormalization = true;
 							break;
 						}
 					}
 
-					// If we need to normalize, shift coordinates that are on the wrong side
+					// If we need to normalize, shift coordinates based on center longitude
 					let normalizedBoundary = boundary;
 					if (needsNormalization) {
-						const avgLng = boundary.reduce((sum: number, [_, lng]: [number, number]) => sum + lng, 0) / boundary.length;
-						normalizedBoundary = boundary.map(([lat, lng]: [number, number]) => {
-							if (avgLng < 0 && lng > 0) {
-								return [lat, lng - 360];
+						normalizedBoundary = boundary.map(([vertLng, vertLat]: [number, number]) => {
+							if (centerLng < 0 && vertLng > 90) { // Hex center is west, vertex is far east -> shift vertex west
+								return [vertLng - 360, vertLat];
 							}
-							if (avgLng > 0 && lng < 0) {
-								return [lat, lng + 360];
+							if (centerLng > 0 && vertLng < -90) { // Hex center is east, vertex is far west -> shift vertex east
+								return [vertLng + 360, vertLat];
 							}
-							return [lat, lng];
+							return [vertLng, vertLat];
 						});
 					}
 
@@ -300,30 +300,30 @@
 				const boundary = h3.cellToBoundary(hexagon, true);
 				const [lat, lng] = h3.cellToLatLng(hexagon);
 				const hexSize = h3.getHexagonEdgeLengthAvg(h3.getResolution(hexagon), 'km') * 1000;
-				
+				const centerLng = lng; // Use center longitude for reference
+
 				// Check for antimeridian crossing
 				let needsNormalization = false;
 				for (let i = 0; i < boundary.length; i++) {
 					const j = (i + 1) % boundary.length;
-					const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
+					const lngDiff = Math.abs(boundary[i][0] - boundary[j][0]);
 					if (lngDiff > 180) {
 						needsNormalization = true;
 						break;
 					}
 				}
 
-				// Normalize if needed
+				// Normalize if needed based on center longitude
 				let normalizedBoundary = boundary;
 				if (needsNormalization) {
-					const avgLng = boundary.reduce((sum: number, [_, lng]: [number, number]) => sum + lng, 0) / boundary.length;
-					normalizedBoundary = boundary.map(([lat, lng]: [number, number]) => {
-						if (avgLng < 0 && lng > 0) {
-							return [lat, lng - 360];
+					normalizedBoundary = boundary.map(([vertLng, vertLat]: [number, number]) => {
+						if (centerLng < 0 && vertLng > 90) { // Hex center is west, vertex is far east -> shift vertex west
+							return [vertLng - 360, vertLat];
 						}
-						if (avgLng > 0 && lng < 0) {
-							return [lat, lng + 360];
+						if (centerLng > 0 && vertLng < -90) { // Hex center is east, vertex is far west -> shift vertex east
+							return [vertLng + 360, vertLat];
 						}
-						return [lat, lng];
+						return [vertLng, vertLat];
 					});
 				}
 
