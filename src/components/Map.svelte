@@ -673,11 +673,11 @@
 
 		map.on("style.load", () => {
 			map.setFog({
-				color: "rgb(186, 210, 235)",
-				"high-color": "rgb(36, 92, 223)",
-				"horizon-blend": 0.02,
-				"space-color": "rgb(11, 11, 25)",
-				"star-intensity": 0.6,
+				color: "rgb(255, 255, 255)",       // Lower atmosphere white
+				"high-color": "rgb(255, 255, 255)", // Upper atmosphere white
+				"horizon-blend": 0.03,          // Slightly increase blend for thickness
+				"space-color": "rgb(17, 24, 39)", // Keep space dark
+				"star-intensity": 0.6
 			});
 		});
 

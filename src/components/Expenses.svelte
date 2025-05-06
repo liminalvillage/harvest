@@ -13,24 +13,29 @@
         date: string;
     }
 
+    interface User {
+        id: number;
+        first_name: string;
+    }
+
     const holosphere = getContext("holosphere") as HoloSphere;
     
     $: holonID = $ID;
     let expenses: Record<string, Expense> = {};
-    let store: Record<string, any> = {};
-    let selectedCurrency = "euro";
+    let store: Record<string, User> = {};
+    let selectedCurrency: string = '';
+    let availableCurrencies: string[] = [];
+    let currenciesFromSettingsLoaded = false;
     let creditMatrix: number[][] = [];
     
-    // Get unique currencies from expenses
-    $: currencies = [...new Set(Object.values(expenses).map(e => e.currency))];
-    
-    $: users = Object.values(store)
+    $: users = Object.values(store);
     
     onMount(() => {
         ID.subscribe((value) => {
             holonID = value;
             subscribeToExpenses();
             subscribeToUsers();
+            subscribeToSettings();
         });
     });
 
@@ -40,7 +45,8 @@
             holosphere.subscribe(
                 holonID,
                 "expenses",
-                (newItem: any, key: string) => {
+                (newItem: any, key?: string) => {
+                    if (key === undefined) return;
                     if (newItem) {
                         try {
                             const parsedExpense = typeof newItem === 'string' ? JSON.parse(newItem) : newItem;
@@ -52,7 +58,9 @@
                         delete expenses[key];
                     }
                     expenses = expenses;
-                    calculateCredits(selectedCurrency);
+                    if (!currenciesFromSettingsLoaded) {
+                        deriveCurrenciesFromExpenses();
+                    }
                 }
             );
         }
@@ -64,15 +72,44 @@
             holosphere.subscribe(
                 holonID,
                 "users",
-                (newUser, key) => {
+                (newUser: any, key?: string) => {
+                    if (key === undefined) return;
                     if (newUser) {
-                        store[key] = newUser;
+                        store[key] = newUser as User;
                     } else {
                         delete store[key];
-                        store = store;
                     }
+                    store = store;
                     users = Object.values(store);
-                    calculateCredits(selectedCurrency);
+                    if (!currenciesFromSettingsLoaded) {
+                        deriveCurrenciesFromExpenses();
+                    }
+                }
+            );
+        }
+    }
+
+    function subscribeToSettings(): void {
+        availableCurrencies = [];
+        if (holosphere && holonID) {
+            holosphere.subscribe(
+                holonID,
+                "settings",
+                (settingsData: any, key?: string) => {
+                    if (settingsData && Array.isArray(settingsData.currencies)) {
+                        availableCurrencies = settingsData.currencies.filter((c: unknown) => typeof c === 'string');
+                    } else {
+                        console.warn("Settings data does not contain a valid 'currencies' array:", settingsData);
+                        availableCurrencies = [];
+                    }
+                    availableCurrencies = [...availableCurrencies];
+
+                    if (settingsData && Array.isArray(settingsData.currencies) && availableCurrencies.length > 0) {
+                        currenciesFromSettingsLoaded = true;
+                    } else {
+                        currenciesFromSettingsLoaded = false;
+                        deriveCurrenciesFromExpenses();
+                    }
                 }
             );
         }
@@ -86,13 +123,12 @@
         creditMatrix = Array(users.length).fill(0).map(() => Array(users.length).fill(0));
         
         Object.values(expenses).forEach(expense => {
-            console.log(expense);
             if (expense.currency.toLowerCase() === currency.toLowerCase()) {
                 const amountPerPerson = expense.amount / (expense.splitWith.length || 1);
-                const payerIndex = users.findIndex(user => user.id === expense.paidBy);
+                const payerIndex = users.findIndex(user => user.id === parseInt(expense.paidBy));
                 
-                expense.splitWith.forEach(member => {
-                    const memberIndex = users.findIndex(user => user.id === member);
+                expense.splitWith.forEach(memberId => {
+                    const memberIndex = users.findIndex(user => user.id === parseInt(memberId));
                     if (memberIndex === -1 || payerIndex === -1) return;
                     
                     if (payerIndex !== memberIndex) {
@@ -104,17 +140,38 @@
         });
     }
 
+    function deriveCurrenciesFromExpenses() {
+        const derived = [...new Set(Object.values(expenses).map(e => e.currency))] 
+                        .filter(c => typeof c === 'string' && c !== '');
+        
+        if (derived.length > 0) {
+            availableCurrencies = derived;
+        } else {
+            availableCurrencies = []; 
+        }
+        availableCurrencies = [...availableCurrencies];
+    }
+
+    // Set initial currency reactively
     $: {
-        if (selectedCurrency) {
+        if (selectedCurrency === '' && availableCurrencies.length > 0) {
+            selectedCurrency = availableCurrencies[0];
+        }
+    }
+
+    // Reactive block that depends on selectedCurrency and users
+    $: {
+        if (selectedCurrency !== '' && users.length > 0) {
             calculateCredits(selectedCurrency);
         }
     }
 
     function formatAmount(amount: number): string {
-        if (['EUR','USD', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'].includes(selectedCurrency.toUpperCase())) {
+        const currencyCode = selectedCurrency ? selectedCurrency.toUpperCase() : '';
+        if (['EUR','USD', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'].includes(currencyCode)) {
             return new Intl.NumberFormat('en-US', {
                 style: 'currency',
-                currency: selectedCurrency.toUpperCase()
+                currency: currencyCode
             }).format(Math.abs(amount));
         } else {
             return Math.abs(amount).toFixed(2);
@@ -125,17 +182,22 @@
 <div class="w-full bg-gray-800 p-6 rounded-3xl">
     <div class="flex justify-between text-white items-center mb-8">
         <p class="text-2xl font-bold">Expenses</p>
+        {#if selectedCurrency !== ''}
         <select
             bind:value={selectedCurrency}
             class="bg-gray-700 text-white px-4 py-2 rounded-lg"
         >
-            {#each currencies as currency}
+            {#each availableCurrencies as currency}
                 <option value={currency}>{currency.toUpperCase()}</option>
             {/each}
         </select>
+        {:else}
+            <span class="text-gray-500">Loading currencies...</span>
+        {/if}
     </div>
 
     <!-- Credits Table -->
+    {#if selectedCurrency !== ''}
     <div class="overflow-x-auto overflow-y-auto max-h-[70vh] rounded-lg border border-gray-700">
         <table class="w-full text-white border-collapse relative">
             <thead class="sticky top-0 z-20">
@@ -183,18 +245,22 @@
             </tbody>
         </table>
     </div>
+    {:else}
+        <div class="text-center text-gray-500 py-10">Select a currency to view balances.</div>
+    {/if}
 
     <!-- Recent Expenses -->
+    {#if selectedCurrency !== ''}
     <div class="mt-8">
         <h3 class="text-xl font-bold text-white mb-4">Recent Expenses</h3>
         <div class="space-y-4">
-            {#each Object.values(expenses).filter(e => e.currency === selectedCurrency).sort((a, b) => new Date(parseInt(b.date)).getTime() - new Date(parseInt(a.date)).getTime()) as expense}
+            {#each Object.values(expenses).filter(e => selectedCurrency !== '' && e.currency === selectedCurrency).sort((a, b) => new Date(parseInt(b.date)).getTime() - new Date(parseInt(a.date)).getTime()) as expense}
                 <div class="bg-gray-700 rounded-lg p-4">
                     <div class="flex justify-between items-start">
                         <div>
                             <h4 class="text-lg font-semibold text-white">{expense.description}</h4>
-                            <p class="text-gray-300">Paid by {users.find(user => user.id === parseInt(expense.paidBy))?.first_name || expense.paidBy}</p>
-                            <p class="text-sm text-gray-400">Split with: {expense.splitWith.map(id => users.find(user => user.id === parseInt(id))?.first_name || id).join(', ')}</p>
+                            <p class="text-gray-300">Paid by {users.find(user => user.id === parseInt(expense.paidBy))?.first_name || `ID: ${expense.paidBy}`}</p>
+                            <p class="text-sm text-gray-400">Split with: {expense.splitWith.map(id => users.find(user => user.id === parseInt(id))?.first_name || `ID: ${id}`).join(', ')}</p>
                         </div>
                         <div class="text-right">
                             <p class="text-xl font-bold text-white">{formatAmount(expense.amount)}</p>
@@ -207,4 +273,5 @@
             {/each}
         </div>
     </div>
+    {/if}
 </div> 
