@@ -134,7 +134,9 @@
 		if (!$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
 			const newHolon: HolonInfo = { id: $ID };
 			previousHolons = [...previousHolons, newHolon];
-			localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+			if (browser) {
+				localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+			}
 			
 			// Then try to fetch and update its name in the previous holons list
 			holosphere.getAll($ID, 'settings').then((settings: any) => {
@@ -144,7 +146,9 @@
 								? { ...holon, name: settings[0].name }
 								: holon
 						);
-						localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+						if (browser) {
+							localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+						}
 				}
 			}).catch((error: Error) => {
 				console.error(`Error fetching name for holon ${$ID}:`, error);
@@ -163,8 +167,11 @@
 
 	function updateRoute(id: string) {
 		let currentPath = $page.url.pathname.split('/').pop();
-		if (currentPath === holonID) currentPath = 'dashboard';
-		goto(`/${id ? id : 'holonid'}/${currentPath}`);
+		if (currentPath === holonID) currentPath = 'dashboard'; // Default to dashboard if current path is just the ID
+		// Ensure goto is only called on the client side
+		if (browser) {
+			goto(`/${id ? id : 'holonid'}/${currentPath}`);
+		}
 	}
 
 	function filterHolons(value: string) {
