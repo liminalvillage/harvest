@@ -19,6 +19,7 @@
 	let selectedQuest: { id: string; quest: Quest } | null = null;
 	let tempDate: string;
 	let tempTime: string;
+	let dialogElement: HTMLDialogElement;
 
 	const dispatch = createEventDispatcher();
 
@@ -127,13 +128,13 @@
 	function update(hex) {
 		// Filter ongoing and scheduled quests
 		const filteredQuests = quests.filter(
-			(quest) =>
-				quest.status === "ongoing"
+			([key, questObj]) =>
+				questObj.status === "ongoing"
 		);
 
 		// Sort quests by when property
 		const sortedQuests = filteredQuests.sort(
-			(a, b) => new Date(a.when) - new Date(b.when)
+			([keyA, questA], [keyB, questB]) => new Date(questA.when).getTime() - new Date(questB.when).getTime()
 		);
 
 		return sortedQuests;
@@ -322,14 +323,13 @@
 	<dialog 
 		class="fixed inset-0 bg-black/75 z-50"
 		bind:this={dialogElement}
-		on:close={() => handleClickOutside()}
+		on:close={() => { showDatePicker = false; selectedQuest = null; }}
 		open
 	>
 		<div class="fixed inset-0 flex items-center justify-center">
 			<form 
 				method="dialog"
 				class="bg-gray-800 p-6 rounded-xl schedule-modal border border-gray-700 shadow-xl max-w-md w-full"
-				role="dialog"
 				aria-labelledby="modal-title"
 				aria-describedby="modal-description"
 			>

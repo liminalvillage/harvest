@@ -1,10 +1,20 @@
+<script context="module" lang="ts">
+	// Extend Window interface for MetaMask
+	interface MetaMaskWindow extends Window {
+		ethereum?: any; // You can use a more specific type if you have one for ethers provider
+	}
+
+	declare let window: MetaMaskWindow;
+</script>
+
 <script lang="ts">
-	import { openSidebar, ID, autoTransitionEnabled } from './store';
+	import { openSidebar, ID, autoTransitionEnabled, walletAddress } from './store';
 	import { onMount, onDestroy, getContext } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import  HoloSphere  from 'holosphere';
+	import { ethers } from 'ethers';
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -24,6 +34,25 @@
 	let inputValue: string = '';
 	let isEditing: boolean = false;
 	let blurTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	// Ethereum wallet connection
+	async function connectWallet() {
+		if (browser && typeof window.ethereum !== 'undefined') {
+			try {
+				const provider = new ethers.BrowserProvider(window.ethereum);
+				await provider.send("eth_requestAccounts", []);
+				const signer = await provider.getSigner();
+				const address = await signer.getAddress();
+				walletAddress.set(address);
+			} catch (error) {
+				console.error('Error connecting to wallet:', error);
+				// Handle error (e.g., show a message to the user)
+			}
+		} else {
+			console.log('MetaMask is not installed!');
+			// Handle case where MetaMask (or other provider) is not available
+		}
+	}
 
 	onMount(() => {
 		const storedHolonID = $page.params.id;
@@ -70,6 +99,12 @@
 			window.removeEventListener('scroll', handleActivity);
 		}
 	});
+
+	// Function to disconnect wallet
+	function disconnectWallet() {
+		walletAddress.set(null);
+		// Potentially clear other related stored data if needed
+	}
 
 	// Move the name fetching logic into a separate function
 	async function fetchHolonName(id: string) {
@@ -197,6 +232,13 @@
 		inputValue = $ID;
 	}
 
+	// Reactive statement for walletAddress changes
+	$: if ($walletAddress) {
+		console.log('Wallet connected:', $walletAddress);
+		// You can add logic here if something needs to happen when the wallet connects,
+		// e.g., fetching user-specific data based on wallet address.
+	}
+
 	function toggleAutoTransition() {
 		autoTransitionEnabled.update(value => !value);
 	}
@@ -318,6 +360,40 @@
 		border-radius: 0.5rem;
 		margin-right: 1rem;
 	}
+	.wallet-button {
+		background-color: #4a5568; /* gray-700 */
+		color: white;
+		padding: 0.5rem 1rem;
+		border-radius: 0.375rem; /* rounded-md */
+		font-weight: 500; /* font-medium */
+		margin-left: 1rem; /* ml-4 */
+		transition: background-color 0.2s;
+	}
+	.wallet-button:hover {
+		background-color: #2d3748; /* gray-800 */
+	}
+	.wallet-info {
+		color: white;
+		margin-left: 1rem; /* ml-4 */
+		font-size: 0.875rem; /* text-sm */
+		display: flex;
+		align-items: center;
+	}
+	.disconnect-button {
+		background-color: transparent;
+		color: #cbd5e0; /* gray-400 */
+		border: 1px solid #cbd5e0; /* gray-400 */
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.375rem; /* rounded-md */
+		margin-left: 0.5rem; /* ml-2 */
+		font-size: 0.75rem; /* text-xs */
+		cursor: pointer;
+	}
+	.disconnect-button:hover {
+		background-color: #ef4444; /* red-500 */
+		color: white;
+		border-color: #ef4444; /* red-500 */
+	}
 </style>
 
 <header class="h-20 items-center relative z-10">
@@ -393,6 +469,16 @@
 				</div>
 			</div>
 			<div class="flex items-center justify-end ml-auto">
+				{#if $walletAddress}
+					<div class="wallet-info">
+						<span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
+						<button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
+					</div>
+				{:else}
+					<button on:click={connectWallet} class="wallet-button">
+						Connect Wallet
+					</button>
+				{/if}
 				<button
 					on:click={toggleAutoTransition}
 					class="p-2 rounded-full hover:bg-gray-700 transition-colors"

@@ -558,6 +558,12 @@
 		// Always set selectedTask to null when modal closes
 		selectedTask = null;
 	}
+
+	function handleDialogKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			hideDialog();
+		}
+	}
 </script>
 
 <div class="flex flex-wrap">
@@ -890,12 +896,13 @@
 		<div 
 			class="fixed inset-0 z-50 overflow-auto bg-black bg-opacity-50 flex items-center justify-center"
 			on:click|self={hideDialog}
+			on:keydown={handleDialogKeydown} 
 			role="dialog"
 			aria-modal="true"
+			tabindex="-1" 
 		>
 			<div 
 				class="bg-gray-800 p-6 rounded-lg shadow-lg w-96 relative"
-				role="dialog"
 				aria-labelledby="task-input-title"
 			>
 				<button
@@ -1028,23 +1035,6 @@
 			opacity: 1;
 			transform: translateY(0);
 		}
-	}
-
-	/* Add tooltip arrow */
-	.group-hover\:visible {
-		position: absolute;
-		pointer-events: none;
-	}
-
-	.group-hover\:visible::before {
-		content: "";
-		position: absolute;
-		top: -4px;
-		left: 50%;
-		transform: translateX(-50%);
-		border-width: 0 4px 4px 4px;
-		border-style: solid;
-		border-color: transparent transparent #1f2937 transparent;
 	}
 
 	/* Update transform styles */
