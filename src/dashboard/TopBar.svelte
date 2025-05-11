@@ -55,6 +55,9 @@
 	}
 
 	onMount(() => {
+		// Ensure auto-transition is off by default when TopBar loads
+		autoTransitionEnabled.set(false);
+
 		const storedHolonID = $page.params.id;
 		if (storedHolonID) {
 			ID.set(storedHolonID);
