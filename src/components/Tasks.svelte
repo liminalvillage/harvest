@@ -262,13 +262,44 @@
 		return ''+ Date.now();
 	}
 
-	// Modify handleAddTask to use 100px spacing
+	// Modify handleAddTask to use a default 'Dashboard User' initiator if user data fetch fails or returns no data, instead of throwing an error.
 	async function handleAddTask() {
 		if (!holosphere || !holonID || !newTask.title.trim()) return;
 
 		try {
-			const userData = await holosphere.get(holonID, 'users', holonID);
-			if (!userData) throw new Error('User data not found');
+			let initiatorInfo;
+			try {
+				// Attempt to get user data
+				const userData = await holosphere.get(holonID, 'users', holonID);
+
+				if (userData && typeof userData === 'object' && userData !== null) {
+					initiatorInfo = {
+						id: holonID,
+						username: userData.username || "Unknown User",
+						firstName: userData.first_name || "",
+						lastName: userData.last_name || ""
+					};
+				} else {
+					// User data not found or not in expected format, use default
+					console.warn(`User data not found or in unexpected format for holonID: ${holonID}. Using default "Dashboard User" as initiator.`);
+					initiatorInfo = {
+						id: holonID, 
+						username: "Dashboard User",
+						firstName: "Dashboard", 
+						lastName: "User"      
+					};
+				}
+			} catch (fetchError) {
+				// Error during fetch, use default
+				console.error('Error fetching user data:', fetchError);
+				console.warn(`Using default "Dashboard User" as initiator due to fetch error for holonID: ${holonID}.`);
+				initiatorInfo = {
+					id: holonID,
+					username: "Dashboard User",
+					firstName: "Dashboard",
+					lastName: "User"
+				};
+			}
 
 			// Get the current top position based on sort order
 			const POSITION_STEP = 100; // Change to 100px spacing
@@ -300,18 +331,18 @@
 
 			const task = {
 				...newTask,
-				initiator: {
-					id: holonID,
-					username: userData.username,
-					firstName: userData.first_name,
-					lastName: userData.last_name
-				},
+				initiator: initiatorInfo, // Use the determined initiatorInfo
 				created: new Date().toISOString(),
 				position: newPosition
 			};
 
 			// Add the task to holosphere
-			await holosphere.put(holonID, 'quests', task);
+			if (holonID) {
+				await holosphere.put(holonID, 'quests', task);
+			} else {
+				console.error("Cannot add task: holonID is null");
+				return;
+			}
 
 			// Reset form and close dialog
 			showTaskInput = false;
@@ -431,7 +462,13 @@
 			};
 
 			// Save to holosphere
-			await holosphere.put(holonID, `quests/${sourceKey}`, updatedQuest);
+			if (holonID) { 
+				await holosphere.put(holonID, `quests/${sourceKey}`, updatedQuest);
+			} else {
+				console.error("Cannot update quest position: holonID is null");
+				// Optionally, return or handle error to prevent further execution
+				return; 
+			}
 
 			// Update local store
 			store = {
@@ -463,11 +500,22 @@
 				});
 
 				// Save all normalized positions
-				await Promise.all(
-					normalized.map(({ key, quest }) => 
-						holosphere.put(holonID, `quests/${key}`, quest)
-					)
-				);
+				if (holonID) { 
+					await Promise.all(
+						normalized.map(({ key, quest }) => {
+							// Ensure holonID is not null before this call too
+							if (holonID) { 
+								return holosphere.put(holonID, `quests/${key}`, quest);
+							} else {
+								// This case should ideally not be reached if the outer check is in place
+								console.error("Critical error: holonID became null during normalization.");
+								return Promise.resolve(); // or handle error appropriately
+							}
+						})
+					);
+				} else {
+					console.error("Cannot normalize positions: holonID is null");
+				}
 
 				// Update local store with normalized positions
 				store = normalized.reduce((acc, { key, quest }) => ({
@@ -748,12 +796,12 @@
 		</div>
 
 		{#if viewMode === "canvas"}
-			<CanvasView
+			{#if holonID} <CanvasView
 				{filteredQuests}
 				{holonID}
 				{showCompleted}
 				on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
-			/>
+			/> {:else} <!-- Optionally, add a loading state or message here --> <p>Loading canvas...</p> {/if}
 		{:else}
 			<div class="space-y-2">
 				{#each filteredQuests as [key, quest]}
@@ -881,7 +929,7 @@
 	</div>
 	<Schedule />
 
-	{#if selectedTask}
+	{#if selectedTask && holonID}
 		<TaskModal
 			quest={selectedTask.quest}
 			questId={selectedTask.key}

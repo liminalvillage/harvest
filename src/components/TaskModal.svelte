@@ -35,6 +35,9 @@
     let editingTitle = false;
     let editedTitle = quest.title;
 
+    let editingDescription = false;
+    let tempDescription = quest.description || "";
+
     let touchedCard: { key: string; quest: any; x: number; y: number } | null =
         null;
     let touchStartX = 0;
@@ -419,6 +422,26 @@
         }
     }
 
+    async function saveDescription() {
+        const newDescription = tempDescription.trim();
+        const oldDescription = (quest.description || "").trim();
+
+        if (newDescription !== oldDescription) {
+            await updateQuest({ description: newDescription });
+        }
+        editingDescription = false;
+    }
+
+    function handleDescriptionKeydown(event: KeyboardEvent) {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            saveDescription();
+        } else if (event.key === "Escape") {
+            tempDescription = quest.description || "";
+            editingDescription = false;
+        }
+    }
+
     // Reactive logging for dropdown state
     $: {
         if (showDropdown) {
@@ -512,11 +535,43 @@
 
             <div class="space-y-6 text-gray-300">
                 <!-- Description -->
-                {#if quest.description}
-                    <div class="bg-gray-700/50 p-4 rounded-lg">
-                        <p class="text-sm">{quest.description}</p>
-                    </div>
-                {/if}
+                <div class="bg-gray-700/50 p-4 rounded-lg">
+                    {#if editingDescription}
+                        <textarea
+                            bind:value={tempDescription}
+                            class="text-sm text-white bg-gray-700 rounded px-2 py-1 w-full resize-none border border-gray-600 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            rows="4"
+                            placeholder="Add a description..."
+                            on:blur={saveDescription}
+                            on:keydown={handleDescriptionKeydown}
+                            use:focusOnMount
+                        ></textarea>
+                    {:else}
+                        {#if quest.description}
+                            <p 
+                                class="text-sm whitespace-pre-wrap cursor-pointer hover:bg-gray-700 p-1 rounded-md" 
+                                on:click={() => {
+                                    tempDescription = quest.description || '';
+                                    editingDescription = true;
+                                }}
+                                role="button"
+                                tabindex="0"
+                                on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (tempDescription = quest.description || '', editingDescription = true)}
+                            >
+                                {quest.description}
+                            </p>
+                        {:else}
+                            <button 
+                                class="text-sm text-gray-400 hover:text-white px-2 py-1 rounded-md hover:bg-gray-700"
+                                on:click={() => {
+                                    tempDescription = ''; // Start with empty for new description
+                                    editingDescription = true;
+                                }}>
+                                + Add description
+                            </button>
+                        {/if}
+                    {/if}
+                </div>
 
                 <!-- Schedule Section -->
                 <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">
