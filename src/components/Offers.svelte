@@ -68,32 +68,67 @@
 		}
 	}
 
+	// Function to get item background color
+	function getItemBackgroundColor(itemType) {
+		if (itemType === 'offer') {
+			return 'hsl(160, 60%, 80%)'; // Minty Green for offers
+		} else if (itemType === 'request') {
+			return '#E5E7EB';  // Tailwind gray-200 for requests
+		}
+		return 'hsl(210, 15%, 75%)'; // Default gray
+	}
+
 	// New function to generate table HTML
 	function generateTableHtml(items, caption, personHeader, itemHeader) {
-		const rows = items
+		const itemCards = items
 			.map(
-				(item) => `
-			<tr>
-				<td>${item.initiator?.first_name || ""}</td>
-				<td>${item.title}</td>
-			</tr>
-		`
+				(item) => {
+					const backgroundColor = getItemBackgroundColor(item.type);
+					// Ensure text colors provide good contrast with the new backgrounds
+					// Titles are currently text-white, details text-gray-300.
+					// These should be fine, but for very light HSL backgrounds, darker text might be needed.
+					// The chosen HSL values (L=80%) should be light enough for dark text to be more readable.
+					// Let's adjust text color for better readability on these lighter backgrounds.
+					const textColor = "text-gray-800"; // Darker text for better contrast
+					const subTextColor = "text-gray-600";
+
+					return `
+				<div 
+					class="p-4 rounded-lg mb-3 shadow hover:shadow-md transition-shadow duration-200"
+					style="background-color: ${backgroundColor};"
+				>
+					<div class="flex items-center">
+						<div class="flex-shrink-0 mr-3">
+							${item.initiator?.id ? `
+								<img
+									class="w-10 h-10 rounded-full border-2 border-gray-400" 
+									src="https://gun.holons.io/getavatar?user_id=${item.initiator.id}"
+									alt="${item.initiator?.first_name || "User"}'s avatar"
+								/>
+							` : `
+								<div class="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center text-white text-xl font-bold border-2 border-gray-400">
+									?
+								</div>
+							`}
+						</div>
+						<div class="flex-grow">
+							<h4 class="text-md font-semibold ${textColor}">${item.title}</h4>
+							<p class="text-sm ${subTextColor}">
+								${personHeader}: ${item.initiator?.first_name || "N/A"} ${item.initiator?.last_name || ""}
+							</p>
+						</div>
+					</div>
+				</div>
+			`;
+				}
 			)
 			.join("");
 
 		return `
-			<table class="w-full text-left border-collapse">
-				<caption class="text-lg font-bold mb-2">${caption}</caption>
-				<thead>
-					<tr>
-						<th class="py-2 px-4 bg-gray-700 text-white">${personHeader}</th>
-						<th class="py-2 px-4 bg-gray-700 text-white">${itemHeader}</th>
-					</tr>
-				</thead>
-				<tbody>
-					${rows}
-				</tbody>
-			</table>
+			<div>
+				<h3 class="text-xl font-bold mb-4 text-white">${caption}</h3>
+				${itemCards.length > 0 ? itemCards : `<p class="text-gray-400">No items to display.</p>`}
+			</div>
 		`;
 	}
 </script>
@@ -175,31 +210,31 @@
 		</div>
 
 		<div class="mb-8">
-			<div class="bg-white rounded-lg p-4">
+			<div class="bg-gray-900 rounded-lg p-4">
 				{#if offers.length > 0}
 					{@html generateTableHtml(
 						offers,
 						"Active Offers",
-						"Person",
+						"Offered by",
 						"Offer"
 					)}
 				{:else}
-					<p class="text-gray-600">No active offers at the moment.</p>
+					<p class="text-gray-400">No active offers at the moment.</p>
 				{/if}
 			</div>
 		</div>
 
 		<div class="mb-8">
-			<div class="bg-white rounded-lg p-4">
+			<div class="bg-gray-900 rounded-lg p-4">
 				{#if needs.length > 0}
 					{@html generateTableHtml(
 						needs,
 						"Active Requests",
-						"Person",
+						"Requested by",
 						"Request"
 					)}
 				{:else}
-					<p class="text-gray-600">
+					<p class="text-gray-400">
 						No active requests at the moment.
 					</p>
 				{/if}
