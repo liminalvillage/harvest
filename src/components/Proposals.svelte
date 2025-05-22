@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount, getContext } from "svelte";
+    import { onMount, onDestroy, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import type HoloSphere from "holosphere";
     import ProposalChart from './ProposalChart.svelte';
@@ -17,10 +17,11 @@
 
     const holosphere = getContext("holosphere") as HoloSphere;
     
-    $: holonID = $ID;
+    $: currentHolonID = $ID;
     let proposals: Record<string, Proposal> = {};
     let selectedProposal: Proposal | null = null;
     let showModal = false;
+    let unsubscribeFromProposals: (() => void) | null = null;
     
     // Computed property to sort proposals by date and then agreement count
     $: sortedProposals = Object.values(proposals)
@@ -36,33 +37,60 @@
         });
 
     onMount(() => {
-        ID.subscribe((value) => {
-            holonID = value;
-            subscribeToProposals();
+        const idUnsubscribe = ID.subscribe((value) => {
+             if (value !== currentHolonID) {
+                 currentHolonID = value;
+                 subscribeToProposals(currentHolonID);
+             } else if (value && !unsubscribeFromProposals) {
+                currentHolonID = value;
+                subscribeToProposals(currentHolonID);
+             }
         });
+
+        return () => {
+            idUnsubscribe();
+            if (unsubscribeFromProposals) {
+                unsubscribeFromProposals();
+            }
+        };
     });
 
-    function subscribeToProposals(): void {
-        proposals = {};
-        if (holosphere) {
+    function subscribeToProposals(holonIdToSubscribe: string | null): void {
+        if (unsubscribeFromProposals) {
+            unsubscribeFromProposals();
+            unsubscribeFromProposals = null;
+        }
+        
+        proposals = {}; 
+
+        if (holosphere && holonIdToSubscribe) {
             holosphere.subscribe(
-                holonID,
+                holonIdToSubscribe,
                 "quests",
-                (newItem: Proposal, key: string) => {
-                    if (newItem) {
-                        if (newItem.type === "proposal") {
-                            proposals[key] = newItem;
-                        }
-                    } else {
-                        delete proposals[key];
+                (newItem: Proposal | null, key?: string) => {
+                    if (!key) return;
+
+                    if (newItem && newItem.type === "proposal") {
+                         proposals[key] = newItem;
+                         proposals = proposals;
+                    } else if (!newItem && proposals[key]) {
+                         delete proposals[key];
+                         proposals = proposals;
                     }
-                    proposals = proposals;
                 }
-            );
+            ).then(subscription => {
+                unsubscribeFromProposals = subscription.unsubscribe;
+            }).catch(error => {
+                console.error("Failed to subscribe to proposals:", error);
+            });
         }
     }
 
     function addProposal(title: string, description: string): void {
+        if (!currentHolonID) {
+            console.error("Cannot add proposal: holonID is not set.");
+            return;
+        }
         const newProposal: Proposal = {
             id: crypto.randomUUID(),
             type: "proposal",
@@ -74,10 +102,14 @@
             creator: "Dashboard User", // You might want to get the actual user
         };
         
-        holosphere.put(holonID, "quests", newProposal);
+        holosphere.put(currentHolonID, "quests", newProposal);
     }
 
     function toggleBlock(proposalId: string): void {
+        if (!currentHolonID) {
+            console.error("Cannot toggle block: holonID is not set.");
+            return;
+        }
         const proposal = proposals[proposalId];
         if (!proposal) return;
 
@@ -93,30 +125,36 @@
         } else {
             updatedProposal.stoppers = [...updatedProposal.stoppers, userId];
             // Remove from participants if blocking
-            updatedProposal.participants = updatedProposal.participants.filter(id => id !== userId);
+            updatedProposal.participants = updatedProposal.participants?.filter(id => id !== userId) || [];
         }
         
-        holosphere.put(holonID, "quests", updatedProposal);
+        holosphere.put(currentHolonID, "quests", updatedProposal);
     }
 
     function toggleAgree(proposalId: string): void {
+        if (!currentHolonID) {
+            console.error("Cannot toggle agree: holonID is not set.");
+            return;
+        }
         const proposal = proposals[proposalId];
         if (!proposal) return;
 
         const userId = "current-user"; // Replace with actual user ID
         const updatedProposal = { ...proposal };
         
-        if (proposal.participants.includes(userId)) {
-            updatedProposal.participants = proposal.participants.filter(id => id !== userId);
+        const participants = updatedProposal.participants || [];
+
+        if (participants.includes(userId)) {
+            updatedProposal.participants = participants.filter(id => id !== userId);
         } else {
-            updatedProposal.participants = [...proposal.participants, userId];
+            updatedProposal.participants = [...participants, userId];
             // Remove from stoppers if agreeing
             if (updatedProposal.stoppers) {
                 updatedProposal.stoppers = updatedProposal.stoppers.filter(id => id !== userId);
             }
         }
         
-        holosphere.put(holonID, "quests", updatedProposal);
+        holosphere.put(currentHolonID, "quests", updatedProposal);
     }
 
     let showAddDialog = false;

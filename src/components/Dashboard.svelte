@@ -21,6 +21,8 @@
     let checklistCount = 0;
     let completedChecklistCount = 0;
 
+    let holonPurpose: string | null = null; // Variable to store the holon's purpose
+
     onMount(() => {
         // Set up subscription to ID store
         unsubscribe = ID.subscribe((value) => {
@@ -64,6 +66,14 @@
             const offers = (await holosphere.getAll(holonID, "offers")) || {};
             const checklists = (await holosphere.getAll(holonID, "checklists")) || {};
 
+            // Fetch holon purpose from config
+            const configData = await holosphere.get(holonID, "settings", holonID);
+            if (configData && typeof configData === 'object' && configData.purpose) {
+                holonPurpose = configData.purpose;
+            } else {
+                holonPurpose = null; // Ensure it's null if not found or not a string
+            }
+
             chatCount = Object.keys(chats).length;
             userCount = Object.keys(users).length;
             shoppingItemCount = Object.keys(shoppingItems).length;
@@ -93,10 +103,13 @@
 
 <div class="flex flex-wrap">
     <div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
-        <div class="flex justify-between text-white items-center mb-8">
+        <div class="flex justify-between text-white items-center mb-2">
             <p class="text-2xl font-bold">Dashboard Overview</p>
             <p class="">{new Date().toDateString()}</p>
         </div>
+        {#if holonPurpose}
+            <p class="text-lg text-gray-400 italic mt-1 mb-6 text-center">{holonPurpose}</p>
+        {/if}
 
         <div class="grid grid-cols-2 md:grid-cols-3 gap-6">
             <!-- <a

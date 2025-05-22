@@ -617,17 +617,10 @@
 <div class="flex flex-wrap">
 	<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
 		<div class="flex justify-between text-white items-center mb-8">
+			<p class="text-lg mt-1">Tasks Today</p>
 			<div class="flex items-center gap-4">
-				<p class="text-lg mt-1">Tasks Today</p>
-				<button
-					on:click={showDialog}
-					class="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-xl font-bold flex items-center justify-center focus:outline-none transition-colors"
-					aria-label="Add new task"
-				>
-					+
-				</button>
+				<p class="">{new Date().toDateString()}</p>
 			</div>
-			<p class="">{new Date().toDateString()}</p>
 		</div>
 
 		<div class="flex flex-wrap justify-between items-center pb-8">
@@ -793,6 +786,17 @@
 					</div>
 				</label>
 			</div>
+		</div>
+
+		<!-- Add Task Button -->
+		<div class="flex justify-center mb-3 sticky top-4 z-30">
+			<button
+				on:click={showDialog}
+				class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none transition-colors shadow-md"
+				aria-label="Add new task"
+			>
+				+
+			</button>
 		</div>
 
 		{#if viewMode === "canvas"}

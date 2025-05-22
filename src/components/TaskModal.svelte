@@ -464,12 +464,32 @@
     transition:fade
 >
     <div
-        class="bg-gray-800 rounded-xl max-w-2xl w-full shadow-xl"
+        class="bg-gray-800 rounded-xl max-w-2xl w-full shadow-xl relative"
         transition:scale={{ duration: 200, start: 0.95 }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
     >
+        <button
+            class="absolute top-4 right-4 text-gray-400 hover:text-white z-10"
+            on:click={closeModal}
+            aria-label="Close modal"
+        >
+            <svg
+                class="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+            >
+                <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M6 18L18 6M6 6l12 12"
+                />
+            </svg>
+        </button>
+
         <div class="p-6">
             <!-- Header -->
             <div class="flex justify-between items-start mb-6">
@@ -512,25 +532,6 @@
                         </span>
                     {/if}
                 </div>
-                <button
-                    class="text-gray-400 hover:text-white"
-                    on:click={closeModal}
-                    aria-label="Close modal"
-                >
-                    <svg
-                        class="w-6 h-6"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M6 18L18 6M6 6l12 12"
-                        />
-                    </svg>
-                </button>
             </div>
 
             <div class="space-y-6 text-gray-300">
