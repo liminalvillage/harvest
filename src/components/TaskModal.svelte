@@ -55,11 +55,99 @@
     const CANVAS_WIDTH = 2000;
     const CANVAS_HEIGHT = 1500;
 
-    onMount(() => {
+    onMount(async () => {
+        console.log("[TaskModal.svelte] Mounted. Quest ID:", questId, "Holon ID:", holonId);
+        console.log("[TaskModal.svelte] Initial quest prop onMount:", JSON.parse(JSON.stringify(quest || {})));
+        console.log("[TaskModal.svelte] Initial quest.participants onMount:", JSON.parse(JSON.stringify(quest.participants || [])));
+
         document.addEventListener("click", handleClickOutside);
+
+        let unsubscribeUsers: (() => void) | undefined;
+
+        if (holosphere && holonId) {
+            // Fetch initial users and build a userStore keyed by user.username
+            try {
+                const initialUsersData = await holosphere.getAll(holonId, "users");
+                let usersKeyedByUsername: UserStore = {};
+                if (Array.isArray(initialUsersData)) {
+                    console.log("[TaskModal.svelte] initialUsersData from getAll is ARRAY. Converting to map using user.username as key.");
+                    initialUsersData.forEach(user => {
+                        if (user && user.username) { // Ensure user and user.username are valid
+                            usersKeyedByUsername[user.username] = user as User;
+                        } else {
+                            console.warn("[TaskModal.svelte] Invalid user or missing user.username in initialUsersData array item:", user);
+                        }
+                    });
+                } else if (typeof initialUsersData === 'object' && initialUsersData !== null) {
+                    console.log("[TaskModal.svelte] initialUsersData from getAll is OBJECT. Iterating to ensure keys are user.username.");
+                    Object.values(initialUsersData).forEach((user: any) => {
+                        if (user && user.username) { // Ensure user and user.username are valid
+                            usersKeyedByUsername[user.username] = user as User;
+                        } else {
+                            console.warn("[TaskModal.svelte] Invalid user or missing user.username in initialUsersData object value:", user);
+                        }
+                    });
+                } else {
+                    console.warn("[TaskModal.svelte] Initial users data for TaskModal is not array or object:", initialUsersData);
+                }
+                userStore = usersKeyedByUsername;
+                console.log("[TaskModal.svelte] userStore after initial getAll (keyed by username):", JSON.parse(JSON.stringify(userStore)));
+            } catch (e) {
+                console.error("[TaskModal.svelte] Error fetching initial users for TaskModal:", e);
+                userStore = {};
+            }
+
+            // Subscribe to user updates - key from subscription might be different from username
+            try {
+                const off = holosphere.subscribe(holonId, "users", (updatedUser: User | null, subKey?: string) => {
+                    const subKeyStr = String(subKey); 
+
+                    if (updatedUser && updatedUser.username) { // Prioritize username as the key
+                        const actualUserKey = updatedUser.username; // Canonical key is username
+                        console.log(`[TaskModal.svelte] User Add/Update. SubKey from Holosphere: '${subKeyStr}', Using actualUserKey (username): '${actualUserKey}'.`);
+                        
+                        userStore = { ...userStore, [actualUserKey]: updatedUser };
+
+                        // If subKey from Holosphere was different and existed, remove it (if it wasn't another user's username)
+                        if (subKeyStr && subKeyStr !== actualUserKey && userStore.hasOwnProperty(subKeyStr) && (!userStore[subKeyStr] || userStore[subKeyStr]?.username !== subKeyStr)) {
+                            console.log(`[TaskModal.svelte] Cleaning up old/mismatched subKey '${subKeyStr}'.`);
+                            delete userStore[subKeyStr];
+                        }
+
+                    } else if (updatedUser === null) { // Deletion
+                        // For deletion, if subKey is a username, use it. 
+                        // If subKey is some other ID, we need to find the user by that other ID and delete by username.
+                        // This part is tricky if subKey is not the username. We'll assume for now subKey might be the username for deletions or we can't reliably delete.
+                        if (!subKeyStr || subKeyStr === 'undefined') {
+                            console.warn(`[TaskModal.svelte] User Deletion: Received invalid or undefined subKey: '${subKeyStr}'.`);
+                        } else if (userStore.hasOwnProperty(subKeyStr)) { // If subKey itself is a username key
+                            console.log(`[TaskModal.svelte] User Deletion. Deleting by username key from Holosphere: '${subKeyStr}'.`);
+                            delete userStore[subKeyStr];
+                        } else {
+                            // If subKey was not a username, we might need to iterate userStore to find the user whose original_id matched subKey.
+                            // This is complex. For now, we log a warning if direct key deletion fails.
+                            console.warn(`[TaskModal.svelte] User Deletion: subKey '${subKeyStr}' not found as a username key. User might exist under a different key or is already deleted.`);
+                        }
+                    } else {
+                        console.warn(`[TaskModal.svelte] User subscription: Unhandled case or invalid data (e.g. user without username). SubKey: '${subKeyStr}', User:`, updatedUser, "Update skipped.");
+                        return;
+                    }
+                    userStore = { ...userStore }; 
+                    console.log("[TaskModal.svelte] userStore after subscription update (keyed by username):", JSON.parse(JSON.stringify(userStore)));
+                });
+                if (typeof off === 'function') {
+                    unsubscribeUsers = off;
+                }
+            } catch (e) {
+                console.error("Error subscribing to user updates in TaskModal:", e);
+            }
+        }
 
         return () => {
             document.removeEventListener("click", handleClickOutside);
+            if (unsubscribeUsers) {
+                unsubscribeUsers();
+            }
         };
     });
 
@@ -68,38 +156,48 @@
     let showDropdown = false;
 
     async function fetchUsersAndShowDropdown() {
+        console.log("[TaskModal.svelte] fetchUsersAndShowDropdown called.");
+        console.log("[TaskModal.svelte] Current quest.participants:", JSON.parse(JSON.stringify(quest.participants || [])));
+        console.log("[TaskModal.svelte] Current userStore:", JSON.parse(JSON.stringify(userStore || {})));
+
         if (!holosphere) {
-            console.error("Cannot fetch users: holosphere is not available");
+            console.error("Cannot show user dropdown: holosphere is not available");
             return;
         }
-        try {
-            // Assuming holosphere.getAll returns an object like { [userId: string]: User }
-            const allUsers = await holosphere.getAll(holonId, "users"); 
-            if (allUsers && typeof allUsers === 'object') {
-                // Basic validation: ensure fetched data is an object (can be refined)
-                userStore = allUsers as UserStore; // Update the store with all fetched users
-                console.log("Fetched and updated userStore:", userStore);
-            } else {
-                console.warn("Fetched users data is not in the expected format:", allUsers);
-                userStore = {}; // Clear store if fetch fails or format is wrong
-            }
-        } catch (error) {
-            console.error("Error fetching users:", error);
-            userStore = {}; // Clear store on error
+        // userStore should be populated by onMount. This function now just ensures the dropdown is visible.
+        // Optional: Add a check or warning if userStore is empty, though onMount should handle population.
+        if (Object.keys(userStore).length === 0 && holonId) {
+            console.warn("User store in TaskModal is empty when trying to show dropdown. It should have been populated onMount.");
+            // As a fallback, you could attempt a one-time fetch here if truly necessary,
+            // but ideally, the onMount subscription keeps it live.
         }
-        // Only show dropdown after attempting to fetch
         showDropdown = true; 
     }
 
     async function updateQuest(updates: any, shouldClose = false) {
         if (!holosphere) {
-            console.error("Cannot update quest: holosphere is not available");
+            console.error("[TaskModal.svelte] Cannot update quest: holosphere is not available");
             return;
         }
 
         const updatedQuest = { ...quest, ...updates };
-        await holosphere.put(holonId, "quests", updatedQuest);
-        quest = updatedQuest;
+
+        // Log the object *before* putting it
+        console.log("[TaskModal.svelte] About to call holosphere.put for quest. Quest ID:", questId, "Holon ID:", holonId);
+        try {
+            console.log("[TaskModal.svelte] updatedQuest object structure:", Object.keys(updatedQuest).join(', '));
+            console.log("[TaskModal.svelte] updatedQuest.participants before put:", JSON.parse(JSON.stringify(updatedQuest.participants || [])));
+            // Avoid logging the entire quest if it's huge and causing console lag, focus on participants
+            // For more detail if needed: console.log("[TaskModal.svelte] updatedQuest object being sent (full):", JSON.parse(JSON.stringify(updatedQuest)));
+        } catch (e) {
+            console.error("[TaskModal.svelte] Error logging updatedQuest before put:", e);
+        }
+
+        await holosphere.put(holonId, "quests", updatedQuest); // This line triggers the loop for quests
+        
+        console.log("[TaskModal.svelte] holosphere.put for quest completed. Quest ID:", questId);
+        quest = updatedQuest; // Update local quest state
+
         if (shouldClose) {
             dispatch("close");
         }
@@ -135,14 +233,12 @@
         await updateQuest({ participants });
     }
 
-    function isUserParticipant(userId: string) {
-        const user = userStore[userId];
-        if (!user) return false;
-
-        return (
-            quest.participants?.some(
-                (p: { username: string }) => p.username === user.username,
-            ) ?? false
+    function isUserParticipant(usernameToTest: string): boolean {
+        // usernameToTest is a key from our userStore (now user.username)
+        if (!quest.participants || quest.participants.length === 0) return false;
+        // quest.participants now stores { id: ACTUAL_USER_ID, username: USERNAME_STRING, firstName: ..., lastName: ... }
+        return quest.participants.some(
+            (p: { id: string; username?: string }) => p.username === usernameToTest 
         );
     }
 
@@ -210,35 +306,34 @@
         await updateQuest({ status: newStatus }, true);
     }
 
-    async function toggleParticipant(userId: string) {
-        const user = userStore[userId];
-        if (!user) {
-            console.error("User not found:", userId);
+    async function toggleParticipant(usernameToAdd: string) {
+        // usernameToAdd is a key from our userStore (now user.username)
+        const user = userStore[usernameToAdd];
+        if (!user || !user.username) { 
+            console.error("User not found in userStore or user.username is missing, for key (username):", usernameToAdd, "User object:", user);
             return;
         }
 
-        // Check if user is already a participant by username
-        if (
-            quest.participants?.some(
-                (p: { username: string }) => p.username === user.username,
-            )
-        ) {
+        // Check if user is already a participant using their username
+        if (isUserParticipant(user.username)) {
+            console.log(`[TaskModal.svelte] User ${user.username} is already a participant.`);
             showDropdown = false;
             return;
         }
 
-        // Create new participant object
         const newParticipant = {
-            id: user.id,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            username: user.username,
+            id: user.id, // Store the actual user ID
+            firstName: user.first_name, // Map to firstName
+            lastName: user.last_name,   // Map to lastName
+            username: user.username, 
         };
 
-        const participants = [...(quest.participants || []), newParticipant];
+        const newParticipantsArray = [...(quest.participants || []), newParticipant];
 
-        // Update user data
-        const userData = (await holosphere.get(holonId, "users", user.id)) || {
+        // When updating user data (actions), use the canonical ID that holosphere.get/put expects for users.
+        // This might be user.id (the original UUID-like ID) if it exists and is different from username.
+        const canonicalUserIdForHolosphere = user.id || user.username; // Choose appropriately
+        const userData = (await holosphere.get(holonId, "users", canonicalUserIdForHolosphere)) || {
             id: user.id,
             actions: [],
         };
@@ -259,7 +354,7 @@
         });
 
         // Update quest with new participants
-        await updateQuest({ participants });
+        await updateQuest({ participants: newParticipantsArray });
         showDropdown = false;
     }
 
@@ -302,7 +397,7 @@
                         card.key === cardId,
                 ) || null;
 
-            if (touchedCard) {
+            if (touchedCard && canvas) { // Added canvas check
                 const touch = event.touches[0];
                 const rect = canvas.getBoundingClientRect();
 
@@ -329,7 +424,7 @@
     function handleTouchMove(event: TouchEvent) {
         event.preventDefault();
 
-        if (touchedCard) {
+        if (touchedCard && canvas) { // Added canvas check
             // Move the touched card
             const touch = event.touches[0];
             const rect = canvas.getBoundingClientRect();
@@ -361,14 +456,14 @@
                 x: Math.min(
                     Math.max(
                         touch.clientX - startPan.x,
-                        -CANVAS_WIDTH * zoom + viewContainer.clientWidth,
+                        viewContainer ? -CANVAS_WIDTH * zoom + viewContainer.clientWidth : -CANVAS_WIDTH * zoom, // Added viewContainer check
                     ),
                     0,
                 ),
                 y: Math.min(
                     Math.max(
                         touch.clientY - startPan.y,
-                        -CANVAS_HEIGHT * zoom + viewContainer.clientHeight,
+                        viewContainer ? -CANVAS_HEIGHT * zoom + viewContainer.clientHeight : -CANVAS_HEIGHT * zoom, // Added viewContainer check
                     ),
                     0,
                 ),
@@ -447,10 +542,10 @@
         if (showDropdown) {
             const availableUsers = Object.entries(userStore).filter(([userId]) => !isUserParticipant(userId));
             const allUsers = Object.entries(userStore);
-            console.log("Dropdown Opened - User Store:", JSON.parse(JSON.stringify(userStore))); // Clone for clean logging
-            console.log("Dropdown Opened - Quest Participants:", JSON.parse(JSON.stringify(quest.participants || []))); // Clone
-            console.log("Dropdown Opened - All Users in Store:", allUsers);
-            console.log("Dropdown Opened - Available Users (Filtered):", availableUsers);
+            console.log("[TaskModal.svelte] Dropdown Opened - User Store (cloned):", JSON.parse(JSON.stringify(userStore))); 
+            console.log("[TaskModal.svelte] Dropdown Opened - Quest Participants (cloned):", JSON.parse(JSON.stringify(quest.participants || [])));
+            console.log("[TaskModal.svelte] Dropdown Opened - All Users in Store (from entries):", allUsers.map(u=>u[1].first_name));
+            console.log("[TaskModal.svelte] Dropdown Opened - Available Users (Filtered for dropdown):", availableUsers.map(u=>u[1].first_name));
         }
     }
 </script>
@@ -549,18 +644,18 @@
                         ></textarea>
                     {:else}
                         {#if quest.description}
-                            <p 
+                            <button  
+                                id="modal-description"
                                 class="text-sm whitespace-pre-wrap cursor-pointer hover:bg-gray-700 p-1 rounded-md" 
                                 on:click={() => {
                                     tempDescription = quest.description || '';
                                     editingDescription = true;
                                 }}
-                                role="button"
-                                tabindex="0"
+            
                                 on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (tempDescription = quest.description || '', editingDescription = true)}
                             >
                                 {quest.description}
-                            </p>
+                            </button>
                         {:else}
                             <button 
                                 class="text-sm text-gray-400 hover:text-white px-2 py-1 rounded-md hover:bg-gray-700"
@@ -742,19 +837,19 @@
                                     <div class="flex items-center gap-2">
                                         <img
                                             src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
-                                            alt={`${participant.first_name} ${participant.last_name || ""}`}
+                                            alt={`${participant.firstName} ${participant.lastName || ""}`}
                                             class="w-8 h-8 rounded-full"
                                         />
                                         <span
-                                            >{participant.first_name}
-                                            {participant.last_name || ""}</span
+                                            >{participant.firstName}
+                                            {participant.lastName || ""}</span
                                         >
                                     </div>
                                     <button
                                         class="text-gray-400 hover:text-red-400 transition-colors"
                                         on:click={() =>
                                             removeParticipant(participant.id)}
-                                        aria-label={`Remove participant ${participant.first_name}`}
+                                        aria-label={`Remove participant ${participant.firstName}`}
                                     >
                                         <svg
                                             class="w-5 h-5"

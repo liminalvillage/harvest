@@ -187,66 +187,50 @@
 	let selectedTask: any = null;
 
 	// Add these near the top of the script section, after the interface definitions
-	let sortField: 'x' | 'y' = 'x';
-	let sortDirection: 'asc' | 'desc' = 'desc';
+	// let sortField: 'x' | 'y' = 'x'; // Removed
+	// let sortDirection: 'asc' | 'desc' = 'desc'; // Removed
 
 	// Add a store to track updates
-	const updateTrigger = writable(0);
-
-	// Add this helper function for position normalization with 100px spacing
-	function normalizePositions(tasks: [string, Quest][]) {
-		const POSITION_STEP = 100; // Change to 100px spacing
-		return tasks.map(([key, task], index) => {
-			const normalizedPosition = {
-				x: sortField === 'x' 
-					? (sortDirection === 'desc' ? (tasks.length - index) : (index + 1)) * POSITION_STEP 
-					: (task.position?.x ?? POSITION_STEP),
-				y: sortField === 'y' 
-					? (sortDirection === 'desc' ? (tasks.length - index) : (index + 1)) * POSITION_STEP 
-					: (task.position?.y ?? POSITION_STEP)
-			};
-			return [key, { ...task, position: normalizedPosition }] as [string, Quest];
-		});
-	}
+	// const updateTrigger = writable(0); // Removed
 
 	// Modify the reactive statement for sorting
 	$: {
-		const filtered = quests.filter(([_, quest]) => {
+		filteredQuests = quests.filter(([_, quest]) => {
 			if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
 			if (!['task', 'quest', 'event'].includes(quest.type)) return false;
 			return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
 		});
 
-		// Sort by position
-		sortedQuests = filtered.sort(([_, a], [__, b]) => {
-			const posA = a.position?.[sortField] ?? 0;
-			const posB = b.position?.[sortField] ?? 0;
-			return sortDirection === 'desc' ? posB - posA : posA - posB;
-		});
+		// Original sorting and normalization logic removed.
+		// sortedQuests = filtered.sort(([_, a], [__, b]) => {
+		// 	const posA = a.position?.[sortField] ?? 0;
+		// 	const posB = b.position?.[sortField] ?? 0;
+		// 	return sortDirection === 'desc' ? posB - posA : posA - posB;
+		// });
 
-		// Normalize positions if needed
-		if (sortedQuests.some(([_, quest]) => !quest.position)) {
-			sortedQuests = normalizePositions(sortedQuests);
-			// Update positions in holosphere
-			sortedQuests.forEach(([key, quest]) => {
-				if (holosphere && holonID) {
-					holosphere.put(holonID, `quests/${key}`, quest).catch(console.error);
-				}
-			});
-		}
+		// // Normalize positions if needed
+		// if (sortedQuests.some(([_, quest]) => !quest.position)) {
+		// 	sortedQuests = normalizePositions(sortedQuests);
+		// 	// Update positions in holosphere
+		// 	sortedQuests.forEach(([key, quest]) => {
+		// 		if (holosphere && holonID) {
+		// 			holosphere.put(holonID, `quests/${key}`, quest).catch(console.error);
+		// 		}
+		// 	});
+		// }
 
-		filteredQuests = sortedQuests;
+		// filteredQuests = sortedQuests; // Now filteredQuests is directly assigned above
 	}
 
 	// Modify the toggle function to handle both field and direction
-	function toggleSort() {
-		if (sortDirection === 'desc') {
-			sortDirection = 'asc';
-		} else {
-			sortDirection = 'desc';
-			sortField = sortField === 'x' ? 'y' : 'x';
-		}
-	}
+	// function toggleSort() { // Removed
+	// 	if (sortDirection === 'desc') {
+	// 		sortDirection = 'asc';
+	// 	} else {
+	// 		sortDirection = 'desc';
+	// 		sortField = sortField === 'x' ? 'y' : 'x';
+	// 	}
+	// }
 
 	// Fix handleTaskClick type
 	function handleTaskClick(key: string, quest: Quest) {
@@ -302,38 +286,38 @@
 			}
 
 			// Get the current top position based on sort order
-			const POSITION_STEP = 100; // Change to 100px spacing
-			let newPosition;
+			// const POSITION_STEP = 100; // Change to 100px spacing // Removed
+			// let newPosition; // Removed
 
 			// If there are existing tasks, position the new one based on sort direction
-			if (sortedQuests.length > 0) {
-				const firstTask = sortedQuests[0][1];
-				const firstPosition = firstTask.position?.[sortField] ?? POSITION_STEP;
+			// if (sortedQuests.length > 0) { // Removed
+			// 	const firstTask = sortedQuests[0][1];
+			// 	const firstPosition = firstTask.position?.[sortField] ?? POSITION_STEP;
 				
-				// Calculate new position based on sort direction
-				const positionOffset = sortDirection === 'desc' ? POSITION_STEP : -POSITION_STEP;
+			// 	// Calculate new position based on sort direction
+			// 	const positionOffset = sortDirection === 'desc' ? POSITION_STEP : -POSITION_STEP;
 				
-				newPosition = {
-					x: sortField === 'x' 
-						? firstPosition + positionOffset 
-						: (firstTask.position?.x ?? POSITION_STEP),
-					y: sortField === 'y' 
-						? firstPosition + positionOffset 
-						: (firstTask.position?.y ?? POSITION_STEP)
-				};
-			} else {
-				// If no tasks exist, start with base position
-				newPosition = {
-					x: POSITION_STEP,
-					y: POSITION_STEP
-				};
-			}
+			// 	newPosition = {
+			// 		x: sortField === 'x' 
+			// 			? firstPosition + positionOffset 
+			// 			: (firstTask.position?.x ?? POSITION_STEP),
+			// 		y: sortField === 'y' 
+			// 			? firstPosition + positionOffset 
+			// 			: (firstTask.position?.y ?? POSITION_STEP)
+			// 	};
+			// } else {
+			// 	// If no tasks exist, start with base position
+			// 	newPosition = {
+			// 		x: POSITION_STEP,
+			// 		y: POSITION_STEP
+			// 	};
+			// }
 
 			const task = {
 				...newTask,
 				initiator: initiatorInfo, // Use the determined initiatorInfo
 				created: new Date().toISOString(),
-				position: newPosition
+				// position: newPosition // Removed
 			};
 
 			// Add the task to holosphere
@@ -358,7 +342,7 @@
 			};
 
 			// Force update
-			updateTrigger.update(n => n + 1);
+			// updateTrigger.update(n => n + 1); // Removed
 		} catch (error) {
 			console.error('Error adding task:', error);
 		}
@@ -411,118 +395,118 @@
 		const targetIndex = filteredQuests.findIndex(([key]) => key === targetKey);
 		if (sourceIndex === -1 || targetIndex === -1) return;
 
-		const POSITION_STEP = 100; // Change to 100px spacing
-		const sourceQuest = filteredQuests[sourceIndex][1];
-		const targetQuest = filteredQuests[targetIndex][1];
+		// const POSITION_STEP = 100; // Change to 100px spacing // Removed
+		// const sourceQuest = filteredQuests[sourceIndex][1]; // Removed
+		// const targetQuest = filteredQuests[targetIndex][1]; // Removed
 
 		try {
 			// Calculate new position based on surrounding tasks and sort direction
-			let newPosition;
+			// let newPosition; // Removed
 			
-			if ((sourceIndex > targetIndex && sortDirection === 'asc') || 
-				(sourceIndex < targetIndex && sortDirection === 'desc')) {
-				// Moving task up in ascending or down in descending
-				const prevTask = targetIndex > 0 ? filteredQuests[targetIndex - 1][1] : null;
-				const prevPos = prevTask?.position?.[sortField] ?? 
-					(sortDirection === 'desc' ? (targetQuest.position?.[sortField] ?? 0) + POSITION_STEP : (targetQuest.position?.[sortField] ?? 0) - POSITION_STEP);
-				const targetPos = targetQuest.position?.[sortField] ?? POSITION_STEP;
+			// if ((sourceIndex > targetIndex && sortDirection === 'asc') || 
+			// 	(sourceIndex < targetIndex && sortDirection === 'desc')) {
+			// 	// Moving task up in ascending or down in descending
+			// 	const prevTask = targetIndex > 0 ? filteredQuests[targetIndex - 1][1] : null;
+			// 	const prevPos = prevTask?.position?.[sortField] ?? 
+			// 		(sortDirection === 'desc' ? (targetQuest.position?.[sortField] ?? 0) + POSITION_STEP : (targetQuest.position?.[sortField] ?? 0) - POSITION_STEP);
+			// 	const targetPos = targetQuest.position?.[sortField] ?? POSITION_STEP;
 				
-				// Position between prev and target
-				const newPos = prevTask 
-					? prevPos + (targetPos - prevPos) / 2 
-					: targetPos + (sortDirection === 'desc' ? POSITION_STEP : -POSITION_STEP);
+			// 	// Position between prev and target
+			// 	const newPos = prevTask 
+			// 		? prevPos + (targetPos - prevPos) / 2 
+			// 		: targetPos + (sortDirection === 'desc' ? POSITION_STEP : -POSITION_STEP);
 
-				newPosition = {
-					x: sortField === 'x' ? newPos : sourceQuest.position?.x ?? POSITION_STEP,
-					y: sortField === 'y' ? newPos : sourceQuest.position?.y ?? POSITION_STEP
-				};
-			} else {
-				// Moving task down in ascending or up in descending
-				const nextTask = targetIndex < filteredQuests.length - 1 
-					? filteredQuests[targetIndex + 1][1] 
-					: null;
-				const targetPos = targetQuest.position?.[sortField] ?? POSITION_STEP;
-				const nextPos = nextTask?.position?.[sortField] ?? 
-					(sortDirection === 'desc' ? targetPos - POSITION_STEP : targetPos + POSITION_STEP);
+			// 	newPosition = {
+			// 		x: sortField === 'x' ? newPos : sourceQuest.position?.x ?? POSITION_STEP,
+			// 		y: sortField === 'y' ? newPos : sourceQuest.position?.y ?? POSITION_STEP
+			// 	};
+			// } else {
+			// 	// Moving task down in ascending or up in descending
+			// 	const nextTask = targetIndex < filteredQuests.length - 1 
+			// 		? filteredQuests[targetIndex + 1][1] 
+			// 		: null;
+			// 	const targetPos = targetQuest.position?.[sortField] ?? POSITION_STEP;
+			// 	const nextPos = nextTask?.position?.[sortField] ?? 
+			// 		(sortDirection === 'desc' ? targetPos - POSITION_STEP : targetPos + POSITION_STEP);
 				
-				// Position between target and next
-				const newPos = nextTask 
-					? targetPos + (nextPos - targetPos) / 2 
-					: targetPos + (sortDirection === 'desc' ? -POSITION_STEP : POSITION_STEP);
+			// 	// Position between target and next
+			// 	const newPos = nextTask 
+			// 		? targetPos + (nextPos - targetPos) / 2 
+			// 		: targetPos + (sortDirection === 'desc' ? -POSITION_STEP : POSITION_STEP);
 
-				newPosition = {
-					x: sortField === 'x' ? newPos : sourceQuest.position?.x ?? POSITION_STEP,
-					y: sortField === 'y' ? newPos : sourceQuest.position?.y ?? POSITION_STEP
-				};
-			}
+			// 	newPosition = {
+			// 		x: sortField === 'x' ? newPos : sourceQuest.position?.x ?? POSITION_STEP,
+			// 		y: sortField === 'y' ? newPos : sourceQuest.position?.y ?? POSITION_STEP
+			// 	};
+			// }
 
-			const updatedQuest = {
-				...sourceQuest,
-				position: newPosition
-			};
+			// const updatedQuest = { // Removed
+			// 	...sourceQuest,
+			// 	position: newPosition
+			// };
 
 			// Save to holosphere
-			if (holonID) { 
-				await holosphere.put(holonID, `quests/${sourceKey}`, updatedQuest);
-			} else {
-				console.error("Cannot update quest position: holonID is null");
-				// Optionally, return or handle error to prevent further execution
-				return; 
-			}
+			// if (holonID) {  // Removed
+			// 	await holosphere.put(holonID, `quests/${sourceKey}`, updatedQuest);
+			// } else {
+			// 	console.error("Cannot update quest position: holonID is null");
+			// 	// Optionally, return or handle error to prevent further execution
+			// 	return; 
+			// }
 
 			// Update local store
-			store = {
-				...store,
-				[sourceKey]: updatedQuest
-			};
+			// store = { // Removed
+			// 	...store,
+			// 	[sourceKey]: updatedQuest
+			// };
 
 			// Check if positions need normalization
-			const positions = filteredQuests.map(([_, q]) => q.position?.[sortField] ?? 0);
-			const minDiff = Math.min(...positions.slice(1).map((pos, i) => Math.abs(pos - positions[i])));
+			// const positions = filteredQuests.map(([_, q]) => q.position?.[sortField] ?? 0); // Removed
+			// const minDiff = Math.min(...positions.slice(1).map((pos, i) => Math.abs(pos - positions[i]))); // Removed
 			
-			if (minDiff < POSITION_STEP / 2) { // Adjust normalization threshold
-				// Normalize all positions
-				const normalized = filteredQuests.map(([key, quest], index) => {
-					const normalizedPos = sortDirection === 'desc' 
-						? (filteredQuests.length - index) * POSITION_STEP 
-						: (index + 1) * POSITION_STEP;
+			// if (minDiff < POSITION_STEP / 2) { // Adjust normalization threshold // Removed
+			// 	// Normalize all positions
+			// 	const normalized = filteredQuests.map(([key, quest], index) => {
+			// 		const normalizedPos = sortDirection === 'desc' 
+			// 			? (filteredQuests.length - index) * POSITION_STEP 
+			// 			: (index + 1) * POSITION_STEP;
 					
-					return {
-						key,
-						quest: {
-							...quest,
-							position: {
-								x: sortField === 'x' ? normalizedPos : quest.position?.x ?? POSITION_STEP,
-								y: sortField === 'y' ? normalizedPos : quest.position?.y ?? POSITION_STEP
-							}
-						}
-					};
-				});
+			// 		return {
+			// 			key,
+			// 			quest: {
+			// 				...quest,
+			// 				position: {
+			// 					x: sortField === 'x' ? normalizedPos : quest.position?.x ?? POSITION_STEP,
+			// 					y: sortField === 'y' ? normalizedPos : quest.position?.y ?? POSITION_STEP
+			// 				}
+			// 			}
+			// 		};
+			// 	});
 
-				// Save all normalized positions
-				if (holonID) { 
-					await Promise.all(
-						normalized.map(({ key, quest }) => {
-							// Ensure holonID is not null before this call too
-							if (holonID) { 
-								return holosphere.put(holonID, `quests/${key}`, quest);
-							} else {
-								// This case should ideally not be reached if the outer check is in place
-								console.error("Critical error: holonID became null during normalization.");
-								return Promise.resolve(); // or handle error appropriately
-							}
-						})
-					);
-				} else {
-					console.error("Cannot normalize positions: holonID is null");
-				}
+			// 	// Save all normalized positions
+			// 	if (holonID) { 
+			// 		await Promise.all(
+			// 			normalized.map(({ key, quest }) => {
+			// 				// Ensure holonID is not null before this call too
+			// 				if (holonID) { 
+			// 					return holosphere.put(holonID, `quests/${key}`, quest);
+			// 				} else {
+			// 					// This case should ideally not be reached if the outer check is in place
+			// 					console.error("Critical error: holonID became null during normalization.");
+			// 					return Promise.resolve(); // or handle error appropriately
+			// 				}
+			// 			})
+			// 		);
+			// 	} else {
+			// 		console.error("Cannot normalize positions: holonID is null");
+			// 	}
 
-				// Update local store with normalized positions
-				store = normalized.reduce((acc, { key, quest }) => ({
-					...acc,
-					[key]: quest
-				}), {});
-			}
+			// 	// Update local store with normalized positions
+			// 	store = normalized.reduce((acc, { key, quest }) => ({
+			// 		...acc,
+			// 		[key]: quest
+			// 	}), {});
+			// }
 		} catch (error) {
 			console.error('Error updating quest position:', error);
 		}
@@ -744,7 +728,7 @@
 
 			<div class="flex w-full sm:w-auto justify-between sm:justify-end items-center gap-4">
 				<!-- Sort Button -->
-				<button
+				<!-- <button // Removed
 					class="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-full text-sm hover:bg-gray-500 transition-colors"
 					on:click={toggleSort}
 					aria-label="Toggle sort order"
@@ -764,7 +748,7 @@
 					>
 						<path d="M12 5v14M19 12l-7 7-7-7"></path>
 					</svg>
-				</button>
+				</button> -->
 
 				<!-- Show Completed Toggle -->
 				<label class="flex items-center cursor-pointer">
@@ -1090,8 +1074,5 @@
 	}
 
 	/* Update transform styles */
-	.transform {
-		transform-origin: center;
-		transition: transform 0.3s ease;
-	}
+	
 </style>

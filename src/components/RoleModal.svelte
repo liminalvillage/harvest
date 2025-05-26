@@ -1,11 +1,12 @@
 <script lang="ts">
-
+    // @ts-nocheck
 
     $: if (role && !role.participants) {
+        console.log("[RoleModal.svelte] Initializing role.participants as [] because it was falsy.");
         role.participants = [];
     }
 
-    import { createEventDispatcher } from 'svelte';
+    import { createEventDispatcher, onMount } from 'svelte';
     import { fade, scale } from 'svelte/transition';
     
     export let role: any;
@@ -14,8 +15,40 @@
     export let holosphere: any;
     export let holonId: string;
 
+    console.log("[RoleModal.svelte] Script run/init. Role ID:", roleId);
+    console.log("[RoleModal.svelte] Initial role prop:", JSON.parse(JSON.stringify(role || {})));
+    console.log("[RoleModal.svelte] Initial userStore prop:", JSON.parse(JSON.stringify(userStore || {})));
+
+    onMount(() => {
+        console.log("[RoleModal.svelte] Mounted. Role ID:", roleId);
+        console.log("[RoleModal.svelte] role prop onMount:", JSON.parse(JSON.stringify(role || {})));
+        console.log("[RoleModal.svelte] userStore prop onMount:", JSON.parse(JSON.stringify(userStore || {})));
+    });
+
     const dispatch = createEventDispatcher();
     let showAddParticipants = false;
+
+    // Reactive declaration for availableUsersToList
+    $: availableUsersToList = [];
+
+    // Reactive statement to re-calculate when userStore or role.participants changes
+    $: {
+        if (userStore && role && role.participants) {
+            availableUsersToList = Object.entries(userStore || {}).filter(([userId, _user]) => !isUserParticipant(userId));
+        } else if (userStore) { // If role or role.participants is undefined/null
+            availableUsersToList = Object.entries(userStore || {});
+        } else {
+            availableUsersToList = [];
+        }
+
+        // Conditionally log based on showAddParticipants to avoid console spam
+        if (showAddParticipants) {
+            console.log("[RoleModal.svelte] 'Add Participants' dropdown opened/updated.");
+            console.log("[RoleModal.svelte] Current role.participants:", JSON.parse(JSON.stringify(role.participants || [])));
+            console.log("[RoleModal.svelte] Current userStore for dropdown:", JSON.parse(JSON.stringify(userStore || {})));
+            console.log("[RoleModal.svelte] Calculated availableUsersToList for dropdown:", availableUsersToList.map(u => u[1].first_name));
+        }
+    }
 
     async function updateRole(updates: any) {
         const updatedRole = { ...role, ...updates };
@@ -26,6 +59,7 @@
     async function deleteRole() {
         if (confirm('Are you sure you want to delete this role?')) {
             await holosphere.delete(holonId, 'roles', roleId);
+            dispatch('deleted', { roleId: roleId });
             dispatch('close');
         }
     }
@@ -97,8 +131,15 @@
                         <button 
                             class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-full text-sm transition-colors"
                             on:click={() => showAddParticipants = !showAddParticipants}
+                            disabled={Object.keys(userStore || {}).length === 0 && !showAddParticipants && holosphere}
                         >
-                            {showAddParticipants ? 'Cancel' : '+ Add Participant'}
+                            {#if Object.keys(userStore || {}).length === 0 && !showAddParticipants && holosphere}
+                                Loading Users...
+                            {:else if showAddParticipants}
+                                Cancel
+                            {:else}
+                                + Add Participant
+                            {/if}
                         </button>
                     </div>
 
@@ -135,10 +176,14 @@
                     <!-- Add Participants Dropdown -->
                     {#if showAddParticipants}
                         <div class="bg-gray-700 rounded-lg overflow-hidden mt-2">
-                            {#each Object.entries(userStore) as [userId, user]}
-                                {#if !isUserParticipant(userId)}
+                            {#if Object.keys(userStore || {}).length === 0 && holosphere}
+                                <p class="p-3 text-sm text-gray-400">Loading users or no users found in this holon.</p>
+                            {:else if availableUsersToList.length === 0 && Object.keys(userStore || {}).length > 0}
+                                <p class="p-3 text-sm text-gray-400">All available users are already participants or no other users to add.</p>
+                            {:else}
+                                {#each availableUsersToList as [userId, user]}
                                     <button
-                                        class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2"
+                                        class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2 text-gray-200"
                                         on:click={() => addParticipant(userId)}
                                     >
                                         {#if user.picture}
@@ -147,11 +192,15 @@
                                                 alt={user.first_name}
                                                 class="w-6 h-6 rounded-full"
                                             />
+                                        {:else}
+                                            <div class="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-xs text-white">
+                                                {user.first_name ? user.first_name[0] : '?'}
+                                            </div>
                                         {/if}
                                         <span>{user.first_name} {user.last_name || ''}</span>
                                     </button>
-                                {/if}
-                            {/each}
+                                {/each}
+                            {/if}
                         </div>
                     {/if}
                 </div>

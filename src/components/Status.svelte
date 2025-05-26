@@ -48,10 +48,19 @@
     onMount(async () => {
         ID.subscribe((value) => {
             holonID = value;
-            loadEquation();
-            subscribeToUsers();
-            
+            if (holonID) {
+                loadEquation();
+                fetchInitialUsersAndSubscribe();
+            } else {
+                store = {};
+                valueEquationLoaded = false;
+            }
         });
+
+        if (holonID) {
+            loadEquation();
+            fetchInitialUsersAndSubscribe();
+        }
     });
 
     async function loadEquation() {
@@ -72,17 +81,44 @@
     }
 
     async function subscribeToUsers() {
-        store = {};
-        if (holosphere) {
+        if (holosphere && holonID) {
             holosphere.subscribe(holonID, "users", (newUser, key) => {
+                if (!key || key === 'undefined') {
+                    console.warn(`[Status.svelte] User subscription received update with invalid key: '${key}'. Skipping.`);
+                    return;
+                }
                 if (newUser) {
-                    store[key] = newUser;
+                    store = { ...store, [key]: newUser };
                 } else {
-                    delete store[key];
-                    store = store;
+                    const { [key]: _, ...rest } = store;
+                    store = rest;
                 }
             });
         }
+    }
+
+    async function fetchInitialUsersAndSubscribe() {
+        if (!holosphere || !holonID) {
+            console.warn("[Status.svelte] Cannot fetch users: holosphere or holonID missing.");
+            store = {};
+            return;
+        }
+
+        console.log(`[Status.svelte] Fetching initial users for holon: ${holonID}`);
+        try {
+            const initialUsers = await holosphere.getAll(holonID, "users");
+            if (typeof initialUsers === 'object' && initialUsers !== null) {
+                store = initialUsers;
+                console.log("[Status.svelte] Initial users fetched:", JSON.parse(JSON.stringify(store)));
+            } else {
+                console.warn("[Status.svelte] getAll users returned non-object or null:", initialUsers);
+                store = {};
+            }
+        } catch (error) {
+            console.error("[Status.svelte] Error fetching initial users:", error);
+            store = {};
+        }
+        subscribeToUsers();
     }
 
     function calculateScore(user: User): number {

@@ -20,6 +20,8 @@
     let offerCount = 0;
     let checklistCount = 0;
     let completedChecklistCount = 0;
+    let roleCount = 0;
+    let unassignedRoleCount = 0;
 
     let holonPurpose: string | null = null; // Variable to store the holon's purpose
 
@@ -65,6 +67,7 @@
             const shoppingItems = (await holosphere.getAll(holonID, "shopping")) || {};
             const offers = (await holosphere.getAll(holonID, "offers")) || {};
             const checklists = (await holosphere.getAll(holonID, "checklists")) || {};
+            const roles = (await holosphere.getAll(holonID, "roles")) || {};
 
             // Fetch holon purpose from config
             const configData = await holosphere.get(holonID, "settings", holonID);
@@ -81,6 +84,11 @@
             checklistCount = Object.keys(checklists).length;
             completedChecklistCount = Object.values(checklists).filter(
                 (checklist: any) => checklist.completed === true
+            ).length;
+
+            roleCount = Object.keys(roles).length;
+            unassignedRoleCount = Object.values(roles).filter(
+                (role: any) => !role.participants || role.participants.length === 0
             ).length;
 
             completedTaskCount = Object.values(tasks).filter(
@@ -174,6 +182,15 @@
                     {completedChecklistCount} / {checklistCount}
                 </p>
                 <p class="text-sm">Completed / Total</p>
+            </a>
+            <a
+                href={`/${holonID}/roles`}
+                class="bg-cyan-500 p-6 rounded-lg text-white relative overflow-hidden"
+            >
+                <i class="fas fa-user-tag text-6xl absolute bottom-0 right-0 transform translate-x-2 translate-y-2 opacity-20"></i>
+                <h3 class="text-xl font-semibold mb-2">Roles</h3>
+                <p class="text-3xl font-bold">{roleCount}</p>
+                <p class="text-sm">{unassignedRoleCount} Unassigned</p>
             </a>
         </div>
     </div>
