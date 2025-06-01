@@ -6,6 +6,11 @@ const config = {
 	kit: {
 		adapter: adapter()
 	},
+	build: {
+		rollupOptions: {
+		  external: ['siwe']
+		}
+	  },
 	// Enhanced preprocessing with better TypeScript support
 	preprocess: [
 		vitePreprocess({
