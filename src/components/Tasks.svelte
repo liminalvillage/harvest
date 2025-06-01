@@ -31,6 +31,7 @@
 			x: number;
 			y: number;
 		};
+		isHologram?: boolean;
 	}
 
 	interface Store {
@@ -812,7 +813,8 @@
 								style="background-color: {quest.status === 'completed'
 									? '#9CA3AF'
 									: getColorFromCategory(quest.category, quest.type)}; 
-									   opacity: {quest.status === 'completed' ? '0.6' : '1'}"
+									   opacity: {quest.status === 'completed' ? '0.6' : '1'};
+									   {quest.isHologram ? 'border: 2px dotted #A78BFA; box-sizing: border-box;' : ''}"
 							>
 								<div
 									class="flex justify-between items-center gap-4"
