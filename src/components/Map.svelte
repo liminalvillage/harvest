@@ -1513,11 +1513,11 @@
 		color: #000;
 	}
 
-	/* .mapboxgl-ctrl.mapboxgl-ctrl-group {
+	:global(.mapboxgl-ctrl.mapboxgl-ctrl-group) {
 		position: relative;
 		background: #fff;
 		border-radius: 4px;
-	} */
+	}
 
 	select:focus {
 		outline: none;
