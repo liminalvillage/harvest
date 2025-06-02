@@ -29,10 +29,15 @@
 		location?: string;
 		ends?: string;
 		type: 'task' | 'quest' | 'event';
-		position?: {
-			x: number;
-			y: number;
+		orderIndex?: number;
+		position?: { x: number; y: number };
+		initiator?: {
+			id: string;
+			username: string;
+			firstName?: string;
+			lastName?: string;
 		};
+		created?: string;
 		isHologram?: boolean;
 	}
 
@@ -83,100 +88,16 @@
 	let showFireworks = false;
 	let showConfetti = false;
 
-	// Remove debounce helper and throttled store updates
-	function updateStore(newStore: Store) {
-		store = newStore;
-		quests = Object.entries(store);
-	}
+	// Sort state variables
+	type SortCriteria = 'orderIndex' | 'positionX' | 'positionY';
+	let sortCriteria: SortCriteria = 'orderIndex';
+	let sortDirection: 'asc' | 'desc' = 'asc';
+	let sortButtonIconRotation = 0; 
 
-	// Modify the subscribe function to use immediate updates
-	function subscribe() {
-		if (!holosphere || !holonID) return;
-		
-		// Don't resubscribe if already subscribed to this holon
-		if (subscriptionState.currentHolonID === holonID) return;
-		
-		// Clear existing store and subscription
-		if (questsUnsubscribe) {
-			questsUnsubscribe();
-			questsUnsubscribe = undefined;
-		}
-		
-		store = {};
-		quests = [];
-		
-		try {
-			// Update subscription state
-			subscriptionState.currentHolonID = holonID;
-			
-			const off = holosphere.subscribe(holonID, "quests", (newquest: Quest | null, key?: string) => {
-				// Update store immediately
-				const newStore = { ...store };
-				if (newquest && key) {
-					newStore[key] = newquest;
-				} else if (key) {
-					delete newStore[key];
-				}
-				store = newStore;
-				quests = Object.entries(store);
-			});
-
-			if (typeof off === 'function') {
-				questsUnsubscribe = off;
-			}
-		} catch (error) {
-			console.error('Error setting up quest subscription:', error);
-			subscriptionState.currentHolonID = null;
-			questsUnsubscribe = undefined;
-		}
-	}
-
-	// Modify onMount to handle subscription cleanup
-	onMount(() => {
-		let mounted = true;
-		
-		// Set up ID subscription only once
-		const idSubscription = ID.subscribe((value) => {
-			if (!mounted || !value || value === subscriptionState.currentHolonID) return;
-			holonID = value;
-			subscribe();
-		});
-
-		// Load preferences
-		try {
-			const storedViewMode = localStorage.getItem('taskViewMode');
-			if (storedViewMode === 'list' || storedViewMode === 'canvas') {
-				viewMode = storedViewMode;
-			}
-			showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
-		} catch (error) {
-			console.error('Error loading preferences:', error);
-			viewMode = 'list';
-			showCompleted = false;
-		}
-
-		return () => {
-			mounted = false;
-			if (idSubscription) idSubscription();
-			if (questsUnsubscribe) questsUnsubscribe();
-			if (subscriptionState.batchTimeout) {
-				clearTimeout(subscriptionState.batchTimeout);
-			}
-			subscriptionState.pendingUpdates.clear();
-			subscriptionState.currentHolonID = null;
-		};
-	});
-
-	// Modify the reactive statements to be more efficient
-	$: {
-		if (typeof window !== 'undefined') {
-			try {
-				localStorage.setItem('taskViewMode', viewMode);
-			} catch (error) {
-				console.error('Error saving view mode:', error);
-			}
-		}
-	}
+	// SVG Paths for sort icons
+	const orderIndexIconPath = "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"; // Heroicons bars-3
+	const directionalSortIconPath = "M12 5v14M19 12l-7 7-7-7"; // Current arrow
+	let currentIconPath = orderIndexIconPath; // Initial icon
 
 	// Add these variables after the existing let declarations
 	let selectedCategory = "all";
@@ -202,11 +123,70 @@
 
 	// Modify the reactive statement for sorting
 	$: {
-		filteredQuests = quests.filter(([_, quest]) => {
-			if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
-			if (!['task', 'quest', 'event'].includes(quest.type)) return false;
-			return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
+		let currentFilteredQuests = quests.filter(([_, quest]) => {
+			if (selectedCategory !== "all" && quest.category !== selectedCategory) {
+				return false;
+			}
+
+			// Default to 'task' if type is missing, then check if it's a valid type for display.
+			const type = quest.type || 'task'; 
+			if (!['task', 'quest', 'event'].includes(type)) {
+				// console.log('Filtering out due to invalid type:', quest.title, quest.type);
+				return false;
+			}
+
+			// Default to 'ongoing' if status is missing.
+			const status = quest.status || 'ongoing';
+			if (status === "completed" && !showCompleted) {
+				// console.log('Filtering out completed task when showCompleted is false:', quest.title);
+				return false;
+			}
+			// Implicitly, if status is 'ongoing', or if it's 'completed' and showCompleted is true, it passes this part.
+
+			return true; // Quest passes all filters
 		});
+
+		// Sort by orderIndex, undefined/null values go to the end
+		currentFilteredQuests.sort(([keyA, a], [keyB, b]) => {
+			let valA: number, valB: number;
+
+			switch (sortCriteria) {
+				case 'positionX':
+					valA = a.position?.x ?? Infinity;
+					valB = b.position?.x ?? Infinity;
+					break;
+				case 'positionY':
+					valA = a.position?.y ?? Infinity;
+					valB = b.position?.y ?? Infinity;
+					break;
+				case 'orderIndex':
+				default:
+					valA = a.orderIndex ?? Infinity;
+					valB = b.orderIndex ?? Infinity;
+					// If orderIndex is the same, sort by key (ID) as a stable secondary sort.
+					// This is always ascending for orderIndex mode.
+					if (valA === valB) {
+						return keyA.localeCompare(keyB);
+					}
+					// For orderIndex, primary sort is always ascending, handled by the main return
+					break;
+			}
+
+			// General comparison for asc/desc.
+			// For orderIndex, sortDirection will always be 'asc' due to handleSortButtonClick logic.
+			if (sortDirection === 'asc') {
+				if (valA === Infinity && valB === Infinity) return 0;
+				if (valA === Infinity) return 1;
+				if (valB === Infinity) return -1;
+				return valA - valB;
+			} else { // sortDirection === 'desc'
+				if (valA === Infinity && valB === Infinity) return 0;
+				if (valA === Infinity) return 1; 
+				if (valB === Infinity) return -1;
+				return valB - valA;
+			}
+		});
+		filteredQuests = currentFilteredQuests;
 
 		// Original sorting and normalization logic removed.
 		// sortedQuests = filtered.sort(([_, a], [__, b]) => {
@@ -229,15 +209,34 @@
 		// filteredQuests = sortedQuests; // Now filteredQuests is directly assigned above
 	}
 
-	// Modify the toggle function to handle both field and direction
-	// function toggleSort() { // Removed
-	// 	if (sortDirection === 'desc') {
-	// 		sortDirection = 'asc';
-	// 	} else {
-	// 		sortDirection = 'desc';
-	// 		sortField = sortField === 'x' ? 'y' : 'x';
-	// 	}
-	// }
+	// Placeholder function for the sort button
+	function handleSortButtonClick() {
+		if (sortCriteria === 'orderIndex') {
+			sortCriteria = 'positionX';
+			sortDirection = 'asc';
+			currentIconPath = directionalSortIconPath;
+			sortButtonIconRotation = 270; // Arrow left for X asc (reversed from typical right)
+		} else if (sortCriteria === 'positionX' && sortDirection === 'asc') {
+			sortDirection = 'desc';
+			currentIconPath = directionalSortIconPath;
+			sortButtonIconRotation = 90; // Arrow right for X desc (reversed from typical left)
+		} else if (sortCriteria === 'positionX' && sortDirection === 'desc') {
+			sortCriteria = 'positionY';
+			sortDirection = 'asc';
+			currentIconPath = directionalSortIconPath;
+			sortButtonIconRotation = 0; // Arrow down for Y asc
+		} else if (sortCriteria === 'positionY' && sortDirection === 'asc') {
+			sortDirection = 'desc';
+			currentIconPath = directionalSortIconPath;
+			sortButtonIconRotation = 180; // Arrow up for Y desc
+		} else { // Was positionY, desc or any other combo, reset to orderIndex
+			sortCriteria = 'orderIndex';
+			sortDirection = 'asc'; // orderIndex is always ascending
+			currentIconPath = orderIndexIconPath;
+			sortButtonIconRotation = 0; // No rotation for list icon
+		}
+		console.log(`Sorting by: ${sortCriteria}` + (sortCriteria !== 'orderIndex' ? `, Direction: ${sortDirection}` : ' (Ascending)') + `, Icon: ${sortButtonIconRotation}°`);
+	}
 
 	// Fix handleTaskClick type
 	function handleTaskClick(key: string, quest: Quest) {
@@ -320,11 +319,22 @@
 			// 	};
 			// }
 
-			const task = {
+			const newOrderIndex = filteredQuests.length > 0 
+				? Math.max(...filteredQuests.map(([_, q]) => q.orderIndex ?? -1)) + 1 
+				: 0;
+
+			// Default position for CanvasView, similar to its INITIAL_OFFSET with randomization
+			const defaultCanvasPosition = {
+				x: 750 + (Math.random() - 0.5) * 200, // Base 750, range +/- 100
+				y: 750 + (Math.random() - 0.5) * 200  // Base 750, range +/- 100
+			};
+
+			const task: Quest = {
 				...newTask,
 				initiator: initiatorInfo, // Use the determined initiatorInfo
 				created: new Date().toISOString(),
-				// position: newPosition // Removed
+				orderIndex: newOrderIndex, // Assign orderIndex
+				position: defaultCanvasPosition // Assign default canvas position
 			};
 
 			// Add the task to holosphere
@@ -396,128 +406,110 @@
 	async function handleDrop(event: DragEvent, targetKey: string) {
 		event.preventDefault();
 		const sourceKey = event.dataTransfer?.getData('text/plain') || '';
-		if (!sourceKey || sourceKey === targetKey) return;
 
-		const sourceIndex = filteredQuests.findIndex(([key]) => key === sourceKey);
-		const targetIndex = filteredQuests.findIndex(([key]) => key === targetKey);
-		if (sourceIndex === -1 || targetIndex === -1) return;
-
-		// const POSITION_STEP = 100; // Change to 100px spacing // Removed
-		// const sourceQuest = filteredQuests[sourceIndex][1]; // Removed
-		// const targetQuest = filteredQuests[targetIndex][1]; // Removed
-
-		try {
-			// Calculate new position based on surrounding tasks and sort direction
-			// let newPosition; // Removed
-			
-			// if ((sourceIndex > targetIndex && sortDirection === 'asc') || 
-			// 	(sourceIndex < targetIndex && sortDirection === 'desc')) {
-			// 	// Moving task up in ascending or down in descending
-			// 	const prevTask = targetIndex > 0 ? filteredQuests[targetIndex - 1][1] : null;
-			// 	const prevPos = prevTask?.position?.[sortField] ?? 
-			// 		(sortDirection === 'desc' ? (targetQuest.position?.[sortField] ?? 0) + POSITION_STEP : (targetQuest.position?.[sortField] ?? 0) - POSITION_STEP);
-			// 	const targetPos = targetQuest.position?.[sortField] ?? POSITION_STEP;
-				
-			// 	// Position between prev and target
-			// 	const newPos = prevTask 
-			// 		? prevPos + (targetPos - prevPos) / 2 
-			// 		: targetPos + (sortDirection === 'desc' ? POSITION_STEP : -POSITION_STEP);
-
-			// 	newPosition = {
-			// 		x: sortField === 'x' ? newPos : sourceQuest.position?.x ?? POSITION_STEP,
-			// 		y: sortField === 'y' ? newPos : sourceQuest.position?.y ?? POSITION_STEP
-			// 	};
-			// } else {
-			// 	// Moving task down in ascending or up in descending
-			// 	const nextTask = targetIndex < filteredQuests.length - 1 
-			// 		? filteredQuests[targetIndex + 1][1] 
-			// 		: null;
-			// 	const targetPos = targetQuest.position?.[sortField] ?? POSITION_STEP;
-			// 	const nextPos = nextTask?.position?.[sortField] ?? 
-			// 		(sortDirection === 'desc' ? targetPos - POSITION_STEP : targetPos + POSITION_STEP);
-				
-			// 	// Position between target and next
-			// 	const newPos = nextTask 
-			// 		? targetPos + (nextPos - targetPos) / 2 
-			// 		: targetPos + (sortDirection === 'desc' ? -POSITION_STEP : POSITION_STEP);
-
-			// 	newPosition = {
-			// 		x: sortField === 'x' ? newPos : sourceQuest.position?.x ?? POSITION_STEP,
-			// 		y: sortField === 'y' ? newPos : sourceQuest.position?.y ?? POSITION_STEP
-			// 	};
-			// }
-
-			// const updatedQuest = { // Removed
-			// 	...sourceQuest,
-			// 	position: newPosition
-			// };
-
-			// Save to holosphere
-			// if (holonID) {  // Removed
-			// 	await holosphere.put(holonID, `quests/${sourceKey}`, updatedQuest);
-			// } else {
-			// 	console.error("Cannot update quest position: holonID is null");
-			// 	// Optionally, return or handle error to prevent further execution
-			// 	return; 
-			// }
-
-			// Update local store
-			// store = { // Removed
-			// 	...store,
-			// 	[sourceKey]: updatedQuest
-			// };
-
-			// Check if positions need normalization
-			// const positions = filteredQuests.map(([_, q]) => q.position?.[sortField] ?? 0); // Removed
-			// const minDiff = Math.min(...positions.slice(1).map((pos, i) => Math.abs(pos - positions[i]))); // Removed
-			
-			// if (minDiff < POSITION_STEP / 2) { // Adjust normalization threshold // Removed
-			// 	// Normalize all positions
-			// 	const normalized = filteredQuests.map(([key, quest], index) => {
-			// 		const normalizedPos = sortDirection === 'desc' 
-			// 			? (filteredQuests.length - index) * POSITION_STEP 
-			// 			: (index + 1) * POSITION_STEP;
-					
-			// 		return {
-			// 			key,
-			// 			quest: {
-			// 				...quest,
-			// 				position: {
-			// 					x: sortField === 'x' ? normalizedPos : quest.position?.x ?? POSITION_STEP,
-			// 					y: sortField === 'y' ? normalizedPos : quest.position?.y ?? POSITION_STEP
-			// 				}
-			// 			}
-			// 		};
-			// 	});
-
-			// 	// Save all normalized positions
-			// 	if (holonID) { 
-			// 		await Promise.all(
-			// 			normalized.map(({ key, quest }) => {
-			// 				// Ensure holonID is not null before this call too
-			// 				if (holonID) { 
-			// 					return holosphere.put(holonID, `quests/${key}`, quest);
-			// 				} else {
-			// 					// This case should ideally not be reached if the outer check is in place
-			// 					console.error("Critical error: holonID became null during normalization.");
-			// 					return Promise.resolve(); // or handle error appropriately
-			// 				}
-			// 			})
-			// 		);
-			// 	} else {
-			// 		console.error("Cannot normalize positions: holonID is null");
-			// 	}
-
-			// 	// Update local store with normalized positions
-			// 	store = normalized.reduce((acc, { key, quest }) => ({
-			// 		...acc,
-			// 		[key]: quest
-			// 	}), {});
-			// }
-		} catch (error) {
-			console.error('Error updating quest position:', error);
+		// Ensure holonID is not null before proceeding
+		const currentHolonID = holonID; // Use the reactive holonID variable
+		if (!currentHolonID) {
+			console.error("Cannot handle drop: holonID is null.");
+			handleDragEnd();
+			return;
 		}
-		
+
+		if (!sourceKey || sourceKey === targetKey) {
+			handleDragEnd();
+			return;
+		}
+
+		if (sortCriteria === 'orderIndex') {
+			const currentQuestsArray = [...filteredQuests];
+			const sourceIndex = currentQuestsArray.findIndex(([key]) => key === sourceKey);
+			const targetIndexOriginal = currentQuestsArray.findIndex(([key]) => key === targetKey);
+
+			if (sourceIndex === -1 || targetIndexOriginal === -1) {
+				handleDragEnd();
+				return;
+			}
+
+			const [draggedItemKey, draggedItemQuest] = currentQuestsArray.splice(sourceIndex, 1)[0];
+			
+			const actualTargetIndex = sourceIndex < targetIndexOriginal ? targetIndexOriginal -1 : targetIndexOriginal;
+			
+			currentQuestsArray.splice(actualTargetIndex, 0, [draggedItemKey, draggedItemQuest]);
+
+			const updatedQuestsPromises = currentQuestsArray.map(async ([key, questToUpdate], index) => {
+				const updatedQuest = { ...questToUpdate, orderIndex: index };
+				store[key] = updatedQuest;
+				return holosphere.put(currentHolonID, `quests/${key}`, updatedQuest);
+			});
+
+			try {
+				await Promise.all(updatedQuestsPromises);
+				quests = Object.entries(store);
+			} catch (error) {
+				console.error('Error updating quest orderIndex after drop:', error);
+			}
+		} else { // sortCriteria is 'positionX' or 'positionY'
+			const POSITION_STEP = 10.0;
+
+			const sourceQuestEntry = filteredQuests.find(([k]) => k === sourceKey);
+			if (!sourceQuestEntry) { 
+				handleDragEnd(); 
+				console.error('Source quest not found during drop for position sort.');
+				return; 
+			}
+			const draggedQuest = { ...sourceQuestEntry[1] }; // Mutable copy of the quest data
+
+			const otherItems = filteredQuests.filter(([k]) => k !== sourceKey);
+			const insertionIndexInOthers = otherItems.findIndex(([k]) => k === targetKey);
+
+			if (insertionIndexInOthers === -1) {
+				console.error("Error determining drop position: targetKey not found in otherItems.");
+				handleDragEnd();
+				return;
+			}
+
+			const prevTaskData = (insertionIndexInOthers > 0) ? otherItems[insertionIndexInOthers - 1][1] : null;
+			const nextTaskData = otherItems[insertionIndexInOthers][1]; // This is the quest data for targetKey
+
+			const mainAxis = sortCriteria === 'positionX' ? 'x' : 'y';
+			const crossAxis = sortCriteria === 'positionX' ? 'y' : 'x';
+
+			const prevMainCoord = prevTaskData?.position?.[mainAxis];
+			const nextMainCoord = nextTaskData?.position?.[mainAxis];
+
+			let newMainCoordValue: number;
+
+			if (prevMainCoord !== undefined && nextMainCoord !== undefined) {
+				newMainCoordValue = (prevMainCoord + nextMainCoord) / 2.0;
+			} else if (nextMainCoord !== undefined) {
+				newMainCoordValue = nextMainCoord - (POSITION_STEP * (sortDirection === 'asc' ? 1 : -1));
+			} else if (prevMainCoord !== undefined) {
+				newMainCoordValue = prevMainCoord + (POSITION_STEP * (sortDirection === 'asc' ? 1 : -1));
+			} else {
+				newMainCoordValue = draggedQuest.position?.[mainAxis] ?? 0;
+			}
+			
+			const currentFullPosition = draggedQuest.position || { x: 0, y: 0 };
+			
+			let newPosition = {
+				...currentFullPosition,
+				[mainAxis]: newMainCoordValue
+			};
+
+			if (newPosition[crossAxis] === undefined) {
+				newPosition[crossAxis] = 0;
+			}
+			draggedQuest.position = newPosition;
+
+			store[sourceKey] = draggedQuest;
+			try {
+				await holosphere.put(currentHolonID, `quests/${sourceKey}`, draggedQuest);
+				quests = Object.entries(store); 
+			} catch (error) {
+				console.error(`Error updating quest position after drop (sort by ${sortCriteria}):`, error);
+			}
+		}
+
 		handleDragEnd();
 	}
 
@@ -620,6 +612,178 @@
 	function handleDialogKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
 			hideDialog();
+		}
+	}
+
+	// Remove debounce helper and throttled store updates
+	function updateStore(newStore: Store) {
+		store = newStore;
+		quests = Object.entries(store);
+	}
+
+	// Modify the subscribe function to use immediate updates
+	function subscribe() {
+		if (!holosphere || !holonID) return;
+		
+		// Don't resubscribe if already subscribed to this holon
+		if (subscriptionState.currentHolonID === holonID && questsUnsubscribe) return; // check questsUnsubscribe too
+		
+		// Clear existing store and subscription
+		if (questsUnsubscribe) {
+			questsUnsubscribe();
+			questsUnsubscribe = undefined;
+		}
+		
+		store = {}; // Reset store
+		quests = []; // Reset quests array
+		filteredQuests = []; // Reset filteredQuests
+		
+		try {
+			// Update subscription state
+			subscriptionState.currentHolonID = holonID;
+			
+			const off = holosphere.subscribe(holonID, "quests", (newquest: Quest | null, key?: string) => {
+				// Update store immediately
+				const newStore = { ...store };
+				if (newquest && key) {
+					newStore[key] = newquest;
+				} else if (key) {
+					delete newStore[key];
+				}
+				// Directly update store and quests, which will trigger reactive updates
+				store = newStore; 
+				quests = Object.entries(store); 
+			});
+
+			if (typeof off === 'function') {
+				questsUnsubscribe = off;
+			}
+		} catch (error) {
+			console.error('Error setting up quest subscription:', error);
+			subscriptionState.currentHolonID = null; // Reset on error
+			questsUnsubscribe = undefined;
+		}
+	}
+
+	// Modify onMount to handle subscription cleanup
+	onMount(() => {
+		let mounted = true;
+		
+		// Set up ID subscription only once
+		const idSubscription = ID.subscribe((value) => {
+			if (!mounted || !value ) return; // Removed check against subscriptionState.currentHolonID to allow re-subscription if ID changes rapidly
+			holonID = value;
+			subscribe();
+		});
+
+		// Load preferences
+		try {
+			const storedViewMode = localStorage.getItem('taskViewMode');
+			if (storedViewMode === 'list' || storedViewMode === 'canvas') {
+				viewMode = storedViewMode as 'list' | 'canvas';
+			}
+			showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
+		} catch (error) {
+			console.error('Error loading preferences:', error);
+			// Defaults are already set, so just log error
+		}
+
+		return () => {
+			mounted = false;
+			if (idSubscription) idSubscription();
+			if (questsUnsubscribe) questsUnsubscribe();
+			if (subscriptionState.batchTimeout) { // Clear timeout if it exists
+				clearTimeout(subscriptionState.batchTimeout);
+				subscriptionState.batchTimeout = null;
+			}
+			subscriptionState.pendingUpdates.clear();
+			// Don't nullify currentHolonID here, as it might be needed if component remounts quickly
+		};
+	});
+
+	// Modify the reactive statements to be more efficient
+	$: {
+		let currentFilteredQuests = quests.filter(([_, quest]) => {
+			if (selectedCategory !== "all" && quest.category !== selectedCategory) {
+				return false;
+			}
+
+			// Default to 'task' if type is missing, then check if it's a valid type for display.
+			const type = quest.type || 'task'; 
+			if (!['task', 'quest', 'event'].includes(type)) {
+				// console.log('Filtering out due to invalid type:', quest.title, quest.type);
+				return false;
+			}
+
+			// Default to 'ongoing' if status is missing.
+			const status = quest.status || 'ongoing';
+			if (status === "completed" && !showCompleted) {
+				// console.log('Filtering out completed task when showCompleted is false:', quest.title);
+				return false;
+			}
+			// Implicitly, if status is 'ongoing', or if it's 'completed' and showCompleted is true, it passes this part.
+
+			return true; // Quest passes all filters
+		});
+
+		// Sort by orderIndex, undefined/null values go to the end
+		currentFilteredQuests.sort(([keyA, a], [keyB, b]) => {
+			let valA: number, valB: number;
+
+			switch (sortCriteria) {
+				case 'positionX':
+					valA = a.position?.x ?? Infinity;
+					valB = b.position?.x ?? Infinity;
+					break;
+				case 'positionY':
+					valA = a.position?.y ?? Infinity;
+					valB = b.position?.y ?? Infinity;
+					break;
+				case 'orderIndex':
+				default:
+					valA = a.orderIndex ?? Infinity;
+					valB = b.orderIndex ?? Infinity;
+					// If orderIndex is the same, sort by key (ID) as a stable secondary sort.
+					// This is always ascending for orderIndex mode.
+					if (valA === valB) {
+						return keyA.localeCompare(keyB);
+					}
+					// For orderIndex, primary sort is always ascending, handled by the main return
+					break;
+			}
+
+			// General comparison for asc/desc.
+			// For orderIndex, sortDirection will always be 'asc' due to handleSortButtonClick logic.
+			if (sortDirection === 'asc') {
+				if (valA === Infinity && valB === Infinity) return 0;
+				if (valA === Infinity) return 1;
+				if (valB === Infinity) return -1;
+				return valA - valB;
+			} else { // sortDirection === 'desc'
+				if (valA === Infinity && valB === Infinity) return 0;
+				if (valA === Infinity) return 1; 
+				if (valB === Infinity) return -1;
+				return valB - valA;
+			}
+		});
+		filteredQuests = currentFilteredQuests;
+	}
+
+	// Handler for optimistic position updates from CanvasView
+	function handleCanvasQuestPositionChange(event: CustomEvent) {
+		const { key, position } = event.detail;
+		if (key && position && store[key]) {
+			store = {
+				...store,
+				[key]: {
+					...store[key],
+					position: position
+				}
+			};
+			quests = Object.entries(store); // Trigger reactivity
+			// console.log('[Tasks.svelte] Optimistically updated position for key:', key, 'to', position);
+		} else {
+			// console.warn('[Tasks.svelte] Could not optimistically update position for event:', event.detail);
 		}
 	}
 </script>
@@ -754,17 +918,16 @@
 
 			<div class="flex w-full sm:w-auto justify-between sm:justify-end items-center gap-4">
 				<!-- Sort Button -->
-				<!-- <button // Removed
+				<button
 					class="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-full text-sm hover:bg-gray-500 transition-colors"
-					on:click={toggleSort}
-					aria-label="Toggle sort order"
+					on:click={handleSortButtonClick}
+					aria-label="Sort tasks"
 				>
 					Sort
+					{#key currentIconPath}
 					<svg
 						class="w-4 h-4 transform transition-transform"
-						style="transform: rotate({sortField === 'x' 
-							? (sortDirection === 'desc' ? '90' : '270') 
-							: (sortDirection === 'desc' ? '180' : '0')}deg)"
+						style="transform: rotate({sortButtonIconRotation}deg)"
 						viewBox="0 0 24 24"
 						fill="none"
 						stroke="currentColor"
@@ -772,9 +935,10 @@
 						stroke-linecap="round"
 						stroke-linejoin="round"
 					>
-						<path d="M12 5v14M19 12l-7 7-7-7"></path>
+						<path d={currentIconPath}></path>
 					</svg>
-				</button> -->
+					{/key}
+				</button>
 
 				<!-- Show Completed Toggle -->
 				<label class="flex items-center cursor-pointer">
@@ -815,6 +979,7 @@
 				{holonID}
 				{showCompleted}
 				on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
+				on:questPositionChanged={handleCanvasQuestPositionChange} 
 			/> {:else} <!-- Optionally, add a loading state or message here --> <p>Loading canvas...</p> {/if}
 		{:else}
 			<div class="space-y-2">

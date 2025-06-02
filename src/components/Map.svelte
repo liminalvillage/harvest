@@ -657,6 +657,7 @@
 			mapboxgl: mapboxgl,
 			marker: false,
 			placeholder: "Search for a location",
+			types: "poi,address,place,locality,neighborhood,region,country,postcode",
 		});
 
 		// Add geolocate control

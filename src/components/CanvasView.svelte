@@ -20,6 +20,7 @@
     let pan = { x: 0, y: 0 };
     let startPan = { x: 0, y: 0 };
     let isPanning = false;
+    let draggedCardVisuals: { key: string; x: number; y: number } | null = null;
 
     // Update canvas dimensions
     const CANVAS_WIDTH = 3000;
@@ -37,26 +38,17 @@
     // Initialize positions if not set - move this out of the reactive statement
     let questCards: { key: string; quest: any; x: number; y: number; }[] = [];
 
-    // Update this to only set initial positions once when filteredQuests changes
-    $: {
-        questCards = filteredQuests
-            .filter(([_, quest]) => showCompleted || quest.status !== 'completed')
-            .map(([key, quest]) => {
-                // Try to find existing card to preserve its position
-                const existingCard = questCards.find(card => card.key === key);
-                if (existingCard) {
-                    return existingCard;
-                }
-                
-                // Only create new position for new cards
-                return {
-                    key,
-                    quest,
-                    x: quest.position?.x || INITIAL_OFFSET.x + Math.random() * 800,
-                    y: quest.position?.y || INITIAL_OFFSET.y + Math.random() * 500
-                };
-            });
-    }
+    // questCards is now purely derived from filteredQuests.
+    // This ensures it always reflects the latest positions from props when not actively dragging.
+    $: questCards = filteredQuests
+        .filter(([_, quest]) => showCompleted || quest.status !== 'completed')
+        .map(([key, quest]) => ({
+            key,
+            quest,
+            // Use nullish coalescing (??) to respect a position of 0.
+            x: quest.position?.x ?? (INITIAL_OFFSET.x + Math.random() * 800),
+            y: quest.position?.y ?? (INITIAL_OFFSET.y + Math.random() * 500)
+        }));
 
     function handleMouseDown(event: MouseEvent, card: typeof questCards[0] | null = null) {
         event.preventDefault();
@@ -74,6 +66,7 @@
         if (event.button === 0 && card) {
             isDragging = true;
             draggedCard = card;
+            draggedCardVisuals = { key: card.key, x: card.x, y: card.y };
             
             const rect = canvas.getBoundingClientRect();
             const mouseX = (event.clientX - rect.left - pan.x) / zoom;
@@ -104,7 +97,7 @@
             return;
         }
 
-        if (!isDragging || !draggedCard || !canvas) return;
+        if (!isDragging || !draggedCardVisuals || !canvas) return;
 
         const rect = canvas.getBoundingClientRect();
         const mouseX = (event.clientX - rect.left - pan.x) / zoom;
@@ -112,15 +105,8 @@
         const newX = mouseX - offset.x;
         const newY = mouseY - offset.y;
 
-        questCards = questCards.map(card => 
-            card.key === draggedCard?.key 
-                ? { 
-                    ...card, 
-                    x: Math.min(Math.max(newX, 0), CANVAS_WIDTH - 300),
-                    y: Math.min(Math.max(newY, 0), CANVAS_HEIGHT - 200)
-                }
-                : card
-        );
+        draggedCardVisuals.x = Math.min(Math.max(newX, 0), CANVAS_WIDTH - 300);
+        draggedCardVisuals.y = Math.min(Math.max(newY, 0), CANVAS_HEIGHT - 200);
     }
 
     function handleMouseUp(event: MouseEvent) {
@@ -128,27 +114,32 @@
         event.stopPropagation();
         
         const wasDragging = isDragging;
-        const draggedCardCopy = draggedCard;
+        // Use draggedCard (original data) and draggedCardVisuals (final position)
+        const finalDraggedCardData = draggedCard; 
+        const finalVisualPosition = draggedCardVisuals;
         
         // Reset states first
         isDragging = false;
         draggedCard = null;
+        draggedCardVisuals = null; // Reset visual state
         isPanning = false;
         
         // Then handle the update
-        if (wasDragging && draggedCardCopy) {
-            const card = questCards.find(c => c.key === draggedCardCopy?.key);
-            if (card) {
-                const updatedQuest = { 
-                    ...card.quest,
-                    position: { x: card.x, y: card.y } 
-                };
-                
-                holosphere.put(holonID, 'quests', {
-                    ...updatedQuest,
-                    id: card.key
-                }).catch(error => console.error('Error updating quest position:', error));
-            }
+        if (wasDragging && finalDraggedCardData && finalVisualPosition && holonID) {
+            const newPosition = { x: finalVisualPosition.x, y: finalVisualPosition.y };
+            const updatedQuest = { 
+                ...finalDraggedCardData.quest, 
+                position: newPosition 
+            };
+            
+            holosphere.put(holonID, `quests/${finalDraggedCardData.key}`, updatedQuest)
+                .catch(error => console.error('Error updating quest position:', error));
+
+            // Dispatch an event so Tasks.svelte can optimistically update its store
+            dispatch('questPositionChanged', {
+                key: finalDraggedCardData.key,
+                position: newPosition
+            });
         }
     }
 
@@ -442,12 +433,14 @@
         <!-- Grid background -->
         <div class="absolute inset-0 grid-background"></div>
 
-        {#each questCards as card}
+        {#each questCards as card (card.key)}
             <div
                 class="absolute task-card"
                 class:cursor-move={!isDragging}
-                class:cursor-grabbing={isDragging && draggedCard?.key === card.key}
-                style="left: {card.x}px; top: {card.y}px; transform: scale(1); transform-origin: top left;"
+                class:cursor-grabbing={isDragging && draggedCardVisuals?.key === card.key}
+                style="left: {(draggedCardVisuals && draggedCardVisuals.key === card.key ? draggedCardVisuals.x : card.x)}px; 
+                       top:  {(draggedCardVisuals && draggedCardVisuals.key === card.key ? draggedCardVisuals.y : card.y)}px; 
+                       transform: scale(1); transform-origin: top left;"
                 on:mousedown|stopPropagation={(e) => handleMouseDown(e, card)}
                 role="presentation"
             >
