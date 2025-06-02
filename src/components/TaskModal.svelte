@@ -301,9 +301,13 @@
                     });
                 }
             }
-        }
 
-        await updateQuest({ status: newStatus }, true);
+            await updateQuest({ status: newStatus, completed_at: new Date().toISOString() });
+            dispatch("taskCompleted", { questId });
+            dispatch("close");
+        } else {
+            await updateQuest({ status: newStatus, completed_at: null });
+        }
     }
 
     async function toggleParticipant(usernameToAdd: string) {

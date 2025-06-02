@@ -8,6 +8,8 @@
 	import TaskModal from "./TaskModal.svelte";
 	import CanvasView from "./CanvasView.svelte";
 	import { writable } from 'svelte/store';
+	import Fireworks from "./Fireworks.svelte";
+	import Confetti from "./Confetti.svelte";
 
 	interface Quest {
 		id: string;
@@ -76,6 +78,10 @@
 		batchTimeout: null as NodeJS.Timeout | null,
 		pendingUpdates: new Map<string, Quest>()
 	};
+
+	// Add state for animations
+	let showFireworks = false;
+	let showConfetti = false;
 
 	// Remove debounce helper and throttled store updates
 	function updateStore(newStore: Store) {
@@ -592,6 +598,25 @@
 		selectedTask = null;
 	}
 
+	// Add function to handle task completion and show animations
+	function handleTaskCompleted(event: CustomEvent) {
+		if (event.detail?.questId) {
+			showFireworks = true;
+			showConfetti = true;
+
+			// Hide fireworks after 2.5 seconds
+			setTimeout(() => {
+				showFireworks = false;
+			}, 2500); // Show for 2.5 seconds
+
+			// Hide confetti after 10 seconds
+			setTimeout(() => {
+				showConfetti = false;
+			}, 10000); // Show for 10 seconds
+		}
+		// Note: handleTaskDeleted will still be called via the "close" event to clear selectedTask
+	}
+
 	function handleDialogKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
 			hideDialog();
@@ -925,6 +950,7 @@
 			questId={selectedTask.key}
 			holonId={holonID}
 			on:close={handleTaskDeleted}
+			on:taskCompleted={handleTaskCompleted}
 		/>
 	{/if}
 
@@ -1027,6 +1053,14 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Add animation components -->
+{#if showFireworks}
+	<Fireworks />
+{/if}
+{#if showConfetti}
+	<Confetti />
+{/if}
 
 <style>
 	/* Add smooth transition for the toggle switch dot */
