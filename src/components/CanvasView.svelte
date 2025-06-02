@@ -22,18 +22,10 @@
     let isPanning = false;
     let draggedCardVisuals: { key: string; x: number; y: number } | null = null;
 
-    // Update canvas dimensions
-    const CANVAS_WIDTH = 3000;
-    const CANVAS_HEIGHT = 3000;
-    const INITIAL_OFFSET = { x: CANVAS_WIDTH / 4, y: CANVAS_HEIGHT / 4 };
-
-    // Add viewport boundaries
-    let bounds = {
-        minX: -CANVAS_WIDTH + 100,
-        maxX: CANVAS_WIDTH - 100,
-        minY: -CANVAS_HEIGHT + 100,
-        maxY: CANVAS_HEIGHT - 100
-    };
+    // Update canvas dimensions to be very large for an "infinite" feel
+    const CANVAS_WIDTH = 30000;
+    const CANVAS_HEIGHT = 30000;
+    const INITIAL_OFFSET = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
 
     // Initialize positions if not set - move this out of the reactive statement
     let questCards: { key: string; quest: any; x: number; y: number; }[] = [];
@@ -89,11 +81,8 @@
                 y: (event.clientY - startPan.y)
             };
             
-            // Constrain panning
-            pan = {
-                x: Math.min(Math.max(newPan.x, -CANVAS_WIDTH + viewContainer.clientWidth), 0),
-                y: Math.min(Math.max(newPan.y, -CANVAS_HEIGHT + viewContainer.clientHeight), 0)
-            };
+            // Remove Panning Constraints
+            pan = newPan;
             return;
         }
 
@@ -105,8 +94,9 @@
         const newX = mouseX - offset.x;
         const newY = mouseY - offset.y;
 
-        draggedCardVisuals.x = Math.min(Math.max(newX, 0), CANVAS_WIDTH - 300);
-        draggedCardVisuals.y = Math.min(Math.max(newY, 0), CANVAS_HEIGHT - 200);
+        // Remove card position constraints
+        draggedCardVisuals.x = newX;
+        draggedCardVisuals.y = newY;
     }
 
     function handleMouseUp(event: MouseEvent) {
@@ -171,17 +161,17 @@
                 y: lastMouseY - (canvasY * zoom)
             };
 
-            // Apply bounds
-            const rect2 = viewContainer.getBoundingClientRect();
-            pan = {
-                x: Math.min(Math.max(pan.x, -CANVAS_WIDTH * zoom + rect2.width), 0),
-                y: Math.min(Math.max(pan.y, -CANVAS_HEIGHT * zoom + rect2.height), 0)
-            };
+            // Remove Panning constraints for zoom
+            // const rect2 = viewContainer.getBoundingClientRect();
+            // pan = {
+            //     x: Math.min(Math.max(pan.x, -CANVAS_WIDTH * zoom + rect2.width), 0),
+            //     y: Math.min(Math.max(pan.y, -CANVAS_HEIGHT * zoom + rect2.height), 0)
+            // };
         } else {
-            // Simple panning
+            // Simple panning - Remove Panning constraints
             pan = {
-                x: Math.min(Math.max(pan.x - event.deltaX, -CANVAS_WIDTH * zoom + viewContainer.clientWidth), 0),
-                y: Math.min(Math.max(pan.y - event.deltaY, -CANVAS_HEIGHT * zoom + viewContainer.clientHeight), 0)
+                x: pan.x - event.deltaX,
+                y: pan.y - event.deltaY
             };
         }
     }
@@ -280,18 +270,18 @@
                 y: lastMouseY - (canvasY * zoom)
             };
             
-            // Apply bounds
-            const rect = viewContainer.getBoundingClientRect();
-            pan = {
-                x: Math.min(Math.max(pan.x, -CANVAS_WIDTH * zoom + rect.width), 0),
-                y: Math.min(Math.max(pan.y, -CANVAS_HEIGHT * zoom + rect.height), 0)
-            };
+            // Remove Panning constraints for touch zoom
+            // const rect = viewContainer.getBoundingClientRect();
+            // pan = {
+            //     x: Math.min(Math.max(pan.x, -CANVAS_WIDTH * zoom + rect.width), 0),
+            //     y: Math.min(Math.max(pan.y, -CANVAS_HEIGHT * zoom + rect.height), 0)
+            // };
         } else if (event.touches.length === 1 && isPanning) {
-            // Handle panning
+            // Handle panning - Remove Panning constraints
             const touch = event.touches[0];
             pan = {
-                x: Math.min(Math.max(touch.clientX - startPan.x, -CANVAS_WIDTH * zoom + viewContainer.clientWidth), 0),
-                y: Math.min(Math.max(touch.clientY - startPan.y, -CANVAS_HEIGHT * zoom + viewContainer.clientHeight), 0)
+                x: touch.clientX - startPan.x,
+                y: touch.clientY - startPan.y
             };
         }
     }
