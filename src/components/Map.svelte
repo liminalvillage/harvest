@@ -1171,6 +1171,17 @@
 
 	// Drag handling functions
 	function handleDragStart(event: MouseEvent) {
+		// If the target is an input, button, select, or anchor, or has such an ancestor, don't start drag
+		const targetElement = event.target as HTMLElement;
+		if (targetElement.tagName === 'INPUT' ||
+			targetElement.tagName === 'BUTTON' ||
+			targetElement.tagName === 'SELECT' ||
+			targetElement.tagName === 'A' ||
+			targetElement.closest('button, input, select, a')) {
+			isDragging = false; // Ensure not in dragging state
+			return;
+		}
+
 		isDragging = true;
 		const sidebarElement = event.currentTarget as HTMLElement;
 		const rect = sidebarElement.getBoundingClientRect();
@@ -1181,7 +1192,7 @@
 			y: event.clientY - rect.top
 		};
 		
-		// Prevent text selection during drag
+		// Prevent text selection during drag only if drag actually starts
 		event.preventDefault();
 	}
 	
@@ -1288,10 +1299,15 @@
 			class="sidebar-overlay"
 			style="left: {sidebarPosition.x}px; top: {sidebarPosition.y}px;"
 			on:mousedown={handleDragStart}
+			role="dialog" 
+			aria-modal="true"
+			aria-labelledby="sidebar-header-title"
+			tabindex="0" 
+			on:keydown={(e) => { if (e.key === 'Escape') closeSidebar(); }}
 		>
 			<div class="sidebar-header">
 				<div class="flex items-center">
-					<span class="text-white font-medium">Hexagon {hexId}</span>
+					<span id="sidebar-header-title" class="text-white font-medium">Hexagon {hexId}</span>
 				</div>
 				<button 
 					class="text-gray-300 hover:text-white" 
@@ -1301,7 +1317,7 @@
 			<div class="sidebar-content">
 				<MapSidebar 
 					{selectedLens}
-					{hexId}
+					
 					isOverlay={true}
 				/>
 			</div>
@@ -1372,7 +1388,7 @@
 		max-height: 70vh;
 	}
 
-	.custom-control-container {
+	/* .custom-control-container {
 		position: absolute;
 		top: 10px;
 		right: 10px;
@@ -1383,12 +1399,12 @@
 		padding: 10px;
 		border-radius: 4px;
 		box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-	}
+	} */
 
-	.lens-container {
+	/* .lens-container {
 		display: flex;
 		align-items: center;
-	}
+	} */
 
 	.lens-selector {
 		position: absolute;
@@ -1428,20 +1444,20 @@
 		min-width: 120px;
 	}
 
-	.select-arrow {
+	/* .select-arrow {
 		position: absolute;
 		right: 36px;
 		top: 50%;
 		transform: translateY(-50%);
 		pointer-events: none;
 		color: #333;
-	}
+	} */
 
 	.info-button {
 		background: none;
 		border: none;
 		padding: 4px;
-		color: #666;
+		color: #000;
 		cursor: pointer;
 		transition: color 0.2s;
 		display: flex;
@@ -1497,11 +1513,11 @@
 		color: #000;
 	}
 
-	.mapboxgl-ctrl.mapboxgl-ctrl-group {
+	/* .mapboxgl-ctrl.mapboxgl-ctrl-group {
 		position: relative;
 		background: #fff;
 		border-radius: 4px;
-	}
+	} */
 
 	select:focus {
 		outline: none;
