@@ -22,6 +22,13 @@
     let isPanning = false;
     let draggedCardVisuals: { key: string; x: number; y: number } | null = null;
 
+    // State for managing dependency linking
+    let linkingState = {
+        isActive: false,
+        sourceCardKey: null as string | null,
+        sourcePointType: null as 'top' | 'bottom' | null, // to distinguish which dot of source card
+    };
+
     // Update canvas dimensions to be very large for an "infinite" feel
     const CANVAS_WIDTH = 30000;
     const CANVAS_HEIGHT = 30000;
@@ -29,6 +36,9 @@
 
     // Initialize positions if not set - move this out of the reactive statement
     let questCards: { key: string; quest: any; x: number; y: number; }[] = [];
+
+    const CARD_WIDTH = 256; // Based on w-64 class (16rem * 16px/rem)
+    const CARD_HEIGHT_ESTIMATE = 120; // Estimated height for arrow connection
 
     // questCards is now purely derived from filteredQuests.
     // This ensures it always reflects the latest positions from props when not actively dragging.
@@ -45,6 +55,16 @@
     function handleMouseDown(event: MouseEvent, card: typeof questCards[0] | null = null) {
         event.preventDefault();
         event.stopPropagation();
+        
+        // Cancel linking if clicking on canvas background and not starting a new link from a dot
+        if (linkingState.isActive && !card && event.target === viewContainer) { // or if target is canvas itself
+            linkingState.isActive = false;
+            linkingState.sourceCardKey = null;
+            linkingState.sourcePointType = null;
+            // console.log("Linking cancelled by clicking background");
+            // Potentially remove visual feedback from source dot here
+            return;
+        }
         
         if (event.button === 1 || event.button === 2 || !card) {
             isPanning = true;
@@ -307,6 +327,90 @@
         localStorage.setItem('canvasViewState', JSON.stringify({ zoom, pan }));
     }
 
+    let dependencyArrows: { x1: number; y1: number; x2: number; y2: number; key: string }[] = [];
+    $: {
+        const arrows: typeof dependencyArrows = [];
+        if (questCards && questCards.length > 0) {
+            for (const targetCard of questCards) {
+                if (targetCard.quest.dependsOn && Array.isArray(targetCard.quest.dependsOn)) {
+                    for (const sourceKey of targetCard.quest.dependsOn) {
+                        const sourceCard = questCards.find(qc => qc.key === sourceKey);
+                        if (sourceCard) {
+                            arrows.push({
+                                x1: sourceCard.x + CARD_WIDTH / 2,
+                                y1: sourceCard.y + CARD_HEIGHT_ESTIMATE, // Bottom-center of source
+                                x2: targetCard.x + CARD_WIDTH / 2,
+                                y2: targetCard.y, // Top-center of target
+                                key: `${sourceKey}-${targetCard.key}`
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        dependencyArrows = arrows;
+    }
+
+    // Function to handle clicks on dependency dots
+    function handleDotClick(event: MouseEvent, cardKey: string, pointType: 'top' | 'bottom') {
+        event.stopPropagation(); // Prevent card dragging or canvas panning
+
+        const clickedCardData = questCards.find(qc => qc.key === cardKey)?.quest;
+        if (!clickedCardData) return;
+
+        if (!linkingState.isActive) {
+            // Start a new link
+            linkingState.isActive = true;
+            linkingState.sourceCardKey = cardKey;
+            linkingState.sourcePointType = pointType;
+            // console.log(`Link started from ${cardKey}, point ${pointType}`);
+            // Add visual feedback to source dot if desired
+        } else {
+            // Attempt to complete a link
+            const sourceCardKey = linkingState.sourceCardKey;
+            const sourcePointType = linkingState.sourcePointType;
+
+            if (sourceCardKey === cardKey) {
+                // console.log("Clicked same card, cancelling link.");
+                // Clicked on a dot of the same card from which the link started - cancel or allow if different points?
+                // For now, just cancel if same card, regardless of point.
+            } else if (sourcePointType === 'bottom' && pointType === 'top') {
+                // Valid link: from bottom of source to top of target
+                // The targetCard (cardKey) depends on the sourceCard (sourceCardKey)
+                const targetQuest = questCards.find(qc => qc.key === cardKey)?.quest;
+                if (targetQuest && holonID) {
+                    const updatedDependsOn = Array.isArray(targetQuest.dependsOn) ? [...targetQuest.dependsOn] : [];
+                    if (!updatedDependsOn.includes(sourceCardKey!)) {
+                        updatedDependsOn.push(sourceCardKey!);
+                    }
+                    const updatedQuest = { ...targetQuest, dependsOn: updatedDependsOn };
+                    
+                    // Optimistically update local store for immediate arrow rendering
+                    const cardIndex = questCards.findIndex(qc => qc.key === cardKey);
+                    if (cardIndex !== -1) {
+                        questCards[cardIndex].quest = updatedQuest;
+                        questCards = [...questCards]; // Trigger reactivity for dependencyArrows
+                    }
+
+                    holosphere.put(holonID, `quests/${cardKey}`, updatedQuest)
+                        .then(() => {
+                            // console.log(`Dependency created: ${cardKey} now depends on ${sourceCardKey}`);
+                            // Dispatch event if Tasks.svelte needs to know about this raw data change
+                            dispatch('questDataChanged', { key: cardKey, quest: updatedQuest });
+                        })
+                        .catch(error => {
+                            console.error('Error creating dependency:', error);
+                            // Potentially revert optimistic update here
+                        });
+                }
+            }
+            // Reset linking state regardless of outcome, unless specific logic to keep it active is added
+            linkingState.isActive = false;
+            linkingState.sourceCardKey = null;
+            linkingState.sourcePointType = null;
+        }
+    }
+
     onMount(() => {
         if (!canvas || !viewContainer) return;
 
@@ -423,6 +527,36 @@
         <!-- Grid background -->
         <div class="absolute inset-0 grid-background"></div>
 
+        <!-- SVG Layer for Dependency Arrows -->
+        <svg 
+            class="absolute top-0 left-0 w-full h-full pointer-events-none"
+            xmlns="http://www.w3.org/2000/svg"
+        >
+            <defs>
+                <marker 
+                    id="markerArrowhead" 
+                    markerWidth="10" 
+                    markerHeight="7" 
+                    refX="0" 
+                    refY="3.5" 
+                    orient="auto"
+                >
+                    <polygon points="0 0, 10 3.5, 0 7" fill="#9ca3af" />
+                </marker>
+            </defs>
+            {#each dependencyArrows as arrow (arrow.key)}
+                <line 
+                    x1={arrow.x1} 
+                    y1={arrow.y1} 
+                    x2={arrow.x2} 
+                    y2={arrow.y2} 
+                    stroke="#9ca3af" 
+                    stroke-width="2" 
+                    marker-end="url(#markerArrowhead)" 
+                />
+            {/each}
+        </svg>
+
         {#each questCards as card (card.key)}
             <div
                 class="absolute task-card"
@@ -434,6 +568,14 @@
                 on:mousedown|stopPropagation={(e) => handleMouseDown(e, card)}
                 role="presentation"
             >
+                <!-- Top connection dot -->
+                <div 
+                    class="dependency-dot dot-top"
+                    on:click|stopPropagation={(e) => handleDotClick(e, card.key, 'top')}
+                    style="background-color: {linkingState.isActive && linkingState.sourceCardKey !== card.key && linkingState.sourcePointType === 'bottom' ? '#60a5fa' : '#fff'};"
+                    title="Link to this task (as a prerequisite)"
+                ></div>
+
                 <div 
                     class="w-64 p-4 rounded-xl shadow-lg border-2 bg-opacity-90"
                     style="background-color: {card.quest.status === 'completed' ? 
@@ -487,6 +629,14 @@
                         </div>
                     {/if}
                 </div>
+
+                <!-- Bottom connection dot -->
+                <div
+                    class="dependency-dot dot-bottom"
+                    on:click|stopPropagation={(e) => handleDotClick(e, card.key, 'bottom')}
+                    style="background-color: {linkingState.isActive && linkingState.sourceCardKey === card.key && linkingState.sourcePointType === 'bottom' ? '#ef4444' : '#fff'};"
+                    title="This task is a prerequisite for..."
+                ></div>
             </div>
         {/each}
     </div>
@@ -504,6 +654,29 @@
         transform: translate3d(0, 0, 0);
         backface-visibility: hidden;
         -webkit-font-smoothing: subpixel-antialiased;
+        position: relative; /* Ensure dots are positioned relative to the card */
+    }
+
+    .dependency-dot {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background-color: white;
+        border: 2px solid #6b7280; /* gray-500 */
+        border-radius: 50%;
+        cursor: crosshair;
+        z-index: 10; /* Ensure dots are clickable above card content */
+        transform: translate(-50%, -50%); /* Center the dot on its anchor point */
+    }
+
+    .dot-top {
+        top: 0;
+        left: 50%;
+    }
+
+    .dot-bottom {
+        bottom: 0;
+        left: 50%;
     }
 
     .cursor-move {

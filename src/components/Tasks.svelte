@@ -31,6 +31,7 @@
 		type: 'task' | 'quest' | 'event';
 		orderIndex?: number;
 		position?: { x: number; y: number };
+		dependsOn?: string[];
 		initiator?: {
 			id: string;
 			username: string;
