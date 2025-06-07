@@ -137,19 +137,33 @@
         // Then handle the update
         if (wasDragging && finalDraggedCardData && finalVisualPosition && holonID) {
             const newPosition = { x: finalVisualPosition.x, y: finalVisualPosition.y };
-            const updatedQuest = { 
-                ...finalDraggedCardData.quest, 
-                position: newPosition 
-            };
-            
-            holosphere.put(holonID, `quests/${finalDraggedCardData.key}`, updatedQuest)
-                .catch(error => console.error('Error updating quest position:', error));
 
-            // Dispatch an event so Tasks.svelte can optimistically update its store
-            dispatch('questPositionChanged', {
-                key: finalDraggedCardData.key,
-                position: newPosition
-            });
+            const dx = Math.abs(newPosition.x - finalDraggedCardData.x);
+            const dy = Math.abs(newPosition.y - finalDraggedCardData.y);
+            const moveThreshold = 5; // pixels
+
+            // Check if it was a click (not a drag)
+            if (dx < moveThreshold && dy < moveThreshold) {
+                dispatch('taskClick', {
+                    key: finalDraggedCardData.key,
+                    quest: finalDraggedCardData.quest
+                });
+            } else {
+                // It was a drag, so update the position
+                const updatedQuest = { 
+                    ...finalDraggedCardData.quest, 
+                    position: newPosition 
+                };
+                
+                holosphere.put(holonID, `quests/${finalDraggedCardData.key}`, updatedQuest)
+                    .catch(error => console.error('Error updating quest position:', error));
+
+                // Dispatch an event so Tasks.svelte can optimistically update its store
+                dispatch('questPositionChanged', {
+                    key: finalDraggedCardData.key,
+                    position: newPosition
+                });
+            }
         }
     }
 

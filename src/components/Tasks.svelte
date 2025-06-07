@@ -17,7 +17,7 @@
 		description?: string;
 		date?: string;
 		when?: string;
-		status: 'ongoing' | 'completed';
+		status: 'ongoing' | 'completed' | 'recurring' | 'repeating';
 		category?: string;
 		participants: Array<{ 
 			id: string; 
@@ -28,7 +28,7 @@
 		appreciation: string[];
 		location?: string;
 		ends?: string;
-		type: 'task' | 'quest' | 'event';
+		type?: 'task' | 'quest' | 'event' | 'proposal' | 'recurring';
 		orderIndex?: number;
 		position?: { x: number; y: number };
 		dependsOn?: string[];
@@ -129,20 +129,17 @@
 				return false;
 			}
 
-			// Default to 'task' if type is missing, then check if it's a valid type for display.
+			// Show tasks and recurring tasks (default to 'task' if type is missing)
 			const type = quest.type || 'task'; 
-			if (!['task', 'quest', 'event'].includes(type)) {
-				// console.log('Filtering out due to invalid type:', quest.title, quest.type);
+			if (type !== 'task' && type !== 'recurring') {
 				return false;
 			}
 
 			// Default to 'ongoing' if status is missing.
 			const status = quest.status || 'ongoing';
 			if (status === "completed" && !showCompleted) {
-				// console.log('Filtering out completed task when showCompleted is false:', quest.title);
 				return false;
 			}
-			// Implicitly, if status is 'ongoing', or if it's 'completed' and showCompleted is true, it passes this part.
 
 			return true; // Quest passes all filters
 		});
@@ -292,43 +289,18 @@
 				};
 			}
 
-			// Get the current top position based on sort order
-			// const POSITION_STEP = 100; // Change to 100px spacing // Removed
-			// let newPosition; // Removed
+			const CANVAS_CENTER_X = 15000;
+			const CANVAS_CENTER_Y = 15000;
 
-			// If there are existing tasks, position the new one based on sort direction
-			// if (sortedQuests.length > 0) { // Removed
-			// 	const firstTask = sortedQuests[0][1];
-			// 	const firstPosition = firstTask.position?.[sortField] ?? POSITION_STEP;
-				
-			// 	// Calculate new position based on sort direction
-			// 	const positionOffset = sortDirection === 'desc' ? POSITION_STEP : -POSITION_STEP;
-				
-			// 	newPosition = {
-			// 		x: sortField === 'x' 
-			// 			? firstPosition + positionOffset 
-			// 			: (firstTask.position?.x ?? POSITION_STEP),
-			// 		y: sortField === 'y' 
-			// 			? firstPosition + positionOffset 
-			// 			: (firstTask.position?.y ?? POSITION_STEP)
-			// 	};
-			// } else {
-			// 	// If no tasks exist, start with base position
-			// 	newPosition = {
-			// 		x: POSITION_STEP,
-			// 		y: POSITION_STEP
-			// 	};
-			// }
+			// Default position for CanvasView, similar to its INITIAL_OFFSET with randomization
+			const defaultCanvasPosition = {
+				x: CANVAS_CENTER_X + (Math.random() * 800 - 400), // Centered with spread
+				y: CANVAS_CENTER_Y + (Math.random() * 500 - 250)  // Centered with spread
+			};
 
 			const newOrderIndex = filteredQuests.length > 0 
 				? Math.max(...filteredQuests.map(([_, q]) => q.orderIndex ?? -1)) + 1 
 				: 0;
-
-			// Default position for CanvasView, similar to its INITIAL_OFFSET with randomization
-			const defaultCanvasPosition = {
-				x: 750 + (Math.random() - 0.5) * 200, // Base 750, range +/- 100
-				y: 750 + (Math.random() - 0.5) * 200  // Base 750, range +/- 100
-			};
 
 			const task: Quest = {
 				...newTask,
@@ -711,7 +683,7 @@
 
 			// Default to 'task' if type is missing, then check if it's a valid type for display.
 			const type = quest.type || 'task'; 
-			if (!['task', 'quest', 'event'].includes(type)) {
+			if (!['task', 'quest', 'event', 'recurring'].includes(type)) {
 				// console.log('Filtering out due to invalid type:', quest.title, quest.type);
 				return false;
 			}
@@ -804,6 +776,7 @@
 					<div class="text-2xl font-bold">
 						{quests.filter(
 							([_, quest]) =>
+								(!quest.type || quest.type === "task" || quest.type === "recurring") &&
 								!quest.participants?.length &&
 								quest.status !== "completed"
 						).length}
@@ -813,21 +786,39 @@
 				<div class="pr-10">
 					<div class="text-2xl font-bold">
 						{quests.filter(
-							([_, quest]) => quest.status === "ongoing"
+							([_, quest]) => 
+								(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+								quest.status !== "completed"
 						).length}
 					</div>
-					<div class="">Ongoing</div>
+					<div class="">Open Tasks</div>
 				</div>
 				<div class="pr-10">
 					<div class="text-2xl font-bold">
 						{quests.filter(
-							([_, quest]) => quest.status === "completed"
+							([_, quest]) => 
+								(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+								(quest.status === "recurring" || quest.status === "repeating")
+						).length}
+					</div>
+					<div class="">Recurring</div>
+				</div>
+				<div class="pr-10">
+					<div class="text-2xl font-bold">
+						{quests.filter(
+							([_, quest]) => 
+								(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+								quest.status === "completed"
 						).length}
 					</div>
 					<div class="">Completed</div>
 				</div>
 				<div>
-					<div class="text-2xl font-bold">{quests.length}</div>
+					<div class="text-2xl font-bold">
+						{quests.filter(([_, quest]) => 
+							!quest.type || quest.type === "task"
+						).length}
+					</div>
 					<div class="">Total Tasks</div>
 				</div>
 			</div>
@@ -985,7 +976,7 @@
 		{:else}
 			<div class="space-y-2">
 				{#each filteredQuests as [key, quest]}
-					{#if quest.status === "ongoing" || (showCompleted && quest.status === "completed")}
+					{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
 						<button
 							id={key}
 							class="w-full task-card relative text-left"
@@ -1018,6 +1009,11 @@
 												{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : '✓'}
 												{quest.type}
 											</span>
+											{#if quest.status === 'recurring' || quest.status === 'repeating'}
+												<span class="text-sm px-2 py-0.5 rounded-full bg-purple-500/30 text-purple-200">
+													🔄 Recurring
+												</span>
+											{/if}
 											{quest.title}
 										</h3>
 										{#if quest.description}

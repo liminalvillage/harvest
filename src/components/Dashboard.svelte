@@ -15,6 +15,7 @@
     let userCount = 0;
     let completedTaskCount = 0;
     let openTaskCount = 0;
+    let proposalCount = 0;
     let recentEventCount = 0;
     let shoppingItemCount = 0;
     let offerCount = 0;
@@ -62,8 +63,7 @@
         try {
             const chats = (await holosphere.getAll(holonID, "chats")) || {};
             const users = (await holosphere.getAll(holonID, "users")) || {};
-            const tasks = (await holosphere.getAll(holonID, "quests")) || {};
-            const events = (await holosphere.getAll(holonID, "events")) || {};
+            const quests = (await holosphere.getAll(holonID, "quests")) || {};
             const shoppingItems = (await holosphere.getAll(holonID, "shopping")) || {};
             const offers = (await holosphere.getAll(holonID, "offers")) || {};
             const checklists = (await holosphere.getAll(holonID, "checklists")) || {};
@@ -91,17 +91,21 @@
                 (role: any) => !role.participants || role.participants.length === 0
             ).length;
 
-            completedTaskCount = Object.values(tasks).filter(
-                (task: any) => task.status === "completed"
-            ).length;
-            openTaskCount = Object.values(tasks).filter(
-                (task: any) => task.status !== "completed"
-            ).length;
-
+            // Process quests to separate tasks, proposals, and events
+            const questValues = Object.values(quests);
+            
+            // Count proposals and events first
+            proposalCount = questValues.filter((item: any) => item.type === "proposal").length;
+            const questEvents = questValues.filter((item: any) => item.type === "event");
+            
+            // Tasks are only items with type "task" (or undefined defaulting to task)
+            const actualTasks = questValues.filter((item: any) => !item.type || item.type === "task");
+            completedTaskCount = actualTasks.filter((task: any) => task.status === "completed").length;
+            openTaskCount = actualTasks.filter((task: any) => task.status !== "completed").length;
             const oneWeekAgo = new Date();
             oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-            recentEventCount = Object.values(events).filter(
-                (event: any) => new Date(event.when) >= oneWeekAgo
+            recentEventCount = questEvents.filter(
+                (event: any) => event.when && new Date(event.when) >= oneWeekAgo
             ).length;
         } catch (error) {
             console.error('Error fetching dashboard data:', error);
@@ -109,90 +113,204 @@
     }
 </script>
 
-<div class="flex flex-wrap">
-    <div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
-        <div class="flex justify-between text-white items-center mb-2">
-            <p class="text-2xl font-bold">Dashboard Overview</p>
-            <p class="">{new Date().toDateString()}</p>
-        </div>
-        {#if holonPurpose}
-            <p class="text-lg text-gray-400 italic mt-1 mb-6 text-center">{holonPurpose}</p>
-        {/if}
-
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-6">
-            <!-- <a
-                href={`/${holonID}/chats`}
-                class="bg-blue-500 p-6 rounded-lg text-white relative overflow-hidden"
-            >
-                <i class="fas fa-comments text-6xl absolute bottom-0 right-0 transform translate-x-2 translate-y-2 opacity-20"></i>
-                <h3 class="text-xl font-semibold mb-2">Chats</h3>
-                <p class="text-3xl font-bold">{chatCount}</p>
-            </a> -->
-            <a
-                href={`/${holonID}/status`}
-                class="bg-green-500 p-6 rounded-lg text-white relative overflow-hidden"
-            >
-                <i class="fas fa-users text-6xl absolute bottom-0 right-0 transform translate-x-2 translate-y-2 opacity-20"></i>
-                <h3 class="text-xl font-semibold mb-2">Users</h3>
-                <p class="text-3xl font-bold">{userCount}</p>
-            </a>
-            <a
-                href={`/${holonID}/tasks`}
-                class="bg-yellow-500 p-6 rounded-lg text-white relative overflow-hidden"
-            >
-                <i class="fas fa-tasks text-6xl absolute bottom-0 right-0 transform translate-x-2 translate-y-2 opacity-20"></i>
-                <h3 class="text-xl font-semibold mb-2">Tasks</h3>
-                <p class="text-3xl font-bold">
-                    {completedTaskCount} / {openTaskCount + completedTaskCount}
-                </p>
-                <p class="text-sm">Completed / Total</p>
-            </a>
-            <a
-                href={`/${holonID}/schedule`}
-                class="bg-purple-500 p-6 rounded-lg text-white relative overflow-hidden"
-            >
-                <i class="fas fa-calendar-alt text-6xl absolute bottom-0 right-0 transform translate-x-2 translate-y-2 opacity-20"></i>
-                <h3 class="text-xl font-semibold mb-2">Recent Events</h3>
-                <p class="text-3xl font-bold">{recentEventCount}</p>
-                <p class="text-sm">Last 7 days</p>
-            </a>
-            <a
-                href={`/${holonID}/shopping`}
-                class="bg-red-500 p-6 rounded-lg text-white relative overflow-hidden"
-            >
-                <i class="fas fa-shopping-cart text-6xl absolute bottom-0 right-0 transform translate-x-2 translate-y-2 opacity-20"></i>
-                <h3 class="text-xl font-semibold mb-2">Shopping Items</h3>
-                <p class="text-3xl font-bold">{shoppingItemCount}</p>
-            </a>
-            <a
-                href={`/${holonID}/offers`}
-                class="bg-indigo-500 p-6 rounded-lg text-white relative overflow-hidden"
-            >
-                <i class="fas fa-gift text-6xl absolute bottom-0 right-0 transform translate-x-2 translate-y-2 opacity-20"></i>
-                <h3 class="text-xl font-semibold mb-2">Active Offers</h3>
-                <p class="text-3xl font-bold">{offerCount}</p>
-            </a>
-            <a
-                href={`/${holonID}/checklists`}
-                class="bg-teal-500 p-6 rounded-lg text-white relative overflow-hidden"
-            >
-                <i class="fas fa-clipboard-check text-6xl absolute bottom-0 right-0 transform translate-x-2 translate-y-2 opacity-20"></i>
-                <h3 class="text-xl font-semibold mb-2">Checklists</h3>
-                <p class="text-3xl font-bold">
-                    {completedChecklistCount} / {checklistCount}
-                </p>
-                <p class="text-sm">Completed / Total</p>
-            </a>
-            <a
-                href={`/${holonID}/roles`}
-                class="bg-cyan-500 p-6 rounded-lg text-white relative overflow-hidden"
-            >
-                <i class="fas fa-user-tag text-6xl absolute bottom-0 right-0 transform translate-x-2 translate-y-2 opacity-20"></i>
-                <h3 class="text-xl font-semibold mb-2">Roles</h3>
-                <p class="text-3xl font-bold">{roleCount}</p>
-                <p class="text-sm">{unassignedRoleCount} Unassigned</p>
-            </a>
+<div class="space-y-8">
+    <!-- Header Section -->
+    <div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
+        <div class="flex flex-col md:flex-row justify-between items-center">
+            <div class="text-center md:text-left mb-4 md:mb-0">
+                <h1 class="text-4xl font-bold text-white mb-2">Dashboard Overview</h1>
+                <p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
+            </div>
+            {#if holonPurpose}
+                <div class="bg-gray-600 bg-opacity-50 rounded-2xl px-6 py-3 max-w-md">
+                    <p class="text-gray-200 italic text-center">"{holonPurpose}"</p>
+                </div>
+            {/if}
         </div>
     </div>
-    <Announcements />
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        <!-- Users Card -->
+        <a
+            href={`/${holonID}/status`}
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-8 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-green-500/10 to-green-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="p-3 bg-green-500 bg-opacity-20 rounded-xl">
+                        <i class="fas fa-users text-2xl text-green-400"></i>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-3xl font-bold text-white">{userCount}</p>
+                        <p class="text-sm text-gray-400">Active Users</p>
+                    </div>
+                </div>
+                <h3 class="text-xl font-semibold text-white group-hover:text-green-400 transition-colors">Users</h3>
+                <p class="text-gray-400 text-sm mt-1">View rankings & stats</p>
+            </div>
+        </a>
+
+        <!-- Tasks Card -->
+        <a
+            href={`/${holonID}/tasks`}
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-8 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="p-3 bg-blue-500 bg-opacity-20 rounded-xl">
+                        <i class="fas fa-tasks text-2xl text-blue-400"></i>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-2xl font-bold text-white">{completedTaskCount}<span class="text-lg text-gray-400">/{openTaskCount + completedTaskCount}</span></p>
+                        <p class="text-sm text-gray-400">Completed</p>
+                    </div>
+                </div>
+                <h3 class="text-xl font-semibold text-white group-hover:text-blue-400 transition-colors">Tasks</h3>
+                <div class="mt-2">
+                    <div class="flex justify-between text-sm text-gray-400 mb-1">
+                        <span>Progress</span>
+                        <span>{Math.round((completedTaskCount / (openTaskCount + completedTaskCount || 1)) * 100)}%</span>
+                    </div>
+                    <div class="w-full bg-gray-700 rounded-full h-2">
+                        <div class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: {(completedTaskCount / (openTaskCount + completedTaskCount || 1)) * 100}%"></div>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Events Card -->
+        <a
+            href={`/${holonID}/schedule`}
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-8 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-purple-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="p-3 bg-purple-500 bg-opacity-20 rounded-xl">
+                        <i class="fas fa-calendar-alt text-2xl text-purple-400"></i>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-3xl font-bold text-white">{recentEventCount}</p>
+                        <p class="text-sm text-gray-400">This Week</p>
+                    </div>
+                </div>
+                <h3 class="text-xl font-semibold text-white group-hover:text-purple-400 transition-colors">Events</h3>
+                <p class="text-gray-400 text-sm mt-1">Recent activities</p>
+            </div>
+        </a>
+
+        <!-- Shopping Card -->
+        <a
+            href={`/${holonID}/shopping`}
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-8 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-red-500/10 to-red-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative z-10">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="p-3 bg-red-500 bg-opacity-20 rounded-xl">
+                        <i class="fas fa-shopping-cart text-2xl text-red-400"></i>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-3xl font-bold text-white">{shoppingItemCount}</p>
+                        <p class="text-sm text-gray-400">Items</p>
+                    </div>
+                </div>
+                <h3 class="text-xl font-semibold text-white group-hover:text-red-400 transition-colors">Shopping</h3>
+                <p class="text-gray-400 text-sm mt-1">Active items</p>
+            </div>
+        </a>
+    </div>
+
+    <!-- Secondary Stats Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <!-- Proposals Card -->
+        <a
+            href={`/${holonID}/proposals`}
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-6 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-yellow-500/10 to-yellow-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative z-10">
+                <div class="flex items-center space-x-4">
+                    <div class="p-3 bg-yellow-500 bg-opacity-20 rounded-xl">
+                        <i class="fas fa-lightbulb text-xl text-yellow-400"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-white group-hover:text-yellow-400 transition-colors">Proposals</h3>
+                        <p class="text-2xl font-bold text-white">{proposalCount}</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Offers Card -->
+        <a
+            href={`/${holonID}/offers`}
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-6 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-indigo-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative z-10">
+                <div class="flex items-center space-x-4">
+                    <div class="p-3 bg-indigo-500 bg-opacity-20 rounded-xl">
+                        <i class="fas fa-gift text-xl text-indigo-400"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors">Active Offers</h3>
+                        <p class="text-2xl font-bold text-white">{offerCount}</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Checklists Card -->
+        <a
+            href={`/${holonID}/checklists`}
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-6 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-teal-500/10 to-teal-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative z-10">
+                <div class="flex items-center space-x-4">
+                    <div class="p-3 bg-teal-500 bg-opacity-20 rounded-xl">
+                        <i class="fas fa-clipboard-check text-xl text-teal-400"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-white group-hover:text-teal-400 transition-colors">Checklists</h3>
+                        <p class="text-2xl font-bold text-white">{completedChecklistCount}<span class="text-lg text-gray-400">/{checklistCount}</span></p>
+                        <div class="mt-1">
+                            <div class="w-full bg-gray-700 rounded-full h-1.5">
+                                <div class="bg-teal-500 h-1.5 rounded-full transition-all duration-500" style="width: {(completedChecklistCount / (checklistCount || 1)) * 100}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Roles Card -->
+        <a
+            href={`/${holonID}/roles`}
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-6 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative z-10">
+                <div class="flex items-center space-x-4">
+                    <div class="p-3 bg-cyan-500 bg-opacity-20 rounded-xl">
+                        <i class="fas fa-user-tag text-xl text-cyan-400"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition-colors">Roles</h3>
+                        <p class="text-2xl font-bold text-white">{roleCount}</p>
+                        <p class="text-sm text-gray-400">{unassignedRoleCount} Unassigned</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- Announcements Section -->
+    <div class="bg-gray-800 rounded-3xl shadow-xl">
+        <Announcements />
+    </div>
 </div>

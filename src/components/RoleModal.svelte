@@ -28,26 +28,27 @@
     const dispatch = createEventDispatcher();
     let showAddParticipants = false;
 
-    // Reactive declaration for availableUsersToList
-    $: availableUsersToList = [];
-
-    // Reactive statement to re-calculate when userStore or role.participants changes
-    $: {
-        if (userStore && role && role.participants) {
-            availableUsersToList = Object.entries(userStore || {}).filter(([userId, _user]) => !isUserParticipant(userId));
-        } else if (userStore) { // If role or role.participants is undefined/null
-            availableUsersToList = Object.entries(userStore || {});
-        } else {
-            availableUsersToList = [];
+    // Reactive statement to calculate available users
+    $: availableUsersToList = (() => {
+        if (!userStore || Object.keys(userStore).length === 0) {
+            return [];
         }
-
-        // Conditionally log based on showAddParticipants to avoid console spam
-        if (showAddParticipants) {
-            console.log("[RoleModal.svelte] 'Add Participants' dropdown opened/updated.");
-            console.log("[RoleModal.svelte] Current role.participants:", JSON.parse(JSON.stringify(role.participants || [])));
-            console.log("[RoleModal.svelte] Current userStore for dropdown:", JSON.parse(JSON.stringify(userStore || {})));
-            console.log("[RoleModal.svelte] Calculated availableUsersToList for dropdown:", availableUsersToList.map(u => u[1].first_name));
+        
+        if (!role?.participants) {
+            // If no participants yet, show all users
+            return Object.entries(userStore);
         }
+        
+        // Filter out users who are already participants
+        return Object.entries(userStore).filter(([userId, _user]) => !isUserParticipant(userId));
+    })();
+
+    // Debug logging when dropdown is shown
+    $: if (showAddParticipants) {
+        console.log("[RoleModal.svelte] Add Participants dropdown opened");
+        console.log("[RoleModal.svelte] userStore keys:", Object.keys(userStore || {}));
+        console.log("[RoleModal.svelte] role.participants:", role?.participants || []);
+        console.log("[RoleModal.svelte] availableUsersToList count:", availableUsersToList.length);
     }
 
     async function updateRole(updates: any) {
@@ -80,8 +81,7 @@
         if (!participants.some((p: { id: string }) => p.id === userId)) {
             participants.push({
                 id: userId,
-                username: user.first_name + (user.last_name ? ' ' + user.last_name : ''),
-                picture: user.picture
+                username: user.first_name + (user.last_name ? ' ' + user.last_name : '')
             });
             await updateRole({ participants });
         }
@@ -149,13 +149,18 @@
                             {#each role.participants as participant}
                                 <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg">
                                     <div class="flex items-center gap-2">
-                                        {#if participant.picture}
-                                            <img 
-                                                src={participant.picture} 
-                                                alt={participant.username}
-                                                class="w-8 h-8 rounded-full"
-                                            />
-                                        {/if}
+                                        <img 
+                                            src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
+                                            alt={participant.username}
+                                            class="w-8 h-8 rounded-full object-cover border border-gray-500"
+                                            on:error={(e) => {
+                                                e.currentTarget.style.display = 'none';
+                                                e.currentTarget.nextElementSibling.style.display = 'flex';
+                                            }}
+                                        />
+                                        <div class="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center text-white text-sm font-bold border border-gray-500" style="display: none;">
+                                            {participant.username ? participant.username[0] : '?'}
+                                        </div>
                                         <span>{participant.username}</span>
                                     </div>
                                     <button 
@@ -186,17 +191,18 @@
                                         class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2 text-gray-200"
                                         on:click={() => addParticipant(userId)}
                                     >
-                                        {#if user.picture}
-                                            <img 
-                                                src={user.picture} 
-                                                alt={user.first_name}
-                                                class="w-6 h-6 rounded-full"
-                                            />
-                                        {:else}
-                                            <div class="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-xs text-white">
-                                                {user.first_name ? user.first_name[0] : '?'}
-                                            </div>
-                                        {/if}
+                                        <img 
+                                            src={`https://gun.holons.io/getavatar?user_id=${user.id || userId}`}
+                                            alt={user.first_name}
+                                            class="w-6 h-6 rounded-full object-cover border border-gray-500"
+                                            on:error={(e) => {
+                                                e.currentTarget.style.display = 'none';
+                                                e.currentTarget.nextElementSibling.style.display = 'flex';
+                                            }}
+                                        />
+                                        <div class="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-xs text-white border border-gray-500" style="display: none;">
+                                            {user.first_name ? user.first_name[0] : '?'}{user.last_name ? user.last_name[0] : ''}
+                                        </div>
                                         <span>{user.first_name} {user.last_name || ''}</span>
                                     </button>
                                 {/each}
