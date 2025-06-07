@@ -10,6 +10,8 @@
     const holosphere = getContext("holosphere") as HoloSphere;
     let holonID: string = $page.params.id;
     let unsubscribe: () => void;
+    let isLoading = true;
+    let connectionReady = false;
 
     let chatCount = 0;
     let userCount = 0;
@@ -27,18 +29,32 @@
     let holonPurpose: string | null = null; // Variable to store the holon's purpose
 
     onMount(() => {
-        // Set up subscription to ID store
-        unsubscribe = ID.subscribe((value) => {
-            if (value) {
-                holonID = value;
+        // Wait for holosphere to be ready before proceeding
+        const checkConnection = async () => {
+            if (!holosphere) {
+                setTimeout(checkConnection, 100);
+                return;
+            }
+            
+            // Add a small delay to ensure the connection is stable
+            await new Promise(resolve => setTimeout(resolve, 200));
+            connectionReady = true;
+            
+            // Set up subscription to ID store
+            unsubscribe = ID.subscribe((value) => {
+                if (value) {
+                    holonID = value;
+                    fetchData();
+                }
+            });
+
+            // Initial fetch if we have an ID
+            if (holonID) {
                 fetchData();
             }
-        });
-
-        // Initial fetch if we have an ID
-        if (holonID) {
-            fetchData();
-        }
+        };
+        
+        checkConnection();
 
         // Cleanup subscription on unmount
         return () => {
@@ -49,7 +65,7 @@
     // Watch for page ID changes
     $: {
         const newId = $page.params.id;
-        if (newId && newId !== holonID) {
+        if (newId && newId !== holonID && connectionReady) {
             holonID = newId;
             if (holosphere) {
                 fetchData();
@@ -57,16 +73,31 @@
         }
     }
 
-    async function fetchData() {
-        if (!holonID || !holosphere) return;
+    async function fetchData(retryCount = 0) {
+        if (!holonID || !holosphere || !connectionReady) return;
+        
+        isLoading = true;
         
         try {
+            // Add sequential fetching with small delays to reduce backend load
             const chats = (await holosphere.getAll(holonID, "chats")) || {};
+            await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
+            
             const users = (await holosphere.getAll(holonID, "users")) || {};
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
             const quests = (await holosphere.getAll(holonID, "quests")) || {};
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
             const shoppingItems = (await holosphere.getAll(holonID, "shopping")) || {};
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
             const offers = (await holosphere.getAll(holonID, "offers")) || {};
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
             const checklists = (await holosphere.getAll(holonID, "checklists")) || {};
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
             const roles = (await holosphere.getAll(holonID, "roles")) || {};
 
             // Fetch holon purpose from config
@@ -109,10 +140,28 @@
             ).length;
         } catch (error) {
             console.error('Error fetching dashboard data:', error);
+            
+            // Retry on 500 errors up to 3 times with exponential backoff
+            if (retryCount < 3 && (error.message?.includes('500') || error.toString().includes('500'))) {
+                const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+                console.log(`Retrying data fetch in ${delay}ms (attempt ${retryCount + 1}/3)`);
+                setTimeout(() => fetchData(retryCount + 1), delay);
+                return;
+            }
+        } finally {
+            isLoading = false;
         }
     }
 </script>
 
+{#if isLoading && !connectionReady}
+<div class="flex items-center justify-center min-h-screen">
+    <div class="text-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+        <p class="text-gray-400">Connecting to holosphere...</p>
+    </div>
+</div>
+{:else}
 <div class="space-y-8">
     <!-- Header Section -->
     <div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
@@ -314,3 +363,4 @@
         <Announcements />
     </div>
 </div>
+{/if}

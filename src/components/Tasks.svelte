@@ -39,7 +39,10 @@
 			lastName?: string;
 		};
 		created?: string;
-		isHologram?: boolean;
+		_meta?: {
+			resolvedFromHologram?: boolean;
+			hologramSoul?: string;
+		};
 	}
 
 	interface Store {
@@ -56,6 +59,7 @@
 	// Initialize with safe defaults
 	let viewMode: 'list' | 'canvas' = 'list';
 	let showCompleted = false;
+	let showHolograms = true;
 	let sortedQuests: [string, Quest][] = [];
 	let filteredQuests: [string, Quest][] = [];
 
@@ -89,6 +93,9 @@
 	let showFireworks = false;
 	let showConfetti = false;
 
+	// Holon name cache
+	let holonNameCache = new Map<string, string>();
+
 	// Sort state variables
 	type SortCriteria = 'orderIndex' | 'positionX' | 'positionY';
 	let sortCriteria: SortCriteria = 'orderIndex';
@@ -102,7 +109,7 @@
 
 	// Add these variables after the existing let declarations
 	let selectedCategory = "all";
-
+	
 	// Compute unique categories from quests
 	$: categories = [
 		"all",
@@ -138,6 +145,11 @@
 			// Default to 'ongoing' if status is missing.
 			const status = quest.status || 'ongoing';
 			if (status === "completed" && !showCompleted) {
+				return false;
+			}
+
+			// Filter holograms if showHolograms is false
+			if (!showHolograms && quest._meta?.resolvedFromHologram) {
 				return false;
 			}
 
@@ -289,13 +301,10 @@
 				};
 			}
 
-			const CANVAS_CENTER_X = 15000;
-			const CANVAS_CENTER_Y = 15000;
-
-			// Default position for CanvasView, similar to its INITIAL_OFFSET with randomization
+			// Default position for CanvasView with top-left as 0,0
 			const defaultCanvasPosition = {
-				x: CANVAS_CENTER_X + (Math.random() * 800 - 400), // Centered with spread
-				y: CANVAS_CENTER_Y + (Math.random() * 500 - 250)  // Centered with spread
+				x: Math.random() * 3700, // Random x within canvas bounds (4000 - 300)
+				y: Math.random() * 2800  // Random y within canvas bounds (3000 - 200)
 			};
 
 			const newOrderIndex = filteredQuests.length > 0 
@@ -518,6 +527,47 @@
 		};
 	});
 
+	// Add function to fetch holon name
+	async function fetchHolonName(holonId: string): Promise<string> {
+		if (holonNameCache.has(holonId)) {
+			return holonNameCache.get(holonId)!;
+		}
+
+		try {
+			const settings = await holosphere.get(holonId, "settings", holonId);
+			const holonName = settings?.name || `Holon ${holonId}`;
+			holonNameCache.set(holonId, holonName);
+			return holonName;
+		} catch (error) {
+			console.error(`Error fetching holon name for ${holonId}:`, error);
+			const fallbackName = `Holon ${holonId}`;
+			holonNameCache.set(holonId, fallbackName);
+			return fallbackName;
+		}
+	}
+
+	// Add function to extract hologram source
+	function getHologramSource(hologramSoul: string | undefined): string {
+		if (!hologramSoul) return '';
+		// Extract the holon ID from path like "Holons/-1002593778587/quests/380"
+		const match = hologramSoul.match(/Holons\/([^\/]+)/);
+		if (!match) return 'External Source';
+		
+		const holonId = match[1];
+		// Return cached name if available, otherwise return ID and fetch name
+		if (holonNameCache.has(holonId)) {
+			return holonNameCache.get(holonId)!;
+		}
+		
+		// Fetch name asynchronously and trigger reactivity
+		fetchHolonName(holonId).then(() => {
+			// Trigger reactivity by updating quests
+			quests = [...quests];
+		});
+		
+		return `Holon ${holonId}`; // Temporary fallback while loading
+	}
+
 	// Add color category function
 	function getColorFromCategory(category: string | undefined, type: string = 'task') {
 		if (!category) {
@@ -656,6 +706,10 @@
 				viewMode = storedViewMode as 'list' | 'canvas';
 			}
 			showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
+			const storedShowHolograms = localStorage.getItem("taskShowHolograms");
+			if (storedShowHolograms !== null) {
+				showHolograms = storedShowHolograms === "true";
+			}
 		} catch (error) {
 			console.error('Error loading preferences:', error);
 			// Defaults are already set, so just log error
@@ -742,6 +796,11 @@
 		filteredQuests = currentFilteredQuests;
 	}
 
+	// Save showHolograms preference to localStorage
+	$: if (typeof localStorage !== 'undefined') {
+		localStorage.setItem("taskShowHolograms", showHolograms.toString());
+	}
+
 	// Handler for optimistic position updates from CanvasView
 	function handleCanvasQuestPositionChange(event: CustomEvent) {
 		const { key, position } = event.detail;
@@ -759,398 +818,437 @@
 			// console.warn('[Tasks.svelte] Could not optimistically update position for event:', event.detail);
 		}
 	}
+
+
 </script>
 
-<div class="flex flex-wrap">
-	<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
-		<div class="flex justify-between text-white items-center mb-8">
-			<p class="text-lg mt-1">Tasks Today</p>
-			<div class="flex items-center gap-4">
-				<p class="">{new Date().toDateString()}</p>
+<div class="space-y-8">
+	<!-- Header Section -->
+	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
+		<div class="flex flex-col md:flex-row justify-between items-center">
+			<div class="text-center md:text-left mb-4 md:mb-0">
+				<h1 class="text-4xl font-bold text-white mb-2">Tasks Overview</h1>
+				<p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
 			</div>
 		</div>
+	</div>
 
-		<div class="flex flex-wrap justify-between items-center pb-8">
-			<div class="flex flex-wrap text-white">
-				<div class="pr-10">
-					<div class="text-2xl font-bold">
-						{quests.filter(
-							([_, quest]) =>
-								(!quest.type || quest.type === "task" || quest.type === "recurring") &&
-								!quest.participants?.length &&
-								quest.status !== "completed"
-						).length}
+	<!-- Main Content Container -->
+	<div class="flex flex-col xl:flex-row gap-8">
+		<!-- Tasks Panel -->
+		<div class="xl:flex-1 bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
+			<div class="p-8">
+				<!-- Stats Section -->
+				<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{quests.filter(
+								([_, quest]) =>
+									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									!quest.participants?.length &&
+									quest.status !== "completed"
+							).length}
+						</div>
+						<div class="text-sm text-gray-400">Unassigned</div>
 					</div>
-					<div class="">Unassigned</div>
-				</div>
-				<div class="pr-10">
-					<div class="text-2xl font-bold">
-						{quests.filter(
-							([_, quest]) => 
-								(!quest.type || quest.type === "task" || quest.type === "recurring") &&
-								quest.status !== "completed"
-						).length}
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{quests.filter(
+								([_, quest]) => 
+									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									quest.status !== "completed"
+							).length}
+						</div>
+						<div class="text-sm text-gray-400">Open Tasks</div>
 					</div>
-					<div class="">Open Tasks</div>
-				</div>
-				<div class="pr-10">
-					<div class="text-2xl font-bold">
-						{quests.filter(
-							([_, quest]) => 
-								(!quest.type || quest.type === "task" || quest.type === "recurring") &&
-								(quest.status === "recurring" || quest.status === "repeating")
-						).length}
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{quests.filter(
+								([_, quest]) => 
+									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									(quest.status === "recurring" || quest.status === "repeating")
+							).length}
+						</div>
+						<div class="text-sm text-gray-400">Recurring</div>
 					</div>
-					<div class="">Recurring</div>
-				</div>
-				<div class="pr-10">
-					<div class="text-2xl font-bold">
-						{quests.filter(
-							([_, quest]) => 
-								(!quest.type || quest.type === "task" || quest.type === "recurring") &&
-								quest.status === "completed"
-						).length}
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{quests.filter(
+								([_, quest]) => 
+									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									quest.status === "completed"
+							).length}
+						</div>
+						<div class="text-sm text-gray-400">Completed</div>
 					</div>
-					<div class="">Completed</div>
-				</div>
-				<div>
-					<div class="text-2xl font-bold">
-						{quests.filter(([_, quest]) => 
-							!quest.type || quest.type === "task"
-						).length}
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{quests.filter(([_, quest]) => 
+								!quest.type || quest.type === "task"
+							).length}
+						</div>
+						<div class="text-sm text-gray-400">Total Tasks</div>
 					</div>
-					<div class="">Total Tasks</div>
 				</div>
-			</div>
-			<div class="flex items-center mt-4 md:mt-0">
-				<button
-					class="text-white {viewMode === 'list'
-						? 'bg-gray-700'
-						: 'bg-transparent'} p-2"
-					title="List View"
-					on:click={() => (viewMode = "list")}
-					aria-label="Switch to list view"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="24"
-						height="24"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<line x1="8" y1="6" x2="21" y2="6" />
-						<line x1="8" y1="12" x2="21" y2="12" />
-						<line x1="8" y1="18" x2="21" y2="18" />
-						<line x1="3" y1="6" x2="3.01" y2="6" />
-						<line x1="3" y1="12" x2="3.01" y2="12" />
-						<line x1="3" y1="18" x2="3.01" y2="18" />
-					</svg>
-				</button>
-				<button
-					class="text-white {viewMode === 'canvas'
-						? 'bg-gray-700'
-						: 'bg-transparent'} p-2 ml-2"
-					title="Canvas View"
-					on:click={() => (viewMode = "canvas")}
-					aria-label="Switch to canvas view"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="20"
-						height="20"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<path d="M5 9l-3 3 3 3"></path>
-						<path d="M9 5l3-3 3 3"></path>
-						<path d="M9 19l3 3 3-3"></path>
-						<path d="M19 9l3 3-3 3"></path>
-						<path d="M2 12h20"></path>
-						<path d="M12 2v20"></path>
-					</svg>
-				</button>
-			</div>
-		</div>
 
-		<div class="flex flex-col sm:flex-row sm:justify-end mb-4 items-center gap-4">
-			<!-- Category Filter -->
-			<div class="relative w-full sm:w-auto">
-				<select
-					bind:value={selectedCategory}
-					class="w-full sm:w-auto appearance-none bg-gray-600 text-white px-4 py-1.5 pr-8 rounded-full cursor-pointer text-sm"
-				>
-					{#each categories as category}
-						<option value={category}>
-							{category === "all" ? "All Categories" : category}
-						</option>
-					{/each}
-				</select>
-				<div
-					class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white"
-				>
-					<svg
-						class="fill-current h-4 w-4"
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 20 20"
-					>
-						<path
-							d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-						/>
-					</svg>
-				</div>
-			</div>
-
-			<div class="flex w-full sm:w-auto justify-between sm:justify-end items-center gap-4">
-				<!-- Sort Button -->
-				<button
-					class="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-full text-sm hover:bg-gray-500 transition-colors"
-					on:click={handleSortButtonClick}
-					aria-label="Sort tasks"
-				>
-					Sort
-					{#key currentIconPath}
-					<svg
-						class="w-4 h-4 transform transition-transform"
-						style="transform: rotate({sortButtonIconRotation}deg)"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<path d={currentIconPath}></path>
-					</svg>
-					{/key}
-				</button>
-
-				<!-- Show Completed Toggle -->
-				<label class="flex items-center cursor-pointer">
-					<div class="relative">
-						<input
-							type="checkbox"
-							class="sr-only"
-							bind:checked={showCompleted}
-						/>
-						<div class="w-10 h-6 bg-gray-600 rounded-full shadow-inner"></div>
-						<div
-							class="dot absolute w-4 h-4 bg-white rounded-full transition left-1 top-1"
-							class:translate-x-4={showCompleted}
-						></div>
-					</div>
-					<div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
-						<span class="hidden sm:inline">Show Completed</span>
-						<span class="sm:hidden" aria-label="Show completed tasks">✓</span>
-					</div>
-				</label>
-			</div>
-		</div>
-
-		<!-- Add Task Button -->
-		<div class="flex justify-center mb-3 sticky top-4 z-30">
-			<button
-				on:click={showDialog}
-				class="w-12 h-12 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-3xl font-bold flex items-center justify-center focus:outline-none transition-colors shadow-md"
-				aria-label="Add new task"
-			>
-				+
-			</button>
-		</div>
-
-		{#if viewMode === "canvas"}
-			{#if holonID} <CanvasView
-				{filteredQuests}
-				{holonID}
-				{showCompleted}
-				on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
-				on:questPositionChanged={handleCanvasQuestPositionChange} 
-			/> {:else} <!-- Optionally, add a loading state or message here --> <p>Loading canvas...</p> {/if}
-		{:else}
-			<div class="space-y-2">
-				{#each filteredQuests as [key, quest]}
-					{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
+				<!-- Controls Section -->
+				<div class="flex flex-col lg:flex-row lg:justify-between lg:items-center mb-6 gap-4">
+					<!-- View Mode Toggle -->
+					<div class="flex items-center bg-gray-700 rounded-xl p-1">
 						<button
-							id={key}
-							class="w-full task-card relative text-left"
-							on:click|stopPropagation={() => handleTaskClick(key, quest)}
-							draggable="true"
-							on:dragstart={(e) => handleDragStart(e, key)}
-							on:dragover={(e) => handleDragOver(e, key)}
-							on:drop={(e) => handleDrop(e, key)}
-							on:dragend={handleDragEnd}
-							aria-label={`Open task: ${quest.title}`}
-							class:dragging={$dragState.draggedId === key}
-							class:drag-over={$dragState.dragOverId === key}
+							class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors {viewMode === 'list'
+								? 'bg-gray-600 text-white'
+								: 'text-gray-400 hover:text-white'}"
+							on:click={() => (viewMode = "list")}
+							aria-label="Switch to list view"
 						>
-							<div
-								class="p-3 rounded-lg transition-colors"
-								style="background-color: {quest.status === 'completed'
-									? '#9CA3AF'
-									: getColorFromCategory(quest.category, quest.type)}; 
-									   opacity: {quest.status === 'completed' ? '0.6' : '1'};
-									   {quest.isHologram ? 'border: 2px dotted #A78BFA; box-sizing: border-box;' : ''}"
+							<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<line x1="8" y1="6" x2="21" y2="6" />
+								<line x1="8" y1="12" x2="21" y2="12" />
+								<line x1="8" y1="18" x2="21" y2="18" />
+								<line x1="3" y1="6" x2="3.01" y2="6" />
+								<line x1="3" y1="12" x2="3.01" y2="12" />
+								<line x1="3" y1="18" x2="3.01" y2="18" />
+							</svg>
+							<span class="hidden sm:inline">List</span>
+						</button>
+						<button
+							class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors {viewMode === 'canvas'
+								? 'bg-gray-600 text-white'
+								: 'text-gray-400 hover:text-white'}"
+							on:click={() => (viewMode = "canvas")}
+							aria-label="Switch to canvas view"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M5 9l-3 3 3 3"></path>
+								<path d="M9 5l3-3 3 3"></path>
+								<path d="M9 19l3 3 3-3"></path>
+								<path d="M19 9l3 3-3 3"></path>
+								<path d="M2 12h20"></path>
+								<path d="M12 2v20"></path>
+							</svg>
+							<span class="hidden sm:inline">Canvas</span>
+						</button>
+					</div>
+
+					<!-- Filters and Controls -->
+					<div class="flex flex-col sm:flex-row gap-4 items-center">
+						<!-- Category Filter -->
+						<div class="relative">
+							<select
+								bind:value={selectedCategory}
+								class="appearance-none bg-gray-700 text-white px-4 py-2 pr-8 rounded-xl cursor-pointer text-sm border border-gray-600 focus:border-blue-500 focus:outline-none"
 							>
+								{#each categories as category}
+									<option value={category}>
+										{category === "all" ? "All Categories" : category}
+									</option>
+								{/each}
+							</select>
+							<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+								<svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+									<path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+								</svg>
+							</div>
+						</div>
+
+						<!-- Sort Button -->
+						<button
+							class="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-xl text-sm hover:bg-gray-600 transition-colors border border-gray-600"
+							on:click={handleSortButtonClick}
+							aria-label="Sort tasks"
+						>
+							<span>Sort</span>
+							{#key currentIconPath}
+							<svg
+								class="w-4 h-4 transform transition-transform"
+								style="transform: rotate({sortButtonIconRotation}deg)"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
+								<path d={currentIconPath}></path>
+							</svg>
+							{/key}
+						</button>
+
+						<!-- Show Completed Toggle -->
+						<label class="flex items-center cursor-pointer">
+							<div class="relative">
+								<input
+									type="checkbox"
+									class="sr-only"
+									bind:checked={showCompleted}
+								/>
+								<div class="w-11 h-6 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
 								<div
-									class="flex justify-between items-center gap-4"
+									class="dot absolute w-4 h-4 bg-white rounded-full transition-transform duration-300 ease-in-out left-1 top-1"
+									class:translate-x-5={showCompleted}
+								></div>
+							</div>
+							<div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
+								<span class="hidden sm:inline">Show Completed</span>
+								<span class="sm:hidden" aria-label="Show completed tasks">✓</span>
+							</div>
+						</label>
+
+						<!-- Show Holograms Toggle -->
+						<label class="flex items-center cursor-pointer">
+							<div class="relative">
+								<input
+									type="checkbox"
+									class="sr-only"
+									bind:checked={showHolograms}
+								/>
+								<div class="w-11 h-6 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
+								<div
+									class="dot absolute w-4 h-4 bg-white rounded-full transition-transform duration-300 ease-in-out left-1 top-1"
+									class:translate-x-5={showHolograms}
+								></div>
+							</div>
+							<div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
+								<span class="hidden sm:inline">Show Holograms</span>
+								<span class="sm:hidden" aria-label="Show hologram tasks">🔮</span>
+							</div>
+						</label>
+					</div>
+				</div>
+
+				<!-- Add Task Button -->
+				<div class="flex justify-center mb-6">
+					<button
+						on:click={showDialog}
+						class="group flex items-center gap-3 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-medium transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+						aria-label="Add new task"
+					>
+						<div class="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors">
+							<span class="text-lg font-bold leading-none">+</span>
+						</div>
+						<span>Add New Task</span>
+					</button>
+				</div>
+
+				<!-- Task Content -->
+				{#if viewMode === "canvas"}
+					{#if holonID} 
+						<CanvasView
+							{filteredQuests}
+							{holonID}
+							{showCompleted}
+							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
+							on:questPositionChanged={handleCanvasQuestPositionChange}
+						/> 
+					{:else} 
+						<div class="flex items-center justify-center py-12">
+							<div class="text-center">
+								<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4 mx-auto"></div>
+								<p class="text-gray-400">Loading canvas...</p>
+							</div>
+						</div>
+					{/if}
+				{:else}
+					<div class="space-y-3">
+						{#each filteredQuests as [key, quest]}
+							{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
+								<button
+									id={key}
+									class="w-full task-card relative text-left group"
+									on:click|stopPropagation={() => handleTaskClick(key, quest)}
+									draggable="true"
+									on:dragstart={(e) => handleDragStart(e, key)}
+									on:dragover={(e) => handleDragOver(e, key)}
+									on:drop={(e) => handleDrop(e, key)}
+									on:dragend={handleDragEnd}
+									aria-label={`Open task: ${quest.title}`}
+									class:dragging={$dragState.draggedId === key}
+									class:drag-over={$dragState.dragOverId === key}
 								>
-									<div class="flex-1 min-w-0">
-										<h3
-											class="text-base font-bold opacity-70 truncate flex items-center gap-2"
-										>
-											<span class="hidden sm:inline-block text-sm px-2 py-0.5 rounded-full bg-black/20">
-												{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : '✓'}
-												{quest.type}
-											</span>
-											{#if quest.status === 'recurring' || quest.status === 'repeating'}
-												<span class="text-sm px-2 py-0.5 rounded-full bg-purple-500/30 text-purple-200">
-													🔄 Recurring
-												</span>
-											{/if}
-											{quest.title}
-										</h3>
-										{#if quest.description}
-											<p
-												class="text-sm opacity-70 truncate"
-											>
-												{quest.description}
-											</p>
-										{/if}
-										{#if quest.category}
-											<p class="hidden sm:block text-sm opacity-70 mt-1">
-												<span
-													class="inline-flex items-center"
-												>
-													<svg
-														class="w-4 h-4 mr-1"
-														viewBox="0 0 24 24"
-														fill="currentColor"
-													>
-														<path
-															d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"
-														/>
-													</svg>
-													{quest.category}
-												</span>
-											</p>
-										{/if}
-									</div>
-
-									<div class="flex items-center gap-4 text-sm whitespace-nowrap">
-										{#if quest.location}
-											<div class="opacity-70">
-												📍 {quest.location.split(
-													","
-												)[0]}
-											</div>
-										{/if}
-
-										<div class="flex items-center gap-1">
-											<span class="opacity-70">🙋‍♂️</span>
-											<div
-												class="flex -space-x-2 relative group"
-												title={quest.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}
-											>
-												{#each quest.participants.slice(0, 3) as participant}
-													<div class="relative">
-														<img
-															class="w-6 h-6 rounded-full border-2 border-gray-300"
-															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
-															alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
-														/>
+									<div
+										class="p-3 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
+										style="background-color: {quest.status === 'completed'
+											? '#374151'
+											: getColorFromCategory(quest.category, quest.type)}; 
+											   opacity: {quest.status === 'completed' ? '0.7' : quest._meta?.resolvedFromHologram ? '0.75' : '1'};
+											   {quest._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+									>
+										<div class="flex items-center justify-between gap-3">
+											<div class="flex items-center gap-3 flex-1 min-w-0">
+												<!-- Task Icon -->
+												<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
+													{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : '✓'}
+												</div>
+												
+												<!-- Main Content -->
+												<div class="flex-1 min-w-0">
+													<div class="flex items-center gap-2 mb-1">
+														<h3 class="text-base font-bold text-gray-800 truncate">
+															{quest.title}
+														</h3>
+														{#if quest._meta?.resolvedFromHologram}
+															<button 
+																class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors" 
+																title="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
+																on:click|stopPropagation={() => {
+																	const match = quest._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
+																	if (match) {
+																		window.location.href = `/${match[1]}/tasks`;
+																	}
+																}}
+															>
+																<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+																	<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+																</svg>
+																{getHologramSource(quest._meta.hologramSoul)}
+																<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+																	<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+																</svg>
+															</button>
+														{/if}
+														{#if quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating'}
+															<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/30 text-purple-800 flex-shrink-0">
+																🔄
+															</span>
+														{/if}
+														{#if quest.category}
+															<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-black/10 text-gray-700 flex-shrink-0">
+																<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+																	<path d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"/>
+																</svg>
+																{quest.category}
+															</span>
+														{/if}
 													</div>
-												{/each}
-												{#if quest.participants.length > 3}
-													<div
-														class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300 relative group"
-														title={quest.participants.slice(3).map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}
-													>
-														<span>+{quest.participants.length - 3}</span>
+													{#if quest.description}
+														<p class="text-sm text-gray-700 truncate">
+															{quest.description}
+														</p>
+													{/if}
+												</div>
+											</div>
+
+											<!-- Right Side Meta Info -->
+											<div class="flex items-center gap-3 flex-shrink-0 text-sm">
+												{#if quest.location}
+													<div class="flex items-center gap-1 text-gray-600">
+														<span class="text-xs">📍</span>
+														<span class="truncate max-w-16 text-xs">{quest.location.split(",")[0]}</span>
+													</div>
+												{/if}
+
+												{#if quest.participants?.length > 0}
+													<div class="flex items-center gap-1">
+														<div class="flex -space-x-1 relative group" title={quest.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}>
+															{#each quest.participants.slice(0, 2) as participant}
+																<div class="relative">
+																	<img
+																		class="w-5 h-5 rounded-full border border-white shadow-sm"
+																		src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
+																		alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
+																	/>
+																</div>
+															{/each}
+															{#if quest.participants.length > 2}
+																<div class="w-5 h-5 rounded-full bg-gray-400 flex items-center justify-center text-xs border border-white shadow-sm text-white font-medium">
+																	<span>+{quest.participants.length - 2}</span>
+																</div>
+															{/if}
+														</div>
+													</div>
+												{/if}
+
+												{#if quest.when}
+													<div class="text-xs font-medium text-gray-700 whitespace-nowrap">
+														<div class="text-xs text-gray-600 mb-1">{formatDate(quest.when)}</div>
+														{formatTime(quest.when)}
+														{#if quest.ends}<br/>{formatTime(quest.ends)}{/if}
+													</div>
+												{/if}
+
+												{#if quest.appreciation.length > 0}
+													<div class="flex items-center gap-1 text-gray-600" title={`${quest.appreciation.length} appreciations`}>
+														<span class="text-xs">👍</span>
+														<span class="text-xs font-medium">{quest.appreciation.length}</span>
 													</div>
 												{/if}
 											</div>
 										</div>
-
-										{#if quest.when}
-											<div class="text-sm font-medium">
-												{formatTime(quest.when)}
-												{#if quest.ends}- {formatTime(
-														quest.ends
-													)}{/if}
-											</div>
-										{/if}
-
-										{#if quest.appreciation.length > 0}
-											<div
-												class="opacity-70 font-bold text-base cursor-help"
-												title={`${quest.appreciation.length} appreciations`}
-											>
-												👍
-											</div>
-										{/if}
 									</div>
+								</button>
+							{/if}
+						{/each}
+						
+						{#if filteredQuests.length === 0}
+							<div class="text-center py-12">
+								<div class="w-16 h-16 mx-auto mb-4 bg-gray-700 rounded-full flex items-center justify-center">
+									<svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+									</svg>
 								</div>
+								<h3 class="text-lg font-medium text-white mb-2">No tasks found</h3>
+								<p class="text-gray-400 mb-4">Get started by creating your first task</p>
+								<button
+									on:click={showDialog}
+									class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors"
+								>
+									Create Task
+								</button>
 							</div>
-						</button>
-					{/if}
-				{/each}
+						{/if}
+					</div>
+				{/if}
 			</div>
-		{/if}
+		</div>
+
+		<!-- Schedule Panel -->
+		<div class="hidden xl:block xl:w-80 xl:flex-shrink-0">
+			<div class="bg-gray-800 rounded-3xl shadow-xl">
+				<Schedule />
+			</div>
+		</div>
 	</div>
-	<Schedule />
+</div>
 
-	{#if selectedTask && holonID}
-		<TaskModal
-			quest={selectedTask.quest}
-			questId={selectedTask.key}
-			holonId={holonID}
-			on:close={handleTaskDeleted}
-			on:taskCompleted={handleTaskCompleted}
-		/>
-	{/if}
+{#if selectedTask && holonID}
+	<TaskModal
+		quest={selectedTask.quest}
+		questId={selectedTask.key}
+		holonId={holonID}
+		on:close={handleTaskDeleted}
+		on:taskCompleted={handleTaskCompleted}
+	/>
+{/if}
 
-	
-	<!-- Replace dialog with div modal -->
-	{#if showTaskInput}
+<!-- Modern Task Input Modal -->
+{#if showTaskInput}
+	<div 
+		class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+		on:click|self={hideDialog}
+		on:keydown={handleDialogKeydown} 
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1" 
+	>
 		<div 
-			class="fixed inset-0 z-50 overflow-auto bg-black bg-opacity-50 flex items-center justify-center"
-			on:click|self={hideDialog}
-			on:keydown={handleDialogKeydown} 
-			role="dialog"
-			aria-modal="true"
-			tabindex="-1" 
+			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700"
+			aria-labelledby="task-input-title"
 		>
-			<div 
-				class="bg-gray-800 p-6 rounded-lg shadow-lg w-96 relative"
-				aria-labelledby="task-input-title"
-			>
-				<button
-					on:click={hideDialog}
-					class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
-					aria-label="Close task input dialog"
-				>
-					<svg
-						class="w-5 h-5"
-						fill="none"
-						stroke="currentColor"
-						viewBox="0 0 24 24"
+			<div class="p-6">
+				<div class="flex items-center justify-between mb-6">
+					<h3 id="task-input-title" class="text-white text-xl font-bold">Add New Task</h3>
+					<button
+						on:click={hideDialog}
+						class="text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-gray-700"
+						aria-label="Close task input dialog"
 					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M6 18L18 6M6 6l12 12"
-						></path>
-					</svg>
-				</button>
-				<h3 id="task-input-title" class="text-white text-lg font-bold mb-4">Add New Task</h3>
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+				
 				<form 
 					on:submit|preventDefault={async (e) => {
 						await handleAddTask();
@@ -1159,32 +1257,32 @@
 					class="space-y-4"
 				>
 					<div>
-						<label for="task-title" class="sr-only">Task title</label>
+						<label for="task-title" class="block text-sm font-medium text-gray-300 mb-2">Task Title</label>
 						<input
 							id="task-title"
 							type="text"
 							bind:value={newTask.title}
-							placeholder="Task title..."
-							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
+							placeholder="Enter task title..."
+							class="w-full px-4 py-3 rounded-xl bg-gray-700 text-white placeholder-gray-400 border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 							required
 						/>
 					</div>
 					<div>
-						<label for="task-description" class="sr-only">Task description</label>
+						<label for="task-description" class="block text-sm font-medium text-gray-300 mb-2">Description</label>
 						<textarea
 							id="task-description"
 							bind:value={newTask.description}
-							placeholder="Description..."
-							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600 resize-none"
+							placeholder="Enter task description..."
+							class="w-full px-4 py-3 rounded-xl bg-gray-700 text-white placeholder-gray-400 border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors resize-none"
 							rows="3"
 						></textarea>
 					</div>
 					<div>
-						<label for="task-category" class="sr-only">Task category</label>
+						<label for="task-category" class="block text-sm font-medium text-gray-300 mb-2">Category</label>
 						<select
 							id="task-category"
 							bind:value={newTask.category}
-							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white border-gray-600"
+							class="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 						>
 							<option value="">Select category...</option>
 							{#each categories.filter(cat => cat !== 'all') as category}
@@ -1192,29 +1290,29 @@
 							{/each}
 						</select>
 					</div>
-					<div class="flex justify-end gap-2">
+					<div class="flex justify-end gap-3 pt-4">
 						<button
 							type="button"
 							on:click={hideDialog}
-							class="px-4 py-2 text-sm rounded-md bg-gray-700 text-white hover:bg-gray-600"
+							class="px-6 py-2.5 text-sm font-medium rounded-xl bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white transition-colors"
 							aria-label="Cancel adding task"
 						>
 							Cancel
 						</button>
 						<button
 							type="submit"
-							class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+							class="px-6 py-2.5 text-sm font-medium rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
 							disabled={!newTask.title.trim()}
 							aria-label="Add new task"
 						>
-							Add Task
+							Create Task
 						</button>
 					</div>
 				</form>
 			</div>
 		</div>
-	{/if}
-</div>
+	</div>
+{/if}
 
 <!-- Add animation components -->
 {#if showFireworks}
@@ -1225,18 +1323,22 @@
 {/if}
 
 <style>
-	/* Add smooth transition for the toggle switch dot */
+	/* Toggle switch styling */
 	.dot {
 		transition: transform 0.3s ease-in-out;
 	}
-	.translate-x-4 {
-		transform: translateX(1rem);
+	.translate-x-5 {
+		transform: translateX(1.25rem);
 	}
 
+	/* Task card styling */
 	.task-card {
 		position: relative;
-		transition: transform 0.2s ease;
 		cursor: grab;
+	}
+
+	.task-card:hover {
+		cursor: pointer;
 	}
 
 	.task-card.dragging {
@@ -1255,11 +1357,21 @@
 		top: -5px;
 		left: 0;
 		right: 0;
-		height: 2px;
-		background-color: #4F46E5;
+		height: 3px;
+		background: linear-gradient(90deg, #3B82F6, #1D4ED8);
 		border-radius: 2px;
+		box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
 	}
 
+	/* Text truncation utilities */
+	.line-clamp-2 {
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	/* Smooth animations */
 	@keyframes slideDown {
 		from {
 			opacity: 0;
@@ -1271,6 +1383,27 @@
 		}
 	}
 
-	/* Update transform styles */
-	
+	/* Card hover effects */
+	.task-card:hover .group {
+		transform: translateY(-1px);
+	}
+
+	/* Custom scrollbar for modal */
+	.modal-content::-webkit-scrollbar {
+		width: 6px;
+	}
+
+	.modal-content::-webkit-scrollbar-track {
+		background: #374151;
+		border-radius: 3px;
+	}
+
+	.modal-content::-webkit-scrollbar-thumb {
+		background: #6B7280;
+		border-radius: 3px;
+	}
+
+	.modal-content::-webkit-scrollbar-thumb:hover {
+		background: #9CA3AF;
+	}
 </style>

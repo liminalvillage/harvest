@@ -73,7 +73,7 @@
             }
             
             if (value && value !== holonID) {
-                holonID = value;
+            holonID = value;
                 store = {}; // Reset store
                 valueEquationLoaded = false;
                 loadEquation();
@@ -158,7 +158,7 @@
                     // Debounce updates to batch multiple changes
                     if (subscriptionUpdateTimeout) {
                         clearTimeout(subscriptionUpdateTimeout);
-                    }
+                }
                     subscriptionUpdateTimeout = setTimeout(flushPendingUsers, 50);
                     
                 } else if (newUser && !newUser.id) {
@@ -167,8 +167,8 @@
                 } else {
                     // Handle deletion
                     if (store.hasOwnProperty(key)) {
-                        const { [key]: _, ...rest } = store;
-                        store = rest;
+                    const { [key]: _, ...rest } = store;
+                    store = rest;
                     }
                 }
             });

@@ -46,8 +46,8 @@
     let tempTitle = quest.title;
     let questCards: Array<{ key: string; quest: any; x: number; y: number }> =
         [];
-    let canvas: HTMLCanvasElement;
-    let viewContainer: HTMLElement;
+    let canvas: HTMLCanvasElement | undefined;
+    let viewContainer: HTMLElement | undefined;
     let isPanning = false;
     let startPan = { x: 0, y: 0 };
     let pan = { x: 0, y: 0 };
@@ -55,7 +55,63 @@
     const CANVAS_WIDTH = 2000;
     const CANVAS_HEIGHT = 1500;
 
-    onMount(async () => {
+    // Holon name cache for holograms
+    let holonNameCache = new Map<string, string>();
+
+    // Add function to fetch holon name
+    async function fetchHolonName(holonId: string): Promise<string> {
+        if (holonNameCache.has(holonId)) {
+            return holonNameCache.get(holonId)!;
+        }
+
+        try {
+            const settings = await holosphere.get(holonId, "settings", holonId);
+            const holonName = settings?.name || `Holon ${holonId}`;
+            holonNameCache.set(holonId, holonName);
+            return holonName;
+        } catch (error) {
+            console.error(`Error fetching holon name for ${holonId}:`, error);
+            const fallbackName = `Holon ${holonId}`;
+            holonNameCache.set(holonId, fallbackName);
+            return fallbackName;
+        }
+    }
+
+    // Add function to extract hologram source and navigate
+    function getHologramSource(hologramSoul: string | undefined): string {
+        if (!hologramSoul) return '';
+        // Extract the holon ID from path like "Holons/-1002593778587/quests/380"
+        const match = hologramSoul.match(/Holons\/([^\/]+)/);
+        if (!match) return 'External Source';
+        
+        const holonId = match[1];
+        // Return cached name if available, otherwise return ID and fetch name
+        if (holonNameCache.has(holonId)) {
+            return holonNameCache.get(holonId)!;
+        }
+        
+        // Fetch name asynchronously and trigger reactivity
+        fetchHolonName(holonId).then(() => {
+            // Trigger reactivity by updating quest
+            quest = { ...quest };
+        });
+        
+        return `Holon ${holonId}`; // Temporary fallback while loading
+    }
+
+    // Add function to navigate to hologram source
+    function navigateToHologramSource() {
+        if (!quest._meta?.hologramSoul) return;
+        
+        const match = quest._meta.hologramSoul.match(/Holons\/([^\/]+)/);
+        if (match) {
+            const sourceHolonId = match[1];
+            // Navigate to the source holon
+            window.location.href = `/${sourceHolonId}`;
+        }
+    }
+
+    onMount(() => {
         console.log("[TaskModal.svelte] Mounted. Quest ID:", questId, "Holon ID:", holonId);
         console.log("[TaskModal.svelte] Initial quest prop onMount:", JSON.parse(JSON.stringify(quest || {})));
         console.log("[TaskModal.svelte] Initial quest.participants onMount:", JSON.parse(JSON.stringify(quest.participants || [])));
@@ -66,36 +122,38 @@
 
         if (holosphere && holonId) {
             // Fetch initial users and build a userStore keyed by user.username
-            try {
-                const initialUsersData = await holosphere.getAll(holonId, "users");
-                let usersKeyedByUsername: UserStore = {};
-                if (Array.isArray(initialUsersData)) {
-                    console.log("[TaskModal.svelte] initialUsersData from getAll is ARRAY. Converting to map using user.username as key.");
-                    initialUsersData.forEach(user => {
-                        if (user && user.username) { // Ensure user and user.username are valid
-                            usersKeyedByUsername[user.username] = user as User;
-                        } else {
-                            console.warn("[TaskModal.svelte] Invalid user or missing user.username in initialUsersData array item:", user);
-                        }
-                    });
-                } else if (typeof initialUsersData === 'object' && initialUsersData !== null) {
-                    console.log("[TaskModal.svelte] initialUsersData from getAll is OBJECT. Iterating to ensure keys are user.username.");
-                    Object.values(initialUsersData).forEach((user: any) => {
-                        if (user && user.username) { // Ensure user and user.username are valid
-                            usersKeyedByUsername[user.username] = user as User;
-                        } else {
-                            console.warn("[TaskModal.svelte] Invalid user or missing user.username in initialUsersData object value:", user);
-                        }
-                    });
-                } else {
-                    console.warn("[TaskModal.svelte] Initial users data for TaskModal is not array or object:", initialUsersData);
+            (async () => {
+                try {
+                    const initialUsersData = await holosphere.getAll(holonId, "users");
+                    let usersKeyedByUsername: UserStore = {};
+                    if (Array.isArray(initialUsersData)) {
+                        console.log("[TaskModal.svelte] initialUsersData from getAll is ARRAY. Converting to map using user.username as key.");
+                        initialUsersData.forEach(user => {
+                            if (user && user.username) { // Ensure user and user.username are valid
+                                usersKeyedByUsername[user.username] = user as User;
+                            } else {
+                                console.warn("[TaskModal.svelte] Invalid user or missing user.username in initialUsersData array item:", user);
+                            }
+                        });
+                    } else if (typeof initialUsersData === 'object' && initialUsersData !== null) {
+                        console.log("[TaskModal.svelte] initialUsersData from getAll is OBJECT. Iterating to ensure keys are user.username.");
+                        Object.values(initialUsersData).forEach((user: any) => {
+                            if (user && user.username) { // Ensure user and user.username are valid
+                                usersKeyedByUsername[user.username] = user as User;
+                            } else {
+                                console.warn("[TaskModal.svelte] Invalid user or missing user.username in initialUsersData object value:", user);
+                            }
+                        });
+                    } else {
+                        console.warn("[TaskModal.svelte] Initial users data for TaskModal is not array or object:", initialUsersData);
+                    }
+                    userStore = usersKeyedByUsername;
+                    console.log("[TaskModal.svelte] userStore after initial getAll (keyed by username):", JSON.parse(JSON.stringify(userStore)));
+                } catch (e) {
+                    console.error("[TaskModal.svelte] Error fetching initial users for TaskModal:", e);
+                    userStore = {};
                 }
-                userStore = usersKeyedByUsername;
-                console.log("[TaskModal.svelte] userStore after initial getAll (keyed by username):", JSON.parse(JSON.stringify(userStore)));
-            } catch (e) {
-                console.error("[TaskModal.svelte] Error fetching initial users for TaskModal:", e);
-                userStore = {};
-            }
+            })();
 
             // Subscribe to user updates - key from subscription might be different from username
             try {
@@ -381,8 +439,8 @@
     }
 
     async function saveTitle() {
-        if (editedTitle.trim() !== quest.title) {
-            await updateQuest({ title: editedTitle.trim() });
+        if (tempTitle.trim() !== quest.title) {
+            await updateQuest({ title: tempTitle.trim() });
         }
         editingTitle = false;
     }
@@ -609,27 +667,47 @@
                             type="button"
                             id="modal-title"
                             class="text-2xl font-bold text-white text-left hover:text-gray-300"
-                            on:click={() => (editingTitle = true)}
+                            on:click={() => {
+                                tempTitle = quest.title;
+                                editingTitle = true;
+                            }}
                         >
                             {quest.title}
                         </button>
                     {/if}
-                    {#if quest.category}
-                        <span
-                            class="inline-flex items-center mt-2 text-sm text-gray-400"
-                        >
-                            <svg
-                                class="w-4 h-4 mr-1"
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
+                    <div class="flex items-center gap-3 mt-2">
+                        {#if quest._meta?.resolvedFromHologram}
+                            <button
+                                class="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 text-blue-300 rounded-lg text-sm font-medium hover:bg-blue-500/30 transition-colors border border-blue-500/50"
+                                on:click={navigateToHologramSource}
+                                title="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
                             >
-                                <path
-                                    d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"
-                                />
-                            </svg>
-                            {quest.category}
-                        </span>
-                    {/if}
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                                </svg>
+                                <span>Hologram from {getHologramSource(quest._meta.hologramSoul)}</span>
+                                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                            </button>
+                        {/if}
+                        {#if quest.category}
+                            <span
+                                class="inline-flex items-center text-sm text-gray-400"
+                            >
+                                <svg
+                                    class="w-4 h-4 mr-1"
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                >
+                                    <path
+                                        d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"
+                                    />
+                                </svg>
+                                {quest.category}
+                            </span>
+                        {/if}
+                    </div>
                 </div>
             </div>
 

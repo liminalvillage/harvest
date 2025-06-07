@@ -12,6 +12,12 @@
 	// Create holosphere instance with default configuration
 	const holosphere = new HoloSphere(environmentName);
 	
+	// Add connection ready check - give holosphere time to initialize
+	let holosphereReady = false;
+	setTimeout(() => {
+		holosphereReady = true;
+	}, 500); // Give 500ms for initial connection
+	
 	// Periodically check for garbage collection opportunities
 	const gcInterval = setInterval(() => {
 		if (typeof window !== 'undefined') {

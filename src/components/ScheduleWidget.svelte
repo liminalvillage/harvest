@@ -222,13 +222,13 @@
 	}
 </script>
 
-<div class="w-full mt-8 lg:mt-0 lg:w-4/12 lg:pl-4">
-	<div class="bg-gray-800 rounded-3xl px-6 pt-6">
+<div class="w-full h-full">
+	<div class="p-6 h-full flex flex-col">
 		<div class="flex text-white text-2xl pb-6 font-bold">
 			<p>Schedule</p>
 		</div>
 		<div 
-			class="scheduleContainer"
+			class="scheduleContainer flex-1 overflow-y-auto"
 			role="grid"
 			aria-label="Daily schedule"
 		>

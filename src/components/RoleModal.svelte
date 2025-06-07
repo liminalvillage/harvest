@@ -149,9 +149,9 @@
                             {#each role.participants as participant}
                                 <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg">
                                     <div class="flex items-center gap-2">
-                                        <img 
+                                            <img 
                                             src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
-                                            alt={participant.username}
+                                                alt={participant.username}
                                             class="w-8 h-8 rounded-full object-cover border border-gray-500"
                                             on:error={(e) => {
                                                 e.currentTarget.style.display = 'none';
@@ -191,9 +191,9 @@
                                         class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2 text-gray-200"
                                         on:click={() => addParticipant(userId)}
                                     >
-                                        <img 
+                                            <img 
                                             src={`https://gun.holons.io/getavatar?user_id=${user.id || userId}`}
-                                            alt={user.first_name}
+                                                alt={user.first_name}
                                             class="w-6 h-6 rounded-full object-cover border border-gray-500"
                                             on:error={(e) => {
                                                 e.currentTarget.style.display = 'none';
@@ -202,7 +202,7 @@
                                         />
                                         <div class="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-xs text-white border border-gray-500" style="display: none;">
                                             {user.first_name ? user.first_name[0] : '?'}{user.last_name ? user.last_name[0] : ''}
-                                        </div>
+                                            </div>
                                         <span>{user.first_name} {user.last_name || ''}</span>
                                     </button>
                                 {/each}
