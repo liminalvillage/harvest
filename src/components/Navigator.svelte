@@ -33,6 +33,7 @@
     let root: d3.HierarchyCircularNode<Holon>;
     let focus: d3.HierarchyCircularNode<Holon>;
     let view: [number, number, number];
+    let isInitialized = false;
 
     // Color scale for different depths
     const color = d3.scaleLinear<string>()
@@ -43,6 +44,10 @@
     // Add zoom behavior variable
     let zoomBehavior: d3.ZoomBehavior<SVGElement, unknown>;
     let mainGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
+
+    // Debouncing variables
+    let updateTimeout: any;
+    let pendingUpdate = false;
 
     function handleZoom(event: d3.D3ZoomEvent<SVGElement, unknown>) {
         mainGroup.attr('transform', event.transform.toString());
@@ -129,10 +134,10 @@
         );
     }
 
-    function updateVisualization(holonsData: HolonData) {
+    function updateVisualization(holonsData: HolonData, applyInitialZoom = false) {
         try {
             root = pack(holonsData);
-            focus = root;
+            if (!focus) focus = root;
             
             const svg = d3.select('svg g');
             
@@ -201,15 +206,13 @@
                     node.text(truncateText(d.data.name, charLimit));
                 });
 
-            // Initial view
-            const scale = width / (root.r * 2.2);
-            const x = width / 2 - (root.x * scale);
-            const y = height / 2 - (root.y * scale);
-            
-            // Get the SVG element directly without trying to call select on a selection
-            if (zoomBehavior) {
+            // Only apply initial zoom on first load or when explicitly requested
+            if (applyInitialZoom && zoomBehavior) {
+                const scale = width / (root.r * 2.2);
+                const x = width / 2 - (root.x * scale);
+                const y = height / 2 - (root.y * scale);
+                
                 try {
-                    // Use type assertion to help TypeScript understand the node type
                     const svgNode = svg.node();
                     if (svgNode) {
                         const ownerSVG = (svgNode as SVGElement).ownerSVGElement;
@@ -218,14 +221,13 @@
                                 .call(zoomBehavior.transform as any, 
                                     d3.zoomIdentity.translate(x, y).scale(scale));
                         } else {
-                            // Fallback to selecting the svg directly
                             d3.select('svg')
                                 .call(zoomBehavior.transform as any, 
                                     d3.zoomIdentity.translate(x, y).scale(scale));
                         }
                     }
                 } catch (e) {
-                    console.error("Error applying transform:", e);
+                    console.error("Error applying initial transform:", e);
                 }
             }
         } catch (error) {
@@ -242,16 +244,38 @@
         focus = d;
         zoomToNode(d);
         if (d.data.key) {
+            // Switch to the clicked holon by updating the ID store
+            ID.set(d.data.key);
             dispatch('holonSelect', { key: d.data.key, holon: d.data });
         }
     }
 
-    // Add reactive statement to handle ID changes
-    $: if ($ID) {
-        const holon = root?.descendants().find(d => d.data.key === $ID);
-        if (holon) {
+    // Debounced update function
+    function debouncedUpdate(holonsData: HolonData) {
+        if (updateTimeout) {
+            clearTimeout(updateTimeout);
+        }
+        
+        pendingUpdate = true;
+        updateTimeout = setTimeout(() => {
+            if (pendingUpdate) {
+                updateVisualization(holonsData, !isInitialized);
+                if (!isInitialized) {
+                    isInitialized = true;
+                }
+                pendingUpdate = false;
+            }
+        }, 100); // 100ms debounce
+    }
+
+    // Add reactive statement to handle ID changes - but don't re-zoom constantly
+    let lastIDZoom = '';
+    $: if ($ID && $ID !== lastIDZoom && root) {
+        const holon = root.descendants().find(d => d.data.key === $ID);
+        if (holon && focus !== holon) {
             focus = holon;
             zoomToNode(holon);
+            lastIDZoom = $ID;
         }
     }
 
@@ -285,6 +309,12 @@
                 }
             });
             settingsSubscriptions.clear();
+        }
+
+        // Clear any pending timeouts
+        if (updateTimeout) {
+            clearTimeout(updateTimeout);
+            updateTimeout = null;
         }
     }
 
@@ -357,8 +387,8 @@
                                 }
                             });
 
-                            console.log('Updated holons data');
-                            updateVisualization(holonsData);
+                            console.log('Updated holons data - using debounced update');
+                            debouncedUpdate(holonsData);
                         } catch (e) {
                             console.error("Error processing holon data:", e);
                         }

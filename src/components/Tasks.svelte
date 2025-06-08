@@ -892,52 +892,54 @@
 				</div>
 
 				<!-- Controls Section -->
-				<div class="flex flex-col lg:flex-row lg:justify-between lg:items-center mb-6 gap-4">
-					<!-- View Mode Toggle -->
-					<div class="flex items-center bg-gray-700 rounded-xl p-1">
-						<button
-							class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors {viewMode === 'list'
-								? 'bg-gray-600 text-white'
-								: 'text-gray-400 hover:text-white'}"
-							on:click={() => (viewMode = "list")}
-							aria-label="Switch to list view"
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<line x1="8" y1="6" x2="21" y2="6" />
-								<line x1="8" y1="12" x2="21" y2="12" />
-								<line x1="8" y1="18" x2="21" y2="18" />
-								<line x1="3" y1="6" x2="3.01" y2="6" />
-								<line x1="3" y1="12" x2="3.01" y2="12" />
-								<line x1="3" y1="18" x2="3.01" y2="18" />
-							</svg>
-							<span class="hidden sm:inline">List</span>
-						</button>
-						<button
-							class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors {viewMode === 'canvas'
-								? 'bg-gray-600 text-white'
-								: 'text-gray-400 hover:text-white'}"
-							on:click={() => (viewMode = "canvas")}
-							aria-label="Switch to canvas view"
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<path d="M5 9l-3 3 3 3"></path>
-								<path d="M9 5l3-3 3 3"></path>
-								<path d="M9 19l3 3 3-3"></path>
-								<path d="M19 9l3 3-3 3"></path>
-								<path d="M2 12h20"></path>
-								<path d="M12 2v20"></path>
-							</svg>
-							<span class="hidden sm:inline">Canvas</span>
-						</button>
+				<div class="mb-6 space-y-4">
+					<!-- Top Row: View Mode Toggle -->
+					<div class="flex justify-center">
+						<div class="flex items-center bg-gray-700 rounded-xl p-1">
+							<button
+								class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors {viewMode === 'list'
+									? 'bg-gray-600 text-white'
+									: 'text-gray-400 hover:text-white'}"
+								on:click={() => (viewMode = "list")}
+								aria-label="Switch to list view"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<line x1="8" y1="6" x2="21" y2="6" />
+									<line x1="8" y1="12" x2="21" y2="12" />
+									<line x1="8" y1="18" x2="21" y2="18" />
+									<line x1="3" y1="6" x2="3.01" y2="6" />
+									<line x1="3" y1="12" x2="3.01" y2="12" />
+									<line x1="3" y1="18" x2="3.01" y2="18" />
+								</svg>
+								<span class="hidden sm:inline">List</span>
+							</button>
+							<button
+								class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors {viewMode === 'canvas'
+									? 'bg-gray-600 text-white'
+									: 'text-gray-400 hover:text-white'}"
+								on:click={() => (viewMode = "canvas")}
+								aria-label="Switch to canvas view"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M5 9l-3 3 3 3"></path>
+									<path d="M9 5l3-3 3 3"></path>
+									<path d="M9 19l3 3 3-3"></path>
+									<path d="M19 9l3 3-3 3"></path>
+									<path d="M2 12h20"></path>
+									<path d="M12 2v20"></path>
+								</svg>
+								<span class="hidden sm:inline">Canvas</span>
+							</button>
+						</div>
 					</div>
 
-					<!-- Filters and Controls -->
-					<div class="flex flex-col sm:flex-row gap-4 items-center">
+					<!-- Second Row: Category and Sort -->
+					<div class="flex flex-col sm:flex-row gap-3 items-center">
 						<!-- Category Filter -->
-						<div class="relative">
+						<div class="relative flex-1 w-full sm:w-auto">
 							<select
 								bind:value={selectedCategory}
-								class="appearance-none bg-gray-700 text-white px-4 py-2 pr-8 rounded-xl cursor-pointer text-sm border border-gray-600 focus:border-blue-500 focus:outline-none"
+								class="appearance-none bg-gray-700 text-white px-4 py-3 pr-8 rounded-xl cursor-pointer text-sm border border-gray-600 focus:border-blue-500 focus:outline-none w-full"
 							>
 								{#each categories as category}
 									<option value={category}>
@@ -954,7 +956,7 @@
 
 						<!-- Sort Button -->
 						<button
-							class="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-xl text-sm hover:bg-gray-600 transition-colors border border-gray-600"
+							class="flex items-center justify-center gap-2 px-4 py-3 bg-gray-700 text-white rounded-xl text-sm hover:bg-gray-600 transition-colors border border-gray-600 w-full sm:w-auto min-w-[100px]"
 							on:click={handleSortButtonClick}
 							aria-label="Sort tasks"
 						>
@@ -974,7 +976,10 @@
 							</svg>
 							{/key}
 						</button>
+					</div>
 
+					<!-- Third Row: Toggle Switches -->
+					<div class="flex flex-row gap-4 items-center justify-center">
 						<!-- Show Completed Toggle -->
 						<label class="flex items-center cursor-pointer">
 							<div class="relative">
