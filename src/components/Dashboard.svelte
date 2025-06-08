@@ -138,7 +138,7 @@
             recentEventCount = questEvents.filter(
                 (event: any) => event.when && new Date(event.when) >= oneWeekAgo
             ).length;
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error fetching dashboard data:', error);
             
             // Retry on 500 errors up to 3 times with exponential backoff
@@ -274,7 +274,7 @@
     </div>
 
     <!-- Secondary Stats Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
         <!-- Proposals Card -->
         <a
             href={`/${holonID}/proposals`}
@@ -352,6 +352,25 @@
                         <h3 class="text-lg font-semibold text-white group-hover:text-cyan-400 transition-colors">Roles</h3>
                         <p class="text-2xl font-bold text-white">{roleCount}</p>
                         <p class="text-sm text-gray-400">{unassignedRoleCount} Unassigned</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Federation Card -->
+        <a
+            href={`/${holonID}/federation`}
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-6 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-orange-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative z-10">
+                <div class="flex items-center space-x-4">
+                    <div class="p-3 bg-orange-500 bg-opacity-20 rounded-xl">
+                        <i class="fas fa-network-wired text-xl text-orange-400"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-white group-hover:text-orange-400 transition-colors">Federation</h3>
+                        <p class="text-sm text-gray-400">Configure data sharing</p>
                     </div>
                 </div>
             </div>
