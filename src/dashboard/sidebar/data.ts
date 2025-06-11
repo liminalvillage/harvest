@@ -12,6 +12,7 @@ import DashboardIcon from './icons/DashboardIcon.svelte';
 import ShoppingIcon from './icons/ShoppingIcon.svelte';
 import ChecklistIcon from './icons/ChecklistIcon.svelte';
 import ExpensesIcon from './icons/ExpensesIcon.svelte';
+import GlobalHolonsIcon from './icons/GlobalHolonsIcon.svelte';
 
 export const data = [
 	{
@@ -68,6 +69,11 @@ export const data = [
 		title: 'Status',
 		icon: StatusIcon,
 		link: '/status'
+	},
+	{
+		title: 'Global Holons',
+		icon: GlobalHolonsIcon,
+		link: '/global-holons'
 	}
 	// {
 	// 	title: 'Documentation',
