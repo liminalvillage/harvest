@@ -13,6 +13,8 @@ import ShoppingIcon from './icons/ShoppingIcon.svelte';
 import ChecklistIcon from './icons/ChecklistIcon.svelte';
 import ExpensesIcon from './icons/ExpensesIcon.svelte';
 import GlobalHolonsIcon from './icons/GlobalHolonsIcon.svelte';
+import FederationIcon from './icons/FederationIcon.svelte';
+import ProposalsIcon from './icons/ProposalsIcon.svelte';
 
 export const data = [
 	{
@@ -51,6 +53,11 @@ export const data = [
 		link: '/tags'
 	},
 	{
+		title: 'Proposals',
+		icon: ProposalsIcon,
+		link: '/proposals'
+	},
+	{
 		title: 'Offers & Requests',
 		icon: OffersIcon,
 		link: '/offers'
@@ -74,6 +81,11 @@ export const data = [
 		title: 'Global Holons',
 		icon: GlobalHolonsIcon,
 		link: '/global-holons'
+	},
+	{
+		title: 'Federation',
+		icon: FederationIcon,
+		link: '/federation'
 	}
 	// {
 	// 	title: 'Documentation',

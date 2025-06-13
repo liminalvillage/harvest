@@ -3,7 +3,7 @@
 
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
-
+	import { formatDate, formatTime } from "../utils/date";
 	import HoloSphere from "holosphere";
 	import Announcements from "./Announcements.svelte";
 
@@ -13,59 +13,314 @@
 	let store = {};
 	$: holonID = $ID;
 
-	$: offers = Object.values(store).filter((item) => item.type === "offer");
-	$: needs = Object.values(store).filter((item) => item.type === "request");
+	// Federated offers toggle
+	let includeFederatedOffers = false;
+	let loadingFederated = false;
+
+	$: offers = Object.values(store).filter((item) => {
+		// Use the classification function for better categorization
+		const classifiedType = classifyTask(item);
+		const isOffer = classifiedType === "offer";
+		console.log(`Checking item ${item.id}: type=${item.type}, classifiedType=${classifiedType}, isOffer=${isOffer}`);
+		return isOffer;
+	});
+	$: needs = Object.values(store).filter((item) => {
+		// Use the classification function for better categorization
+		const classifiedType = classifyTask(item);
+		const isNeed = classifiedType === "request" || classifiedType === "need";
+		console.log(`Checking item ${item.id}: type=${item.type}, classifiedType=${classifiedType}, isNeed=${isNeed}`);
+		return isNeed;
+	});
 
 	let holosphere = getContext("holosphere") as HoloSphere;
+
+	let userStore = {};
+	let showDropdownFor = null; // key of offer/need for which dropdown is open
+
+	// Holon name cache for holograms
+	let holonNameCache = new Map<string, string>();
+
+	// Fetch and subscribe to users for the current holon
+	async function fetchAndSubscribeUsers() {
+		if (!holosphere || !holonID) {
+			userStore = {};
+			return;
+		}
+		try {
+			const initialUsers = await holosphere.getAll(holonID, "users");
+			let usersKeyedById = {};
+			if (Array.isArray(initialUsers)) {
+				initialUsers.forEach(user => {
+					if (user && user.id) usersKeyedById[user.id] = user;
+				});
+			} else if (typeof initialUsers === 'object' && initialUsers !== null) {
+				Object.values(initialUsers).forEach((user) => {
+					if (user && user.id) usersKeyedById[user.id] = user;
+				});
+			}
+			userStore = usersKeyedById;
+		} catch (e) {
+			console.error("[Offers.svelte] Error fetching initial users:", e);
+			userStore = {};
+		}
+
+		// Subscribe to user updates
+		holosphere.subscribe(holonID, "users", (updatedUser, key) => {
+			if (updatedUser) {
+				userStore = { ...userStore, [key]: updatedUser };
+			} else {
+				const { [key]: _, ...rest } = userStore;
+				userStore = rest;
+			}
+		});
+	}
+
+	// Call this in onMount and when holonID changes
+	$: if (holonID) {
+		fetchAndSubscribeUsers();
+		subscribeToOffersAndNeeds(); // Also subscribe to offers when holonID changes
+	}
 
 	onMount(() => {
 		ID.subscribe((value) => {
 			holonID = value;
 			subscribeToOffersAndNeeds();
 		});
+		
+		// Add click outside handler
+		document.addEventListener('click', handleClickOutside);
+		
+		return () => {
+			document.removeEventListener('click', handleClickOutside);
+		};
 	});
 
 	// Subscribe to changes in the specified holon
 	async function subscribeToOffersAndNeeds() {
 		store = {};
-		if (holosphere)
-			holosphere.subscribe(holonID, "quests", (newItem, key) => {
-				if (newItem) {
-					const parsedItem = newItem;
-					parsedItem.key = key; // Add the key to the parsed item object
-					store[key] = parsedItem;
-				} else {
-					// A key may contain a null value (if data has been deleted/set to null)
-					// if so, we remove the item from the store
-					delete store[key];
-				}
-				store = store; // Trigger reactivity
-			});
-	}
-
-	// Format time for display
-	/**
-	 * @param {string | number | Date} dateTime
-	 */
-	function formatTime(dateTime) {
-		const options = { hour: "2-digit", minute: "2-digit" };
-		return new Date(dateTime).toLocaleTimeString([], options);
-	}
-
-	function formatDate(dateTime) {
-		const date = new Date(dateTime);
-		const today = new Date();
-		const tomorrow = new Date(today);
-		tomorrow.setDate(tomorrow.getDate() + 1);
-
-		if (date.toDateString() === today.toDateString()) {
-			return "today";
-		} else if (date.toDateString() === tomorrow.toDateString()) {
-			return "tomorrow";
-		} else {
-			const diff = Math.ceil((date - today) / (1000 * 60 * 60 * 24));
-			return `in ${diff} days`;
+		if (holosphere) {
+			if (includeFederatedOffers) {
+				// Use federated data retrieval
+				await fetchFederatedOffersAndNeeds();
+			} else {
+				// Use regular subscription
+				holosphere.subscribe(holonID, "quests", (newItem, key) => {
+					if (newItem) {
+						const parsedItem = newItem;
+						parsedItem.key = key; // Add the key to the parsed item object
+						store[key] = parsedItem;
+					} else {
+						// A key may contain a null value (if data has been deleted/set to null)
+						// if so, we remove the item from the store
+						delete store[key];
+					}
+					store = store; // Trigger reactivity
+				});
+			}
 		}
+	}
+
+	// Fetch federated offers and needs
+	async function fetchFederatedOffersAndNeeds() {
+		if (!holosphere || !holonID) return;
+		
+		loadingFederated = true;
+		try {
+			console.log("Fetching federated offers and needs...");
+			console.log("Current holonID:", holonID);
+			
+			// First, let's check what's in the local holon directly
+			console.log("Checking local data first...");
+			const localData = await holosphere.getAll(holonID, "quests");
+			console.log("Local data:", localData);
+			
+			// Get federated data from connected holons
+			const federatedData = await holosphere.getFederated(holonID, "quests", {
+				includeLocal: true,
+				includeFederated: true,
+				resolveReferences: true,
+				aggregate: false
+			});
+			
+			console.log("Federated data result:", federatedData);
+			
+			// Get user-specific offers from each user's personal holon
+			console.log("Fetching user-specific offers...");
+			const userOffers = await fetchUserSpecificOffers();
+			console.log("User-specific offers:", userOffers);
+			
+			// Combine all data sources
+			const allData = [...federatedData, ...userOffers];
+			console.log("Combined data:", allData);
+			
+			// Convert array to keyed object for consistency with subscription format
+			const keyedStore = {};
+			
+			// Handle all data (federated + user-specific)
+			allData.forEach((item, index) => {
+				if (item && item.id) {
+					// For federated data, we need to preserve the original key structure
+					// If the item has a key from the original subscription, use it
+					// Otherwise, use the id as the key
+					const key = item.key || item.id || `combined_${index}`;
+					
+					// Add federation metadata if it's from a federated source
+					const processedItem = {
+						...item,
+						key: key
+					};
+					
+					// If this item has federation metadata, it's from a federated source
+					if (item._federation) {
+						processedItem._federation = item._federation;
+					}
+					
+					// If this is a resolved hologram, mark it appropriately
+					if (item._federation && item._federation.isReference) {
+						processedItem._meta = {
+							...processedItem._meta,
+							resolvedFromHologram: true,
+							hologramSoul: item._federation.soul
+						};
+					}
+					
+					// Mark user-specific offers
+					if (item._userSpecific) {
+						processedItem._userSpecific = item._userSpecific;
+					}
+					
+					keyedStore[key] = processedItem;
+					console.log(`Added item to store with key ${key}:`, processedItem);
+					console.log(`Item type: ${processedItem.type}, is offer: ${processedItem.type === 'offer'}`);
+				}
+			});
+			
+			// If no data was found, fall back to local data only
+			if (allData.length === 0 && localData.length > 0) {
+				console.log("No combined data found, using local data only");
+				localData.forEach((item, index) => {
+					if (item && item.id) {
+						const key = item.key || item.id || `local_${index}`;
+						keyedStore[key] = {
+							...item,
+							key: key
+						};
+					}
+				});
+			}
+			
+			store = keyedStore;
+			console.log(`Final store:`, store);
+			console.log(`Fetched ${federatedData.length} federated items + ${userOffers.length} user items, store has ${Object.keys(store).length} keys`);
+			
+			// Debug: Check what's in the store after processing
+			const storeValues = Object.values(store);
+			console.log("Store values:", storeValues);
+			console.log("Items with type 'offer':", storeValues.filter(item => item.type === 'offer'));
+			console.log("Items with type 'request':", storeValues.filter(item => item.type === 'request'));
+		} catch (error) {
+			console.error("Error fetching federated data:", error);
+			// Fallback to local data only
+			try {
+				console.log("Falling back to local data only...");
+				const localData = await holosphere.getAll(holonID, "quests");
+				const keyedStore = {};
+				localData.forEach((item, index) => {
+					if (item && item.id) {
+						const key = item.key || item.id || `local_${index}`;
+						keyedStore[key] = {
+							...item,
+							key: key
+						};
+					}
+				});
+				store = keyedStore;
+				console.log(`Fallback: Loaded ${localData.length} local items`);
+			} catch (fallbackError) {
+				console.error("Error in fallback to local data:", fallbackError);
+				store = {};
+			}
+		} finally {
+			loadingFederated = false;
+		}
+	}
+
+	// Fetch offers from each user's personal holon
+	async function fetchUserSpecificOffers() {
+		if (!holosphere || !holonID || !userStore) return [];
+		
+		const userOffers = [];
+		const userIds = Object.keys(userStore);
+		
+		console.log(`Fetching offers from ${userIds.length} users:`, userIds);
+		
+		// Fetch offers from each user's personal holon
+		for (const userId of userIds) {
+			try {
+				const user = userStore[userId];
+				if (!user || !user.id) continue;
+				
+				// Each user's personal holon is typically their user ID
+				const userHolonId = user.id;
+				
+				console.log(`Fetching offers from user ${user.first_name} (${userHolonId})`);
+				
+				// Fetch quests from user's personal holon
+				const userQuests = await holosphere.getAll(userHolonId, "quests");
+				
+				if (userQuests && userQuests.length > 0) {
+					console.log(`Found ${userQuests.length} quests from user ${user.first_name}`);
+					
+					// Process each quest and mark it as user-specific
+					userQuests.forEach((quest, index) => {
+						if (quest && quest.id) {
+							const processedQuest = {
+								...quest,
+								key: `user_${userHolonId}_${quest.id}`,
+								_userSpecific: {
+									userId: user.id,
+									userName: `${user.first_name} ${user.last_name || ''}`.trim(),
+									userHolonId: userHolonId,
+									fetchedAt: Date.now()
+								}
+							};
+							userOffers.push(processedQuest);
+						}
+					});
+				}
+			} catch (error) {
+				console.warn(`Error fetching offers from user ${userId}:`, error);
+				// Continue with other users even if one fails
+			}
+		}
+		
+		console.log(`Total user-specific offers found: ${userOffers.length}`);
+		return userOffers;
+	}
+
+	// Handle federated toggle change
+	async function handleFederatedToggle() {
+		includeFederatedOffers = !includeFederatedOffers;
+		await subscribeToOffersAndNeeds();
+	}
+
+	// Manual refresh function
+	async function refreshData() {
+		console.log("Manual refresh triggered");
+		await subscribeToOffersAndNeeds();
+	}
+
+	// Function to classify a task as offer or request
+	function classifyTask(item) {
+		if (!item) return null;
+		
+		// Only accept items that are explicitly marked as offers or requests
+		if (item.type === "offer" || item.type === "request" || item.type === "need") {
+			return item.type;
+		}
+		
+		// If it's not explicitly an offer/request/need, return null (filtered out)
+		return null;
 	}
 
 	// Function to get item background color
@@ -78,168 +333,585 @@
 		return 'hsl(210, 15%, 75%)'; // Default gray
 	}
 
-	// New function to generate table HTML
-	function generateTableHtml(items, caption, personHeader, itemHeader) {
-		const itemCards = items
-			.map(
-				(item) => {
-					const backgroundColor = getItemBackgroundColor(item.type);
-					// Ensure text colors provide good contrast with the new backgrounds
-					// Titles are currently text-white, details text-gray-300.
-					// These should be fine, but for very light HSL backgrounds, darker text might be needed.
-					// The chosen HSL values (L=80%) should be light enough for dark text to be more readable.
-					// Let's adjust text color for better readability on these lighter backgrounds.
-					const textColor = "text-gray-800"; // Darker text for better contrast
-					const subTextColor = "text-gray-600";
+	// Add function to fetch holon name
+	async function fetchHolonName(holonId: string): Promise<string> {
+		if (holonNameCache.has(holonId)) {
+			return holonNameCache.get(holonId)!;
+		}
 
-					return `
-				<div 
-					class="p-4 rounded-lg mb-3 shadow hover:shadow-md transition-shadow duration-200"
-					style="background-color: ${backgroundColor};"
-				>
-					<div class="flex items-center">
-						<div class="flex-shrink-0 mr-3">
-							${item.initiator?.id ? `
-								<img
-									class="w-10 h-10 rounded-full border-2 border-gray-400" 
-									src="https://gun.holons.io/getavatar?user_id=${item.initiator.id}"
-									alt="${item.initiator?.first_name || "User"}'s avatar"
-								/>
-							` : `
-								<div class="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center text-white text-xl font-bold border-2 border-gray-400">
-									?
-								</div>
-							`}
-						</div>
-						<div class="flex-grow">
-							<h4 class="text-md font-semibold ${textColor}">${item.title}</h4>
-							<p class="text-sm ${subTextColor}">
-								${personHeader}: ${item.initiator?.first_name || "N/A"} ${item.initiator?.last_name || ""}
-							</p>
-						</div>
-					</div>
-				</div>
-			`;
-				}
-			)
-			.join("");
+		try {
+			const settings = await holosphere.get(holonId, "settings", holonId);
+			const holonName = settings?.name || `Holon ${holonId}`;
+			holonNameCache.set(holonId, holonName);
+			return holonName;
+		} catch (error) {
+			console.error(`Error fetching holon name for ${holonId}:`, error);
+			const fallbackName = `Holon ${holonId}`;
+			holonNameCache.set(holonId, fallbackName);
+			return fallbackName;
+		}
+	}
 
-		return `
-			<div>
-				<h3 class="text-xl font-bold mb-4 text-white">${caption}</h3>
-				${itemCards.length > 0 ? itemCards : `<p class="text-gray-400">No items to display.</p>`}
-			</div>
-		`;
+	// Add function to extract hologram source
+	function getHologramSource(hologramSoul: string | undefined): string {
+		if (!hologramSoul) return '';
+		// Extract the holon ID from path like "Holons/-1002593778587/quests/380"
+		const match = hologramSoul.match(/Holons\/([^\/]+)/);
+		if (!match) return 'External Source';
+		
+		const holonId = match[1];
+		// Return cached name if available, otherwise return ID and fetch name
+		if (holonNameCache.has(holonId)) {
+			return holonNameCache.get(holonId)!;
+		}
+		
+		// Fetch name asynchronously and trigger reactivity
+		fetchHolonName(holonId).then(() => {
+			// Trigger reactivity by updating store
+			store = { ...store };
+		});
+		
+		return `Holon ${holonId}`; // Temporary fallback while loading
+	}
+
+	// Assign a user as a participant to an offer or need
+	async function takeOfferOrNeed(item, user) {
+		if (!holosphere || !holonID || !item || !user) return;
+		
+		// Check if user is already a participant
+		const isAlreadyParticipant = item.participants?.some(p => p.id === user.id);
+		if (isAlreadyParticipant) {
+			showDropdownFor = null;
+			return;
+		}
+		
+		const newParticipant = {
+			id: user.id,
+			first_name: user.first_name,
+			last_name: user.last_name,
+			username: user.username
+		};
+		
+		// Add to existing participants or create new array
+		const updatedParticipants = [...(item.participants || []), newParticipant];
+		
+		const updatedItem = {
+			...item,
+			participants: updatedParticipants
+		};
+		
+		await holosphere.put(holonID, 'quests', updatedItem);
+		showDropdownFor = null;
+	}
+
+	// Toggle dropdown for a specific item
+	function toggleDropdown(itemKey) {
+		console.log('toggleDropdown called with:', itemKey, 'current showDropdownFor:', showDropdownFor);
+		showDropdownFor = showDropdownFor === itemKey ? null : itemKey;
+		console.log('showDropdownFor set to:', showDropdownFor);
+	}
+
+	// Close dropdown when clicking outside
+	function handleClickOutside(event) {
+		console.log('handleClickOutside called');
+		const dropdowns = document.querySelectorAll('.user-dropdown');
+		let clickedInside = false;
+		dropdowns.forEach(dropdown => {
+			if (dropdown.contains(event.target)) clickedInside = true;
+		});
+		if (!clickedInside) {
+			console.log('Clicked outside, closing dropdown');
+			showDropdownFor = null;
+		}
+	}
+
+	// Debug function to check data
+	async function debugData() {
+		if (!holosphere || !holonID) {
+			console.log("No holosphere or holonID available");
+			return;
+		}
+		
+		console.log("=== DEBUG DATA ===");
+		console.log("Current holonID:", holonID);
+		console.log("Current store:", store);
+		console.log("Current offers:", offers);
+		console.log("Current needs:", needs);
+		
+		// Show detailed item information
+		const storeValues = Object.values(store);
+		console.log("=== DETAILED ITEM ANALYSIS ===");
+		storeValues.forEach((item, index) => {
+			console.log(`Item ${index + 1}:`, {
+				id: item.id,
+				type: item.type,
+				title: item.title,
+				description: item.description,
+				initiator: item.initiator,
+				participants: item.participants,
+				when: item.when,
+				ends: item.ends,
+				_federation: item._federation,
+				_meta: item._meta
+			});
+		});
+		
+		// Show filtering summary
+		console.log("=== FILTERING SUMMARY ===");
+		const totalItems = storeValues.length;
+		const offerItems = offers.length;
+		const needItems = needs.length;
+		const filteredOutItems = totalItems - offerItems - needItems;
+		
+		console.log(`Total items in store: ${totalItems}`);
+		console.log(`Items classified as offers: ${offerItems}`);
+		console.log(`Items classified as needs: ${needItems}`);
+		console.log(`Items filtered out: ${filteredOutItems}`);
+		
+		// Show what was filtered out
+		const filteredItems = storeValues.filter(item => {
+			const classifiedType = classifyTask(item);
+			return !classifiedType || (classifiedType !== "offer" && classifiedType !== "request" && classifiedType !== "need");
+		});
+		
+		if (filteredItems.length > 0) {
+			console.log("Filtered out items:");
+			filteredItems.forEach(item => {
+				console.log(`- ${item.id}: "${item.title}" (type: ${item.type})`);
+			});
+		}
+		
+		try {
+			const localData = await holosphere.getAll(holonID, "quests");
+			console.log("Raw local data:", localData);
+			
+			const federationInfo = await holosphere.getFederation(holonID);
+			console.log("Federation info:", federationInfo);
+		} catch (error) {
+			console.error("Error in debug:", error);
+		}
 	}
 </script>
 
-<div class="flex flex-wrap">
-	<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
-		<div class="flex justify-between text-white items-center mb-8">
-			<p class="text-2xl font-bold">Offers &amp; Requests</p>
-			<p class="">{new Date().toDateString()}</p>
-		</div>
-
-		<div class="flex flex-wrap justify-between items-center pb-8">
-			<div class="flex flex-wrap text-white">
-				<div class="pr-10">
-					<div class="text-2xl font-bold">
-						{offers.length + needs.length}
-					</div>
-					<div class="">Total</div>
-				</div>
-				<div>
-					<div class="text-2xl font-bold">
-						{offers.length +
-							needs.length -
-							offers
-								.concat(needs)
-								.filter((item) => item.participants?.length > 0)
-								.length}
-					</div>
-					<div class="">Unassigned</div>
-				</div>
+<div class="space-y-8">
+	<!-- Header Section -->
+	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
+		<div class="flex flex-col md:flex-row justify-between items-center">
+			<div class="text-center md:text-left mb-4 md:mb-0">
+				<h1 class="text-4xl font-bold text-white mb-2">Offers & Requests</h1>
+				<p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
 			</div>
-
-			<div class="flex items-center mt-4 md:mt-0">
+			
+			<!-- Federated Toggle Switch -->
+			<div class="flex items-center gap-3">
+				<span class="text-white text-sm font-medium">Include Federated</span>
 				<button 
-					class="text-white bg-transparent" 
-					title="List View"
-					aria-label="Switch to list view">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="24"
-						height="24"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<line x1="8" y1="6" x2="21" y2="6" />
-						<line x1="8" y1="12" x2="21" y2="12" />
-						<line x1="8" y1="18" x2="21" y2="18" />
-						<line x1="3" y1="6" x2="3.01" y2="6" />
-						<line x1="3" y1="12" x2="3.01" y2="12" />
-						<line x1="3" y1="18" x2="3.01" y2="18" />
+					class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 {includeFederatedOffers ? 'bg-blue-600' : 'bg-gray-600'}"
+					on:click={handleFederatedToggle}
+					disabled={loadingFederated}
+				>
+					<span class="sr-only">Include federated offers</span>
+					<span 
+						class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {includeFederatedOffers ? 'translate-x-6' : 'translate-x-1'}"
+					/>
+				</button>
+				{#if loadingFederated}
+					<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+				{/if}
+				
+				<!-- Debug Button -->
+				<button 
+					class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm transition-colors"
+					on:click={debugData}
+					title="Debug data state"
+				>
+					🐛 Debug
+				</button>
+				
+				<!-- Refresh Button -->
+				<button 
+					class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors"
+					on:click={refreshData}
+					title="Refresh data"
+					disabled={loadingFederated}
+				>
+					🔄 Refresh
+				</button>
+			</div>
+		</div>
+		</div>
+
+	<!-- Main Content Container -->
+	<div class="flex flex-col xl:flex-row gap-8">
+		<!-- Offers & Requests Panel -->
+		<div class="xl:flex-1 bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
+			<div class="p-8">
+				<!-- Stats Section -->
+				<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">{offers.length}</div>
+						<div class="text-sm text-gray-400">Offers</div>
+					</div>
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">{needs.length}</div>
+						<div class="text-sm text-gray-400">Requests</div>
+					</div>
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{offers.length + needs.length - offers.concat(needs).filter((item) => item.participants?.length > 0).length}
+						</div>
+						<div class="text-sm text-gray-400">Unassigned</div>
+				</div>
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">{offers.length + needs.length}</div>
+						<div class="text-sm text-gray-400">Total</div>
+					</div>
+				</div>
+
+				<!-- Federated Status Indicator -->
+				{#if includeFederatedOffers}
+					<div class="mb-6 p-3 bg-blue-500/20 border border-blue-500/30 rounded-lg">
+						<div class="flex items-center gap-2 text-blue-300">
+							<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+								<path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
+							</svg>
+							<span class="text-sm font-medium">Showing federated offers from connected holons and user-specific offers</span>
+						</div>
+					</div>
+				{/if}
+
+				<!-- Offers Section -->
+				<div class="mb-8">
+					<h2 class="text-2xl font-bold text-white mb-6">Active Offers</h2>
+					{#if offers.length > 0}
+						<div class="space-y-3">
+							{#each offers as offer (offer.key)}
+								<div 
+									class="task-card relative text-left group p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
+									style="background-color: {getItemBackgroundColor(offer.type)}; 
+										   opacity: {offer._meta?.resolvedFromHologram ? '0.75' : '1'};
+										   {offer._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+								>
+									<div class="flex items-center justify-between gap-3">
+										<div class="flex items-center gap-3 flex-1 min-w-0">
+											<!-- Offer Icon -->
+											<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
+												🤝
+											</div>
+
+											<!-- Main Content -->
+											<div class="flex-1 min-w-0">
+												<div class="flex items-center gap-2 mb-1">
+													<h3 class="text-base font-bold text-gray-800 truncate">
+														{offer.title}
+													</h3>
+													{#if offer._meta?.resolvedFromHologram}
+				<button 
+															class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors" 
+															title="Navigate to source holon: {getHologramSource(offer._meta.hologramSoul)}"
+															on:click|stopPropagation={() => {
+																const match = offer._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
+																if (match) {
+																	window.location.href = `/${match[1]}/offers`;
+																}
+															}}
+														>
+															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+																<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+															</svg>
+															{getHologramSource(offer._meta.hologramSoul)}
+															<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
 					</svg>
 				</button>
+													{/if}
+													{#if offer._federation?.origin && offer._federation.origin !== holonID}
+														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-800 flex-shrink-0">
+															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+																<path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
+															</svg>
+															{offer._federation.origin}
+														</span>
+													{/if}
+													{#if offer._userSpecific}
+														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-800 flex-shrink-0">
+															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+																<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
+															</svg>
+															{offer._userSpecific.userName}
+														</span>
+													{/if}
+												</div>
+												{#if offer.description}
+													<p class="text-sm text-gray-700 truncate">
+														{offer.description}
+													</p>
+												{/if}
+											</div>
+										</div>
+
+										<!-- Right Side Meta Info -->
+										<div class="flex items-center gap-3 flex-shrink-0 text-sm">
+											<!-- Take Offer Dropdown -->
+											<div class="relative">
+												<button 
+													class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors" 
+													on:click|stopPropagation={(e) => {
+														console.log('Take Offer button clicked for:', offer.key);
+														toggleDropdown(offer.key);
+													}}
+												>
+													{#if offer.participants && offer.participants.length > 0}
+														Add ({offer.participants.length})
+													{:else}
+														Take Offer
+													{/if}
+												</button>
+												{#if showDropdownFor === offer.key}
+													<div class="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 user-dropdown">
+														{#each Object.entries(userStore).filter(([userId, user]) => !offer.participants?.some(p => p.id === user.id)) as [userId, user]}
+															<button class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2" on:click|stopPropagation={() => takeOfferOrNeed(offer, user)}>
+																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://gun.holons.io/getavatar?user_id=${user.id}`} alt={user.first_name} />
+																<span>{user.first_name} {user.last_name || ''}</span>
+															</button>
+														{/each}
+														{#if Object.entries(userStore).filter(([userId, user]) => !offer.participants?.some(p => p.id === user.id)).length === 0}
+															<div class="px-4 py-2 text-gray-400 text-sm">All users already participating</div>
+														{/if}
+													</div>
+												{/if}
+											</div>
+
+											{#if offer.participants?.length > 0}
+												<div class="flex items-center gap-1">
+													<div class="flex -space-x-1 relative group" title={offer.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}>
+														{#each offer.participants.slice(0, 2) as participant}
+															<div class="relative">
+																<img
+																	class="w-5 h-5 rounded-full border border-white shadow-sm"
+																	src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
+																	alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
+																/>
+															</div>
+														{/each}
+														{#if offer.participants.length > 2}
+															<div class="w-5 h-5 rounded-full bg-gray-400 flex items-center justify-center text-xs border border-white shadow-sm text-white font-medium">
+																<span>+{offer.participants.length - 2}</span>
+															</div>
+														{/if}
+													</div>
+												</div>
+											{/if}
+
+											{#if offer.when}
+												<div class="text-xs font-medium text-gray-700 whitespace-nowrap">
+													<div class="text-xs text-gray-600 mb-1">{formatDate(offer.when)}</div>
+													{formatTime(offer.when)}
+													{#if offer.ends}<br/>{formatTime(offer.ends)}{/if}
+												</div>
+											{/if}
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{:else}
+						<div class="text-center py-12">
+							<div class="w-16 h-16 mx-auto mb-4 bg-gray-700 rounded-full flex items-center justify-center">
+								<svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+								</svg>
+							</div>
+							<h3 class="text-lg font-medium text-white mb-2">No offers found</h3>
+							<p class="text-gray-400">No active offers at the moment.</p>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Requests Section -->
+				<div class="mb-8">
+					<h2 class="text-2xl font-bold text-white mb-6">Active Requests</h2>
+					{#if needs.length > 0}
+						<div class="space-y-3">
+							{#each needs as need (need.key)}
+								<div 
+									class="task-card relative text-left group p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
+									style="background-color: {getItemBackgroundColor(need.type)}; 
+										   opacity: {need._meta?.resolvedFromHologram ? '0.75' : '1'};
+										   {need._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+								>
+									<div class="flex items-center justify-between gap-3">
+										<div class="flex items-center gap-3 flex-1 min-w-0">
+											<!-- Request Icon -->
+											<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
+												📋
+											</div>
+											
+											<!-- Main Content -->
+											<div class="flex-1 min-w-0">
+												<div class="flex items-center gap-2 mb-1">
+													<h3 class="text-base font-bold text-gray-800 truncate">
+														{need.title}
+													</h3>
+													{#if need._meta?.resolvedFromHologram}
 				<button
-					class="text-white bg-gray-700 p-2 ml-2"
-					title="Grid View"
-					aria-label="Switch to grid view">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="20"
-						height="20"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<rect x="3" y="3" width="7" height="7" />
-						<rect x="14" y="3" width="7" height="7" />
-						<rect x="14" y="14" width="7" height="7" />
-						<rect x="3" y="14" width="7" height="7" />
+															class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors" 
+															title="Navigate to source holon: {getHologramSource(need._meta.hologramSoul)}"
+															on:click|stopPropagation={() => {
+																const match = need._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
+																if (match) {
+																	window.location.href = `/${match[1]}/offers`;
+																}
+															}}
+														>
+															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+																<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+															</svg>
+															{getHologramSource(need._meta.hologramSoul)}
+															<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
 					</svg>
 				</button>
+													{/if}
+													{#if need._federation?.origin && need._federation.origin !== holonID}
+														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-800 flex-shrink-0">
+															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+																<path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
+															</svg>
+															{need._federation.origin}
+														</span>
+													{/if}
+													{#if need._userSpecific}
+														<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-500/20 text-orange-800 flex-shrink-0">
+															<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+																<path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
+															</svg>
+															{need._userSpecific.userName}
+														</span>
+													{/if}
+												</div>
+												{#if need.description}
+													<p class="text-sm text-gray-700 truncate">
+														{need.description}
+													</p>
+												{/if}
 			</div>
 		</div>
 
-		<div class="mb-8">
-			<div class="bg-gray-900 rounded-lg p-4">
-				{#if offers.length > 0}
-					{@html generateTableHtml(
-						offers,
-						"Active Offers",
-						"Offered by",
-						"Offer"
-					)}
+										<!-- Right Side Meta Info -->
+										<div class="flex items-center gap-3 flex-shrink-0 text-sm">
+											<!-- Take Need Dropdown -->
+											<div class="relative">
+												<button 
+													class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors" 
+													on:click|stopPropagation={(e) => {
+														console.log('Take Need button clicked for:', need.key);
+														toggleDropdown(need.key);
+													}}
+												>
+													{#if need.participants && need.participants.length > 0}
+														Add ({need.participants.length})
+													{:else}
+														Take Need
+													{/if}
+												</button>
+												{#if showDropdownFor === need.key}
+													<div class="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 user-dropdown">
+														{#each Object.entries(userStore).filter(([userId, user]) => !need.participants?.some(p => p.id === user.id)) as [userId, user]}
+															<button class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2" on:click|stopPropagation={() => takeOfferOrNeed(need, user)}>
+																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://gun.holons.io/getavatar?user_id=${user.id}`} alt={user.first_name} />
+																<span>{user.first_name} {user.last_name || ''}</span>
+															</button>
+														{/each}
+														{#if Object.entries(userStore).filter(([userId, user]) => !need.participants?.some(p => p.id === user.id)).length === 0}
+															<div class="px-4 py-2 text-gray-400 text-sm">All users already participating</div>
+														{/if}
+													</div>
+												{/if}
+											</div>
+
+											{#if need.participants?.length > 0}
+												<div class="flex items-center gap-1">
+													<div class="flex -space-x-1 relative group" title={need.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}>
+														{#each need.participants.slice(0, 2) as participant}
+															<div class="relative">
+																<img
+																	class="w-5 h-5 rounded-full border border-white shadow-sm"
+																	src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
+																	alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
+																/>
+															</div>
+														{/each}
+														{#if need.participants.length > 2}
+															<div class="w-5 h-5 rounded-full bg-gray-400 flex items-center justify-center text-xs border border-white shadow-sm text-white font-medium">
+																<span>+{need.participants.length - 2}</span>
+															</div>
+														{/if}
+													</div>
+												</div>
+											{/if}
+
+											{#if need.when}
+												<div class="text-xs font-medium text-gray-700 whitespace-nowrap">
+													<div class="text-xs text-gray-600 mb-1">{formatDate(need.when)}</div>
+													{formatTime(need.when)}
+													{#if need.ends}<br/>{formatTime(need.ends)}{/if}
+												</div>
+											{/if}
+										</div>
+									</div>
+								</div>
+							{/each}
+						</div>
 				{:else}
-					<p class="text-gray-400">No active offers at the moment.</p>
+						<div class="text-center py-12">
+							<div class="w-16 h-16 mx-auto mb-4 bg-gray-700 rounded-full flex items-center justify-center">
+								<svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+								</svg>
+							</div>
+							<h3 class="text-lg font-medium text-white mb-2">No requests found</h3>
+							<p class="text-gray-400">No active requests at the moment.</p>
+						</div>
 				{/if}
+				</div>
 			</div>
 		</div>
 
-		<div class="mb-8">
-			<div class="bg-gray-900 rounded-lg p-4">
-				{#if needs.length > 0}
-					{@html generateTableHtml(
-						needs,
-						"Active Requests",
-						"Requested by",
-						"Request"
-					)}
-				{:else}
-					<p class="text-gray-400">
-						No active requests at the moment.
-					</p>
-				{/if}
+		<!-- Announcements Panel -->
+		<div class="hidden xl:block xl:w-80 xl:flex-shrink-0">
+			<div class="bg-gray-800 rounded-3xl shadow-xl">
+				<Announcements />
 			</div>
 		</div>
 	</div>
-	<Announcements />
 </div>
+
+<style>
+	/* Task card styling */
+	.task-card {
+		position: relative;
+		cursor: pointer;
+	}
+
+	.task-card:hover {
+		cursor: pointer;
+	}
+
+	/* Smooth animations */
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	/* Card hover effects */
+	.task-card:hover .group {
+		transform: translateY(-1px);
+	}
+</style>

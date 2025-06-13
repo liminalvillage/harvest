@@ -1,50 +1,5 @@
-<script>
-	export let className = '';
+<script lang="ts">
+	export let active = false;
 </script>
 
-<svg
-	class={className}
-	viewBox="0 0 24 24"
-	fill="none"
-	xmlns="http://www.w3.org/2000/svg"
->
-	<path
-		d="M12 2L2 7V17L12 22L22 17V7L12 2Z"
-		stroke="currentColor"
-		stroke-width="2"
-		stroke-linecap="round"
-		stroke-linejoin="round"
-	/>
-	<path
-		d="M12 22V12"
-		stroke="currentColor"
-		stroke-width="2"
-		stroke-linecap="round"
-		stroke-linejoin="round"
-	/>
-	<path
-		d="M22 7L12 12L2 7"
-		stroke="currentColor"
-		stroke-width="2"
-		stroke-linecap="round"
-		stroke-linejoin="round"
-	/>
-	<circle
-		cx="7"
-		cy="9"
-		r="1.5"
-		fill="currentColor"
-	/>
-	<circle
-		cx="17"
-		cy="9"
-		r="1.5"
-		fill="currentColor"
-	/>
-	<circle
-		cx="12"
-		cy="15"
-		r="1.5"
-		fill="currentColor"
-	/>
-</svg> 
+<i class="fas fa-globe text-xl {active ? 'text-indigo-400' : 'text-gray-400'}"></i> 

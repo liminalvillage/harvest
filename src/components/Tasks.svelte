@@ -824,22 +824,23 @@
 
 <div class="space-y-8">
 	<!-- Header Section -->
-	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
-		<div class="flex flex-col md:flex-row justify-between items-center">
-			<div class="text-center md:text-left mb-4 md:mb-0">
-				<h1 class="text-4xl font-bold text-white mb-2">Tasks Overview</h1>
-				<p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
+	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-6 px-3 sm:py-8 sm:px-8 rounded-3xl shadow-2xl">
+		<div class="flex flex-col sm:flex-row justify-between items-center sm:gap-0 gap-2">
+			<div class="text-center sm:text-left mb-2 sm:mb-0 flex-1 min-w-0">
+				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">Tasks Overview</h1>
 			</div>
+			<!-- Hide date on xs screens -->
+			<p class="text-gray-300 text-base sm:text-lg flex-shrink-0 hidden sm:block">{new Date().toDateString()}</p>
 		</div>
 	</div>
 
 	<!-- Main Content Container -->
-	<div class="flex flex-col xl:flex-row gap-8">
+	<div class="flex flex-col xl:flex-row gap-4 sm:gap-8">
 		<!-- Tasks Panel -->
 		<div class="xl:flex-1 bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
-			<div class="p-8">
+			<div class="p-3 sm:p-8">
 				<!-- Stats Section -->
-				<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+				<div class="grid grid-cols-2 md:grid-cols-5 gap-2 sm:gap-4 mb-4 sm:mb-8">
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
@@ -892,18 +893,16 @@
 				</div>
 
 				<!-- Controls Section -->
-				<div class="mb-6 space-y-4">
-					<!-- Top Row: View Mode Toggle -->
-					<div class="flex justify-center">
-						<div class="flex items-center bg-gray-700 rounded-xl p-1">
+				<div class="mb-4 sm:mb-6">
+					<div class="flex flex-wrap sm:flex-nowrap items-center gap-1 sm:gap-2 justify-between compact-toolbar">
+						<!-- View Mode Toggle -->
+						<div class="flex items-center bg-gray-700 rounded-xl p-0.5 h-9">
 							<button
-								class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors {viewMode === 'list'
-									? 'bg-gray-600 text-white'
-									: 'text-gray-400 hover:text-white'}"
-								on:click={() => (viewMode = "list")}
+								class="flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors text-sm h-7 {viewMode === 'list' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'}"
+								on:click={() => (viewMode = 'list')}
 								aria-label="Switch to list view"
 							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 									<line x1="8" y1="6" x2="21" y2="6" />
 									<line x1="8" y1="12" x2="21" y2="12" />
 									<line x1="8" y1="18" x2="21" y2="18" />
@@ -911,16 +910,14 @@
 									<line x1="3" y1="12" x2="3.01" y2="12" />
 									<line x1="3" y1="18" x2="3.01" y2="18" />
 								</svg>
-								<span class="hidden sm:inline">List</span>
+								<span>List</span>
 							</button>
 							<button
-								class="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors {viewMode === 'canvas'
-									? 'bg-gray-600 text-white'
-									: 'text-gray-400 hover:text-white'}"
-								on:click={() => (viewMode = "canvas")}
+								class="flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors text-sm h-7 {viewMode === 'canvas' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'}"
+								on:click={() => (viewMode = 'canvas')}
 								aria-label="Switch to canvas view"
 							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 									<path d="M5 9l-3 3 3 3"></path>
 									<path d="M9 5l3-3 3 3"></path>
 									<path d="M9 19l3 3 3-3"></path>
@@ -928,18 +925,15 @@
 									<path d="M2 12h20"></path>
 									<path d="M12 2v20"></path>
 								</svg>
-								<span class="hidden sm:inline">Canvas</span>
+								<span>Canvas</span>
 							</button>
 						</div>
-					</div>
 
-					<!-- Second Row: Category and Sort -->
-					<div class="flex flex-col sm:flex-row gap-3 items-center">
 						<!-- Category Filter -->
-						<div class="relative flex-1 w-full sm:w-auto">
+						<div class="relative flex-1 w-auto min-w-[120px] max-w-[180px]">
 							<select
 								bind:value={selectedCategory}
-								class="appearance-none bg-gray-700 text-white px-4 py-3 pr-8 rounded-xl cursor-pointer text-sm border border-gray-600 focus:border-blue-500 focus:outline-none w-full"
+								class="appearance-none bg-gray-700 text-white px-3 py-1.5 pr-7 rounded-xl cursor-pointer text-sm border border-gray-600 focus:border-blue-500 focus:outline-none w-full h-9"
 							>
 								{#each categories as category}
 									<option value={category}>
@@ -948,7 +942,7 @@
 								{/each}
 							</select>
 							<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
-								<svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+								<svg class="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
 									<path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
 								</svg>
 							</div>
@@ -956,69 +950,63 @@
 
 						<!-- Sort Button -->
 						<button
-							class="flex items-center justify-center gap-2 px-4 py-3 bg-gray-700 text-white rounded-xl text-sm hover:bg-gray-600 transition-colors border border-gray-600 w-full sm:w-auto min-w-[100px]"
+							class="flex items-center justify-center gap-1 px-3 py-1.5 bg-gray-700 text-white rounded-xl text-sm hover:bg-gray-600 transition-colors border border-gray-600 w-auto min-w-[80px] h-9"
 							on:click={handleSortButtonClick}
 							aria-label="Sort tasks"
 						>
 							<span>Sort</span>
 							{#key currentIconPath}
-							<svg
-								class="w-4 h-4 transform transition-transform"
-								style="transform: rotate({sortButtonIconRotation}deg)"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-								stroke-linecap="round"
-								stroke-linejoin="round"
-							>
-								<path d={currentIconPath}></path>
-							</svg>
+								<svg
+									class="w-3 h-3 transform transition-transform"
+									style="transform: rotate({sortButtonIconRotation}deg)"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path d={currentIconPath}></path>
+								</svg>
 							{/key}
 						</button>
-					</div>
 
-					<!-- Third Row: Toggle Switches -->
-					<div class="flex flex-row gap-4 items-center justify-center">
-						<!-- Show Completed Toggle -->
-						<label class="flex items-center cursor-pointer">
-							<div class="relative">
-								<input
-									type="checkbox"
-									class="sr-only"
-									bind:checked={showCompleted}
-								/>
-								<div class="w-11 h-6 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
-								<div
-									class="dot absolute w-4 h-4 bg-white rounded-full transition-transform duration-300 ease-in-out left-1 top-1"
-									class:translate-x-5={showCompleted}
-								></div>
-							</div>
-							<div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
-								<span class="hidden sm:inline">Show Completed</span>
-								<span class="sm:hidden" aria-label="Show completed tasks">✓</span>
-							</div>
-						</label>
+						<!-- Toggle Switches -->
+						<div class="flex flex-row gap-2 items-center ml-2">
+							<!-- Show Completed Toggle -->
+							<label class="flex items-center cursor-pointer text-sm">
+								<div class="relative">
+									<input
+										type="checkbox"
+										class="sr-only"
+										bind:checked={showCompleted}
+									/>
+									<div class="w-8 h-4 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
+									<div
+										class="dot absolute w-3 h-3 bg-white rounded-full transition-transform duration-300 ease-in-out left-0.5 top-0.5"
+										class:translate-x-4={showCompleted}
+									></div>
+								</div>
+								<span class="ml-1 text-white font-medium">Show Completed</span>
+							</label>
 
-						<!-- Show Holograms Toggle -->
-						<label class="flex items-center cursor-pointer">
-							<div class="relative">
-								<input
-									type="checkbox"
-									class="sr-only"
-									bind:checked={showHolograms}
-								/>
-								<div class="w-11 h-6 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
-								<div
-									class="dot absolute w-4 h-4 bg-white rounded-full transition-transform duration-300 ease-in-out left-1 top-1"
-									class:translate-x-5={showHolograms}
-								></div>
-							</div>
-							<div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
-								<span class="hidden sm:inline">Show Holograms</span>
-								<span class="sm:hidden" aria-label="Show hologram tasks">🔮</span>
-							</div>
-						</label>
+							<!-- Show Holograms Toggle -->
+							<label class="flex items-center cursor-pointer text-sm">
+								<div class="relative">
+									<input
+										type="checkbox"
+										class="sr-only"
+										bind:checked={showHolograms}
+									/>
+									<div class="w-8 h-4 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
+									<div
+										class="dot absolute w-3 h-3 bg-white rounded-full transition-transform duration-300 ease-in-out left-0.5 top-0.5"
+										class:translate-x-4={showHolograms}
+									></div>
+								</div>
+								<span class="ml-1 text-white font-medium">Show Holograms</span>
+							</label>
+						</div>
 					</div>
 				</div>
 
@@ -1410,5 +1398,24 @@
 
 	.modal-content::-webkit-scrollbar-thumb:hover {
 		background: #9CA3AF;
+	}
+
+	.compact-toolbar {
+		gap: 0.5rem !important;
+	}
+	.compact-toolbar select,
+	.compact-toolbar button {
+		font-size: 0.95rem;
+		padding-top: 0.25rem;
+		padding-bottom: 0.25rem;
+		padding-left: 0.75rem;
+		padding-right: 0.75rem;
+		height: 2.25rem;
+	}
+	.compact-toolbar .dot {
+		transition: transform 0.3s ease-in-out;
+	}
+	.compact-toolbar .translate-x-4 {
+		transform: translateX(1.25rem);
 	}
 </style>
