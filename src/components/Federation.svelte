@@ -9,12 +9,12 @@
     const holosphere = getContext("holosphere") as HoloSphere;
 
     // Default small set of commonly federated lenses
-    const DEFAULT_AVAILABLE_LENSES = ['Quests', 'Offers', 'Announcements'];
+    const DEFAULT_AVAILABLE_LENSES = ['quests', 'offers', 'announcements'];
     
     // All possible lenses that could be federated
     const ALL_POSSIBLE_LENSES = [
-        'Quests', 'Offers', 'Tags', 'Expenses', 
-        'Announcements', 'Users', 'Shopping', 'Recurring'
+        'quests', 'offers', 'tags', 'expenses', 
+        'announcements', 'users', 'shopping', 'recurring'
     ];
     
     // User-configurable available lenses (starts with all possible lenses)
@@ -32,6 +32,11 @@
     function isLensInArray(lens: string, lensArray: string[]): boolean {
         const normalizedLens = normalizeLensName(lens);
         return lensArray.some(l => normalizeLensName(l) === normalizedLens);
+    }
+
+    // Helper function to get canonical lens name (always lowercase)
+    function getCanonicalLensName(lensName: string): string {
+        return lensName.toLowerCase();
     }
 
     interface FederationInfo {
@@ -341,17 +346,18 @@
     }
 
     function getLensIcon(lens: string): string {
+        const normalizedLens = normalizeLensName(lens);
         const icons: Record<string, string> = {
-            'Quests': '🎯',
-            'Offers': '🤝',
-            'Tags': '🏷️',
-            'Expenses': '💰',
-            'Announcements': '📢',
-            'Users': '👥',
-            'Shopping': '🛒',
-            'Recurring': '🔄'
+            'quests': '🎯',
+            'offers': '🤝',
+            'tags': '🏷️',
+            'expenses': '💰',
+            'announcements': '📢',
+            'users': '👥',
+            'shopping': '🛒',
+            'recurring': '🔄'
         };
-        return icons[lens] || '📦';
+        return icons[normalizedLens] || '📦';
     }
 
     function getStatusColor(status: string): string {
@@ -375,7 +381,7 @@
     }
 
     function addCustomLens() {
-        const lensName = newCustomLens.trim();
+        const lensName = newCustomLens.trim().toLowerCase();
         if (lensName && !availableLenses.includes(lensName) && !customLenses.includes(lensName)) {
             customLenses = [...customLenses, lensName];
             availableLenses = [...availableLenses, lensName];
@@ -1076,8 +1082,8 @@
                                             if (selectedHolon && e.currentTarget.checked) {
                                                 // Remove any existing case variants first
                                                 selectedHolon.lensConfig.federate = selectedHolon.lensConfig.federate.filter(l => normalizeLensName(l) !== normalizeLensName(lens));
-                                                // Add the canonical version
-                                                selectedHolon.lensConfig.federate = [...selectedHolon.lensConfig.federate, lens];
+                                                // Add the canonical version (lowercase)
+                                                selectedHolon.lensConfig.federate = [...selectedHolon.lensConfig.federate, getCanonicalLensName(lens)];
                                             } else if (selectedHolon) {
                                                 selectedHolon.lensConfig.federate = selectedHolon.lensConfig.federate.filter(l => normalizeLensName(l) !== normalizeLensName(lens));
                                             }
@@ -1109,8 +1115,8 @@
                                             if (selectedHolon && e.currentTarget.checked) {
                                                 // Remove any existing case variants first
                                                 selectedHolon.lensConfig.notify = selectedHolon.lensConfig.notify.filter(l => normalizeLensName(l) !== normalizeLensName(lens));
-                                                // Add the canonical version
-                                                selectedHolon.lensConfig.notify = [...selectedHolon.lensConfig.notify, lens];
+                                                // Add the canonical version (lowercase)
+                                                selectedHolon.lensConfig.notify = [...selectedHolon.lensConfig.notify, getCanonicalLensName(lens)];
                                             } else if (selectedHolon) {
                                                 selectedHolon.lensConfig.notify = selectedHolon.lensConfig.notify.filter(l => normalizeLensName(l) !== normalizeLensName(lens));
                                             }
