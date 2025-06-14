@@ -54,12 +54,13 @@
 		});
 	}
 
-	page.subscribe(() => {
-		// close Sidebar on route changes.
-		if ($sidebarOpen) {
-			closeSidebar();
-		}
-	});
+	// Removed automatic sidebar closing on route changes
+	// page.subscribe(() => {
+	// 	// close Sidebar on route changes.
+	// 	if ($sidebarOpen) {
+	// 		closeSidebar();
+	// 	}
+	// });
 </script>
 
 <div class={style.container} on:mousemove={handleMouseMove} role="presentation">

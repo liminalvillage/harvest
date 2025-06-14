@@ -641,7 +641,16 @@
 	function initializeMap() {
 		if (mapInitialized || !browser) return;
 		
-		mapboxgl.accessToken = "pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
+		// Validate Mapbox access token
+		const accessToken = "pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
+		if (!accessToken || accessToken.length < 50) {
+			console.error('[Map] Invalid Mapbox access token');
+			return;
+		}
+		
+		mapboxgl.accessToken = accessToken;
+		console.log('[Map] Initializing map with access token:', accessToken.substring(0, 20) + '...');
+		
 		map = new mapboxgl.Map({
 			container: mapContainer,
 			style: "mapbox://styles/mapbox/satellite-streets-v12",
@@ -652,25 +661,45 @@
 		});
 
 		// Add geocoder (search box)
-		const geocoder = new MapboxGeocoder({
-			accessToken: mapboxgl.accessToken,
-			mapboxgl: mapboxgl,
-			marker: false,
-			placeholder: "Search for a location",
-			types: "poi,address,place,locality,neighborhood,region,country,postcode",
-		});
+		try {
+			const geocoder = new MapboxGeocoder({
+				accessToken: mapboxgl.accessToken,
+				mapboxgl: mapboxgl,
+				marker: false,
+				placeholder: "Search for a location",
+				types: "poi,address,place,locality,neighborhood,region,country,postcode",
+			});
 
-		// Add geolocate control
-		const geolocate = new mapboxgl.GeolocateControl({
-			positionOptions: {
-				enableHighAccuracy: true,
-			},
-			trackUserLocation: true,
-			showUserHeading: true,
-		});
+			// Add geolocate control
+			const geolocate = new mapboxgl.GeolocateControl({
+				positionOptions: {
+					enableHighAccuracy: true,
+				},
+				trackUserLocation: true,
+				showUserHeading: true,
+			});
 
-		map.addControl(geocoder, "top-right");
-		map.addControl(geolocate, "top-right");
+			map.addControl(geocoder, "top-right");
+			map.addControl(geolocate, "top-right");
+			
+			// Debug: Check if geocoder was added successfully
+			console.log('[Map] Geocoder added to map');
+			
+			// Ensure geocoder is visible
+			setTimeout(() => {
+				const geocoderElement = mapContainer.querySelector('.mapboxgl-ctrl-geocoder');
+				if (geocoderElement) {
+					console.log('[Map] Geocoder element found:', geocoderElement);
+					geocoderElement.style.display = 'block';
+					geocoderElement.style.visibility = 'visible';
+					geocoderElement.style.opacity = '1';
+				} else {
+					console.warn('[Map] Geocoder element not found');
+				}
+			}, 1000);
+		} catch (error) {
+			console.error('[Map] Error adding geocoder:', error);
+		}
 
 		map.on("style.load", () => {
 			map.setFog({
@@ -1099,12 +1128,41 @@
 	}
 
 	// Update ID store subscription
-	$: if ($ID && $ID !== hexId && isVisible) {
+	$: if ($ID && $ID !== hexId && isH3Cell($ID)) {
+		console.log(`[Map] ID changed to hexagon: ${$ID}`);
 		hexId = $ID;
 		dispatch('holonChange', { id: $ID });
-		// Only update map if we're visible and it's a valid H3 cell
-		if (map && isH3Cell($ID)) {
+		
+		// If map is ready and visible, navigate immediately
+		if (map && isVisible && mapInitialized) {
+			console.log(`[Map] Navigating to hexagon: ${$ID}`);
 			updateSelectedHexagon($ID);
+		} else if (isVisible && !mapInitialized && browser) {
+			// If map isn't ready yet but we're visible, initialize it and then navigate
+			console.log(`[Map] Map not ready, initializing and will navigate to: ${$ID}`);
+			window.setTimeout(() => {
+				if (map && mapInitialized) {
+					console.log(`[Map] Map now ready, navigating to: ${$ID}`);
+					updateSelectedHexagon($ID);
+				}
+			}, 200);
+		}
+	}
+
+	// Handle navigation when map becomes ready and there's already a hexagon ID
+	$: if (map && mapInitialized && isVisible && hexId && isH3Cell(hexId)) {
+		// Check if we need to navigate to the current hexagon
+		const currentCenter = map.getCenter();
+		const [hexLat, hexLng] = h3.cellToLatLng(hexId);
+		const distance = Math.sqrt(
+			Math.pow(currentCenter.lat - hexLat, 2) + 
+			Math.pow(currentCenter.lng - hexLng, 2)
+		);
+		
+		// If we're not already at the hexagon (within a small threshold), navigate to it
+		if (distance > 0.01) { // About 1km threshold
+			console.log(`[Map] Map ready, navigating to existing hexagon: ${hexId}`);
+			updateSelectedHexagon(hexId);
 		}
 	}
 
@@ -1531,6 +1589,10 @@
 		font-size: 14px !important;
 		line-height: 20px !important;
 		box-shadow: 0 0 0 2px rgba(0,0,0,0.1) !important;
+		display: block !important;
+		visibility: visible !important;
+		opacity: 1 !important;
+		z-index: 1000 !important;
 	}
 
 	:global(.mapboxgl-ctrl-geocoder input[type='text']) {
@@ -1551,21 +1613,28 @@
 		display: flex;
 		flex-direction: column;
 		align-items: flex-end;
+		z-index: 1000 !important;
 	}
 
 	/* Ensure proper spacing between controls */
 	:global(.mapboxgl-ctrl-top-right .mapboxgl-ctrl) {
 		margin: 10px 10px 0 0;
+		display: block !important;
+		visibility: visible !important;
 	}
 
 	/* Ensure the geocoder doesn't wrap */
 	:global(.mapboxgl-ctrl-geocoder.mapboxgl-ctrl) {
 		margin-top: 10px !important;
+		display: block !important;
+		visibility: visible !important;
 	}
 
 	/* Ensure the geolocate control appears below */
 	:global(.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate) {
 		margin-top: 10px !important;
+		display: block !important;
+		visibility: visible !important;
 	}
 </style>
 
