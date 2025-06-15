@@ -10,6 +10,7 @@
 	import { writable } from 'svelte/store';
 	import Fireworks from "./Fireworks.svelte";
 	import Confetti from "./Confetti.svelte";
+	import { getHologramSourceName, getCachedHolonName } from "../utils/holonNames";
 
 	interface Quest {
 		id: string;
@@ -92,9 +93,6 @@
 	// Add state for animations
 	let showFireworks = false;
 	let showConfetti = false;
-
-	// Holon name cache
-	let holonNameCache = new Map<string, string>();
 
 	// Sort state variables
 	type SortCriteria = 'orderIndex' | 'positionX' | 'positionY';
@@ -527,45 +525,19 @@
 		};
 	});
 
-	// Add function to fetch holon name
-	async function fetchHolonName(holonId: string): Promise<string> {
-		if (holonNameCache.has(holonId)) {
-			return holonNameCache.get(holonId)!;
-		}
-
-		try {
-			const settings = await holosphere.get(holonId, "settings", holonId);
-			const holonName = settings?.name || `Holon ${holonId}`;
-			holonNameCache.set(holonId, holonName);
-			return holonName;
-		} catch (error) {
-			console.error(`Error fetching holon name for ${holonId}:`, error);
-			const fallbackName = `Holon ${holonId}`;
-			holonNameCache.set(holonId, fallbackName);
-			return fallbackName;
-		}
-	}
-
-	// Add function to extract hologram source
+	// Function to get hologram source name using centralized service
 	function getHologramSource(hologramSoul: string | undefined): string {
 		if (!hologramSoul) return '';
-		// Extract the holon ID from path like "Holons/-1002593778587/quests/380"
-		const match = hologramSoul.match(/Holons\/([^\/]+)/);
-		if (!match) return 'External Source';
 		
-		const holonId = match[1];
-		// Return cached name if available, otherwise return ID and fetch name
-		if (holonNameCache.has(holonId)) {
-			return holonNameCache.get(holonId)!;
-		}
-		
-		// Fetch name asynchronously and trigger reactivity
-		fetchHolonName(holonId).then(() => {
-			// Trigger reactivity by updating quests
+		// Use the centralized service to get hologram source name
+		getHologramSourceName(holosphere, hologramSoul, () => {
+			// Trigger reactivity by updating quests when name is fetched
 			quests = [...quests];
 		});
 		
-		return `Holon ${holonId}`; // Temporary fallback while loading
+		// Return cached name or fallback immediately
+		const holonId = hologramSoul.match(/Holons\/([^\/]+)/)?.[1];
+		return holonId ? getCachedHolonName(holonId) : 'External Source';
 	}
 
 	// Add color category function
@@ -645,7 +617,7 @@
 	}
 
 	// Modify the subscribe function to use immediate updates
-	function subscribe() {
+	async function subscribe() {
 		if (!holosphere || !holonID) return;
 		
 		// Don't resubscribe if already subscribed to this holon
@@ -665,6 +637,89 @@
 			// Update subscription state
 			subscriptionState.currentHolonID = holonID;
 			
+			// Fetch initial data first
+			console.log("[Tasks.svelte] Fetching initial data for holonID:", holonID);
+			const initialData = await holosphere.getAll(holonID, "quests");
+			console.log("[Tasks.svelte] Initial data:", initialData);
+			
+			// Fetch participation data for federated items
+			console.log("[Tasks.svelte] Fetching participation data...");
+			const participationData = await holosphere.getAll(holonID, "participations");
+			console.log("[Tasks.svelte] Participation data:", participationData);
+			
+			// Create a map of item participations
+			const participationsMap = new Map();
+			if (Array.isArray(participationData)) {
+				participationData.forEach((participation: any) => {
+					if (participation && participation.itemId) {
+						if (!participationsMap.has(participation.itemId)) {
+							participationsMap.set(participation.itemId, []);
+						}
+						participationsMap.get(participation.itemId).push(participation.participant);
+					}
+				});
+			}
+			
+			// Process initial data
+			if (Array.isArray(initialData)) {
+				initialData.forEach((quest: any, index) => {
+					if (quest && quest.id) {
+						// Use the quest ID as the key, or generate one if missing
+						const key = quest.id || `initial_${index}`;
+						
+						// Check if this quest has participation data
+						const participations = participationsMap.get(quest.id);
+						if (participations && participations.length > 0) {
+							// Merge participation data with existing participants
+							const existingParticipants = quest.participants || [];
+							const mergedParticipants = [...existingParticipants];
+							
+							// Add participations that aren't already in the participants list
+							participations.forEach((participation: any) => {
+								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
+								if (!alreadyExists) {
+									mergedParticipants.push(participation);
+								}
+							});
+							
+							quest.participants = mergedParticipants;
+						}
+						
+						store[key] = quest as Quest;
+					}
+				});
+			} else if (typeof initialData === 'object' && initialData !== null) {
+				// If it's already a keyed object, use it directly
+				Object.entries(initialData).forEach(([key, quest]: [string, any]) => {
+					if (quest && quest.id) {
+						// Check if this quest has participation data
+						const participations = participationsMap.get(quest.id);
+						if (participations && participations.length > 0) {
+							// Merge participation data with existing participants
+							const existingParticipants = quest.participants || [];
+							const mergedParticipants = [...existingParticipants];
+							
+							// Add participations that aren't already in the participants list
+							participations.forEach((participation: any) => {
+								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
+								if (!alreadyExists) {
+									mergedParticipants.push(participation);
+								}
+							});
+							
+							quest.participants = mergedParticipants;
+						}
+						
+						store[key] = quest as Quest;
+					}
+				});
+			}
+			
+			// Update quests array to trigger reactivity
+			quests = Object.entries(store);
+			console.log("[Tasks.svelte] Initial store populated with", Object.keys(store).length, "items");
+			
+			// Set up subscription for future updates
 			const off = holosphere.subscribe(holonID, "quests", (newquest: Quest | null, key?: string) => {
 				// Update store immediately
 				const newStore = { ...store };
@@ -678,8 +733,51 @@
 				quests = Object.entries(store); 
 			});
 
+			// Also subscribe to participation updates
+			const participationOff = holosphere.subscribe(holonID, "participations", (newParticipation: any, key?: string) => {
+				if (newParticipation && newParticipation.itemId) {
+					// Find the quest in the store and update its participants
+					const questKey = Object.keys(store).find(k => store[k].id === newParticipation.itemId);
+					if (questKey) {
+						const quest = store[questKey];
+						const existingParticipants = quest.participants || [];
+						const alreadyExists = existingParticipants.some((p: any) => p.id === newParticipation.participant.id);
+						
+						if (!alreadyExists) {
+							const updatedQuest = {
+								...quest,
+								participants: [...existingParticipants, newParticipation.participant]
+							};
+							store = {
+								...store,
+								[questKey]: updatedQuest
+							};
+							quests = Object.entries(store);
+						}
+					}
+				} else if (key) {
+					// This is a deletion - we need to find which quest had this participation
+					// and remove the corresponding participant
+					Object.keys(store).forEach(questKey => {
+						const quest = store[questKey];
+						if (quest.participants && quest.participants.length > 0) {
+							// We can't easily determine which participant was removed from just the key
+							// So we'll need to refetch participation data to get the current state
+							// For now, we'll just trigger a store update to ensure consistency
+							store = { ...store };
+							quests = Object.entries(store);
+						}
+					});
+				}
+			});
+
 			if (typeof off === 'function') {
-				questsUnsubscribe = off;
+				questsUnsubscribe = () => {
+					off();
+					if (typeof participationOff === 'function') {
+						participationOff();
+					}
+				};
 			}
 		} catch (error) {
 			console.error('Error setting up quest subscription:', error);
@@ -693,10 +791,10 @@
 		let mounted = true;
 		
 		// Set up ID subscription only once
-		const idSubscription = ID.subscribe((value) => {
+		const idSubscription = ID.subscribe(async (value) => {
 			if (!mounted || !value ) return; // Removed check against subscriptionState.currentHolonID to allow re-subscription if ID changes rapidly
 			holonID = value;
-			subscribe();
+			await subscribe();
 		});
 
 		// Load preferences

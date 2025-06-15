@@ -92,9 +92,6 @@
             const shoppingItems = (await holosphere.getAll(holonID, "shopping")) || {};
             await new Promise(resolve => setTimeout(resolve, 50));
             
-            const offers = (await holosphere.getAll(holonID, "offers")) || {};
-            await new Promise(resolve => setTimeout(resolve, 50));
-            
             const checklists = (await holosphere.getAll(holonID, "checklists")) || {};
             await new Promise(resolve => setTimeout(resolve, 50));
             
@@ -111,7 +108,15 @@
             chatCount = Object.keys(chats).length;
             userCount = Object.keys(users).length;
             shoppingItemCount = Object.keys(shoppingItems).length;
-            offerCount = Object.keys(offers).length;
+            
+            // Count offers and requests from quests lens
+            const questValues = Object.values(quests);
+            const offersAndRequests = questValues.filter((item: any) => {
+                const type = item.type || 'task';
+                return type === 'offer' || type === 'request' || type === 'need';
+            });
+            offerCount = offersAndRequests.length;
+            
             checklistCount = Object.keys(checklists).length;
             completedChecklistCount = Object.values(checklists).filter(
                 (checklist: any) => checklist.completed === true
@@ -123,14 +128,16 @@
             ).length;
 
             // Process quests to separate tasks, proposals, and events
-            const questValues = Object.values(quests);
-            
             // Count proposals and events first
             proposalCount = questValues.filter((item: any) => item.type === "proposal").length;
             const questEvents = questValues.filter((item: any) => item.type === "event");
             
             // Tasks are only items with type "task" (or undefined defaulting to task)
-            const actualTasks = questValues.filter((item: any) => !item.type || item.type === "task");
+            // Exclude offers and requests from task count since they're counted separately
+            const actualTasks = questValues.filter((item: any) => {
+                const type = item.type || 'task';
+                return type === 'task' || type === 'recurring';
+            });
             completedTaskCount = actualTasks.filter((task: any) => task.status === "completed").length;
             openTaskCount = actualTasks.filter((task: any) => task.status !== "completed").length;
             const oneWeekAgo = new Date();
@@ -306,7 +313,7 @@
                         <i class="fas fa-gift text-xl text-indigo-400"></i>
                     </div>
                     <div class="flex-1">
-                        <h3 class="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors">Active Offers</h3>
+                        <h3 class="text-lg font-semibold text-white group-hover:text-indigo-400 transition-colors">Offers & Requests</h3>
                         <p class="text-2xl font-bold text-white">{offerCount}</p>
                     </div>
                 </div>

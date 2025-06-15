@@ -15,6 +15,7 @@
 	import { browser } from '$app/environment';
 	import  HoloSphere  from 'holosphere';
 	import { ethers } from 'ethers';
+	import { fetchHolonName } from "../utils/holonNames";
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -74,9 +75,9 @@
 				previousHolons.forEach(async (holon) => {
 					if (!holon.name) {
 						try {
-							const data = await holosphere.getAll(holon.id, 'settings');
-							if (data && data[0] && data[0].name) {
-								holon.name = data[0].name;
+							const holonName = await fetchHolonName(holosphere, holon.id);
+							if (holonName && !holonName.startsWith('Holon ')) {
+								holon.name = holonName;
 								localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
 							}
 						} catch (error) {
@@ -109,15 +110,10 @@
 		// Potentially clear other related stored data if needed
 	}
 
-	// Move the name fetching logic into a separate function
-	async function fetchHolonName(id: string) {
+	// Use centralized holon name service
+	async function updateCurrentHolonName(id: string) {
 		try {
-			const settings = await holosphere.getAll(id, 'settings');
-			if (settings && settings.length > 0 && settings[0].name) {
-				currentHolonName = settings[0].name;
-			} else {
-				currentHolonName = undefined;
-			}
+			currentHolonName = await fetchHolonName(holosphere, id);
 		} catch (error) {
 			console.error(`Error fetching name for holon ${id}:`, error);
 			currentHolonName = undefined;
@@ -131,7 +127,7 @@
 		updateRoute($ID);
 		
 		// Fetch the name whenever ID changes
-		fetchHolonName($ID);
+		updateCurrentHolonName($ID);
 		
 		// Add to previous holons if it doesn't start with 8
 		if (!$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
@@ -142,16 +138,16 @@
 			}
 			
 			// Then try to fetch and update its name in the previous holons list
-			holosphere.getAll($ID, 'settings').then((settings: any) => {
-				if (settings && settings[0] && settings[0].name) {
-						previousHolons = previousHolons.map(holon => 
-							holon.id === $ID 
-								? { ...holon, name: settings[0].name }
-								: holon
-						);
-						if (browser) {
-							localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
-						}
+			fetchHolonName(holosphere, $ID).then((holonName: string) => {
+				if (holonName && !holonName.startsWith('Holon ')) {
+					previousHolons = previousHolons.map(holon => 
+						holon.id === $ID 
+							? { ...holon, name: holonName }
+							: holon
+					);
+					if (browser) {
+						localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+					}
 				}
 			}).catch((error: Error) => {
 				console.error(`Error fetching name for holon ${$ID}:`, error);

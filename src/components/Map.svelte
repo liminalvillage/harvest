@@ -190,9 +190,12 @@
 
 		// Update the highlighted hexagons if any are visible at current resolution
 		if (visibleHighlightedHexes.size > 0) {
-			map.getSource("highlighted-hexagons")?.setData(
-				highlightHexagons(visibleHighlightedHexes, highlightColor)
-			);
+			const highlightedSource = map.getSource("highlighted-hexagons");
+			if (highlightedSource) {
+				highlightedSource.setData(
+					highlightHexagons(visibleHighlightedHexes, highlightColor)
+				);
+			}
 		}
 
 		const h3res = getResolution(currentZoom);
@@ -364,15 +367,27 @@
 		const hexagons = generateHexagons(h3res);
 		const hexagonsLower = generateHexagons(h3resLower);
 
-		map.getSource("hexagon-grid")?.setData({
-			type: "FeatureCollection",
-			features: hexagonsToFeatures(hexagons)
-		});
+		// Add safety checks to ensure sources exist before updating them
+		const hexagonGridSource = map.getSource("hexagon-grid");
+		const hexagonGridLowerSource = map.getSource("hexagon-grid-lower");
+		
+		if (hexagonGridSource) {
+			hexagonGridSource.setData({
+				type: "FeatureCollection",
+				features: hexagonsToFeatures(hexagons)
+			});
+		} else {
+			console.warn('[Map] hexagon-grid source not ready yet');
+		}
 
-		map.getSource("hexagon-grid-lower")?.setData({
-			type: "FeatureCollection",
-			features: hexagonsToFeatures(hexagonsLower)
-		});
+		if (hexagonGridLowerSource) {
+			hexagonGridLowerSource.setData({
+				type: "FeatureCollection",
+				features: hexagonsToFeatures(hexagonsLower)
+			});
+		} else {
+			console.warn('[Map] hexagon-grid-lower source not ready yet');
+		}
 	}
 
 	function goToHex(hex: string) {
@@ -702,6 +717,8 @@
 		}
 
 		map.on("style.load", () => {
+			console.log("Map style loaded");
+			
 			map.setFog({
 				color: "rgb(255, 255, 255)",       // Lower atmosphere white
 				"high-color": "rgb(255, 255, 255)", // Upper atmosphere white
@@ -709,19 +726,32 @@
 				"space-color": "rgb(17, 24, 39)", // Keep space dark
 				"star-intensity": 0.6
 			});
-		});
-
-		map.on("load", () => {
-			console.log("Map loaded");
 			
 			// Check if sources already exist and remove them
 			try {
-				if (map.getSource("hexagon-grid")) {
-					console.log('[Map] Removing existing hexagon-grid source');
-					// Need to remove layers first
-					if (map.getLayer("hexagon-grid-outline-layer")) map.removeLayer("hexagon-grid-outline-layer");
-					if (map.getLayer("hexagon-grid-circle-layer")) map.removeLayer("hexagon-grid-circle-layer");
-					map.removeSource("hexagon-grid");
+				// Define all sources and their associated layers
+				const sourceLayerMap = {
+					"hexagon-grid": ["hexagon-grid-outline-layer", "hexagon-grid-circle-layer"],
+					"hexagon-grid-lower": ["hexagon-grid-lower-outline-layer", "hexagon-grid-lower-circle-layer"],
+					"highlighted-hexagons": ["highlighted-hexagons-fill-layer", "highlighted-hexagons-outline-layer", "highlighted-hexagons-circle-layer"],
+					"selected-hexagon": ["selected-hexagon-fill-layer", "selected-hexagon-outline-layer", "selected-hexagon-circle-layer"]
+				};
+				
+				// Remove all existing layers and sources systematically
+				for (const [sourceId, layerIds] of Object.entries(sourceLayerMap)) {
+					// Remove layers first (they depend on sources)
+					for (const layerId of layerIds) {
+						if (map.getLayer(layerId)) {
+							console.log(`[Map] Removing existing layer: ${layerId}`);
+							map.removeLayer(layerId);
+						}
+					}
+					
+					// Then remove the source
+					if (map.getSource(sourceId)) {
+						console.log(`[Map] Removing existing source: ${sourceId}`);
+						map.removeSource(sourceId);
+					}
 				}
 				
 				// Base hexagon grid layers
@@ -906,9 +936,19 @@
 						]
 					}
 				});
+				
+				// Now that sources are ready, render initial hexes
+				if (selectedLens) {
+					console.log('[Map] Rendering initial hexes after style load');
+					renderHexes(map, selectedLens);
+				}
 			} catch (e) {
 				console.error('[Map] Error cleaning up existing sources/layers:', e);
 			}
+		});
+
+		map.on("load", () => {
+			console.log("Map loaded");
 			
 			// Initial data fetch after map is fully loaded
 			console.log('[Map] Map initialized, scheduling initial data fetch');
@@ -919,7 +959,6 @@
 					fetchLensData(selectedLens);
 				}
 			}, 500);
-			renderHexes(map, selectedLens);
 			mapInitialized = true;
 		});
 
@@ -1066,39 +1105,28 @@
 			
 			// Try to clean up layers and sources to prevent ID conflicts
 			try {
-				// Remove layers before removing sources
-				const layersToRemove = [
-					"hexagon-grid-outline-layer",
-					"hexagon-grid-circle-layer",
-					"hexagon-grid-lower-outline-layer",
-					"hexagon-grid-lower-circle-layer",
-					"highlighted-hexagons-fill-layer",
-					"highlighted-hexagons-outline-layer",
-					"highlighted-hexagons-circle-layer",
-					"selected-hexagon-fill-layer",
-					"selected-hexagon-outline-layer",
-					"selected-hexagon-circle-layer"
-				];
+				// Define all sources and their associated layers
+				const sourceLayerMap = {
+					"hexagon-grid": ["hexagon-grid-outline-layer", "hexagon-grid-circle-layer"],
+					"hexagon-grid-lower": ["hexagon-grid-lower-outline-layer", "hexagon-grid-lower-circle-layer"],
+					"highlighted-hexagons": ["highlighted-hexagons-fill-layer", "highlighted-hexagons-outline-layer", "highlighted-hexagons-circle-layer"],
+					"selected-hexagon": ["selected-hexagon-fill-layer", "selected-hexagon-outline-layer", "selected-hexagon-circle-layer"]
+				};
 				
-				for (const layer of layersToRemove) {
-					if (map.getLayer(layer)) {
-						console.log(`[Map] Removing layer: ${layer}`);
-						map.removeLayer(layer);
+				// Remove all existing layers and sources systematically
+				for (const [sourceId, layerIds] of Object.entries(sourceLayerMap)) {
+					// Remove layers first (they depend on sources)
+					for (const layerId of layerIds) {
+						if (map.getLayer(layerId)) {
+							console.log(`[Map] Removing layer: ${layerId}`);
+							map.removeLayer(layerId);
+						}
 					}
-				}
-				
-				// Now remove sources
-				const sourcesToRemove = [
-					"hexagon-grid",
-					"hexagon-grid-lower",
-					"highlighted-hexagons",
-					"selected-hexagon"
-				];
-				
-				for (const source of sourcesToRemove) {
-					if (map.getSource(source)) {
-						console.log(`[Map] Removing source: ${source}`);
-						map.removeSource(source);
+					
+					// Then remove the source
+					if (map.getSource(sourceId)) {
+						console.log(`[Map] Removing source: ${sourceId}`);
+						map.removeSource(sourceId);
 					}
 				}
 			} catch (e) {

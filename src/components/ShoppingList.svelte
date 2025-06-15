@@ -1,7 +1,9 @@
 <script lang="ts">
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
+    import { formatDate, formatTime } from "../utils/date";
     import HoloSphere from "holosphere";
+    import { getHologramSourceName, getCachedHolonName } from "../utils/holonNames";
 
     interface ShoppingItem {
         id: string;
@@ -33,9 +35,6 @@
     let inputText = "";
     let showHolograms = true;
 
-    // Holon name cache
-    let holonNameCache = new Map<string, string>();
-
     onMount(() => {
         ID.subscribe((value) => {
             holonID = value;
@@ -58,45 +57,19 @@
         localStorage.setItem("shoppingShowHolograms", showHolograms.toString());
     }
 
-    // Add function to fetch holon name
-    async function fetchHolonName(holonId: string): Promise<string> {
-        if (holonNameCache.has(holonId)) {
-            return holonNameCache.get(holonId)!;
-        }
-
-        try {
-            const settings = await holosphere.get(holonId, "settings", holonId);
-            const holonName = settings?.name || `Holon ${holonId}`;
-            holonNameCache.set(holonId, holonName);
-            return holonName;
-        } catch (error) {
-            console.error(`Error fetching holon name for ${holonId}:`, error);
-            const fallbackName = `Holon ${holonId}`;
-            holonNameCache.set(holonId, fallbackName);
-            return fallbackName;
-        }
-    }
-
-    // Add function to extract hologram source
+    // Function to get hologram source name using centralized service
     function getHologramSource(hologramSoul: string | undefined): string {
         if (!hologramSoul) return '';
-        // Extract the holon ID from path like "Holons/-1002593778587/shopping/380"
-        const match = hologramSoul.match(/Holons\/([^\/]+)/);
-        if (!match) return 'External Source';
         
-        const holonId = match[1];
-        // Return cached name if available, otherwise return ID and fetch name
-        if (holonNameCache.has(holonId)) {
-            return holonNameCache.get(holonId)!;
-        }
-        
-        // Fetch name asynchronously and trigger reactivity
-        fetchHolonName(holonId).then(() => {
-            // Trigger reactivity by updating shoppingItems
+        // Use the centralized service to get hologram source name
+        getHologramSourceName(holosphere, hologramSoul, () => {
+            // Trigger reactivity by updating shoppingItems when name is fetched
             shoppingItems = [...shoppingItems];
         });
         
-        return `Holon ${holonId}`; // Temporary fallback while loading
+        // Return cached name or fallback immediately
+        const holonId = hologramSoul.match(/Holons\/([^\/]+)/)?.[1];
+        return holonId ? getCachedHolonName(holonId) : 'External Source';
     }
 
     function subscribeToShoppingItems(): void {

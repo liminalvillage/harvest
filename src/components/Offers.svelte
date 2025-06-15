@@ -6,6 +6,7 @@
 	import { formatDate, formatTime } from "../utils/date";
 	import HoloSphere from "holosphere";
 	import Announcements from "./Announcements.svelte";
+	import { getHologramSourceName, getCachedHolonName } from "../utils/holonNames";
 
 	/**
 	 * @type {string | any[]}
@@ -37,8 +38,10 @@
 	let userStore = {};
 	let showDropdownFor = null; // key of offer/need for which dropdown is open
 
-	// Holon name cache for holograms
-	let holonNameCache = new Map<string, string>();
+	// Add publish functionality
+	let isPublishing = false;
+	let publishStatus = '';
+	let publishingItemKey = null;
 
 	// Fetch and subscribe to users for the current holon
 	async function fetchAndSubscribeUsers() {
@@ -116,6 +119,30 @@
 					}
 					store = store; // Trigger reactivity
 				});
+				
+				// Also subscribe to participation updates
+				holosphere.subscribe(holonID, "participations", (newParticipation, key) => {
+					if (newParticipation && newParticipation.itemId) {
+						// Find the item in the store and update its participants
+						const itemKey = Object.keys(store).find(k => store[k].id === newParticipation.itemId);
+						if (itemKey) {
+							const item = store[itemKey];
+							const existingParticipants = item.participants || [];
+							const alreadyExists = existingParticipants.some((p) => p.id === newParticipation.participant.id);
+							
+							if (!alreadyExists) {
+								const updatedItem = {
+									...item,
+									participants: [...existingParticipants, newParticipation.participant]
+								};
+								store = {
+									...store,
+									[itemKey]: updatedItem
+								};
+							}
+						}
+					}
+				});
 			}
 		}
 	}
@@ -133,6 +160,24 @@
 			console.log("Checking local data first...");
 			const localData = await holosphere.getAll(holonID, "quests");
 			console.log("Local data:", localData);
+			
+			// Fetch participation data for federated items
+			console.log("Fetching participation data...");
+			const participationData = await holosphere.getAll(holonID, "participations");
+			console.log("Participation data:", participationData);
+			
+			// Create a map of item participations
+			const participationsMap = new Map();
+			if (Array.isArray(participationData)) {
+				participationData.forEach((participation) => {
+					if (participation && participation.itemId) {
+						if (!participationsMap.has(participation.itemId)) {
+							participationsMap.set(participation.itemId, []);
+						}
+						participationsMap.get(participation.itemId).push(participation.participant);
+					}
+				});
+			}
 			
 			// Get federated data from connected holons
 			const federatedData = await holosphere.getFederated(holonID, "quests", {
@@ -189,6 +234,24 @@
 						processedItem._userSpecific = item._userSpecific;
 					}
 					
+					// Check if this item has participation data and merge it
+					const participations = participationsMap.get(item.id);
+					if (participations && participations.length > 0) {
+						// Merge participation data with existing participants
+						const existingParticipants = processedItem.participants || [];
+						const mergedParticipants = [...existingParticipants];
+						
+						// Add participations that aren't already in the participants list
+						participations.forEach((participation) => {
+							const alreadyExists = mergedParticipants.some((p) => p.id === participation.id);
+							if (!alreadyExists) {
+								mergedParticipants.push(participation);
+							}
+						});
+						
+						processedItem.participants = mergedParticipants;
+					}
+					
 					keyedStore[key] = processedItem;
 					console.log(`Added item to store with key ${key}:`, processedItem);
 					console.log(`Item type: ${processedItem.type}, is offer: ${processedItem.type === 'offer'}`);
@@ -201,6 +264,25 @@
 				localData.forEach((item, index) => {
 					if (item && item.id) {
 						const key = item.key || item.id || `local_${index}`;
+						
+						// Check if this item has participation data and merge it
+						const participations = participationsMap.get(item.id);
+						if (participations && participations.length > 0) {
+							// Merge participation data with existing participants
+							const existingParticipants = item.participants || [];
+							const mergedParticipants = [...existingParticipants];
+							
+							// Add participations that aren't already in the participants list
+							participations.forEach((participation) => {
+								const alreadyExists = mergedParticipants.some((p) => p.id === participation.id);
+								if (!alreadyExists) {
+									mergedParticipants.push(participation);
+								}
+							});
+							
+							item.participants = mergedParticipants;
+						}
+						
 						keyedStore[key] = {
 							...item,
 							key: key
@@ -333,45 +415,19 @@
 		return 'hsl(210, 15%, 75%)'; // Default gray
 	}
 
-	// Add function to fetch holon name
-	async function fetchHolonName(holonId: string): Promise<string> {
-		if (holonNameCache.has(holonId)) {
-			return holonNameCache.get(holonId)!;
-		}
-
-		try {
-			const settings = await holosphere.get(holonId, "settings", holonId);
-			const holonName = settings?.name || `Holon ${holonId}`;
-			holonNameCache.set(holonId, holonName);
-			return holonName;
-		} catch (error) {
-			console.error(`Error fetching holon name for ${holonId}:`, error);
-			const fallbackName = `Holon ${holonId}`;
-			holonNameCache.set(holonId, fallbackName);
-			return fallbackName;
-		}
-	}
-
-	// Add function to extract hologram source
+	// Function to get hologram source name using centralized service
 	function getHologramSource(hologramSoul: string | undefined): string {
 		if (!hologramSoul) return '';
-		// Extract the holon ID from path like "Holons/-1002593778587/quests/380"
-		const match = hologramSoul.match(/Holons\/([^\/]+)/);
-		if (!match) return 'External Source';
 		
-		const holonId = match[1];
-		// Return cached name if available, otherwise return ID and fetch name
-		if (holonNameCache.has(holonId)) {
-			return holonNameCache.get(holonId)!;
-		}
-		
-		// Fetch name asynchronously and trigger reactivity
-		fetchHolonName(holonId).then(() => {
-			// Trigger reactivity by updating store
+		// Use the centralized service to get hologram source name
+		getHologramSourceName(holosphere, hologramSoul, () => {
+			// Trigger reactivity by updating store when name is fetched
 			store = { ...store };
 		});
 		
-		return `Holon ${holonId}`; // Temporary fallback while loading
+		// Return cached name or fallback immediately
+		const holonId = hologramSoul.match(/Holons\/([^\/]+)/)?.[1];
+		return holonId ? getCachedHolonName(holonId) : 'External Source';
 	}
 
 	// Assign a user as a participant to an offer or need
@@ -385,10 +441,11 @@
 			return;
 		}
 		
+		// Use the correct property names that match the Tasks component expectations
 		const newParticipant = {
 			id: user.id,
-			first_name: user.first_name,
-			last_name: user.last_name,
+			firstName: user.first_name,  // Changed from first_name to firstName
+			lastName: user.last_name,    // Changed from last_name to lastName
 			username: user.username
 		};
 		
@@ -400,7 +457,40 @@
 			participants: updatedParticipants
 		};
 		
-		await holosphere.put(holonID, 'quests', updatedItem);
+		// If this is a federated item (has _federation metadata), we need to handle it differently
+		// to avoid creating duplicates. Instead of putting it directly to the local holon,
+		// we should update the original source or use a different approach.
+		if (item._federation || item._meta?.resolvedFromHologram) {
+			console.log("[Offers.svelte] Taking federated item:", item.id);
+			
+			// For federated items, we'll store the participation in a separate local tracking system
+			// to avoid duplicating the entire item
+			const participationKey = `participation_${item.id}`;
+			const participationData = {
+				itemId: item.id,
+				itemTitle: item.title,
+				participant: newParticipant,
+				participatedAt: new Date().toISOString(),
+				originalHolonId: item._federation?.sourceHolonId || item._meta?.hologramSoul?.match(/Holons\/([^\/]+)/)?.[1],
+				itemSoul: item._federation?.soul || item._meta?.hologramSoul
+			};
+			
+			// Store participation locally
+			await holosphere.put(holonID, 'participations', participationData);
+			
+			// Update the item in the store to show the user as a participant
+			// This is just for UI display - the actual item remains federated
+			store = {
+				...store,
+				[item.key]: updatedItem
+			};
+			
+			console.log("[Offers.svelte] Stored participation for federated item:", participationData);
+		} else {
+			// For local items, update normally
+			await holosphere.put(holonID, 'quests', updatedItem);
+		}
+		
 		showDropdownFor = null;
 	}
 
@@ -489,6 +579,152 @@
 			console.log("Federation info:", federationInfo);
 		} catch (error) {
 			console.error("Error in debug:", error);
+		}
+	}
+
+	// Add publish functionality
+	async function publishToFederatedChats(item) {
+		console.log("[Offers.svelte] publishToFederatedChats function called with item:", item);
+		console.log("[Offers.svelte] holosphere:", holosphere);
+		console.log("[Offers.svelte] holonID:", holonID);
+		
+		if (!holosphere || !holonID || !item) {
+			console.error("Cannot publish: missing holosphere, holonId, or item");
+			return;
+		}
+
+		isPublishing = true;
+		publishingItemKey = item.key;
+		publishStatus = 'Checking federation...';
+
+		try {
+			console.log("[Offers.svelte] Publishing item to federated chats:", { itemId: item.id, holonID });
+
+			// First check if there are any federated chats available
+			const fedInfo = await holosphere.getFederation(holonID);
+			console.log("[Offers.svelte] Federation info:", fedInfo);
+			
+			// Check if we have either federated chats OR if this is a hex-based holon that can propagate to parents
+			const hasFederatedChats = fedInfo && fedInfo.notify && fedInfo.notify.length > 0;
+			
+			// For hex-based holons, we can still propagate to parents even without federation
+			// Let's proceed with propagation regardless of federation status
+			if (!hasFederatedChats) {
+				console.log("[Offers.svelte] No federated chats available, but proceeding with parent propagation for hex-based holons");
+			}
+
+			publishStatus = 'Publishing...';
+
+			// Create a hologram for the item to propagate
+			// Use the full item data instead of just the ID reference
+			const hologram = holosphere.createHologram(holonID, 'quests', item);
+			console.log("[Offers.svelte] Created hologram:", hologram);
+
+			// Use federation propagation to publish to federated spaces
+			// Explicitly enable parent propagation for hex-based holons
+			const propagationResult = await holosphere.propagate(holonID, 'quests', hologram, {
+				useHolograms: true,
+				propagateToParents: true,
+				maxParentLevels: 1  // Only propagate to immediate parent (1 level up)
+			});
+
+			console.log("[Offers.svelte] Propagation result:", propagationResult);
+
+			if (propagationResult.success > 0 || propagationResult.parentPropagation?.success > 0) {
+				const totalSuccess = (propagationResult.success || 0) + (propagationResult.parentPropagation?.success || 0);
+				publishStatus = `Published to ${totalSuccess} location(s)`;
+				
+				// Update the item to show it's been published
+				const updatedItem = {
+					...item,
+					published: true,
+					publishedAt: new Date().toISOString(),
+					publishedTo: totalSuccess
+				};
+				
+				// Update in store
+				store = {
+					...store,
+					[item.key]: updatedItem
+				};
+				
+				// Show success message briefly
+				setTimeout(() => {
+					publishStatus = '';
+					publishingItemKey = null;
+				}, 3000);
+			} else {
+				const errorMessage = propagationResult.message || propagationResult.parentPropagation?.messages?.join(', ') || 'Unknown propagation error';
+				publishStatus = `Failed to publish: ${errorMessage}`;
+				console.error('Propagation failed:', propagationResult);
+				
+				// Show error message briefly
+				setTimeout(() => {
+					publishStatus = '';
+					publishingItemKey = null;
+				}, 5000);
+			}
+		} catch (error) {
+			console.error("[Offers.svelte] Error publishing item:", error);
+			publishStatus = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+			
+			// Show error message briefly
+			setTimeout(() => {
+				publishStatus = '';
+				publishingItemKey = null;
+			}, 5000);
+		} finally {
+			isPublishing = false;
+		}
+	}
+
+	// Remove a user's participation from an offer or need
+	async function removeParticipation(item, user) {
+		if (!holosphere || !holonID || !item || !user) return;
+		
+		// Check if user is actually a participant
+		const isParticipant = item.participants?.some(p => p.id === user.id);
+		if (!isParticipant) {
+			return;
+		}
+		
+		// If this is a federated item, remove from participations
+		if (item._federation || item._meta?.resolvedFromHologram) {
+			console.log("[Offers.svelte] Removing participation from federated item:", item.id);
+			
+			// Find and remove the participation record
+			const participationData = await holosphere.getAll(holonID, "participations");
+			if (Array.isArray(participationData)) {
+				const participationToRemove = participationData.find(p => 
+					p.itemId === item.id && p.participant.id === user.id
+				);
+				
+				if (participationToRemove) {
+					// Delete the participation record
+					await holosphere.delete(holonID, "participations", participationToRemove.id || participationToRemove.key);
+					
+					// Update the item in the store to remove the user from participants
+					const updatedParticipants = item.participants.filter(p => p.id !== user.id);
+					store = {
+						...store,
+						[item.key]: {
+							...item,
+							participants: updatedParticipants
+						}
+					};
+					
+					console.log("[Offers.svelte] Removed participation for federated item:", item.id);
+				}
+			}
+		} else {
+			// For local items, update normally
+			const updatedParticipants = item.participants.filter(p => p.id !== user.id);
+			const updatedItem = {
+				...item,
+				participants: updatedParticipants
+			};
+			
+			await holosphere.put(holonID, 'quests', updatedItem);
 		}
 	}
 </script>
@@ -641,6 +877,17 @@
 															{offer._userSpecific.userName}
 														</span>
 													{/if}
+													{#if offer.published}
+														<span
+															class="inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-800 border border-green-500/50"
+															title="Published to {offer.publishedTo || 'federated'} chat(s) on {new Date(offer.publishedAt).toLocaleDateString()}"
+														>
+															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
+															</svg>
+															<span>Published</span>
+														</span>
+													{/if}
 												</div>
 												{#if offer.description}
 													<p class="text-sm text-gray-700 truncate">
@@ -652,6 +899,34 @@
 
 										<!-- Right Side Meta Info -->
 										<div class="flex items-center gap-3 flex-shrink-0 text-sm">
+											<!-- Publish Button -->
+											<button
+												class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+												on:click|stopPropagation={() => {
+													console.log("[Offers.svelte] Publish button clicked for offer:", offer);
+													console.log("[Offers.svelte] Offer data:", offer);
+													console.log("[Offers.svelte] holosphere available:", !!holosphere);
+													console.log("[Offers.svelte] holonID:", holonID);
+													publishToFederatedChats(offer);
+												}}
+												disabled={isPublishing}
+												title={offer.published ? 
+													`Published to ${offer.publishedTo || 'federated'} chat(s) on ${new Date(offer.publishedAt).toLocaleDateString()}` : 
+													'Publish this offer to federated chats'
+												}
+											>
+												<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
+												</svg>
+												{#if isPublishing && publishingItemKey === offer.key}
+													<span class="text-sm">{publishStatus}</span>
+												{:else if offer.published}
+													<span class="text-sm">Published</span>
+												{:else}
+													<span class="text-sm">Publish</span>
+												{/if}
+											</button>
+
 											<!-- Take Offer Dropdown -->
 											<div class="relative">
 												<button 
@@ -789,17 +1064,56 @@
 															{need._userSpecific.userName}
 														</span>
 													{/if}
+													{#if need.published}
+														<span
+															class="inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-800 border border-green-500/50"
+															title="Published to {need.publishedTo || 'federated'} chat(s) on {new Date(need.publishedAt).toLocaleDateString()}"
+														>
+															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
+															</svg>
+															<span>Published</span>
+														</span>
+													{/if}
 												</div>
 												{#if need.description}
 													<p class="text-sm text-gray-700 truncate">
 														{need.description}
 													</p>
 												{/if}
-			</div>
-		</div>
+											</div>
+										</div>
 
 										<!-- Right Side Meta Info -->
 										<div class="flex items-center gap-3 flex-shrink-0 text-sm">
+											<!-- Publish Button -->
+											<button
+												class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+												on:click|stopPropagation={() => {
+													console.log("[Offers.svelte] Publish button clicked for need:", need);
+													console.log("[Offers.svelte] Need data:", need);
+													console.log("[Offers.svelte] holosphere available:", !!holosphere);
+													console.log("[Offers.svelte] holonID:", holonID);
+													publishToFederatedChats(need);
+												}}
+												disabled={isPublishing}
+												title={need.published ? 
+													`Published to ${need.publishedTo || 'federated'} chat(s) on ${new Date(need.publishedAt).toLocaleDateString()}` : 
+													'Publish this request to federated chats'
+												}
+											>
+												<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
+												</svg>
+												{#if isPublishing && publishingItemKey === need.key}
+													<span class="text-sm">{publishStatus}</span>
+												{:else if need.published}
+													<span class="text-sm">Published</span>
+												{:else}
+													<span class="text-sm">Publish</span>
+												{/if}
+											</button>
+
 											<!-- Take Need Dropdown -->
 											<div class="relative">
 												<button 

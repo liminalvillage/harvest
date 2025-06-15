@@ -2,6 +2,7 @@
     import { createEventDispatcher, getContext, onMount } from "svelte";
     import { fade, scale } from "svelte/transition";
     import HoloSphere from "holosphere";
+    import { getHologramSourceName, getCachedHolonName } from "../utils/holonNames";
 
     export let quest: any;
     export let questId: string;
@@ -55,48 +56,19 @@
     const CANVAS_WIDTH = 2000;
     const CANVAS_HEIGHT = 1500;
 
-    // Holon name cache for holograms
-    let holonNameCache = new Map<string, string>();
-
-    // Add function to fetch holon name
-    async function fetchHolonName(holonId: string): Promise<string> {
-        if (holonNameCache.has(holonId)) {
-            return holonNameCache.get(holonId)!;
-        }
-
-        try {
-            const settings = await holosphere.get(holonId, "settings", holonId);
-            const holonName = settings?.name || `Holon ${holonId}`;
-            holonNameCache.set(holonId, holonName);
-            return holonName;
-        } catch (error) {
-            console.error(`Error fetching holon name for ${holonId}:`, error);
-            const fallbackName = `Holon ${holonId}`;
-            holonNameCache.set(holonId, fallbackName);
-            return fallbackName;
-        }
-    }
-
-    // Add function to extract hologram source and navigate
+    // Function to get hologram source name using centralized service
     function getHologramSource(hologramSoul: string | undefined): string {
         if (!hologramSoul) return '';
-        // Extract the holon ID from path like "Holons/-1002593778587/quests/380"
-        const match = hologramSoul.match(/Holons\/([^\/]+)/);
-        if (!match) return 'External Source';
         
-        const holonId = match[1];
-        // Return cached name if available, otherwise return ID and fetch name
-        if (holonNameCache.has(holonId)) {
-            return holonNameCache.get(holonId)!;
-        }
-        
-        // Fetch name asynchronously and trigger reactivity
-        fetchHolonName(holonId).then(() => {
-            // Trigger reactivity by updating quest
+        // Use the centralized service to get hologram source name
+        getHologramSourceName(holosphere, hologramSoul, () => {
+            // Trigger reactivity by updating quest when name is fetched
             quest = { ...quest };
         });
         
-        return `Holon ${holonId}`; // Temporary fallback while loading
+        // Return cached name or fallback immediately
+        const holonId = hologramSoul.match(/Holons\/([^\/]+)/)?.[1];
+        return holonId ? getCachedHolonName(holonId) : 'External Source';
     }
 
     // Add function to navigate to hologram source
@@ -566,6 +538,36 @@
         node.focus();
     }
 
+    // Add touch handling for buttons
+    function handleButtonTouchStart(event: TouchEvent) {
+        // Add visual feedback for touch
+        const button = event.currentTarget as HTMLElement;
+        button.style.transform = 'scale(0.95)';
+        button.style.transition = 'transform 0.1s ease';
+    }
+
+    function handleButtonTouchEnd(event: TouchEvent) {
+        // Remove visual feedback
+        const button = event.currentTarget as HTMLElement;
+        button.style.transform = 'scale(1)';
+        
+        // Prevent default to avoid double-triggering with click
+        event.preventDefault();
+        
+        // Get the button's click handler and call it
+        const buttonElement = event.currentTarget as HTMLButtonElement;
+        if (buttonElement && !buttonElement.disabled) {
+            // Trigger the click event programmatically
+            buttonElement.click();
+        }
+    }
+
+    function handleButtonTouchCancel(event: TouchEvent) {
+        // Remove visual feedback if touch is cancelled
+        const button = event.currentTarget as HTMLElement;
+        button.style.transform = 'scale(1)';
+    }
+
     function handleTitleEdit() {
         saveTitle();
     }
@@ -610,6 +612,90 @@
             console.log("[TaskModal.svelte] Dropdown Opened - Available Users (Filtered for dropdown):", availableUsers.map(u=>u[1].first_name));
         }
     }
+
+    // Add publish functionality
+    let isPublishing = false;
+    let publishStatus = '';
+
+    async function publishToFederatedChats() {
+        if (!holosphere || !holonId || !questId) {
+            console.error("Cannot publish: missing holosphere, holonId, or questId");
+            return;
+        }
+
+        isPublishing = true;
+        publishStatus = 'Checking federation...';
+
+        try {
+            console.log("[TaskModal.svelte] Publishing quest to federated chats:", { questId, holonId });
+
+            // First check if there are any federated chats available
+            const fedInfo = await holosphere.getFederation(holonId);
+            console.log("[TaskModal.svelte] Federation info:", fedInfo);
+            
+            // Check if we have either federated chats OR if this is a hex-based holon that can propagate to parents
+            const hasFederatedChats = fedInfo && fedInfo.notify && fedInfo.notify.length > 0;
+            
+            // For hex-based holons, we can still propagate to parents even without federation
+            // Let's proceed with propagation regardless of federation status
+            if (!hasFederatedChats) {
+                console.log("[TaskModal.svelte] No federated chats available, but proceeding with parent propagation for hex-based holons");
+            }
+
+            publishStatus = 'Publishing...';
+
+            // Create a hologram for the quest to propagate
+            // Use the full quest data instead of just the ID reference
+            const hologram = holosphere.createHologram(holonId, 'quests', quest);
+            console.log("[TaskModal.svelte] Created hologram:", hologram);
+
+            // Use federation propagation to publish to federated spaces
+            // Explicitly enable parent propagation for hex-based holons
+            const propagationResult = await holosphere.propagate(holonId, 'quests', hologram, {
+                useHolograms: true,
+                propagateToParents: true,
+                maxParentLevels: 1  // Only propagate to immediate parent (1 level up)
+            });
+
+            console.log("[TaskModal.svelte] Propagation result:", propagationResult);
+
+            if (propagationResult.success > 0 || propagationResult.parentPropagation?.success > 0) {
+                const totalSuccess = (propagationResult.success || 0) + (propagationResult.parentPropagation?.success || 0);
+                publishStatus = `Published to ${totalSuccess} location(s)`;
+                
+                // Update the quest to show it's been published
+                await updateQuest({ 
+                    published: true,
+                    publishedAt: new Date().toISOString(),
+                    publishedTo: totalSuccess
+                });
+                
+                // Show success message briefly
+                setTimeout(() => {
+                    publishStatus = '';
+                }, 3000);
+            } else {
+                const errorMessage = propagationResult.message || propagationResult.parentPropagation?.messages?.join(', ') || 'Unknown propagation error';
+                publishStatus = `Failed to publish: ${errorMessage}`;
+                console.error('Propagation failed:', propagationResult);
+                
+                // Show error message briefly
+                setTimeout(() => {
+                    publishStatus = '';
+                }, 5000);
+            }
+        } catch (error) {
+            console.error("[TaskModal.svelte] Error publishing quest:", error);
+            publishStatus = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            
+            // Show error message briefly
+            setTimeout(() => {
+                publishStatus = '';
+            }, 5000);
+        } finally {
+            isPublishing = false;
+        }
+    }
 </script>
 
 <div
@@ -628,9 +714,13 @@
         aria-labelledby="modal-title"
     >
         <button
-            class="absolute top-4 right-4 text-gray-400 hover:text-white z-10"
+            class="absolute top-4 right-4 text-gray-400 hover:text-white z-10 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center p-2"
             on:click={closeModal}
+            on:touchstart={handleButtonTouchStart}
+            on:touchend={handleButtonTouchEnd}
+            on:touchcancel={handleButtonTouchCancel}
             aria-label="Close modal"
+            type="button"
         >
             <svg
                 class="w-6 h-6"
@@ -666,11 +756,14 @@
                         <button
                             type="button"
                             id="modal-title"
-                            class="text-2xl font-bold text-white text-left hover:text-gray-300"
+                            class="text-2xl font-bold text-white text-left hover:text-gray-300 touch-manipulation min-h-[44px] min-w-[44px] flex items-center"
                             on:click={() => {
                                 tempTitle = quest.title;
                                 editingTitle = true;
                             }}
+                            on:touchstart={handleButtonTouchStart}
+                            on:touchend={handleButtonTouchEnd}
+                            on:touchcancel={handleButtonTouchCancel}
                         >
                             {quest.title}
                         </button>
@@ -678,9 +771,13 @@
                     <div class="flex items-center gap-3 mt-2">
                         {#if quest._meta?.resolvedFromHologram}
                             <button
-                                class="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 text-blue-300 rounded-lg text-sm font-medium hover:bg-blue-500/30 transition-colors border border-blue-500/50"
+                                class="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 text-blue-300 rounded-lg text-sm font-medium hover:bg-blue-500/30 transition-colors border border-blue-500/50 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
                                 on:click={navigateToHologramSource}
+                                on:touchstart={handleButtonTouchStart}
+                                on:touchend={handleButtonTouchEnd}
+                                on:touchcancel={handleButtonTouchCancel}
                                 title="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
+                                type="button"
                             >
                                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -690,6 +787,17 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
                                 </svg>
                             </button>
+                        {/if}
+                        {#if quest.published}
+                            <span
+                                class="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 text-green-300 rounded-lg text-sm font-medium border border-green-500/50"
+                                title="Published to {quest.publishedTo || 'federated'} chat(s) on {new Date(quest.publishedAt).toLocaleDateString()}"
+                            >
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
+                                </svg>
+                                <span>Published</span>
+                            </span>
                         {/if}
                         {#if quest.category}
                             <span
@@ -728,23 +836,30 @@
                         {#if quest.description}
                             <button  
                                 id="modal-description"
-                                class="text-sm whitespace-pre-wrap cursor-pointer hover:bg-gray-700 p-1 rounded-md" 
+                                class="text-sm whitespace-pre-wrap cursor-pointer hover:bg-gray-700 p-1 rounded-md touch-manipulation min-h-[44px] min-w-[44px] flex items-center" 
                                 on:click={() => {
                                     tempDescription = quest.description || '';
                                     editingDescription = true;
                                 }}
-            
+                                on:touchstart={handleButtonTouchStart}
+                                on:touchend={handleButtonTouchEnd}
+                                on:touchcancel={handleButtonTouchCancel}
                                 on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (tempDescription = quest.description || '', editingDescription = true)}
+                                type="button"
                             >
                                 {quest.description}
                             </button>
                         {:else}
                             <button 
-                                class="text-sm text-gray-400 hover:text-white px-2 py-1 rounded-md hover:bg-gray-700"
+                                class="text-sm text-gray-400 hover:text-white px-2 py-1 rounded-md hover:bg-gray-700 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
                                 on:click={() => {
                                     tempDescription = ''; // Start with empty for new description
                                     editingDescription = true;
-                                }}>
+                                }}
+                                on:touchstart={handleButtonTouchStart}
+                                on:touchend={handleButtonTouchEnd}
+                                on:touchcancel={handleButtonTouchCancel}
+                                type="button">
                                 + Add description
                             </button>
                         {/if}
@@ -778,8 +893,12 @@
                             Schedule
                         </h3>
                         <button
-                            class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm"
+                            class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
                             on:click={() => (showDatePicker = !showDatePicker)}
+                            on:touchstart={handleButtonTouchStart}
+                            on:touchend={handleButtonTouchEnd}
+                            on:touchcancel={handleButtonTouchCancel}
+                            type="button"
                         >
                             {quest.when ? "Reschedule" : "Schedule Task"}
                         </button>
@@ -819,14 +938,22 @@
                             </div>
                             <div class="flex justify-end space-x-2">
                                 <button
-                                    class="px-3 py-1.5 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm"
+                                    class="px-3 py-1.5 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
                                     on:click={() => (showDatePicker = false)}
+                                    on:touchstart={handleButtonTouchStart}
+                                    on:touchend={handleButtonTouchEnd}
+                                    on:touchcancel={handleButtonTouchCancel}
+                                    type="button"
                                 >
                                     Cancel
                                 </button>
                                 <button
-                                    class="px-3 py-1.5 bg-gray-800 text-blue-400 rounded-lg hover:bg-gray-600 border border-blue-500 transition-colors text-sm"
+                                    class="px-3 py-1.5 bg-gray-800 text-blue-400 rounded-lg hover:bg-gray-600 border border-blue-500 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
                                     on:click={scheduleTask}
+                                    on:touchstart={handleButtonTouchStart}
+                                    on:touchend={handleButtonTouchEnd}
+                                    on:touchcancel={handleButtonTouchCancel}
+                                    type="button"
                                 >
                                     Save Schedule
                                 </button>
@@ -852,13 +979,17 @@
                                     </span>
                                 </div>
                                 <button
-                                    class="text-gray-400 hover:text-red-400 transition-colors"
+                                    class="text-gray-400 hover:text-red-400 transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center p-2"
                                     on:click={() =>
                                         updateQuest({
                                             when: null,
                                             status: "ongoing",
                                         })}
+                                    on:touchstart={handleButtonTouchStart}
+                                    on:touchend={handleButtonTouchEnd}
+                                    on:touchcancel={handleButtonTouchCancel}
                                     aria-label="Remove schedule"
+                                    type="button"
                                 >
                                     <svg
                                         class="w-5 h-5"
@@ -901,9 +1032,13 @@
                             Participants
                         </h3>
                         <button
-                            class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm"
+                            class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
                             on:click|stopPropagation={fetchUsersAndShowDropdown}
+                            on:touchstart={handleButtonTouchStart}
+                            on:touchend={handleButtonTouchEnd}
+                            on:touchcancel={handleButtonTouchCancel}
                             disabled={!holosphere}
+                            type="button"
                         >
                             + Add Participant
                         </button>
@@ -928,10 +1063,14 @@
                                         >
                                     </div>
                                     <button
-                                        class="text-gray-400 hover:text-red-400 transition-colors"
+                                        class="text-gray-400 hover:text-red-400 transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center p-2"
                                         on:click={() =>
                                             removeParticipant(participant.id)}
+                                        on:touchstart={handleButtonTouchStart}
+                                        on:touchend={handleButtonTouchEnd}
+                                        on:touchcancel={handleButtonTouchCancel}
                                         aria-label={`Remove participant ${participant.firstName}`}
+                                        type="button"
                                     >
                                         <svg
                                             class="w-5 h-5"
@@ -965,9 +1104,13 @@
                         >
                             {#each availableUsers as [userId, user]}
                                 <button
-                                    class="w-full text-left px-4 py-2 transition-colors flex items-center gap-2 hover:bg-gray-600 text-gray-200"
+                                    class="w-full text-left px-4 py-2 transition-colors flex items-center gap-2 hover:bg-gray-600 text-gray-200 touch-manipulation min-h-[44px]"
                                     on:click|stopPropagation={() =>
                                         toggleParticipant(userId)}
+                                    on:touchstart={handleButtonTouchStart}
+                                    on:touchend={handleButtonTouchEnd}
+                                    on:touchcancel={handleButtonTouchCancel}
+                                    type="button"
                                 >
                                     <img
                                         src={`https://gun.holons.io/getavatar?user_id=${user.id}`}
@@ -992,8 +1135,12 @@
                 <!-- Action Buttons -->
                 <div class="flex gap-2 pt-4">
                     <button
-                        class="px-4 py-2 bg-gray-700/50 text-red-400 rounded-lg hover:bg-gray-600 border border-red-500/50 transition-colors"
+                        class="px-4 py-2 bg-gray-700/50 text-red-400 rounded-lg hover:bg-gray-600 border border-red-500/50 transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
                         on:click={deleteQuest}
+                        on:touchstart={handleButtonTouchStart}
+                        on:touchend={handleButtonTouchEnd}
+                        on:touchcancel={handleButtonTouchCancel}
+                        type="button"
                     >
                         Delete Task
                     </button>
@@ -1002,12 +1149,41 @@
                         class="px-4 py-2 bg-gray-700/50 {quest.status ===
                         'completed'
                             ? 'text-yellow-400 border-yellow-500/50'
-                            : 'text-green-400 border-green-500/50'} rounded-lg border hover:bg-gray-600 transition-colors"
+                            : 'text-green-400 border-green-500/50'} rounded-lg border hover:bg-gray-600 transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
                         on:click={completeQuest}
+                        on:touchstart={handleButtonTouchStart}
+                        on:touchend={handleButtonTouchEnd}
+                        on:touchcancel={handleButtonTouchCancel}
+                        type="button"
                     >
                         {quest.status === "completed"
                             ? "Mark Ongoing"
                             : "Mark Complete"}
+                    </button>
+
+                    <button
+                        class="px-4 py-2 bg-gray-700/50 text-blue-400 rounded-lg hover:bg-gray-600 border border-blue-500/50 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation min-h-[44px] min-w-[44px] justify-center"
+                        on:click={publishToFederatedChats}
+                        on:touchstart={handleButtonTouchStart}
+                        on:touchend={handleButtonTouchEnd}
+                        on:touchcancel={handleButtonTouchCancel}
+                        disabled={isPublishing}
+                        title={quest.published ? 
+                            `Published to ${quest.publishedTo || 'federated'} chat(s) on ${new Date(quest.publishedAt).toLocaleDateString()}` : 
+                            'Publish this task to federated chats'
+                        }
+                        type="button"
+                    >
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
+                        </svg>
+                        {#if isPublishing}
+                            <span class="text-sm">{publishStatus}</span>
+                        {:else if quest.published}
+                            <span class="text-sm">Published</span>
+                        {:else}
+                            <span class="text-sm">Publish</span>
+                        {/if}
                     </button>
                 </div>
             </div>
