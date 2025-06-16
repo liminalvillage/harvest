@@ -10,7 +10,7 @@
 	import { writable } from 'svelte/store';
 	import Fireworks from "./Fireworks.svelte";
 	import Confetti from "./Confetti.svelte";
-	import { getHologramSourceName, getCachedHolonName } from "../utils/holonNames";
+	import { getHologramSourceName } from "../utils/holonNames";
 
 	interface Quest {
 		id: string;
@@ -548,14 +548,12 @@
 		if (!hologramSoul) return '';
 		
 		// Use the centralized service to get hologram source name
-		getHologramSourceName(holosphere, hologramSoul, () => {
+		// This will return cached name immediately or trigger async fetch with callback
+		return getHologramSourceName(holosphere, hologramSoul, () => {
 			// Trigger reactivity by updating quests when name is fetched
+			console.log('[Tasks] Hologram source name updated, triggering reactivity');
 			quests = [...quests];
 		});
-		
-		// Return cached name or fallback immediately
-		const holonId = hologramSoul.match(/Holons\/([^\/]+)/)?.[1];
-		return holonId ? getCachedHolonName(holonId) : 'External Source';
 	}
 
 	// Add color category function

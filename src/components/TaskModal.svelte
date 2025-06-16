@@ -2,7 +2,7 @@
     import { createEventDispatcher, getContext, onMount } from "svelte";
     import { fade, scale } from "svelte/transition";
     import HoloSphere from "holosphere";
-    import { getHologramSourceName, getCachedHolonName } from "../utils/holonNames";
+    import { getHologramSourceName } from "../utils/holonNames";
 
     export let quest: any;
     export let questId: string;
@@ -61,14 +61,12 @@
         if (!hologramSoul) return '';
         
         // Use the centralized service to get hologram source name
-        getHologramSourceName(holosphere, hologramSoul, () => {
+        // This will return cached name immediately or trigger async fetch with callback
+        return getHologramSourceName(holosphere, hologramSoul, () => {
             // Trigger reactivity by updating quest when name is fetched
+            console.log('[TaskModal] Hologram source name updated, triggering reactivity');
             quest = { ...quest };
         });
-        
-        // Return cached name or fallback immediately
-        const holonId = hologramSoul.match(/Holons\/([^\/]+)/)?.[1];
-        return holonId ? getCachedHolonName(holonId) : 'External Source';
     }
 
     // Add function to navigate to hologram source

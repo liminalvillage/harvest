@@ -6,7 +6,7 @@
 	import { formatDate, formatTime } from "../utils/date";
 	import HoloSphere from "holosphere";
 	import Announcements from "./Announcements.svelte";
-	import { getHologramSourceName, getCachedHolonName } from "../utils/holonNames";
+	import { getHologramSourceName } from "../utils/holonNames";
 
 	/**
 	 * @type {string | any[]}
@@ -410,14 +410,12 @@
 		if (!hologramSoul) return '';
 		
 		// Use the centralized service to get hologram source name
-		getHologramSourceName(holosphere, hologramSoul, () => {
+		// This will return cached name immediately or trigger async fetch with callback
+		return getHologramSourceName(holosphere, hologramSoul, () => {
 			// Trigger reactivity by updating store when name is fetched
+			console.log('[Offers] Hologram source name updated, triggering reactivity');
 			store = { ...store };
 		});
-		
-		// Return cached name or fallback immediately
-		const holonId = hologramSoul.match(/Holons\/([^\/]+)/)?.[1];
-		return holonId ? getCachedHolonName(holonId) : 'External Source';
 	}
 
 	// Assign a user as a participant to an offer or need
