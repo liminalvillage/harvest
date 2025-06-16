@@ -387,9 +387,19 @@
             ],
         });
 
-        // Update quest with new participants
-        await updateQuest({ participants: newParticipantsArray });
-        showDropdown = false;
+            // Update quest with new participants
+    await updateQuest({ participants: newParticipantsArray });
+    
+    // Create a hologram of the task in the participant's personal holon
+    try {
+        const hologram = holosphere.createHologram(holonId, 'quests', quest);
+        await holosphere.put(user.id, 'quests', hologram);
+        console.log(`[TaskModal.svelte] Created hologram of task "${quest.title}" in participant's personal holon:`, user.id);
+    } catch (error) {
+        console.error(`[TaskModal.svelte] Error creating hologram in participant's holon (${user.id}):`, error);
+    }
+    
+    showDropdown = false;
     }
 
     function handleClickOutside(event: MouseEvent) {

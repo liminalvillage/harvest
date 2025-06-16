@@ -387,6 +387,8 @@
 		event.preventDefault();
 		const sourceKey = event.dataTransfer?.getData('text/plain') || '';
 
+		console.log(`[Tasks] Drop initiated: ${sourceKey} -> ${targetKey}, sortCriteria: ${sortCriteria}`);
+
 		// Ensure holonID is not null before proceeding
 		const currentHolonID = holonID; // Use the reactive holonID variable
 		if (!currentHolonID) {
@@ -396,6 +398,7 @@
 		}
 
 		if (!sourceKey || sourceKey === targetKey) {
+			console.log("[Tasks] Drop cancelled: invalid source/target");
 			handleDragEnd();
 			return;
 		}
@@ -416,17 +419,30 @@
 			
 			currentQuestsArray.splice(actualTargetIndex, 0, [draggedItemKey, draggedItemQuest]);
 
+			// Temporarily disable subscription to prevent override during update
+			let tempQuestsUnsub = questsUnsubscribe;
+			questsUnsubscribe = undefined;
+
 			const updatedQuestsPromises = currentQuestsArray.map(async ([key, questToUpdate], index) => {
-				const updatedQuest = { ...questToUpdate, orderIndex: index };
-				store[key] = updatedQuest;
-				return holosphere.put(currentHolonID, `quests/${key}`, updatedQuest);
+				if (questToUpdate.orderIndex !== index) {
+					const updatedQuest = { ...questToUpdate, id: key, orderIndex: index };
+					store[key] = updatedQuest;
+					console.log(`[Tasks] Updating orderIndex for quest ${key}: ${questToUpdate.orderIndex || 'undefined'} -> ${index}`);
+					return holosphere.put(currentHolonID, 'quests', updatedQuest);
+				}
+				return Promise.resolve();
 			});
 
 			try {
 				await Promise.all(updatedQuestsPromises);
+				console.log(`[Tasks] Successfully updated orderIndex for changed quests after drop`);
+				// Re-enable subscription after save
+				questsUnsubscribe = tempQuestsUnsub;
 				quests = Object.entries(store);
 			} catch (error) {
 				console.error('Error updating quest orderIndex after drop:', error);
+				// Re-enable subscription even on error
+				questsUnsubscribe = tempQuestsUnsub;
 			}
 		} else { // sortCriteria is 'positionX' or 'positionY'
 			const POSITION_STEP = 10.0;
@@ -481,10 +497,12 @@
 			}
 			draggedQuest.position = newPosition;
 
+			draggedQuest.id = sourceKey; // Ensure ID is set
 			store[sourceKey] = draggedQuest;
 			try {
-				await holosphere.put(currentHolonID, `quests/${sourceKey}`, draggedQuest);
+				await holosphere.put(currentHolonID, 'quests', draggedQuest);
 				quests = Object.entries(store); 
+				console.log(`[Tasks] Successfully saved position update for quest ${sourceKey}`);
 			} catch (error) {
 				console.error(`Error updating quest position after drop (sort by ${sortCriteria}):`, error);
 			}
@@ -721,6 +739,7 @@
 			
 			// Set up subscription for future updates
 			const off = holosphere.subscribe(holonID, "quests", (newquest: Quest | null, key?: string) => {
+				console.log(`[Tasks] Subscription update received for key: ${key}`, newquest ? 'UPDATE' : 'DELETE');
 				// Update store immediately
 				const newStore = { ...store };
 				if (newquest && key) {
@@ -734,47 +753,53 @@
 			});
 
 			// Also subscribe to participation updates
-			const participationOff = holosphere.subscribe(holonID, "participations", (newParticipation: any, key?: string) => {
-				if (newParticipation && newParticipation.itemId) {
-					// Find the quest in the store and update its participants
-					const questKey = Object.keys(store).find(k => store[k].id === newParticipation.itemId);
-					if (questKey) {
-						const quest = store[questKey];
-						const existingParticipants = quest.participants || [];
-						const alreadyExists = existingParticipants.some((p: any) => p.id === newParticipation.participant.id);
-						
-						if (!alreadyExists) {
-							const updatedQuest = {
-								...quest,
-								participants: [...existingParticipants, newParticipation.participant]
-							};
-							store = {
-								...store,
-								[questKey]: updatedQuest
-							};
-							quests = Object.entries(store);
+			let participationOff: (() => void) | undefined;
+			try {
+				const participationSub = await holosphere.subscribe(holonID, "participations", (newParticipation: any, key?: string) => {
+					if (newParticipation && newParticipation.itemId) {
+						// Find the quest in the store and update its participants
+						const questKey = Object.keys(store).find(k => store[k].id === newParticipation.itemId);
+						if (questKey) {
+							const quest = store[questKey];
+							const existingParticipants = quest.participants || [];
+							const alreadyExists = existingParticipants.some((p: any) => p.id === newParticipation.participant.id);
+							
+							if (!alreadyExists) {
+								const updatedQuest = {
+									...quest,
+									participants: [...existingParticipants, newParticipation.participant]
+								};
+								store = {
+									...store,
+									[questKey]: updatedQuest
+								};
+								quests = Object.entries(store);
+							}
 						}
+					} else if (key) {
+						// This is a deletion - we need to find which quest had this participation
+						// and remove the corresponding participant
+						Object.keys(store).forEach(questKey => {
+							const quest = store[questKey];
+							if (quest.participants && quest.participants.length > 0) {
+								// We can't easily determine which participant was removed from just the key
+								// So we'll need to refetch participation data to get the current state
+								// For now, we'll just trigger a store update to ensure consistency
+								store = { ...store };
+								quests = Object.entries(store);
+							}
+						});
 					}
-				} else if (key) {
-					// This is a deletion - we need to find which quest had this participation
-					// and remove the corresponding participant
-					Object.keys(store).forEach(questKey => {
-						const quest = store[questKey];
-						if (quest.participants && quest.participants.length > 0) {
-							// We can't easily determine which participant was removed from just the key
-							// So we'll need to refetch participation data to get the current state
-							// For now, we'll just trigger a store update to ensure consistency
-							store = { ...store };
-							quests = Object.entries(store);
-						}
-					});
-				}
-			});
+				});
+				participationOff = participationSub?.unsubscribe;
+			} catch (error) {
+				console.error('Error setting up participation subscription:', error);
+			}
 
 			if (typeof off === 'function') {
 				questsUnsubscribe = () => {
 					off();
-					if (typeof participationOff === 'function') {
+					if (participationOff && typeof participationOff === 'function') {
 						participationOff();
 					}
 				};

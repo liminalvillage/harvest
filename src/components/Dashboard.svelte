@@ -364,24 +364,7 @@
             </div>
         </a>
 
-        <!-- Global Holons Card -->
-        <a
-            href={`/${holonID}/global-holons`}
-            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-6 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
-        >
-            <div class="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-purple-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <div class="relative z-10">
-                <div class="flex items-center space-x-4">
-                    <div class="p-3 bg-purple-500 bg-opacity-20 rounded-xl">
-                        <i class="fas fa-globe text-xl text-purple-400"></i>
-                    </div>
-                    <div class="flex-1">
-                        <h3 class="text-lg font-semibold text-white group-hover:text-purple-400 transition-colors">Global Network</h3>
-                        <p class="text-sm text-gray-400">View all holons</p>
-                    </div>
-                </div>
-            </div>
-        </a>
+
 
         <!-- Federation Card -->
         <a

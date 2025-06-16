@@ -279,13 +279,14 @@
 
             // Check if it was a click (not a drag)
             if (dx < moveThreshold && dy < moveThreshold) {
+                console.log(`[CanvasView] Task clicked: ${finalDraggedCardData.key} (movement: ${dx}, ${dy})`);
                 dispatch('taskClick', {
                     key: finalDraggedCardData.key,
                     quest: finalDraggedCardData.quest
                 });
             } else {
                 // It was a drag, so update the position
-                console.log(`[CanvasView] Dragged quest ${finalDraggedCardData.key} from (${finalDraggedCardData.x}, ${finalDraggedCardData.y}) to (${newPosition.x}, ${newPosition.y})`);
+                console.log(`[CanvasView] Dragged quest ${finalDraggedCardData.key} from (${finalDraggedCardData.x}, ${finalDraggedCardData.y}) to (${newPosition.x}, ${newPosition.y}) - movement: ${dx}, ${dy}`);
                 
                 // Always save position when dragged (whether it had a position before or not)
                 positionAssignments.add(finalDraggedCardData.key);
@@ -303,11 +304,18 @@
                     console.log(`[CanvasView] Local task ${finalDraggedCardData.key} - saving to database`);
                     
                     const updatedQuest = { 
-                        ...finalDraggedCardData.quest, 
+                        ...finalDraggedCardData.quest,
+                        id: finalDraggedCardData.key,
                         position: newPosition 
                     };
                     
-                    holosphere.put(holonID, `quests/${finalDraggedCardData.key}`, updatedQuest)
+                    // Dispatch optimistic update to parent
+                    dispatch('questPositionChanged', {
+                        key: finalDraggedCardData.key,
+                        position: newPosition
+                    });
+                    
+                    holosphere.put(holonID, 'quests', updatedQuest)
                         .then(() => {
                             console.log(`[CanvasView] Successfully saved new position for quest ${finalDraggedCardData.key}`);
                             pendingPositionSaves.delete(finalDraggedCardData.key);
