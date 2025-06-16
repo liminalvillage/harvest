@@ -95,11 +95,25 @@
 		
 		return () => {
 			document.removeEventListener('click', handleClickOutside);
+			// Clean up subscriptions on unmount
+			if (questSubscriptionOff) {
+				questSubscriptionOff();
+				questSubscriptionOff = null;
+			}
 		};
 	});
 
+	// Store cleanup function to avoid subscription conflicts
+	let questSubscriptionOff = null;
+
 	// Subscribe to changes in the specified holon
 	async function subscribeToOffersAndNeeds() {
+		// Clean up any existing subscription
+		if (questSubscriptionOff) {
+			questSubscriptionOff();
+			questSubscriptionOff = null;
+		}
+
 		store = {};
 		if (holosphere) {
 			if (includeFederatedOffers) {
@@ -107,7 +121,7 @@
 				await fetchFederatedOffersAndNeeds();
 			} else {
 				// Use regular subscription
-				holosphere.subscribe(holonID, "quests", (newItem, key) => {
+				questSubscriptionOff = holosphere.subscribe(holonID, "quests", (newItem, key) => {
 					if (newItem) {
 						const parsedItem = newItem;
 						parsedItem.key = key; // Add the key to the parsed item object
@@ -118,30 +132,6 @@
 						delete store[key];
 					}
 					store = store; // Trigger reactivity
-				});
-				
-				// Also subscribe to participation updates
-				holosphere.subscribe(holonID, "participations", (newParticipation, key) => {
-					if (newParticipation && newParticipation.itemId) {
-						// Find the item in the store and update its participants
-						const itemKey = Object.keys(store).find(k => store[k].id === newParticipation.itemId);
-						if (itemKey) {
-							const item = store[itemKey];
-							const existingParticipants = item.participants || [];
-							const alreadyExists = existingParticipants.some((p) => p.id === newParticipation.participant.id);
-							
-							if (!alreadyExists) {
-								const updatedItem = {
-									...item,
-									participants: [...existingParticipants, newParticipation.participant]
-								};
-								store = {
-									...store,
-									[itemKey]: updatedItem
-								};
-							}
-						}
-					}
 				});
 			}
 		}
@@ -487,7 +477,7 @@
 			
 			console.log("[Offers.svelte] Stored participation for federated item:", participationData);
 		} else {
-			// For local items, update normally
+			// For local items, update normally - the subscription will handle the store update
 			await holosphere.put(holonID, 'quests', updatedItem);
 		}
 		
@@ -830,10 +820,19 @@
 								>
 									<div class="flex items-center justify-between gap-3">
 										<div class="flex items-center gap-3 flex-1 min-w-0">
-											<!-- Offer Icon -->
-											<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
-												🤝
-											</div>
+											<!-- Initiator Picture -->
+											{#if offer.initiator?.id}
+												<img 
+													class="w-8 h-8 rounded-full border border-gray-400 flex-shrink-0" 
+													src={`https://gun.holons.io/getavatar?user_id=${offer.initiator.id}`} 
+													alt={offer.initiator.firstName || offer.initiator.username || 'User'} 
+												/>
+											{:else}
+												<!-- Fallback Offer Icon -->
+												<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
+													🤝
+												</div>
+											{/if}
 
 											<!-- Main Content -->
 											<div class="flex-1 min-w-0">
@@ -880,15 +879,21 @@
 													{#if offer.published}
 														<span
 															class="inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-800 border border-green-500/50"
-															title="Published to {offer.publishedTo || 'federated'} chat(s) on {new Date(offer.publishedAt).toLocaleDateString()}"
+															title="Cast to {offer.publishedTo || 'federated'} chat(s) on {new Date(offer.publishedAt).toLocaleDateString()}"
+															style="display: none"
 														>
 															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
 															</svg>
-															<span>Published</span>
+															<span>Cast</span>
 														</span>
 													{/if}
 												</div>
+												{#if offer.initiator?.firstName || offer.initiator?.username}
+													<p class="text-xs text-gray-600 mb-1">
+														Offered by {offer.initiator.firstName || offer.initiator.username}
+													</p>
+												{/if}
 												{#if offer.description}
 													<p class="text-sm text-gray-700 truncate">
 														{offer.description}
@@ -899,11 +904,11 @@
 
 										<!-- Right Side Meta Info -->
 										<div class="flex items-center gap-3 flex-shrink-0 text-sm">
-											<!-- Publish Button -->
+											<!-- Cast Button -->
 											<button
 												class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
 												on:click|stopPropagation={() => {
-													console.log("[Offers.svelte] Publish button clicked for offer:", offer);
+													console.log("[Offers.svelte] Cast button clicked for offer:", offer);
 													console.log("[Offers.svelte] Offer data:", offer);
 													console.log("[Offers.svelte] holosphere available:", !!holosphere);
 													console.log("[Offers.svelte] holonID:", holonID);
@@ -911,9 +916,10 @@
 												}}
 												disabled={isPublishing}
 												title={offer.published ? 
-													`Published to ${offer.publishedTo || 'federated'} chat(s) on ${new Date(offer.publishedAt).toLocaleDateString()}` : 
-													'Publish this offer to federated chats'
+													`Cast to ${offer.publishedTo || 'federated'} chat(s) on ${new Date(offer.publishedAt).toLocaleDateString()}` : 
+													'Cast this offer to federated chats'
 												}
+												style="display: none"
 											>
 												<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
@@ -921,9 +927,9 @@
 												{#if isPublishing && publishingItemKey === offer.key}
 													<span class="text-sm">{publishStatus}</span>
 												{:else if offer.published}
-													<span class="text-sm">Published</span>
+													<span class="text-sm">Cast</span>
 												{:else}
-													<span class="text-sm">Publish</span>
+													<span class="text-sm">Cast</span>
 												{/if}
 											</button>
 
@@ -939,7 +945,7 @@
 													{#if offer.participants && offer.participants.length > 0}
 														Add ({offer.participants.length})
 													{:else}
-														Take Offer
+														Accept
 													{/if}
 												</button>
 												{#if showDropdownFor === offer.key}
@@ -1017,10 +1023,19 @@
 								>
 									<div class="flex items-center justify-between gap-3">
 										<div class="flex items-center gap-3 flex-1 min-w-0">
-											<!-- Request Icon -->
-											<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
-												📋
-											</div>
+											<!-- Initiator Picture -->
+											{#if need.initiator?.id}
+												<img 
+													class="w-8 h-8 rounded-full border border-gray-400 flex-shrink-0" 
+													src={`https://gun.holons.io/getavatar?user_id=${need.initiator.id}`} 
+													alt={need.initiator.firstName || need.initiator.username || 'User'} 
+												/>
+											{:else}
+												<!-- Fallback Request Icon -->
+												<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
+													📋
+												</div>
+											{/if}
 											
 											<!-- Main Content -->
 											<div class="flex-1 min-w-0">
@@ -1067,15 +1082,21 @@
 													{#if need.published}
 														<span
 															class="inline-flex items-center gap-2 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-800 border border-green-500/50"
-															title="Published to {need.publishedTo || 'federated'} chat(s) on {new Date(need.publishedAt).toLocaleDateString()}"
+															title="Cast to {need.publishedTo || 'federated'} chat(s) on {new Date(need.publishedAt).toLocaleDateString()}"
+															style="display: none"
 														>
 															<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
 															</svg>
-															<span>Published</span>
+															<span>Cast</span>
 														</span>
 													{/if}
 												</div>
+												{#if need.initiator?.firstName || need.initiator?.username}
+													<p class="text-xs text-gray-600 mb-1">
+														Requested by {need.initiator.firstName || need.initiator.username}
+													</p>
+												{/if}
 												{#if need.description}
 													<p class="text-sm text-gray-700 truncate">
 														{need.description}
@@ -1086,11 +1107,11 @@
 
 										<!-- Right Side Meta Info -->
 										<div class="flex items-center gap-3 flex-shrink-0 text-sm">
-											<!-- Publish Button -->
+											<!-- Cast Button -->
 											<button
 												class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
 												on:click|stopPropagation={() => {
-													console.log("[Offers.svelte] Publish button clicked for need:", need);
+													console.log("[Offers.svelte] Cast button clicked for need:", need);
 													console.log("[Offers.svelte] Need data:", need);
 													console.log("[Offers.svelte] holosphere available:", !!holosphere);
 													console.log("[Offers.svelte] holonID:", holonID);
@@ -1098,9 +1119,10 @@
 												}}
 												disabled={isPublishing}
 												title={need.published ? 
-													`Published to ${need.publishedTo || 'federated'} chat(s) on ${new Date(need.publishedAt).toLocaleDateString()}` : 
-													'Publish this request to federated chats'
+													`Cast to ${need.publishedTo || 'federated'} chat(s) on ${new Date(need.publishedAt).toLocaleDateString()}` : 
+													'Cast this request to federated chats'
 												}
+												style="display: none"
 											>
 												<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
 													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
@@ -1108,9 +1130,9 @@
 												{#if isPublishing && publishingItemKey === need.key}
 													<span class="text-sm">{publishStatus}</span>
 												{:else if need.published}
-													<span class="text-sm">Published</span>
+													<span class="text-sm">Cast</span>
 												{:else}
-													<span class="text-sm">Publish</span>
+													<span class="text-sm">Cast</span>
 												{/if}
 											</button>
 
@@ -1126,7 +1148,7 @@
 													{#if need.participants && need.participants.length > 0}
 														Add ({need.participants.length})
 													{:else}
-														Take Need
+														Fulfill
 													{/if}
 												</button>
 												{#if showDropdownFor === need.key}

@@ -77,11 +77,11 @@ export const data = [
 		icon: StatusIcon,
 		link: '/status'
 	},
-	{
-		title: 'Global Holons',
-		icon: GlobalHolonsIcon,
-		link: '/global-holons'
-	},
+	// {
+	// 	title: 'Global Holons',
+	// 	icon: GlobalHolonsIcon,
+	// 	link: '/global-holons'
+	// },
 	{
 		title: 'Federation',
 		icon: FederationIcon,

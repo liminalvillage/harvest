@@ -659,7 +659,7 @@
 
             console.log("[TaskModal.svelte] Propagation result:", propagationResult);
 
-            if (propagationResult.success > 0 || propagationResult.parentPropagation?.success > 0) {
+            if (propagationResult.success > 0 || (propagationResult.parentPropagation?.success || 0) > 0) {
                 const totalSuccess = (propagationResult.success || 0) + (propagationResult.parentPropagation?.success || 0);
                 publishStatus = `Published to ${totalSuccess} location(s)`;
                 
@@ -791,12 +791,13 @@
                         {#if quest.published}
                             <span
                                 class="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 text-green-300 rounded-lg text-sm font-medium border border-green-500/50"
-                                title="Published to {quest.publishedTo || 'federated'} chat(s) on {new Date(quest.publishedAt).toLocaleDateString()}"
+                                title="Cast to {quest.publishedTo || 'federated'} chat(s) on {new Date(quest.publishedAt).toLocaleDateString()}"
+                                style="display: none"
                             >
                                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
                                 </svg>
-                                <span>Published</span>
+                                <span>Cast</span>
                             </span>
                         {/if}
                         {#if quest.category}
@@ -1169,10 +1170,11 @@
                         on:touchcancel={handleButtonTouchCancel}
                         disabled={isPublishing}
                         title={quest.published ? 
-                            `Published to ${quest.publishedTo || 'federated'} chat(s) on ${new Date(quest.publishedAt).toLocaleDateString()}` : 
-                            'Publish this task to federated chats'
+                            `Cast to ${quest.publishedTo || 'federated'} chat(s) on ${new Date(quest.publishedAt).toLocaleDateString()}` : 
+                            'Cast this task to federated chats'
                         }
                         type="button"
+                        style="display: none"
                     >
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
@@ -1180,9 +1182,9 @@
                         {#if isPublishing}
                             <span class="text-sm">{publishStatus}</span>
                         {:else if quest.published}
-                            <span class="text-sm">Published</span>
+                            <span class="text-sm">Cast</span>
                         {:else}
-                            <span class="text-sm">Publish</span>
+                            <span class="text-sm">Cast</span>
                         {/if}
                     </button>
                 </div>
