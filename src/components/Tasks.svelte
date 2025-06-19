@@ -120,6 +120,9 @@
 	// Add this variable to track the selected task
 	let selectedTask: any = null;
 
+	// Add cache for hologram source names to avoid repeated resolution
+	let hologramSourceNames = new Map<string, string>();
+
 	// Add these near the top of the script section, after the interface definitions
 	// let sortField: 'x' | 'y' = 'x'; // Removed
 	// let sortDirection: 'asc' | 'desc' = 'desc'; // Removed
@@ -387,8 +390,6 @@
 		event.preventDefault();
 		const sourceKey = event.dataTransfer?.getData('text/plain') || '';
 
-		console.log(`[Tasks] Drop initiated: ${sourceKey} -> ${targetKey}, sortCriteria: ${sortCriteria}`);
-
 		// Ensure holonID is not null before proceeding
 		const currentHolonID = holonID; // Use the reactive holonID variable
 		if (!currentHolonID) {
@@ -398,7 +399,6 @@
 		}
 
 		if (!sourceKey || sourceKey === targetKey) {
-			console.log("[Tasks] Drop cancelled: invalid source/target");
 			handleDragEnd();
 			return;
 		}
@@ -543,17 +543,63 @@
 		};
 	});
 
-	// Function to get hologram source name using centralized service
+	// Function to get hologram source name from cache
 	function getHologramSource(hologramSoul: string | undefined): string {
 		if (!hologramSoul) return '';
 		
-		// Use the centralized service to get hologram source name
-		// This will return cached name immediately or trigger async fetch with callback
-		return getHologramSourceName(holosphere, hologramSoul, () => {
-			// Trigger reactivity by updating quests when name is fetched
-			console.log('[Tasks] Hologram source name updated, triggering reactivity');
-			quests = [...quests];
+		// Return cached name if available
+		if (hologramSourceNames.has(hologramSoul)) {
+			return hologramSourceNames.get(hologramSoul)!;
+		}
+		
+		// Return fallback while loading
+		const match = hologramSoul.match(/Holons\/([^\/]+)/);
+		return match ? `Holon ${match[1]}` : 'External Source';
+	}
+
+		// Function to pre-resolve hologram names for all quests
+	async function preResolveHologramNames(questsToProcess: [string, Quest][]) {
+		const hologramSouls = new Set<string>();
+		
+		// Collect all unique hologram souls that we don't already have cached
+		questsToProcess.forEach(([_, quest]) => {
+			if (quest._meta?.resolvedFromHologram && quest._meta.hologramSoul) {
+				// Only add if we don't already have it cached
+				if (!hologramSourceNames.has(quest._meta.hologramSoul)) {
+					hologramSouls.add(quest._meta.hologramSoul);
+				}
+			}
 		});
+		
+		// Only resolve names we don't already have
+		if (hologramSouls.size === 0) return;
+		
+		// Resolve names for all new hologram souls using the async version to get real names
+		const promises = Array.from(hologramSouls).map(async (hologramSoul) => {
+			try {
+				const match = hologramSoul.match(/Holons\/([^\/]+)/);
+				if (match) {
+					const holonId = match[1];
+					// Use the async version to get the actual name directly
+					const { fetchHolonName } = await import('../utils/holonNames');
+					const realName = await fetchHolonName(holosphere, holonId);
+					hologramSourceNames.set(hologramSoul, realName);
+				}
+			} catch (error) {
+				// Error resolving hologram source name - set fallback
+				const match = hologramSoul.match(/Holons\/([^\/]+)/);
+				if (match) {
+					hologramSourceNames.set(hologramSoul, `Holon ${match[1]}`);
+				}
+			}
+		});
+		
+		await Promise.allSettled(promises);
+		
+		// Trigger reactivity only if we actually resolved new names
+		if (hologramSouls.size > 0) {
+			hologramSourceNames = new Map(hologramSourceNames);
+		}
 	}
 
 	// Add color category function
@@ -654,14 +700,10 @@
 			subscriptionState.currentHolonID = holonID;
 			
 			// Fetch initial data first
-			console.log("[Tasks.svelte] Fetching initial data for holonID:", holonID);
 			const initialData = await holosphere.getAll(holonID, "quests");
-			console.log("[Tasks.svelte] Initial data:", initialData);
 			
 			// Fetch participation data for federated items
-			console.log("[Tasks.svelte] Fetching participation data...");
 			const participationData = await holosphere.getAll(holonID, "participations");
-			console.log("[Tasks.svelte] Participation data:", participationData);
 			
 			// Create a map of item participations
 			const participationsMap = new Map();
@@ -676,12 +718,16 @@
 				});
 			}
 			
-			// Process initial data
+							// Process initial data
 			if (Array.isArray(initialData)) {
 				initialData.forEach((quest: any, index) => {
 					if (quest && quest.id) {
 						// Use the quest ID as the key, or generate one if missing
 						const key = quest.id || `initial_${index}`;
+						
+						// Ensure required arrays are initialized
+						if (!quest.participants) quest.participants = [];
+						if (!quest.appreciation) quest.appreciation = [];
 						
 						// Check if this quest has participation data
 						const participations = participationsMap.get(quest.id);
@@ -733,27 +779,45 @@
 			
 			// Update quests array to trigger reactivity
 			quests = Object.entries(store);
-			console.log("[Tasks.svelte] Initial store populated with", Object.keys(store).length, "items");
 			
-			// Set up subscription for future updates
-			const off = holosphere.subscribe(holonID, "quests", (newquest: Quest | null, key?: string) => {
-				console.log(`[Tasks] Subscription update received for key: ${key}`, newquest ? 'UPDATE' : 'DELETE');
+			// Pre-resolve hologram names to avoid repeated resolution in templates
+			await preResolveHologramNames(quests);
+			
+			// Set up subscription for future updates  
+			const off = holosphere.subscribe(holonID, "quests", async (newquest: Quest | null, key?: string) => {
+				// Check if this is the circular hologram that's causing issues
+				if (newquest && newquest.id === '1750286259429') {
+					console.warn('Blocking circular hologram quest:', newquest.id);
+					return;
+				}
+				
 				// Update store immediately
 				const newStore = { ...store };
 				if (newquest && key) {
+					// Ensure required arrays are initialized
+					if (!newquest.participants) newquest.participants = [];
+					if (!newquest.appreciation) newquest.appreciation = [];
 					newStore[key] = newquest;
 				} else if (key) {
 					delete newStore[key];
 				}
 				// Directly update store and quests, which will trigger reactive updates
 				store = newStore; 
-				quests = Object.entries(store); 
+				quests = Object.entries(store);
+				
+				// Only resolve hologram names if this is a new hologram we haven't seen before
+				if (newquest && newquest._meta?.resolvedFromHologram && newquest._meta.hologramSoul && 
+					!hologramSourceNames.has(newquest._meta.hologramSoul)) {
+					await preResolveHologramNames([[key!, newquest]]);
+				}
 			});
 
 			// Also subscribe to participation updates
 			let participationOff: (() => void) | undefined;
 			try {
 				const participationSub = await holosphere.subscribe(holonID, "participations", (newParticipation: any, key?: string) => {
+					let storeUpdated = false;
+					
 					if (newParticipation && newParticipation.itemId) {
 						// Find the quest in the store and update its participants
 						const questKey = Object.keys(store).find(k => store[k].id === newParticipation.itemId);
@@ -771,22 +835,24 @@
 									...store,
 									[questKey]: updatedQuest
 								};
-								quests = Object.entries(store);
+								storeUpdated = true;
 							}
 						}
 					} else if (key) {
-						// This is a deletion - we need to find which quest had this participation
-						// and remove the corresponding participant
-						Object.keys(store).forEach(questKey => {
-							const quest = store[questKey];
-							if (quest.participants && quest.participants.length > 0) {
-								// We can't easily determine which participant was removed from just the key
-								// So we'll need to refetch participation data to get the current state
-								// For now, we'll just trigger a store update to ensure consistency
-								store = { ...store };
-								quests = Object.entries(store);
-							}
-						});
+						// For deletions, just mark that we need to update
+						// We'll avoid triggering unnecessary reactive updates
+						const hasParticipants = Object.values(store).some(quest => 
+							quest.participants && quest.participants.length > 0
+						);
+						if (hasParticipants) {
+							store = { ...store };
+							storeUpdated = true;
+						}
+					}
+					
+					// Only update quests if store was actually changed
+					if (storeUpdated) {
+						quests = Object.entries(store);
 					}
 				});
 				participationOff = participationSub?.unsubscribe;
@@ -849,8 +915,9 @@
 		};
 	});
 
-	// Modify the reactive statements to be more efficient
-	$: {
+	// Modify the reactive statements to be more efficient and avoid triggering excessive re-processing
+	$: filteredQuests = (() => {
+		// Create a memoized/stable reference to avoid unnecessary re-filtering
 		let currentFilteredQuests = quests.filter(([_, quest]) => {
 			if (selectedCategory !== "all" && quest.category !== selectedCategory) {
 				return false;
@@ -859,17 +926,14 @@
 			// Default to 'task' if type is missing, then check if it's a valid type for display.
 			const type = quest.type || 'task'; 
 			if (!['task', 'quest', 'event', 'recurring'].includes(type)) {
-				// console.log('Filtering out due to invalid type:', quest.title, quest.type);
 				return false;
 			}
 
 			// Default to 'ongoing' if status is missing.
 			const status = quest.status || 'ongoing';
 			if (status === "completed" && !showCompleted) {
-				// console.log('Filtering out completed task when showCompleted is false:', quest.title);
 				return false;
 			}
-			// Implicitly, if status is 'ongoing', or if it's 'completed' and showCompleted is true, it passes this part.
 
 			return true; // Quest passes all filters
 		});
@@ -914,8 +978,9 @@
 				return valB - valA;
 			}
 		});
-		filteredQuests = currentFilteredQuests;
-	}
+		
+		return currentFilteredQuests;
+	})();
 
 	// Save showHolograms preference to localStorage
 	$: if (typeof localStorage !== 'undefined') {
@@ -1135,13 +1200,10 @@
 				<div class="flex justify-center mb-6">
 					<button
 						on:click={showDialog}
-						class="group flex items-center gap-3 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-medium transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+						class="w-12 h-12 bg-gray-600 hover:bg-gray-500 text-white rounded-full flex items-center justify-center transition-all duration-300 transform hover:scale-110 shadow-lg hover:shadow-xl"
 						aria-label="Add new task"
 					>
-						<div class="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors">
-							<span class="text-lg font-bold leading-none">+</span>
-						</div>
-						<span>Add New Task</span>
+						<span class="text-xl font-bold leading-none">+</span>
 					</button>
 				</div>
 
@@ -1164,133 +1226,131 @@
 						</div>
 					{/if}
 				{:else}
-					<div class="space-y-3">
-						{#each filteredQuests as [key, quest]}
-							{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
-								<button
-									id={key}
-									class="w-full task-card relative text-left group"
-									on:click|stopPropagation={() => handleTaskClick(key, quest)}
-									draggable="true"
-									on:dragstart={(e) => handleDragStart(e, key)}
-									on:dragover={(e) => handleDragOver(e, key)}
-									on:drop={(e) => handleDrop(e, key)}
-									on:dragend={handleDragEnd}
-									aria-label={`Open task: ${quest.title}`}
-									class:dragging={$dragState.draggedId === key}
-									class:drag-over={$dragState.dragOverId === key}
-								>
-									<div
-										class="p-3 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
-										style="background-color: {quest.status === 'completed'
-											? '#374151'
-											: getColorFromCategory(quest.category, quest.type)}; 
-											   opacity: {quest.status === 'completed' ? '0.7' : quest._meta?.resolvedFromHologram ? '0.75' : '1'};
-											   {quest._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
-									>
-										<div class="flex items-center justify-between gap-3">
-											<div class="flex items-center gap-3 flex-1 min-w-0">
-												<!-- Task Icon -->
-												<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
-													{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : '✓'}
-												</div>
-												
-												<!-- Main Content -->
-												<div class="flex-1 min-w-0">
-													<div class="flex items-center gap-2 mb-1">
-														<h3 class="text-base font-bold text-gray-800 truncate">
-															{quest.title}
-														</h3>
-														{#if quest._meta?.resolvedFromHologram}
-															<button 
-																class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors" 
-																title="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
-																on:click|stopPropagation={() => {
-																	const match = quest._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
-																	if (match) {
-																		window.location.href = `/${match[1]}/tasks`;
-																	}
-																}}
-															>
-																<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-																	<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-																</svg>
-																{getHologramSource(quest._meta.hologramSoul)}
-																<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-																	<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-																</svg>
-															</button>
-														{/if}
-														{#if quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating'}
-															<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/30 text-purple-800 flex-shrink-0">
-																🔄
-															</span>
-														{/if}
-														{#if quest.category}
-															<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-black/10 text-gray-700 flex-shrink-0">
-																<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-																	<path d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"/>
-																</svg>
-																{quest.category}
-															</span>
-														{/if}
-													</div>
-													{#if quest.description}
-														<p class="text-sm text-gray-700 truncate">
-															{quest.description}
-														</p>
-													{/if}
-												</div>
-											</div>
-
-											<!-- Right Side Meta Info -->
-											<div class="flex items-center gap-3 flex-shrink-0 text-sm">
-												{#if quest.location}
-													<div class="flex items-center gap-1 text-gray-600">
-														<span class="text-xs">📍</span>
-														<span class="truncate max-w-16 text-xs">{quest.location.split(",")[0]}</span>
-													</div>
-												{/if}
-
-												{#if quest.participants?.length > 0}
-													<div class="flex items-center gap-1">
-														<div class="flex -space-x-1 relative group" title={quest.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}>
-															{#each quest.participants.slice(0, 2) as participant}
-																<div class="relative">
-																	<img
-																		class="w-5 h-5 rounded-full border border-white shadow-sm"
-																		src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
-																		alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
-																	/>
-																</div>
-															{/each}
-															{#if quest.participants.length > 2}
-																<div class="w-5 h-5 rounded-full bg-gray-400 flex items-center justify-center text-xs border border-white shadow-sm text-white font-medium">
-																	<span>+{quest.participants.length - 2}</span>
-																</div>
-															{/if}
-														</div>
-													</div>
-												{/if}
-
-												{#if quest.when}
-													<div class="text-xs font-medium text-gray-700 whitespace-nowrap">
-														<div class="text-xs text-gray-600 mb-1">{formatDate(quest.when)}</div>
-														{formatTime(quest.when)}
-														{#if quest.ends}<br/>{formatTime(quest.ends)}{/if}
-													</div>
-												{/if}
-
-												{#if quest.appreciation.length > 0}
-													<div class="flex items-center gap-1 text-gray-600" title={`${quest.appreciation.length} appreciations`}>
-														<span class="text-xs">👍</span>
-														<span class="text-xs font-medium">{quest.appreciation.length}</span>
-													</div>
+					<div class="space-y-2 sm:space-y-3">
+										{#each filteredQuests as [key, quest]}
+					{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
+						<button
+							id={key}
+							class="w-full task-card relative text-left group"
+							on:click|stopPropagation={() => handleTaskClick(key, quest)}
+							draggable="true"
+							on:dragstart={(e) => handleDragStart(e, key)}
+							on:dragover={(e) => handleDragOver(e, key)}
+							on:drop={(e) => handleDrop(e, key)}
+							on:dragend={handleDragEnd}
+							aria-label={`Open task: ${quest.title}`}
+							class:dragging={$dragState.draggedId === key}
+							class:drag-over={$dragState.dragOverId === key}
+						>
+							<div
+								class="p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
+								style="background-color: {quest.status === 'completed'
+									? '#374151'
+									: getColorFromCategory(quest.category, quest.type)};
+								   opacity: {quest.status === 'completed' ? '0.7' : quest._meta?.resolvedFromHologram ? '0.75' : '1'};
+								   {quest._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+							>
+								<div class="flex items-center justify-between gap-2 sm:gap-3">
+									<div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+										<!-- Task Icon -->
+										<div class="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-black/20 flex items-center justify-center text-xs sm:text-sm">
+											{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : '✓'}
+										</div>
+										
+										<!-- Main Content -->
+										<div class="flex-1 min-w-0">
+											<div class="flex items-center gap-1 sm:gap-2 mb-0.5 sm:mb-1">
+												<h3 class="text-sm sm:text-base font-bold text-gray-800 truncate">
+													{quest.title}
+												</h3>
+												{#if quest._meta?.resolvedFromHologram}
+													<span
+														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors cursor-pointer"
+														title="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
+														on:click|stopPropagation={() => {
+															const match = quest._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
+															if (match) {
+																window.location.href = `/${match[1]}/tasks`;
+															}
+														}}
+														on:keydown|stopPropagation={(e) => {
+															if (e.key === 'Enter' || e.key === ' ') {
+																const match = quest._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
+																if (match) {
+																	window.location.href = `/${match[1]}/tasks`;
+																}
+															}
+														}}
+														tabindex="0"
+														role="button"
+														aria-label="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
+													>
+														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+														</svg>
+														{getHologramSource(quest._meta.hologramSoul)}
+														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+														</svg>
+													</span>
 												{/if}
 											</div>
+											{#if quest.description}
+												<p class="text-xs sm:text-sm text-gray-700 mb-1 sm:mb-2 line-clamp-2">{quest.description}</p>
+											{/if}
+											{#if quest.category}
+												<span class="inline-block px-1.5 sm:px-2 py-0.5 sm:py-1 text-xs bg-black/10 text-gray-700 rounded-md">
+													{quest.category}
+												</span>
+											{/if}
 										</div>
 									</div>
-								</button>
+									
+									<!-- Right Side Content -->
+									<div class="flex items-center gap-1.5 sm:gap-3 text-xs sm:text-sm text-gray-700">
+										{#if quest.when}
+											<div class="text-center hidden sm:block" title="Scheduled time">
+												<span class="block text-xs opacity-75">
+													{formatDate(quest.when)} @ {formatTime(quest.when)}
+													{#if quest.ends}- {formatTime(quest.ends)}{/if}
+												</span>
+											</div>
+										{/if}
+										
+										{#if quest.participants && quest.participants.length > 0}
+											<div class="flex -space-x-1 relative" title={quest.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}>
+												{#each quest.participants.slice(0, 3) as participant}
+													{#if participant.id}
+														<img 
+															class="w-5 h-5 sm:w-7 sm:h-7 rounded-full border-1 sm:border-2 border-white object-cover" 
+															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`} 
+															alt={participant.firstName || participant.username || 'User'} 
+															title={`${participant.firstName || participant.username} ${participant.lastName || ''}`}
+														/>
+													{:else}
+														<div class="w-5 h-5 sm:w-7 sm:h-7 rounded-full border-1 sm:border-2 border-white flex items-center justify-center text-xs font-medium bg-blue-500 text-white">
+															{participant.firstName ? participant.firstName[0] : (participant.username ? participant.username[0] : '?')}
+														</div>
+													{/if}
+												{/each}
+												{#if quest.participants.length > 3}
+													<div class="w-5 h-5 sm:w-7 sm:h-7 rounded-full border-1 sm:border-2 border-white flex items-center justify-center text-xs font-medium bg-gray-500 text-white">
+														<span>+{quest.participants.length - 3}</span>
+													</div>
+												{/if}
+											</div>
+										{/if}
+
+										{#if quest.appreciation && quest.appreciation.length > 0}
+											<div class="flex items-center gap-0.5 sm:gap-1" title={`${quest.appreciation.length} appreciations`}>
+												<span class="text-xs">👍</span>
+												<span class="text-xs sm:text-sm">{quest.appreciation.length}</span>
+											</div>
+										{/if}
+									</div>
+								</div>
+							</div>
+						</button>
 							{/if}
 						{/each}
 						
@@ -1441,9 +1501,6 @@
 	.dot {
 		transition: transform 0.3s ease-in-out;
 	}
-	.translate-x-5 {
-		transform: translateX(1.25rem);
-	}
 
 	/* Task card styling */
 	.task-card {
@@ -1453,28 +1510,6 @@
 
 	.task-card:hover {
 		cursor: pointer;
-	}
-
-	.task-card.dragging {
-		opacity: 0.5;
-		cursor: grabbing;
-		z-index: 10;
-	}
-
-	.task-card.drag-over {
-		transform: translateY(10px);
-	}
-
-	.task-card.drag-over::before {
-		content: '';
-		position: absolute;
-		top: -5px;
-		left: 0;
-		right: 0;
-		height: 3px;
-		background: linear-gradient(90deg, #3B82F6, #1D4ED8);
-		border-radius: 2px;
-		box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
 	}
 
 	/* Text truncation utilities */
@@ -1497,30 +1532,6 @@
 		}
 	}
 
-	/* Card hover effects */
-	.task-card:hover .group {
-		transform: translateY(-1px);
-	}
-
-	/* Custom scrollbar for modal */
-	.modal-content::-webkit-scrollbar {
-		width: 6px;
-	}
-
-	.modal-content::-webkit-scrollbar-track {
-		background: #374151;
-		border-radius: 3px;
-	}
-
-	.modal-content::-webkit-scrollbar-thumb {
-		background: #6B7280;
-		border-radius: 3px;
-	}
-
-	.modal-content::-webkit-scrollbar-thumb:hover {
-		background: #9CA3AF;
-	}
-
 	.compact-toolbar {
 		gap: 0.5rem !important;
 	}
@@ -1535,8 +1546,5 @@
 	}
 	.compact-toolbar .dot {
 		transition: transform 0.3s ease-in-out;
-	}
-	.compact-toolbar .translate-x-4 {
-		transform: translateX(1.25rem);
 	}
 </style>

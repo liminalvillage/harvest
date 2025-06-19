@@ -57,7 +57,7 @@
 		"d3": "^7.9.0",
 		"ethers": "^6.14.0",
 		"fontawesome": "^5.6.3",
-		"holosphere": "1.1.12",
+		"holosphere": "1.1.15",
 		"lune": "^0.4.0",
 		"mapbox-gl": "^3.7.0",
 		"sass": "^1.77.6",

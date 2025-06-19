@@ -5,10 +5,30 @@
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
+	// Track current subscription state
+	let currentHolonID: string | null = null;
+	let unsubscribeFunction: (() => void) | null = null;
+
 	onMount(() => {
-		ID.subscribe((value) => {
-			subscribeToAnnouncements();
+		const idUnsubscribe = ID.subscribe((value) => {
+			if (value && value !== currentHolonID) {
+				// Clean up previous subscription
+				if (unsubscribeFunction) {
+					unsubscribeFunction();
+					unsubscribeFunction = null;
+				}
+				
+				currentHolonID = value;
+				subscribeToAnnouncements();
+			}
 		});
+		
+		return () => {
+			idUnsubscribe();
+			if (unsubscribeFunction) {
+				unsubscribeFunction();
+			}
+		};
 	});
 
 	interface Announcement {
@@ -26,21 +46,32 @@
 	$: holonID = $ID;
 	$: announcements = Object.entries(store);
 
-	// Suscribe to changes in the specified holon
+	// Subscribe to changes in the specified holon
 	async function subscribeToAnnouncements() {
 		store = {};
-		if (holosphere)
-			holosphere.subscribe(holonID, "announcements", (announce, key) => {
-				if (announce) {
-					// Updates the store with the new value
-					store[key] = announce;
-				} else {
-					// A key may contain a null value (if data has been deleted/set to null)
-					// if so, we remove the item from the store
-					delete store[key];
-					store = store;
+		if (holosphere && holonID) {
+			try {
+				const subscription = await holosphere.subscribe(holonID, "announcements", (announce, key) => {
+					if (!key) return;
+					
+					if (announce) {
+						// Updates the store with the new value
+						store[key] = announce;
+					} else {
+						// A key may contain a null value (if data has been deleted/set to null)
+						// if so, we remove the item from the store
+						delete store[key];
+						store = store;
+					}
+				});
+				
+				if (subscription && typeof subscription.unsubscribe === 'function') {
+					unsubscribeFunction = subscription.unsubscribe;
 				}
-			});
+			} catch (error) {
+				console.error('Failed to subscribe to announcements:', error);
+			}
+		}
 	}
 </script>
 

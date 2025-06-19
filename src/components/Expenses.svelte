@@ -27,91 +27,151 @@
     let availableCurrencies: string[] = [];
     let currenciesFromSettingsLoaded = false;
     let creditMatrix: number[][] = [];
+    let dataLoaded = false; // Track if initial data loading is complete
     
     $: users = Object.values(store);
     
-    onMount(() => {
-        ID.subscribe((value) => {
-            holonID = value;
-            subscribeToExpenses();
-            subscribeToUsers();
-            subscribeToSettings();
+    // Track current subscription state
+    let currentSubscriptionHolonID: string | null = null;
+    let unsubscribeFunctions: (() => void)[] = [];
+    
+    function cleanupSubscriptions() {
+        unsubscribeFunctions.forEach(unsub => {
+            if (typeof unsub === 'function') {
+                try {
+                    unsub();
+                } catch (e) {
+                    console.error('Error during cleanup:', e);
+                }
+            }
         });
+        unsubscribeFunctions = [];
+        currentSubscriptionHolonID = null;
+    }
+    
+    onMount(() => {
+        const idUnsubscribe = ID.subscribe(async (value) => {
+            if (value && value !== currentSubscriptionHolonID) {
+                // Clean up previous subscriptions
+                cleanupSubscriptions();
+                
+                holonID = value;
+                currentSubscriptionHolonID = value;
+                dataLoaded = false; // Reset data loaded state
+                
+                await Promise.all([
+                    subscribeToExpenses(),
+                    subscribeToUsers(),
+                    subscribeToSettings()
+                ]);
+            }
+        });
+        
+        return () => {
+            idUnsubscribe();
+            cleanupSubscriptions();
+        };
     });
 
-    function subscribeToExpenses(): void {
+    async function subscribeToExpenses(): Promise<void> {
         expenses = {};
-        if (holosphere) {
-            holosphere.subscribe(
-                holonID,
-                "expenses",
-                (newItem: any, key?: string) => {
-                    if (key === undefined) return;
-                    if (newItem) {
-                        try {
-                            const parsedExpense = typeof newItem === 'string' ? JSON.parse(newItem) : newItem;
-                            expenses[key] = parsedExpense as Expense;
-                        } catch (e) {
-                            console.error('Failed to parse expense:', e);
+        if (holosphere && holonID) {
+            try {
+                const subscription = await holosphere.subscribe(
+                    holonID,
+                    "expenses",
+                    (newItem: any, key?: string) => {
+                        if (key === undefined) return;
+                        if (newItem) {
+                            try {
+                                const parsedExpense = typeof newItem === 'string' ? JSON.parse(newItem) : newItem;
+                                expenses[key] = parsedExpense as Expense;
+                            } catch (e) {
+                                console.error('Failed to parse expense:', e);
+                            }
+                        } else {
+                            delete expenses[key];
                         }
-                    } else {
-                        delete expenses[key];
+                        expenses = expenses;
+                        if (!currenciesFromSettingsLoaded) {
+                            deriveCurrenciesFromExpenses();
+                        }
+                        dataLoaded = true;
                     }
-                    expenses = expenses;
-                    if (!currenciesFromSettingsLoaded) {
-                        deriveCurrenciesFromExpenses();
-                    }
+                );
+                
+                if (subscription && typeof subscription.unsubscribe === 'function') {
+                    unsubscribeFunctions.push(subscription.unsubscribe);
                 }
-            );
+            } catch (error) {
+                console.error('Failed to subscribe to expenses:', error);
+            }
         }
     }
 
-    function subscribeToUsers(): void {
+    async function subscribeToUsers(): Promise<void> {
         store = {};
-        if (holosphere) {
-            holosphere.subscribe(
-                holonID,
-                "users",
-                (newUser: any, key?: string) => {
-                    if (key === undefined) return;
-                    if (newUser) {
-                        store[key] = newUser as User;
-                    } else {
-                        delete store[key];
+        if (holosphere && holonID) {
+            try {
+                const subscription = await holosphere.subscribe(
+                    holonID,
+                    "users",
+                    (newUser: any, key?: string) => {
+                        if (key === undefined) return;
+                        if (newUser) {
+                            store[key] = newUser as User;
+                        } else {
+                            delete store[key];
+                        }
+                        store = store;
+                        users = Object.values(store);
+                        if (!currenciesFromSettingsLoaded) {
+                            deriveCurrenciesFromExpenses();
+                        }
                     }
-                    store = store;
-                    users = Object.values(store);
-                    if (!currenciesFromSettingsLoaded) {
-                        deriveCurrenciesFromExpenses();
-                    }
+                );
+                
+                if (subscription && typeof subscription.unsubscribe === 'function') {
+                    unsubscribeFunctions.push(subscription.unsubscribe);
                 }
-            );
+            } catch (error) {
+                console.error('Failed to subscribe to users:', error);
+            }
         }
     }
 
-    function subscribeToSettings(): void {
+    async function subscribeToSettings(): Promise<void> {
         availableCurrencies = [];
         if (holosphere && holonID) {
-            holosphere.subscribe(
-                holonID,
-                "settings",
-                (settingsData: any, key?: string) => {
-                    if (settingsData && Array.isArray(settingsData.currencies)) {
-                        availableCurrencies = settingsData.currencies.filter((c: unknown) => typeof c === 'string');
-                    } else {
-                        console.warn("Settings data does not contain a valid 'currencies' array:", settingsData);
-                        availableCurrencies = [];
-                    }
-                    availableCurrencies = [...availableCurrencies];
+            try {
+                const subscription = await holosphere.subscribe(
+                    holonID,
+                    "settings",
+                    (settingsData: any, key?: string) => {
+                        if (settingsData && Array.isArray(settingsData.currencies)) {
+                            availableCurrencies = settingsData.currencies.filter((c: unknown) => typeof c === 'string');
+                        } else {
+                            console.warn("Settings data does not contain a valid 'currencies' array:", settingsData);
+                            availableCurrencies = [];
+                        }
+                        availableCurrencies = [...availableCurrencies];
 
-                    if (settingsData && Array.isArray(settingsData.currencies) && availableCurrencies.length > 0) {
-                        currenciesFromSettingsLoaded = true;
-                    } else {
-                        currenciesFromSettingsLoaded = false;
-                        deriveCurrenciesFromExpenses();
+                        if (settingsData && Array.isArray(settingsData.currencies) && availableCurrencies.length > 0) {
+                            currenciesFromSettingsLoaded = true;
+                        } else {
+                            currenciesFromSettingsLoaded = false;
+                            deriveCurrenciesFromExpenses();
+                        }
+                        dataLoaded = true;
                     }
+                );
+                
+                if (subscription && typeof subscription.unsubscribe === 'function') {
+                    unsubscribeFunctions.push(subscription.unsubscribe);
                 }
-            );
+            } catch (error) {
+                console.error('Failed to subscribe to settings:', error);
+            }
         }
     }
 
@@ -144,6 +204,7 @@
         const derived = [...new Set(Object.values(expenses).map(e => e.currency))] 
                         .filter(c => typeof c === 'string' && c !== '');
         
+
         if (derived.length > 0) {
             availableCurrencies = derived;
         } else {
@@ -158,6 +219,9 @@
             selectedCurrency = availableCurrencies[0];
         }
     }
+
+    // Check if we have finished loading and have no currencies
+    $: noCurrenciesAvailable = dataLoaded && availableCurrencies.length === 0;
 
     // Reactive block that depends on selectedCurrency and users
     $: {
@@ -191,6 +255,8 @@
                 <option value={currency}>{currency.toUpperCase()}</option>
             {/each}
         </select>
+        {:else if noCurrenciesAvailable}
+            <span class="text-gray-500">No currencies configured</span>
         {:else}
             <span class="text-gray-500">Loading currencies...</span>
         {/if}
@@ -245,8 +311,22 @@
             </tbody>
         </table>
     </div>
+    {:else if noCurrenciesAvailable}
+        <div class="text-center text-gray-500 py-16">
+            <div class="mb-4">
+                <i class="fas fa-coins text-4xl text-gray-600 mb-4"></i>
+            </div>
+            <h3 class="text-xl font-semibold mb-2">No Expenses Yet</h3>
+            <p class="text-gray-400 mb-4">Start by adding some expenses to track spending and balances.</p>
+            <p class="text-sm text-gray-500">
+                You can also configure currencies in your holon settings.
+            </p>
+        </div>
     {:else}
-        <div class="text-center text-gray-500 py-10">Select a currency to view balances.</div>
+        <div class="text-center text-gray-500 py-10">
+            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+            <p>Loading expense data...</p>
+        </div>
     {/if}
 
     <!-- Recent Expenses -->

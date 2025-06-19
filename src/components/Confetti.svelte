@@ -68,11 +68,9 @@
     confettiParticles.forEach(p => p.draw(ctx!));
     confettiParticles = confettiParticles.filter(p => p.opacity > 0);
 
-    if (confettiParticles.length === 0 && animationFrameId) { // Stop animation if no particles
-        // Optionally, trigger an event or callback here if the animation is meant to run once and then stop
-        // For continuous effect (if desired later), remove this check or re-trigger createConfetti
-    } else {
-        animationFrameId = requestAnimationFrame(animate);
+    // Continue animation only if there are particles
+    if (confettiParticles.length > 0) {
+      animationFrameId = requestAnimationFrame(animate);
     }
   }
 

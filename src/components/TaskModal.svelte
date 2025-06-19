@@ -61,12 +61,8 @@
         if (!hologramSoul) return '';
         
         // Use the centralized service to get hologram source name
-        // This will return cached name immediately or trigger async fetch with callback
-        return getHologramSourceName(holosphere, hologramSoul, () => {
-            // Trigger reactivity by updating quest when name is fetched
-            console.log('[TaskModal] Hologram source name updated, triggering reactivity');
-            quest = { ...quest };
-        });
+        // Don't use callback to avoid reactive loops - just return cached value
+        return getHologramSourceName(holosphere, hologramSoul);
     }
 
     // Add function to navigate to hologram source
@@ -82,10 +78,6 @@
     }
 
     onMount(() => {
-        console.log("[TaskModal.svelte] Mounted. Quest ID:", questId, "Holon ID:", holonId);
-        console.log("[TaskModal.svelte] Initial quest prop onMount:", JSON.parse(JSON.stringify(quest || {})));
-        console.log("[TaskModal.svelte] Initial quest.participants onMount:", JSON.parse(JSON.stringify(quest.participants || [])));
-
         document.addEventListener("click", handleClickOutside);
 
         let unsubscribeUsers: (() => void) | undefined;
@@ -97,7 +89,6 @@
                     const initialUsersData = await holosphere.getAll(holonId, "users");
                     let usersKeyedByUsername: UserStore = {};
                     if (Array.isArray(initialUsersData)) {
-                        console.log("[TaskModal.svelte] initialUsersData from getAll is ARRAY. Converting to map using user.username as key.");
                         initialUsersData.forEach(user => {
                             if (user && user.username) { // Ensure user and user.username are valid
                                 usersKeyedByUsername[user.username] = user as User;
@@ -106,7 +97,6 @@
                             }
                         });
                     } else if (typeof initialUsersData === 'object' && initialUsersData !== null) {
-                        console.log("[TaskModal.svelte] initialUsersData from getAll is OBJECT. Iterating to ensure keys are user.username.");
                         Object.values(initialUsersData).forEach((user: any) => {
                             if (user && user.username) { // Ensure user and user.username are valid
                                 usersKeyedByUsername[user.username] = user as User;
@@ -118,7 +108,6 @@
                         console.warn("[TaskModal.svelte] Initial users data for TaskModal is not array or object:", initialUsersData);
                     }
                     userStore = usersKeyedByUsername;
-                    console.log("[TaskModal.svelte] userStore after initial getAll (keyed by username):", JSON.parse(JSON.stringify(userStore)));
                 } catch (e) {
                     console.error("[TaskModal.svelte] Error fetching initial users for TaskModal:", e);
                     userStore = {};
@@ -132,13 +121,11 @@
 
                     if (updatedUser && updatedUser.username) { // Prioritize username as the key
                         const actualUserKey = updatedUser.username; // Canonical key is username
-                        console.log(`[TaskModal.svelte] User Add/Update. SubKey from Holosphere: '${subKeyStr}', Using actualUserKey (username): '${actualUserKey}'.`);
                         
                         userStore = { ...userStore, [actualUserKey]: updatedUser };
 
                         // If subKey from Holosphere was different and existed, remove it (if it wasn't another user's username)
                         if (subKeyStr && subKeyStr !== actualUserKey && userStore.hasOwnProperty(subKeyStr) && (!userStore[subKeyStr] || userStore[subKeyStr]?.username !== subKeyStr)) {
-                            console.log(`[TaskModal.svelte] Cleaning up old/mismatched subKey '${subKeyStr}'.`);
                             delete userStore[subKeyStr];
                         }
 
@@ -149,7 +136,6 @@
                         if (!subKeyStr || subKeyStr === 'undefined') {
                             console.warn(`[TaskModal.svelte] User Deletion: Received invalid or undefined subKey: '${subKeyStr}'.`);
                         } else if (userStore.hasOwnProperty(subKeyStr)) { // If subKey itself is a username key
-                            console.log(`[TaskModal.svelte] User Deletion. Deleting by username key from Holosphere: '${subKeyStr}'.`);
                             delete userStore[subKeyStr];
                         } else {
                             // If subKey was not a username, we might need to iterate userStore to find the user whose original_id matched subKey.
@@ -160,8 +146,7 @@
                         console.warn(`[TaskModal.svelte] User subscription: Unhandled case or invalid data (e.g. user without username). SubKey: '${subKeyStr}', User:`, updatedUser, "Update skipped.");
                         return;
                     }
-                    userStore = { ...userStore }; 
-                    console.log("[TaskModal.svelte] userStore after subscription update (keyed by username):", JSON.parse(JSON.stringify(userStore)));
+                    userStore = { ...userStore };
                 });
                 if (typeof off === 'function') {
                     unsubscribeUsers = off;
@@ -184,10 +169,6 @@
     let showDropdown = false;
 
     async function fetchUsersAndShowDropdown() {
-        console.log("[TaskModal.svelte] fetchUsersAndShowDropdown called.");
-        console.log("[TaskModal.svelte] Current quest.participants:", JSON.parse(JSON.stringify(quest.participants || [])));
-        console.log("[TaskModal.svelte] Current userStore:", JSON.parse(JSON.stringify(userStore || {})));
-
         if (!holosphere) {
             console.error("Cannot show user dropdown: holosphere is not available");
             return;
@@ -210,20 +191,7 @@
 
         const updatedQuest = { ...quest, ...updates };
 
-        // Log the object *before* putting it
-        console.log("[TaskModal.svelte] About to call holosphere.put for quest. Quest ID:", questId, "Holon ID:", holonId);
-        try {
-            console.log("[TaskModal.svelte] updatedQuest object structure:", Object.keys(updatedQuest).join(', '));
-            console.log("[TaskModal.svelte] updatedQuest.participants before put:", JSON.parse(JSON.stringify(updatedQuest.participants || [])));
-            // Avoid logging the entire quest if it's huge and causing console lag, focus on participants
-            // For more detail if needed: console.log("[TaskModal.svelte] updatedQuest object being sent (full):", JSON.parse(JSON.stringify(updatedQuest)));
-        } catch (e) {
-            console.error("[TaskModal.svelte] Error logging updatedQuest before put:", e);
-        }
-
         await holosphere.put(holonId, "quests", updatedQuest); // This line triggers the loop for quests
-        
-        console.log("[TaskModal.svelte] holosphere.put for quest completed. Quest ID:", questId);
         quest = updatedQuest; // Update local quest state
 
         if (shouldClose) {
@@ -330,6 +298,33 @@
                 }
             }
 
+            // Add time tracking to expenses when completing task
+            if (quest.timeTracking) {
+                for (const [userID, hours] of Object.entries(quest.timeTracking)) {
+                    const hoursAsNumber = hours as number;
+                    if (hoursAsNumber > 0) {
+                        // Create expense entry for the time logged
+                        try {
+                            const messageID = `${questId}_time_${userID}_${Date.now()}`; // Unique ID for this expense
+                                                         await holosphere.put(holonId, "expenses", {
+                                 id: messageID,
+                                 chatID: holonId,
+                                 amount: hoursAsNumber, // Total hours logged
+                                unit: 'hour',
+                                description: quest.title,
+                                paidBy: userID,
+                                splitWith: [6152474485], // Split with specified user ID
+                                timestamp: new Date().toISOString(),
+                                fromTimeTracking: true, // Flag to identify expenses from time tracking
+                                questId: questId
+                            });
+                        } catch (error) {
+                            console.error(`Error adding time tracking expense for user ${userID}:`, error);
+                        }
+                    }
+                }
+            }
+
             await updateQuest({ status: newStatus, completed_at: new Date().toISOString() });
             dispatch("taskCompleted", { questId });
             dispatch("close");
@@ -348,7 +343,6 @@
 
         // Check if user is already a participant using their username
         if (isUserParticipant(user.username)) {
-            console.log(`[TaskModal.svelte] User ${user.username} is already a participant.`);
             showDropdown = false;
             return;
         }
@@ -392,7 +386,6 @@
     try {
         const hologram = holosphere.createHologram(holonId, 'quests', quest);
         await holosphere.put(user.id, 'quests', hologram);
-        console.log(`[TaskModal.svelte] Created hologram of task "${quest.title}" in participant's personal holon:`, user.id);
     } catch (error) {
         console.error(`[TaskModal.svelte] Error creating hologram in participant's holon (${user.id}):`, error);
     }
@@ -609,16 +602,52 @@
         }
     }
 
-    // Reactive logging for dropdown state
-    $: {
-        if (showDropdown) {
-            const availableUsers = Object.entries(userStore).filter(([userId]) => !isUserParticipant(userId));
-            const allUsers = Object.entries(userStore);
-            console.log("[TaskModal.svelte] Dropdown Opened - User Store (cloned):", JSON.parse(JSON.stringify(userStore))); 
-            console.log("[TaskModal.svelte] Dropdown Opened - Quest Participants (cloned):", JSON.parse(JSON.stringify(quest.participants || [])));
-            console.log("[TaskModal.svelte] Dropdown Opened - All Users in Store (from entries):", allUsers.map(u=>u[1].first_name));
-            console.log("[TaskModal.svelte] Dropdown Opened - Available Users (Filtered for dropdown):", availableUsers.map(u=>u[1].first_name));
+
+
+    // Add time tracking functionality
+    async function updateTimeTracking(userId: string, hoursToAdd: number) {
+        if (!userId) return;
+        
+        const currentTimeTracking = quest.timeTracking || {};
+        const currentHours = currentTimeTracking[userId] || 0;
+        const newHours = Math.max(0, currentHours + hoursToAdd); // Don't allow negative hours
+        
+        const updatedTimeTracking = {
+            ...currentTimeTracking,
+            [userId]: newHours
+        };
+
+        // Remove entries with 0 hours to keep the object clean
+        if (newHours === 0) {
+            delete updatedTimeTracking[userId];
         }
+
+        await updateQuest({ timeTracking: updatedTimeTracking });
+    }
+
+    function formatTime(hours: number): string {
+        if (hours === 0) return "0h";
+        if (hours < 1) {
+            const minutes = Math.round(hours * 60);
+            return `${minutes}m`;
+        }
+        return `${hours.toFixed(2)}h`;
+    }
+
+    function getAllTimeTrackingParticipants() {
+        const participants = [...(quest.participants || [])];
+        
+        // Add initiator if not already in participants
+        if (quest.initiator && !participants.find(p => p.id === quest.initiator.id)) {
+            participants.unshift({
+                id: quest.initiator.id,
+                firstName: quest.initiator.firstName || quest.initiator.first_name,
+                lastName: quest.initiator.lastName || quest.initiator.last_name,
+                username: quest.initiator.username
+            });
+        }
+        
+        return participants;
     }
 
     // Add publish functionality
@@ -635,27 +664,17 @@
         publishStatus = 'Checking federation...';
 
         try {
-            console.log("[TaskModal.svelte] Publishing quest to federated chats:", { questId, holonId });
-
             // First check if there are any federated chats available
             const fedInfo = await holosphere.getFederation(holonId);
-            console.log("[TaskModal.svelte] Federation info:", fedInfo);
             
             // Check if we have either federated chats OR if this is a hex-based holon that can propagate to parents
             const hasFederatedChats = fedInfo && fedInfo.notify && fedInfo.notify.length > 0;
             
-            // For hex-based holons, we can still propagate to parents even without federation
-            // Let's proceed with propagation regardless of federation status
-            if (!hasFederatedChats) {
-                console.log("[TaskModal.svelte] No federated chats available, but proceeding with parent propagation for hex-based holons");
-            }
-
             publishStatus = 'Publishing...';
 
             // Create a hologram for the quest to propagate
             // Use the full quest data instead of just the ID reference
             const hologram = holosphere.createHologram(holonId, 'quests', quest);
-            console.log("[TaskModal.svelte] Created hologram:", hologram);
 
             // Use federation propagation to publish to federated spaces
             // Explicitly enable parent propagation for hex-based holons
@@ -664,8 +683,6 @@
                 propagateToParents: true,
                 maxParentLevels: 1  // Only propagate to immediate parent (1 level up)
             });
-
-            console.log("[TaskModal.svelte] Propagation result:", propagationResult);
 
             if (propagationResult.success > 0 || (propagationResult.parentPropagation?.success || 0) > 0) {
                 const totalSuccess = (propagationResult.success || 0) + (propagationResult.parentPropagation?.success || 0);
@@ -1057,8 +1074,9 @@
                     <div class="space-y-2">
                         {#if quest.participants?.length}
                             {#each quest.participants as participant}
+                                {@const currentTime = quest.timeTracking?.[participant.id] || 0}
                                 <div
-                                    class="flex items-center justify-between bg-gray-700/50 p-2 rounded-lg border border-gray-600/50"
+                                    class="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg border border-gray-600/50"
                                 >
                                     <div class="flex items-center gap-2">
                                         <img
@@ -1066,41 +1084,111 @@
                                             alt={`${participant.firstName} ${participant.lastName || ""}`}
                                             class="w-8 h-8 rounded-full"
                                         />
-                                        <span
-                                            >{participant.firstName}
-                                            {participant.lastName || ""}</span
-                                        >
+                                        <div class="flex flex-col">
+                                            <span class="text-sm font-medium">
+                                                {participant.firstName} {participant.lastName || ""}
+                                            </span>
+                                            <span class="text-xs text-gray-400">
+                                                {formatTime(currentTime)}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <button
-                                        class="text-gray-400 hover:text-red-400 transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center p-2"
-                                        on:click={() =>
-                                            removeParticipant(participant.id)}
-                                        on:touchstart={handleButtonTouchStart}
-                                        on:touchend={handleButtonTouchEnd}
-                                        on:touchcancel={handleButtonTouchCancel}
-                                        aria-label={`Remove participant ${participant.firstName}`}
-                                        type="button"
-                                    >
-                                        <svg
-                                            class="w-5 h-5"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            viewBox="0 0 24 24"
+                                    
+                                    <div class="flex items-center gap-1">
+                                        <!-- Time tracking buttons -->
+                                        <button
+                                            class="px-2 py-1 bg-red-500/20 text-red-400 rounded border border-red-500/50 hover:bg-red-500/30 transition-colors text-xs font-medium touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center"
+                                            on:click={() => updateTimeTracking(participant.id, -1)}
+                                            on:touchstart={handleButtonTouchStart}
+                                            on:touchend={handleButtonTouchEnd}
+                                            on:touchcancel={handleButtonTouchCancel}
+                                            disabled={currentTime === 0}
+                                            title="Remove 1 hour"
+                                            type="button"
                                         >
-                                            <path
-                                                stroke-linecap="round"
-                                                stroke-linejoin="round"
-                                                stroke-width="2"
-                                                d="M6 18L18 6M6 6l12 12"
-                                            />
-                                        </svg>
-                                    </button>
+                                            -1h
+                                        </button>
+                                        <button
+                                            class="px-2 py-1 bg-red-500/20 text-red-400 rounded border border-red-500/50 hover:bg-red-500/30 transition-colors text-xs font-medium touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center"
+                                            on:click={() => updateTimeTracking(participant.id, -0.25)}
+                                            on:touchstart={handleButtonTouchStart}
+                                            on:touchend={handleButtonTouchEnd}
+                                            on:touchcancel={handleButtonTouchCancel}
+                                            disabled={currentTime === 0}
+                                            title="Remove 15 minutes"
+                                            type="button"
+                                        >
+                                            -15m
+                                        </button>
+                                        <button
+                                            class="px-2 py-1 bg-green-500/20 text-green-400 rounded border border-green-500/50 hover:bg-green-500/30 transition-colors text-xs font-medium touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center"
+                                            on:click={() => updateTimeTracking(participant.id, 0.25)}
+                                            on:touchstart={handleButtonTouchStart}
+                                            on:touchend={handleButtonTouchEnd}
+                                            on:touchcancel={handleButtonTouchCancel}
+                                            title="Add 15 minutes"
+                                            type="button"
+                                        >
+                                            +15m
+                                        </button>
+                                        <button
+                                            class="px-2 py-1 bg-green-500/20 text-green-400 rounded border border-green-500/50 hover:bg-green-500/30 transition-colors text-xs font-medium touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center"
+                                            on:click={() => updateTimeTracking(participant.id, 1)}
+                                            on:touchstart={handleButtonTouchStart}
+                                            on:touchend={handleButtonTouchEnd}
+                                            on:touchcancel={handleButtonTouchCancel}
+                                            title="Add 1 hour"
+                                            type="button"
+                                        >
+                                            +1h
+                                        </button>
+                                        
+                                        <!-- Remove participant button -->
+                                        <button
+                                            class="text-gray-400 hover:text-red-400 transition-colors touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center p-1 ml-2"
+                                            on:click={() =>
+                                                removeParticipant(participant.id)}
+                                            on:touchstart={handleButtonTouchStart}
+                                            on:touchend={handleButtonTouchEnd}
+                                            on:touchcancel={handleButtonTouchCancel}
+                                            aria-label={`Remove participant ${participant.firstName}`}
+                                            title="Remove participant"
+                                            type="button"
+                                        >
+                                            <svg
+                                                class="w-4 h-4"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"
+                                                    stroke-width="2"
+                                                    d="M6 18L18 6M6 6l12 12"
+                                                />
+                                            </svg>
+                                        </button>
+                                    </div>
                                 </div>
                             {/each}
                         {:else}
                             <p class="text-gray-500 text-sm">
                                 No participants yet
                             </p>
+                        {/if}
+
+                        <!-- Total time summary -->
+                        {#if quest.timeTracking && Object.keys(quest.timeTracking).length > 0}
+                            {@const totalHours = Object.values(quest.timeTracking).reduce((sum, hours) => (sum as number) + (hours as number), 0)}
+                            {#if totalHours > 0}
+                                <div class="bg-gray-700/30 p-3 rounded-lg border border-gray-600/30 mt-3">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-sm font-medium text-gray-300">Total Time Logged:</span>
+                                        <span class="text-sm font-bold text-white">{formatTime(totalHours as number)}</span>
+                                    </div>
+                                </div>
+                            {/if}
                         {/if}
                     </div>
 
@@ -1140,6 +1228,8 @@
                         </div>
                     {/if}
                 </div>
+
+
 
                 <!-- Action Buttons -->
                 <div class="flex gap-2 pt-4">

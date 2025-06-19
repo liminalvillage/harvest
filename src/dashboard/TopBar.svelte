@@ -13,7 +13,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import  HoloSphere  from 'holosphere';
+	import HoloSphere from 'holosphere';
 	import { ethers } from 'ethers';
 	import { fetchHolonName } from "../utils/holonNames";
 
@@ -71,20 +71,28 @@
 			const stored = localStorage.getItem('previousHolons');
 			if (stored) {
 				previousHolons = JSON.parse(stored).filter((holon: HolonInfo) => !holon.id.startsWith('8'));
-				// Fetch names for holons that don't have them
-				previousHolons.forEach(async (holon) => {
-					if (!holon.name) {
+				// Fetch names for holons that don't have them (batch to avoid redundant calls)
+				const holonsNeedingNames = previousHolons.filter(holon => !holon.name);
+				if (holonsNeedingNames.length > 0) {
+					// Process all missing names in parallel but only update localStorage once
+					Promise.all(holonsNeedingNames.map(async (holon) => {
 						try {
 							const holonName = await fetchHolonName(holosphere, holon.id);
 							if (holonName && !holonName.startsWith('Holon ')) {
 								holon.name = holonName;
-								localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+								return true; // Indicate this holon was updated
 							}
 						} catch (error) {
 							console.error(`Error fetching name for holon ${holon.id}:`, error);
 						}
-					}
-				});
+						return false;
+					})).then((results) => {
+						// Only update localStorage if any names were actually fetched
+						if (results.some(updated => updated)) {
+							localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+						}
+					});
+				}
 			}
 
 			// Add event listeners only in browser environment

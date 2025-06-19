@@ -15,6 +15,7 @@
     color: string;
     dead: boolean = false;
     particles: Particle[] = [];
+    exploded: boolean = false;
 
     constructor(x: number, y: number, sx: number, sy: number, size: number, color: string) {
       this.x = x;
@@ -23,7 +24,6 @@
       this.sy = sy;
       this.size = size;
       this.color = color;
-      this.createParticles();
     }
 
     createParticles() {
@@ -36,29 +36,35 @@
     update() {
       if (this.dead) return;
 
-      this.x += this.sx;
-      this.y += this.sy;
-      this.sy += 0.02; // Gravity
+      if (!this.exploded) {
+        // Update firework rocket
+        this.x += this.sx;
+        this.y += this.sy;
+        this.sy += 0.02; // Gravity
 
-      if (this.sy >= 0 && !this.particles.length) { // Explode when starts falling
-        this.dead = true; // Original firework is done
-         // Particles are already created, they will now animate
-      }
-      
-      this.particles.forEach(p => p.update());
-      this.particles = this.particles.filter(p => !p.dead);
-      if (this.particles.length === 0) {
+        // Explode when rocket starts falling or reaches a certain height
+        if (this.sy >= 0 || this.y <= window.innerHeight * 0.2) {
+          this.exploded = true;
+          this.createParticles(); // Create particles at explosion point
+        }
+      } else {
+        // Update particles
+        this.particles.forEach(p => p.update());
+        this.particles = this.particles.filter(p => !p.dead);
+        if (this.particles.length === 0) {
           this.dead = true;
+        }
       }
     }
 
     draw(ctx: CanvasRenderingContext2D) {
-      if (!this.dead && this.sy < 0) { // Only draw the rocket before explosion
+      if (!this.exploded && !this.dead) { // Draw the rocket before explosion
         ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
         ctx.fill();
       }
+      // Draw particles after explosion
       this.particles.forEach(p => p.draw(ctx));
     }
   }
@@ -125,9 +131,7 @@
     });
     fireworks = fireworks.filter(fw => !fw.dead); // Remove dead fireworks
 
-    // Always request the next animation frame while the component is mounted.
-    // The loop will be stopped by cancelAnimationFrame in onDestroy.
-    // This ensures fireworks launched via setTimeout in onMount are processed.
+    // Continue animation loop - don't stop it until component is destroyed
     animationFrameId = requestAnimationFrame(animate);
   }
 
@@ -138,8 +142,8 @@
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     
-    // Launch an initial burst of 3-5 fireworks
-    const burstCount = Math.floor(Math.random() * 3) + 3; // Randomly 3, 4, or 5 fireworks
+    // Launch an initial burst of 8-12 fireworks
+    const burstCount = Math.floor(Math.random() * 5) + 8; // Randomly 8, 9, 10, 11, or 12 fireworks
     for(let i = 0; i < burstCount; i++) {
         // Stagger the launch slightly for a more natural look
         setTimeout(launchFirework, i * 200); 

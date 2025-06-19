@@ -23,17 +23,11 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 	// Create new fetch promise
 	const fetchPromise = (async () => {
 		try {
-			console.log(`[holonNames] Fetching name for holon: ${holonId}`);
 			const settings = await holosphere.get(holonId, "settings", holonId);
-			console.log(`[holonNames] Settings response for ${holonId}:`, settings);
-			
 			const holonName = settings?.name || `Holon ${holonId}`;
-			console.log(`[holonNames] Resolved name for ${holonId}: ${holonName}`);
-			
 			holonNameCache.set(holonId, holonName);
 			return holonName;
 		} catch (error) {
-			console.error(`Error fetching holon name for ${holonId}:`, error);
 			const fallbackName = `Holon ${holonId}`;
 			holonNameCache.set(holonId, fallbackName);
 			return fallbackName;
@@ -81,19 +75,15 @@ export function getHologramSourceName(
 	// If we have cached name, return it immediately
 	if (holonNameCache.has(holonId)) {
 		const cachedName = holonNameCache.get(holonId)!;
-		console.log(`[holonNames] Using cached name for ${holonId}: ${cachedName}`);
 		return cachedName;
 	}
 	
 	// If we don't have the name cached, start fetching it
-	console.log(`[holonNames] Name not cached for ${holonId}, starting fetch...`);
 	fetchHolonName(holosphere, holonId).then((fetchedName) => {
-		console.log(`[holonNames] Fetched name for ${holonId}: ${fetchedName}, triggering update`);
 		if (onUpdate) {
 			onUpdate();
 		}
 	}).catch((error) => {
-		console.error(`[holonNames] Error in fetch promise for ${holonId}:`, error);
 		if (onUpdate) {
 			onUpdate(); // Still trigger update even on error
 		}
