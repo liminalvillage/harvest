@@ -12,7 +12,7 @@
 	 * @type {string | any[]}
 	 */
 	let store = {};
-	$: holonID = $ID;
+	let holonID: string | null = null;
 
 	// Federated offers toggle
 	let includeFederatedOffers = false;
@@ -37,11 +37,37 @@
 
 	let userStore = {};
 	let showDropdownFor = null; // key of offer/need for which dropdown is open
+	let componentReady = false; // Track if component is ready to work
 
 	// Add publish functionality
 	let isPublishing = false;
 	let publishStatus = '';
 	let publishingItemKey = null;
+
+	// Check holosphere availability with retry logic
+	async function waitForHolosphere(): Promise<boolean> {
+		if (holosphere) {
+			return true;
+		}
+		
+		let retries = 0;
+		const maxRetries = 5; // Reduced retries to fail faster
+		
+		while (retries < maxRetries) {
+			await new Promise(resolve => setTimeout(resolve, 200)); // Slightly longer delay
+			try {
+				holosphere = getContext("holosphere");
+				if (holosphere) {
+					return true;
+				}
+			} catch (error) {
+				// Silently handle context errors
+			}
+			retries++;
+		}
+		
+		return false;
+	}
 
 	// Fetch and subscribe to users for the current holon
 	async function fetchAndSubscribeUsers() {
@@ -49,6 +75,7 @@
 			userStore = {};
 			return;
 		}
+		
 		try {
 			const initialUsers = await holosphere.getAll(holonID, "users");
 			let usersKeyedById = {};
@@ -63,77 +90,142 @@
 			}
 			userStore = usersKeyedById;
 		} catch (e) {
-			console.error("[Offers.svelte] Error fetching initial users:", e);
 			userStore = {};
 		}
 
-		// Subscribe to user updates
-		holosphere.subscribe(holonID, "users", (updatedUser, key) => {
-			if (updatedUser) {
-				userStore = { ...userStore, [key]: updatedUser };
-			} else {
-				const { [key]: _, ...rest } = userStore;
-				userStore = rest;
-			}
-		});
-	}
-
-	// Call this in onMount and when holonID changes
-	$: if (holonID) {
-		fetchAndSubscribeUsers();
-		subscribeToOffersAndNeeds(); // Also subscribe to offers when holonID changes
+		// Subscribe to user updates with error handling
+		try {
+			holosphere.subscribe(holonID, "users", (updatedUser, key) => {
+				try {
+					if (updatedUser) {
+						userStore = { ...userStore, [key]: updatedUser };
+					} else {
+						const { [key]: _, ...rest } = userStore;
+						userStore = rest;
+					}
+				} catch (error) {
+					// Silently handle user update errors
+				}
+			});
+		} catch (error) {
+			// Silently handle subscription setup errors
+		}
 	}
 
 	onMount(() => {
-		ID.subscribe((value) => {
-			holonID = value;
-			subscribeToOffersAndNeeds();
+		let isDestroyed = false;
+		
+		// Set up ID subscription with proper cleanup
+		const idUnsubscribe = ID.subscribe((value) => {
+			if (isDestroyed) return;
+			if (value && value !== holonID) {
+				holonID = value;
+				// Force re-initialization when ID changes with error handling
+				initializeComponent().catch(error => {
+					// Silently handle re-initialization errors
+				});
+			}
 		});
 		
 		// Add click outside handler
 		document.addEventListener('click', handleClickOutside);
 		
+		// Initial load if holonID is already set from the ID store
+		if ($ID) {
+			holonID = $ID;
+			initializeComponent().catch(error => {
+				// Silently handle initial initialization errors
+			});
+		}
+		
 		return () => {
+			isDestroyed = true;
 			document.removeEventListener('click', handleClickOutside);
+			idUnsubscribe();
 			// Clean up subscriptions on unmount
 			if (questSubscriptionOff) {
-				questSubscriptionOff();
+				try {
+					questSubscriptionOff();
+				} catch (error) {
+					// Silently handle cleanup errors
+				}
 				questSubscriptionOff = null;
 			}
 		};
 	});
+
+	// Separate initialization function to avoid duplication
+	async function initializeComponent() {
+		if (!holonID) {
+			componentReady = true; // Set ready even if no holonID to not block navigation
+			return;
+		}
+		
+		try {
+			// Wait for holosphere to be available
+			const holosphereAvailable = await waitForHolosphere();
+			if (!holosphereAvailable) {
+				componentReady = true; // Set ready even if holosphere not available to not block navigation
+				return;
+			}
+			
+			// Run both initializations
+			await Promise.all([
+				subscribeToOffersAndNeeds(),
+				fetchAndSubscribeUsers()
+			]);
+		} catch (error) {
+			// Silently handle initialization errors
+		} finally {
+			// Always set component as ready to not block navigation
+			componentReady = true;
+		}
+	}
 
 	// Store cleanup function to avoid subscription conflicts
 	let questSubscriptionOff = null;
 
 	// Subscribe to changes in the specified holon
 	async function subscribeToOffersAndNeeds() {
-		// Clean up any existing subscription
-		if (questSubscriptionOff) {
-			questSubscriptionOff();
-			questSubscriptionOff = null;
-		}
-
-		store = {};
-		if (holosphere) {
-			if (includeFederatedOffers) {
-				// Use federated data retrieval
-				await fetchFederatedOffersAndNeeds();
-			} else {
-				// Use regular subscription
-				questSubscriptionOff = holosphere.subscribe(holonID, "quests", (newItem, key) => {
-					if (newItem) {
-						const parsedItem = newItem;
-						parsedItem.key = key; // Add the key to the parsed item object
-						store[key] = parsedItem;
-					} else {
-						// A key may contain a null value (if data has been deleted/set to null)
-						// if so, we remove the item from the store
-						delete store[key];
-					}
-					store = store; // Trigger reactivity
-				});
+		try {
+			// Clean up any existing subscription
+			if (questSubscriptionOff) {
+				try {
+					questSubscriptionOff();
+				} catch (error) {
+					// Silently handle cleanup errors
+				}
+				questSubscriptionOff = null;
 			}
+
+			store = {};
+			if (holosphere && holonID) {
+				if (includeFederatedOffers) {
+					// Use federated data retrieval
+					await fetchFederatedOffersAndNeeds();
+				} else {
+					// Use regular subscription
+					questSubscriptionOff = holosphere.subscribe(holonID, "quests", (newItem, key) => {
+						try {
+							if (newItem) {
+								const parsedItem = newItem;
+								parsedItem.key = key; // Add the key to the parsed item object
+								store[key] = parsedItem;
+							} else {
+								// A key may contain a null value (if data has been deleted/set to null)
+								// if so, we remove the item from the store
+								delete store[key];
+							}
+							store = store; // Trigger reactivity
+						} catch (error) {
+							// Silently handle subscription item processing errors
+						}
+					});
+				}
+			}
+		} catch (error) {
+			// Set component as ready even if subscription fails to not block navigation
+			componentReady = true;
 		}
 	}
 
@@ -766,9 +858,21 @@
 		</div>
 
 	<!-- Main Content Container -->
-	<div class="flex flex-col xl:flex-row gap-8">
-		<!-- Offers & Requests Panel -->
-		<div class="xl:flex-1 bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
+	{#if !componentReady}
+		<!-- Loading State -->
+		<div class="flex items-center justify-center min-h-[600px] bg-gray-800 rounded-3xl">
+			<div class="text-center">
+				<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4 mx-auto"></div>
+				<p class="text-gray-400">Loading offers and requests...</p>
+				{#if holonID}
+					<p class="text-gray-500 text-sm mt-2">Holon: {holonID}</p>
+				{/if}
+			</div>
+		</div>
+	{:else}
+		<div class="flex flex-col xl:flex-row gap-8">
+			<!-- Offers & Requests Panel -->
+			<div class="xl:flex-1 bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
 			<div class="p-8">
 				<!-- Stats Section -->
 				<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -1219,6 +1323,7 @@
 			</div>
 		</div>
 	</div>
+	{/if}
 </div>
 
 <style>

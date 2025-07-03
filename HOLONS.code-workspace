@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "../HolonsBot"
+		},
+		{
+			"path": "../website"
 		}
 	],
 	"settings": {}

@@ -2,6 +2,7 @@
     import { createEventDispatcher, getContext, onMount } from 'svelte';
     import { formatDate, formatTime } from '../utils/date.js';
     import HoloSphere from 'holosphere';
+    import DrawingTools from './DrawingTools.svelte';
 
     const holosphere = getContext("holosphere") as HoloSphere;
 
@@ -24,10 +25,30 @@
 
 
 
-    // Update canvas dimensions to be very large for an "infinite" feel
-    const CANVAS_WIDTH = 30000;
-    const CANVAS_HEIGHT = 30000;
-    const INITIAL_OFFSET = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
+    // Smaller, more manageable canvas with 0,0 at top-left
+    const CANVAS_WIDTH = 8000;
+    const CANVAS_HEIGHT = 6000;
+    const INITIAL_OFFSET = { x: 0, y: 0 };
+    
+    // New task inbox area
+    const INBOX_CENTER = { x: -100, y: -100 };
+    const INBOX_WIDTH = 400;
+    const INBOX_HEIGHT = 300;
+
+    // Drawing tools state
+    let isDrawing = false;
+    let drawingEnabled = false;
+    let currentTool = 'hand';
+    let currentColor = '#3B82F6';
+    let currentStroke = 3;
+    let drawings: any[] = [];
+    let currentPath: any[] = [];
+    let startPoint: { x: number; y: number } | null = null;
+    let isEditingText = false;
+    let textInput = '';
+    let textPosition: { x: number; y: number } | null = null;
+
+
 
     // Initialize positions if not set - move this out of the reactive statement
     let questCards: { key: string; quest: any; x: number; y: number; }[] = [];
@@ -49,7 +70,6 @@
             if (stored) {
                 const parsed = JSON.parse(stored);
                 hologramPositions = new Map(Object.entries(parsed));
-                console.log(`[CanvasView] Loaded ${hologramPositions.size} hologram positions from localStorage`);
             } else {
                 hologramPositions.clear();
             }
@@ -57,6 +77,9 @@
             console.error('Error loading hologram positions:', error);
             hologramPositions.clear();
         }
+
+        // Load drawings
+        loadDrawings();
     }
     
     // Save hologram positions to localStorage when they change
@@ -65,43 +88,160 @@
             try {
                 const obj = Object.fromEntries(hologramPositions);
                 localStorage.setItem(`hologramPositions_${holonID}`, JSON.stringify(obj));
-                console.log(`[CanvasView] Saved ${hologramPositions.size} hologram positions to localStorage`);
             } catch (error) {
                 console.error('Error saving hologram positions:', error);
             }
         }
     }
 
+    // Drawing functions
+    async function loadDrawings() {
+        if (!holosphere || !holonID) return;
+        try {
+            const drawingData = await holosphere.get(holonID, 'canvas', 'drawings');
+            if (drawingData && Array.isArray(drawingData)) {
+                drawings = drawingData;
+            } else {
+                drawings = [];
+            }
+        } catch (error) {
+            console.error('Error loading drawings:', error);
+            drawings = [];
+        }
+    }
+
+    async function saveDrawings() {
+        if (!holosphere || !holonID) return;
+        try {
+            await holosphere.put(holonID, 'canvas', { id: 'drawings', data: drawings });
+        } catch (error) {
+            console.error('Error saving drawings:', error);
+        }
+    }
+
+    function toggleDrawing() {
+        drawingEnabled = !drawingEnabled;
+        console.log('Toggle drawing:', { drawingEnabled, currentTool });
+        if (!drawingEnabled) {
+            isDrawing = false;
+            currentPath = [];
+            startPoint = null;
+            isEditingText = false;
+            textPosition = null;
+            currentTool = 'hand'; // Switch to navigation mode
+        } else {
+            currentTool = 'line'; // Default to line when entering drawing mode
+        }
+        console.log('After toggle:', { drawingEnabled, currentTool });
+    }
+
+    // Event handlers for DrawingTools component
+    function handleDrawingToggle(event: CustomEvent) {
+        const { drawingEnabled: newDrawingEnabled, currentTool: newCurrentTool } = event.detail;
+        drawingEnabled = newDrawingEnabled;
+        currentTool = newCurrentTool;
+        
+        if (!drawingEnabled) {
+            isDrawing = false;
+            currentPath = [];
+            startPoint = null;
+            isEditingText = false;
+            textPosition = null;
+        }
+    }
+
+    function handleToolChange(event: CustomEvent) {
+        const { currentTool: newCurrentTool } = event.detail;
+        currentTool = newCurrentTool;
+    }
+
+    function handleColorChange(event: CustomEvent) {
+        const { currentColor: newCurrentColor } = event.detail;
+        currentColor = newCurrentColor;
+    }
+
+    function handleStrokeChange(event: CustomEvent) {
+        const { currentStroke: newCurrentStroke } = event.detail;
+        currentStroke = newCurrentStroke;
+    }
+
+    function clearDrawings() {
+        drawings = [];
+        saveDrawings();
+    }
+
+    function handleTextInput(event: KeyboardEvent) {
+        if (event.key === 'Enter' && textInput.trim() && textPosition) {
+            // Save the text
+            drawings = [...drawings, {
+                type: 'text',
+                text: textInput.trim(),
+                x: textPosition.x,
+                y: textPosition.y,
+                color: currentColor,
+                fontSize: currentStroke * 4, // Use stroke width as font size multiplier
+                timestamp: Date.now()
+            }];
+            console.log('Saved text:', textInput, 'at:', textPosition);
+            saveDrawings();
+            
+            // Reset text state
+            isEditingText = false;
+            textInput = '';
+            textPosition = null;
+        } else if (event.key === 'Escape') {
+            // Cancel text input
+            isEditingText = false;
+            textInput = '';
+            textPosition = null;
+        }
+    }
+
+    function getCanvasPoint(clientX: number, clientY: number) {
+        if (!viewContainer) return { x: 0, y: 0 };
+        const rect = viewContainer.getBoundingClientRect();
+        return {
+            x: (clientX - rect.left - pan.x) / zoom,
+            y: (clientY - rect.top - pan.y) / zoom
+        };
+    }
+
     // Minimap functions
     const MINIMAP_WIDTH = 120;
     const MINIMAP_HEIGHT = 90;
 
-    function getMinimapViewX() {
-        if (!viewContainer) return 0;
-        const containerRect = viewContainer.getBoundingClientRect();
-        const viewX = -pan.x / (CANVAS_WIDTH * zoom) * MINIMAP_WIDTH;
-        return Math.max(0, Math.min(MINIMAP_WIDTH, viewX));
-    }
+    // Reactive minimap calculations that update when zoom, pan, or viewContainer changes
+    let minimapViewX = 0;
+    let minimapViewY = 0;
+    let minimapViewWidth = MINIMAP_WIDTH;
+    let minimapViewHeight = MINIMAP_HEIGHT;
 
-    function getMinimapViewY() {
-        if (!viewContainer) return 0;
+    $: if (viewContainer && typeof window !== 'undefined') {
         const containerRect = viewContainer.getBoundingClientRect();
-        const viewY = -pan.y / (CANVAS_HEIGHT * zoom) * MINIMAP_HEIGHT;
-        return Math.max(0, Math.min(MINIMAP_HEIGHT, viewY));
-    }
+        
+        // Calculate the visible area in canvas coordinates
+        // The canvas transform is translate(pan.x, pan.y) scale(zoom)
+        // So a screen point (0, 0) maps to canvas point (-pan.x/zoom, -pan.y/zoom)
+        const visibleLeft = -pan.x / zoom;
+        const visibleTop = -pan.y / zoom;
+        const visibleRight = visibleLeft + (containerRect.width / zoom);
+        const visibleBottom = visibleTop + (containerRect.height / zoom);
+        const visibleWidth = containerRect.width / zoom;
+        const visibleHeight = containerRect.height / zoom;
+        
+        // Convert to minimap coordinates
+        const viewX = (visibleLeft / CANVAS_WIDTH) * MINIMAP_WIDTH;
+        const viewY = (visibleTop / CANVAS_HEIGHT) * MINIMAP_HEIGHT;
+        const viewWidth = (visibleWidth / CANVAS_WIDTH) * MINIMAP_WIDTH;
+        const viewHeight = (visibleHeight / CANVAS_HEIGHT) * MINIMAP_HEIGHT;
+        
+        // Update reactive variables
+        minimapViewX = Math.max(0, Math.min(MINIMAP_WIDTH - viewWidth, viewX));
+        minimapViewY = Math.max(0, Math.min(MINIMAP_HEIGHT - viewHeight, viewY));
+        minimapViewWidth = Math.min(MINIMAP_WIDTH, Math.max(5, viewWidth));
+        minimapViewHeight = Math.min(MINIMAP_HEIGHT, Math.max(5, viewHeight));
+        
 
-    function getMinimapViewWidth() {
-        if (!viewContainer) return MINIMAP_WIDTH;
-        const containerRect = viewContainer.getBoundingClientRect();
-        const viewWidth = containerRect.width / (CANVAS_WIDTH * zoom) * MINIMAP_WIDTH;
-        return Math.min(MINIMAP_WIDTH - getMinimapViewX(), Math.max(5, viewWidth));
-    }
-
-    function getMinimapViewHeight() {
-        if (!viewContainer) return MINIMAP_HEIGHT;
-        const containerRect = viewContainer.getBoundingClientRect();
-        const viewHeight = containerRect.height / (CANVAS_HEIGHT * zoom) * MINIMAP_HEIGHT;
-        return Math.min(MINIMAP_HEIGHT - getMinimapViewY(), Math.max(5, viewHeight));
     }
 
     function handleMinimapClick(event: MouseEvent) {
@@ -123,7 +263,7 @@
             y: -(canvasY * zoom) + containerRect.height / 2
         };
 
-        console.log(`[CanvasView] Minimap click: navigated to (${canvasX.toFixed(0)}, ${canvasY.toFixed(0)})`);
+
     }
 
 
@@ -170,30 +310,23 @@
                 };
             }
             
-            // Generate consistent position based on key for display, but don't save it yet
+            // Generate consistent position within the inbox area for new tasks
             const hash = key.split('').reduce((a, b) => {
                 a = ((a << 5) - a) + b.charCodeAt(0);
                 return a & a;
             }, 0);
             
-            const displayPosition = {
-                x: INITIAL_OFFSET.x + (Math.sin(hash) * 800),
-                y: INITIAL_OFFSET.y + (Math.cos(hash) * 600)
+            // Position new tasks within the inbox area
+            const inboxPosition = {
+                x: INBOX_CENTER.x + (Math.sin(hash) * (INBOX_WIDTH / 3)),
+                y: INBOX_CENTER.y + (Math.cos(hash) * (INBOX_HEIGHT / 3))
             };
             
             return {
                 key,
                 quest,
-                x: displayPosition.x,
-                y: displayPosition.y
-            };
-            
-            // Fallback
-            return {
-                key,
-                quest,
-                x: INITIAL_OFFSET.x,
-                y: INITIAL_OFFSET.y
+                x: inboxPosition.x,
+                y: inboxPosition.y
             };
         });
 
@@ -201,28 +334,61 @@
         event.preventDefault();
         event.stopPropagation();
         
-        if (event.button === 1 || event.button === 2 || !card) {
-            isPanning = true;
-            startPan = { 
-                x: event.clientX - pan.x, 
-                y: event.clientY - pan.y 
-            };
-            return;
+        // Handle drawing mode - disable all other interactions
+        if (drawingEnabled && event.button === 0) {
+            const point = getCanvasPoint(event.clientX, event.clientY);
+            
+            if (currentTool === 'line') {
+                isDrawing = true;
+                startPoint = { x: point.x, y: point.y };
+            } else if (currentTool === 'text') {
+                // Place text at clicked position
+                textPosition = { x: point.x, y: point.y };
+                isEditingText = true;
+                textInput = '';
+            } else if (currentTool === 'eraser') {
+                isDrawing = true;
+                // Find and remove drawings at this point
+                const eraseRadius = currentStroke * 2;
+                drawings = drawings.filter(drawing => {
+                    if (drawing.type === 'path' || drawing.type === 'line') {
+                        return !drawing.points?.some((p: any) => 
+                            Math.hypot(p.x - point.x, p.y - point.y) < eraseRadius
+                        );
+                    } else if (drawing.type === 'text') {
+                        return Math.hypot(drawing.x - point.x, drawing.y - point.y) > eraseRadius;
+                    }
+                    return true;
+                });
+            }
+            return; // Exit early, don't allow panning or card dragging
         }
+        
+        // Only allow panning and card dragging when drawing is disabled
+        if (!drawingEnabled) {
+            if (event.button === 1 || event.button === 2 || !card) {
+                isPanning = true;
+                startPan = { 
+                    x: event.clientX - pan.x, 
+                    y: event.clientY - pan.y 
+                };
+                return;
+            }
 
-        if (event.button === 0 && card) {
-            isDragging = true;
-            draggedCard = card;
-            draggedCardVisuals = { key: card.key, x: card.x, y: card.y };
-            
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = (event.clientX - rect.left - pan.x) / zoom;
-            const mouseY = (event.clientY - rect.top - pan.y) / zoom;
-            
-            offset = {
-                x: mouseX - card.x,
-                y: mouseY - card.y
-            };
+            if (event.button === 0 && card) {
+                isDragging = true;
+                draggedCard = card;
+                draggedCardVisuals = { key: card.key, x: card.x, y: card.y };
+                
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = (event.clientX - rect.left - pan.x) / zoom;
+                const mouseY = (event.clientY - rect.top - pan.y) / zoom;
+                
+                offset = {
+                    x: mouseX - card.x,
+                    y: mouseY - card.y
+                };
+            }
         }
     }
 
@@ -230,102 +396,147 @@
         event.preventDefault();
         event.stopPropagation();
         
-        if (isPanning && viewContainer) {
-            const newPan = {
-                x: (event.clientX - startPan.x),
-                y: (event.clientY - startPan.y)
-            };
+        // Handle drawing mode - only allow drawing interactions
+        if (drawingEnabled && isDrawing) {
+            const point = getCanvasPoint(event.clientX, event.clientY);
             
-            // Remove Panning Constraints
-            pan = newPan;
+            if (currentTool === 'line' && startPoint) {
+                // Update the preview line endpoint
+                currentPath = [startPoint, { x: point.x, y: point.y }];
+            } else if (currentTool === 'eraser') {
+                // Continue erasing
+                const eraseRadius = currentStroke * 2;
+                drawings = drawings.filter(drawing => {
+                    if (drawing.type === 'path' || drawing.type === 'line') {
+                        return !drawing.points?.some((p: any) => 
+                            Math.hypot(p.x - point.x, p.y - point.y) < eraseRadius
+                        );
+                    } else if (drawing.type === 'text') {
+                        return Math.hypot(drawing.x - point.x, drawing.y - point.y) > eraseRadius;
+                    }
+                    return true;
+                });
+            }
             return;
         }
+        
+        // Only allow panning and card dragging when drawing is disabled
+        if (!drawingEnabled) {
+            if (isPanning && viewContainer) {
+                const newPan = {
+                    x: (event.clientX - startPan.x),
+                    y: (event.clientY - startPan.y)
+                };
+                
+                // Remove Panning Constraints
+                pan = newPan;
+                return;
+            }
 
-        if (!isDragging || !draggedCardVisuals || !canvas) return;
+            if (!isDragging || !draggedCardVisuals || !canvas) return;
 
-        const rect = canvas.getBoundingClientRect();
-        const mouseX = (event.clientX - rect.left - pan.x) / zoom;
-        const mouseY = (event.clientY - rect.top - pan.y) / zoom;
-        const newX = mouseX - offset.x;
-        const newY = mouseY - offset.y;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = (event.clientX - rect.left - pan.x) / zoom;
+            const mouseY = (event.clientY - rect.top - pan.y) / zoom;
+            const newX = mouseX - offset.x;
+            const newY = mouseY - offset.y;
 
-        // Remove card position constraints
-        draggedCardVisuals.x = newX;
-        draggedCardVisuals.y = newY;
+            // Remove card position constraints
+            draggedCardVisuals.x = newX;
+            draggedCardVisuals.y = newY;
+        }
     }
 
     function handleMouseUp(event: MouseEvent) {
         event.preventDefault();
         event.stopPropagation();
         
-        const wasDragging = isDragging;
-        // Use draggedCard (original data) and draggedCardVisuals (final position)
-        const finalDraggedCardData = draggedCard; 
-        const finalVisualPosition = draggedCardVisuals;
+        // Handle drawing mode - only process drawing interactions
+        if (drawingEnabled && isDrawing) {
+            isDrawing = false;
+            
+            if (currentTool === 'line' && currentPath.length === 2) {
+                // Save the completed line
+                const newDrawing = {
+                    type: 'line',
+                    points: currentPath,
+                    color: currentColor,
+                    strokeWidth: currentStroke,
+                    timestamp: Date.now()
+                };
+                drawings = [...drawings, newDrawing];
+                saveDrawings();
+            }
+            
+            currentPath = [];
+            startPoint = null;
+            return;
+        }
         
-        // Reset states first
-        isDragging = false;
-        draggedCard = null;
-        draggedCardVisuals = null; // Reset visual state
-        isPanning = false;
-        
-        // Then handle the update
-        if (wasDragging && finalDraggedCardData && finalVisualPosition && holonID) {
-            const newPosition = { x: finalVisualPosition.x, y: finalVisualPosition.y };
+        // Only handle panning and card dragging when drawing is disabled
+        if (!drawingEnabled) {
+            const wasDragging = isDragging;
+            // Use draggedCard (original data) and draggedCardVisuals (final position)
+            const finalDraggedCardData = draggedCard; 
+            const finalVisualPosition = draggedCardVisuals;
+            
+            // Reset states first
+            isDragging = false;
+            draggedCard = null;
+            draggedCardVisuals = null; // Reset visual state
+            isPanning = false;
+            
+            // Then handle the update
+            if (wasDragging && finalDraggedCardData && finalVisualPosition && holonID) {
+                const newPosition = { x: finalVisualPosition.x, y: finalVisualPosition.y };
 
-            const dx = Math.abs(newPosition.x - finalDraggedCardData.x);
-            const dy = Math.abs(newPosition.y - finalDraggedCardData.y);
-            const moveThreshold = 5; // pixels
+                const dx = Math.abs(newPosition.x - finalDraggedCardData.x);
+                const dy = Math.abs(newPosition.y - finalDraggedCardData.y);
+                const moveThreshold = 5; // pixels
 
-            // Check if it was a click (not a drag)
-            if (dx < moveThreshold && dy < moveThreshold) {
-                console.log(`[CanvasView] Task clicked: ${finalDraggedCardData.key} (movement: ${dx}, ${dy})`);
-                dispatch('taskClick', {
-                    key: finalDraggedCardData.key,
-                    quest: finalDraggedCardData.quest
-                });
-            } else {
-                // It was a drag, so update the position
-                console.log(`[CanvasView] Dragged quest ${finalDraggedCardData.key} from (${finalDraggedCardData.x}, ${finalDraggedCardData.y}) to (${newPosition.x}, ${newPosition.y}) - movement: ${dx}, ${dy}`);
-                
-                // Always save position when dragged (whether it had a position before or not)
-                positionAssignments.add(finalDraggedCardData.key);
-                pendingPositionSaves.set(finalDraggedCardData.key, newPosition);
-                
-                // Check if this is a hologram task (read-only from another holon)
-                if (finalDraggedCardData.quest._meta?.resolvedFromHologram) {
-                    console.log(`[CanvasView] Hologram task ${finalDraggedCardData.key} - position stored locally only, not saved to holosphere`);
-                    // For holograms, we store the position locally in localStorage
-                    hologramPositions.set(finalDraggedCardData.key, newPosition);
-                    saveHologramPositions();
-                    pendingPositionSaves.delete(finalDraggedCardData.key);
-                } else {
-                    // Regular task - save to holosphere database
-                    console.log(`[CanvasView] Local task ${finalDraggedCardData.key} - saving to database`);
-                    
-                    const updatedQuest = { 
-                        ...finalDraggedCardData.quest,
-                        id: finalDraggedCardData.key,
-                        position: newPosition 
-                    };
-                    
-                    // Dispatch optimistic update to parent
-                    dispatch('questPositionChanged', {
+                // Check if it was a click (not a drag)
+                if (dx < moveThreshold && dy < moveThreshold) {
+                    dispatch('taskClick', {
                         key: finalDraggedCardData.key,
-                        position: newPosition
+                        quest: finalDraggedCardData.quest
                     });
+                } else {
+                    // It was a drag, so update the position
+                    // Always save position when dragged (whether it had a position before or not)
+                    positionAssignments.add(finalDraggedCardData.key);
+                    pendingPositionSaves.set(finalDraggedCardData.key, newPosition);
                     
-                    holosphere.put(holonID, 'quests', updatedQuest)
-                        .then(() => {
-                            console.log(`[CanvasView] Successfully saved new position for quest ${finalDraggedCardData.key}`);
-                            pendingPositionSaves.delete(finalDraggedCardData.key);
-                        })
-                        .catch(error => {
-                            console.error('Error updating quest position:', error);
-                            // Revert tracking on error
-                            positionAssignments.delete(finalDraggedCardData.key);
-                            pendingPositionSaves.delete(finalDraggedCardData.key);
+                    // Check if this is a hologram task (read-only from another holon)
+                    if (finalDraggedCardData.quest._meta?.resolvedFromHologram) {
+                        // For holograms, we store the position locally in localStorage
+                        hologramPositions.set(finalDraggedCardData.key, newPosition);
+                        saveHologramPositions();
+                        pendingPositionSaves.delete(finalDraggedCardData.key);
+                    } else {
+                        // Regular task - save to holosphere database
+                        const updatedQuest = { 
+                            ...finalDraggedCardData.quest,
+                            id: finalDraggedCardData.key,
+                            position: newPosition 
+                        };
+                        
+                        // Dispatch optimistic update to parent
+                        dispatch('questPositionChanged', {
+                            key: finalDraggedCardData.key,
+                            position: newPosition
                         });
+                        
+                        holosphere.put(holonID, 'quests', updatedQuest)
+                            .then(() => {
+                                pendingPositionSaves.delete(finalDraggedCardData.key);
+                            })
+                            .catch(error => {
+                                console.error('Error updating quest position:', error);
+                                // Revert tracking on error
+                                positionAssignments.delete(finalDraggedCardData.key);
+                                pendingPositionSaves.delete(finalDraggedCardData.key);
+                            });
+                    }
                 }
             }
         }
@@ -337,6 +548,9 @@
     let lastMouseY = 0;
 
     function handleWheel(event: WheelEvent) {
+        // Only allow wheel zoom/pan when drawing is disabled
+        if (drawingEnabled) return;
+        
         event.preventDefault();
         
         if (event.ctrlKey || event.metaKey) {
@@ -404,6 +618,46 @@
         } else {
             exitFullscreen();
         }
+    }
+
+    function goToInbox() {
+        if (!viewContainer) return;
+        
+        // Navigate directly to the inbox area
+        const containerRect = viewContainer.getBoundingClientRect();
+        pan = {
+            x: -(INBOX_CENTER.x * zoom) + containerRect.width / 2,
+            y: -(INBOX_CENTER.y * zoom) + containerRect.height / 2
+        };
+        
+    }
+
+    function centerOnTasks() {
+        if (!viewContainer) return;
+        
+        if (questCards.length === 0) {
+            // No tasks, center on inbox
+            goToInbox();
+            return;
+        }
+        
+        // Calculate the center of all tasks plus the inbox area
+        let totalX = INBOX_CENTER.x; // Include inbox in calculation
+        let totalY = INBOX_CENTER.y;
+        questCards.forEach(card => {
+            totalX += card.x;
+            totalY += card.y;
+        });
+        
+        const centerX = totalX / (questCards.length + 1); // +1 for inbox
+        const centerY = totalY / (questCards.length + 1);
+        
+        // Center the view on the calculated center
+        const containerRect = viewContainer.getBoundingClientRect();
+        pan = {
+            x: -(centerX * zoom) + containerRect.width / 2,
+            y: -(centerY * zoom) + containerRect.height / 2
+        };
     }
 
     // Add these state variables at the top
@@ -509,17 +763,19 @@
 
 
 
+
+
     onMount(() => {
         if (!canvas || !viewContainer) return;
 
         const handleGlobalMouseMove = (e: MouseEvent) => {
-            if (isDragging || isPanning) {
+            if (isDragging || isPanning || isDrawing) {
                 handleMouseMove(e);
             }
         };
         
         const handleGlobalMouseUp = (e: MouseEvent) => {
-            if (isDragging || isPanning) {
+            if (isDragging || isPanning || isDrawing) {
                 handleMouseUp(e);
             }
         };
@@ -530,11 +786,19 @@
 
         // Only center the view if there's no saved state
         if (!localStorage.getItem('canvasViewState')) {
-            const containerRect = viewContainer.getBoundingClientRect();
-            pan = { 
-                x: -INITIAL_OFFSET.x + containerRect.width / 2, 
-                y: -INITIAL_OFFSET.y + containerRect.height / 2 
-            };
+            // Wait a bit for questCards to be populated, then center on tasks
+            setTimeout(() => {
+                if (questCards.length > 0) {
+                    centerOnTasks();
+                } else {
+                    // Fallback to center on inbox area if no tasks
+                    const containerRect = viewContainer.getBoundingClientRect();
+                    pan = { 
+                        x: -(INBOX_CENTER.x * zoom) + containerRect.width / 2, 
+                        y: -(INBOX_CENTER.y * zoom) + containerRect.height / 2 
+                    };
+                }
+            }, 100);
         }
 
         const handleFullscreenChange = () => {
@@ -612,8 +876,9 @@
     class:inset-0={isFullscreen}
     class:z-50={isFullscreen}
     class:rounded-none={isFullscreen}
-    class:cursor-grab={!isDragging && !isPanning}
-    class:cursor-grabbing={(isDragging || isPanning)}
+    class:cursor-grab={!isDragging && !isPanning && !drawingEnabled}
+    class:cursor-grabbing={(isDragging || isPanning) && !drawingEnabled}
+    class:cursor-crosshair={drawingEnabled}
     bind:this={viewContainer}
     on:mousedown|preventDefault|stopPropagation={(e) => handleMouseDown(e)}
     on:touchstart|preventDefault={handleTouchStart}
@@ -622,11 +887,47 @@
     on:contextmenu|preventDefault
     role="presentation"
 >
+    <!-- Drawing Tools Overlay -->
+    <DrawingTools 
+        {drawingEnabled}
+        {currentTool}
+        {currentColor}
+        {currentStroke}
+        on:toggle={handleDrawingToggle}
+        on:toolChange={handleToolChange}
+        on:colorChange={handleColorChange}
+        on:strokeChange={handleStrokeChange}
+        on:clear={clearDrawings}
+    />
+
     <!-- Control Panel -->
     <div class="absolute top-4 right-4 z-10 flex flex-col gap-2">
+        <!-- Go to Inbox button -->
+        <button 
+            class="p-2 bg-blue-800 bg-opacity-70 hover:bg-blue-700 rounded-lg text-white text-opacity-90 hover:text-white transition-colors"
+            on:click={goToInbox}
+            aria-label="Go to inbox area"
+            title="Go to new task inbox"
+        >
+            📥
+        </button>
+
+        <!-- Center on Tasks button -->
+        <button 
+            class="p-2 bg-gray-800 bg-opacity-50 hover:bg-gray-700 rounded-lg text-white text-opacity-70 hover:text-white hover:text-opacity-90 transition-colors"
+            on:click={centerOnTasks}
+            aria-label="Center view on tasks"
+            title="Center view on tasks"
+        >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+        </button>
+
         <!-- Fullscreen toggle button -->
         <button 
-            class="p-2 bg-gray-800/50 hover:bg-gray-700 rounded-lg text-white/70 hover:text-white/90 transition-colors"
+            class="p-2 bg-gray-800 bg-opacity-50 hover:bg-gray-700 rounded-lg text-white text-opacity-70 hover:text-white hover:text-opacity-90 transition-colors"
             on:click={toggleFullscreen}
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
         >
@@ -642,8 +943,8 @@
         </button>
 
         <!-- Minimap -->
-        <div class="bg-gray-800/90 rounded-lg p-2 border border-gray-600">
-            <div class="text-white/70 text-xs mb-1 text-center">Map</div>
+        <div class="bg-gray-800 bg-opacity-90 rounded-lg p-2 border border-gray-600">
+            <div class="text-white text-opacity-70 text-xs mb-1 text-center">Map</div>
             <div 
                 class="relative bg-gray-900 border border-gray-700 cursor-pointer"
                 style="width: 120px; height: 90px;"
@@ -658,11 +959,11 @@
                 
                 <!-- Current viewport indicator -->
                 <div 
-                    class="absolute border-2 border-blue-400 bg-blue-400/20 rounded"
-                    style="left: {getMinimapViewX()}px; 
-                           top: {getMinimapViewY()}px; 
-                           width: {getMinimapViewWidth()}px; 
-                           height: {getMinimapViewHeight()}px;"
+                    class="absolute border-2 border-blue-400 bg-blue-400 bg-opacity-20 rounded"
+                    style="left: {minimapViewX}px; 
+                           top: {minimapViewY}px; 
+                           width: {minimapViewWidth}px; 
+                           height: {minimapViewHeight}px;"
                 ></div>
                 
                 <!-- Task cards as dots -->
@@ -684,7 +985,7 @@
                     ></div>
                 {/each}
             </div>
-            <div class="text-white/50 text-xs mt-1 text-center">
+            <div class="text-white text-opacity-50 text-xs mt-1 text-center">
                 {questCards.length} tasks
             </div>
         </div>
@@ -698,18 +999,114 @@
         <!-- Grid background -->
         <div class="absolute inset-0 grid-background"></div>
 
+        <!-- Drawing Layer -->
+        <svg 
+            class="absolute inset-0 pointer-events-none"
+            width="{CANVAS_WIDTH}"
+            height="{CANVAS_HEIGHT}"
+            viewBox="0 0 {CANVAS_WIDTH} {CANVAS_HEIGHT}"
+            xmlns="http://www.w3.org/2000/svg"
+        >
+            <!-- Saved drawings -->
+            {#each drawings as drawing, i}
+                {#if drawing.type === 'path' && drawing.points && drawing.points.length > 1}
+                    {@const pathData = `M ${drawing.points[0].x},${drawing.points[0].y} ${drawing.points.slice(1).map(p => `L ${p.x},${p.y}`).join(' ')}`}
+                    <path
+                        d={pathData}
+                        stroke={drawing.color || '#3B82F6'}
+                        stroke-width={drawing.strokeWidth || 3}
+                        fill="none"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    />
+                {:else if drawing.type === 'line' && drawing.points && drawing.points.length === 2}
+                    <line
+                        x1={drawing.points[0].x}
+                        y1={drawing.points[0].y}
+                        x2={drawing.points[1].x}
+                        y2={drawing.points[1].y}
+                        stroke={drawing.color || '#3B82F6'}
+                        stroke-width={drawing.strokeWidth || 3}
+                        stroke-linecap="round"
+                    />
+                {:else if drawing.type === 'text'}
+                    <text
+                        x={drawing.x}
+                        y={drawing.y}
+                        fill={drawing.color || '#3B82F6'}
+                        font-size={drawing.fontSize || 16}
+                        font-family="sans-serif"
+                        dominant-baseline="hanging"
+                    >
+                        {drawing.text}
+                    </text>
+                {/if}
+            {/each}
+            
+            <!-- Current drawing preview -->
+            {#if currentPath.length === 2 && currentTool === 'line'}
+                <line
+                    x1={currentPath[0].x}
+                    y1={currentPath[0].y}
+                    x2={currentPath[1].x}
+                    y2={currentPath[1].y}
+                    stroke={currentColor}
+                    stroke-width={currentStroke}
+                    stroke-linecap="round"
+                    opacity="0.6"
+                />
+            {/if}
+        </svg>
 
+        <!-- Text Input Field -->
+        {#if isEditingText && textPosition}
+            <input
+                type="text"
+                bind:value={textInput}
+                on:keydown={handleTextInput}
+                class="absolute bg-white border border-gray-300 px-2 py-1 rounded text-black z-20"
+                style="left: {textPosition.x * zoom + pan.x}px; 
+                       top: {textPosition.y * zoom + pan.y}px;
+                       font-size: {currentStroke * 4}px;"
+                placeholder="Type text and press Enter"
+                autofocus
+            />
+        {/if}
+
+        <!-- New Task Inbox Area -->
+        <div 
+            class="absolute border-2 border-dashed border-blue-400 border-opacity-50 rounded-lg bg-blue-400 bg-opacity-10 flex items-center justify-center"
+            style="left: {INBOX_CENTER.x - INBOX_WIDTH/2}px; 
+                   top: {INBOX_CENTER.y - INBOX_HEIGHT/2}px; 
+                   width: {INBOX_WIDTH}px; 
+                   height: {INBOX_HEIGHT}px;"
+        >
+            <div class="text-blue-300 text-opacity-70 text-lg font-medium text-center pointer-events-none select-none">
+                📥 New Tasks<br/>
+                <span class="text-sm opacity-60">Drag to organize</span>
+            </div>
+        </div>
 
         {#each questCards as card (card.key)}
             <div
                 class="absolute task-card"
-                class:cursor-move={!isDragging}
+                class:cursor-move={!isDragging && !drawingEnabled}
                 class:cursor-grabbing={isDragging && draggedCardVisuals?.key === card.key}
+                class:cursor-crosshair={drawingEnabled}
                 style="left: {(draggedCardVisuals && draggedCardVisuals.key === card.key ? draggedCardVisuals.x : card.x)}px; 
                        top:  {(draggedCardVisuals && draggedCardVisuals.key === card.key ? draggedCardVisuals.y : card.y)}px; 
                        width: {CARD_WIDTH}px;
                        transform: scale(1); transform-origin: top left;"
-                on:mousedown|stopPropagation={(e) => handleMouseDown(e, card)}
+                on:mousedown|stopPropagation={(e) => {
+                    if (drawingEnabled) {
+                        // When drawing is enabled, let the event bubble up to the main canvas handler
+                        e.stopPropagation();
+                        handleMouseDown(e);
+                    } else {
+                        // Normal task card interaction
+                        handleMouseDown(e, card);
+                    }
+                }}
                 role="presentation"
             >
 
@@ -724,21 +1121,16 @@
                 >
                     <!-- Header -->
                     <div class="flex items-center justify-between gap-3">
-                        <div class="flex items-center gap-3 flex-1 min-w-0">
-                            <!-- Task Icon -->
-                            <div class="flex-shrink-0 w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center text-sm">
-                                {card.quest.type === 'event' ? '📅' : card.quest.type === 'quest' ? '⚔️' : card.quest.type === 'recurring' || card.quest.status === 'recurring' || card.quest.status === 'repeating' ? '🔄' : '✓'}
-                            </div>
-                            
+                        <div class="flex-1 min-w-0">
                             <!-- Main Content -->
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-center gap-2 mb-1">
-                                    <h3 class="text-base font-bold text-gray-800 truncate">
+                                    <h3 class="text-base font-bold text-gray-800">
                                         {card.quest.title}
                                     </h3>
                                     {#if card.quest._meta?.resolvedFromHologram}
                                         <button 
-                                            class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors" 
+                                            class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500 bg-opacity-20 text-blue-800 flex-shrink-0 hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
                                             title="Navigate to source holon"
                                             on:click|stopPropagation={() => {
                                                 const match = card.quest._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
@@ -757,19 +1149,21 @@
                                         </button>
                                     {/if}
                                     {#if card.quest.type === 'recurring' || card.quest.status === 'recurring' || card.quest.status === 'repeating'}
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/30 text-purple-800 flex-shrink-0">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500 bg-opacity-30 text-purple-800 flex-shrink-0">
                                             🔄
                                         </span>
                                     {/if}
-                                    {#if card.quest.category}
-                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-black/10 text-gray-700 flex-shrink-0">
+                                </div>
+                                {#if card.quest.category}
+                                    <div class="mb-2">
+                                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-black bg-opacity-10 text-gray-700">
                                             <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
                                                 <path d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"/>
                                             </svg>
                                             {card.quest.category}
                                         </span>
-                                    {/if}
-                                </div>
+                                    </div>
+                                {/if}
                                 {#if card.quest.description}
                                     <p class="text-sm text-gray-700 truncate">
                                         {card.quest.description}
@@ -847,10 +1241,12 @@
         position: relative; /* Ensure dots are positioned relative to the card */
     }
 
-
-
     .cursor-move {
         user-select: none;
+    }
+
+    .cursor-crosshair {
+        cursor: crosshair;
     }
 
     div {

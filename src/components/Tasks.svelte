@@ -302,12 +302,6 @@
 				};
 			}
 
-			// Default position for CanvasView with top-left as 0,0
-			const defaultCanvasPosition = {
-				x: Math.random() * 3700, // Random x within canvas bounds (4000 - 300)
-				y: Math.random() * 2800  // Random y within canvas bounds (3000 - 200)
-			};
-
 			const newOrderIndex = filteredQuests.length > 0 
 				? Math.max(...filteredQuests.map(([_, q]) => q.orderIndex ?? -1)) + 1 
 				: 0;
@@ -316,8 +310,8 @@
 				...newTask,
 				initiator: initiatorInfo, // Use the determined initiatorInfo
 				created: new Date().toISOString(),
-				orderIndex: newOrderIndex, // Assign orderIndex
-				position: defaultCanvasPosition // Assign default canvas position
+				orderIndex: newOrderIndex // Assign orderIndex
+				// No position assigned - let CanvasView handle positioning in inbox
 			};
 
 			// Add the task to holosphere
