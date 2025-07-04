@@ -157,46 +157,49 @@
 			return true; // Quest passes all filters
 		});
 
-		// Sort by orderIndex, undefined/null values go to the end
-		currentFilteredQuests.sort(([keyA, a], [keyB, b]) => {
-			let valA: number, valB: number;
+		// Only sort when not in canvas view, as canvas uses absolute positioning
+		if (viewMode !== 'canvas') {
+			// Sort by orderIndex, undefined/null values go to the end
+			currentFilteredQuests.sort(([keyA, a], [keyB, b]) => {
+				let valA: number, valB: number;
 
-			switch (sortCriteria) {
-				case 'positionX':
-					valA = a.position?.x ?? Infinity;
-					valB = b.position?.x ?? Infinity;
-					break;
-				case 'positionY':
-					valA = a.position?.y ?? Infinity;
-					valB = b.position?.y ?? Infinity;
-					break;
-				case 'orderIndex':
-				default:
-					valA = a.orderIndex ?? Infinity;
-					valB = b.orderIndex ?? Infinity;
-					// If orderIndex is the same, sort by key (ID) as a stable secondary sort.
-					// This is always ascending for orderIndex mode.
-					if (valA === valB) {
-						return keyA.localeCompare(keyB);
-					}
-					// For orderIndex, primary sort is always ascending, handled by the main return
-					break;
-			}
+				switch (sortCriteria) {
+					case 'positionX':
+						valA = a.position?.x ?? Infinity;
+						valB = b.position?.x ?? Infinity;
+						break;
+					case 'positionY':
+						valA = a.position?.y ?? Infinity;
+						valB = b.position?.y ?? Infinity;
+						break;
+					case 'orderIndex':
+					default:
+						valA = a.orderIndex ?? Infinity;
+						valB = b.orderIndex ?? Infinity;
+						// If orderIndex is the same, sort by key (ID) as a stable secondary sort.
+						// This is always ascending for orderIndex mode.
+						if (valA === valB) {
+							return keyA.localeCompare(keyB);
+						}
+						// For orderIndex, primary sort is always ascending, handled by the main return
+						break;
+				}
 
-			// General comparison for asc/desc.
-			// For orderIndex, sortDirection will always be 'asc' due to handleSortButtonClick logic.
-			if (sortDirection === 'asc') {
-				if (valA === Infinity && valB === Infinity) return 0;
-				if (valA === Infinity) return 1;
-				if (valB === Infinity) return -1;
-				return valA - valB;
-			} else { // sortDirection === 'desc'
-				if (valA === Infinity && valB === Infinity) return 0;
-				if (valA === Infinity) return 1; 
-				if (valB === Infinity) return -1;
-				return valB - valA;
-			}
-		});
+				// General comparison for asc/desc.
+				// For orderIndex, sortDirection will always be 'asc' due to handleSortButtonClick logic.
+				if (sortDirection === 'asc') {
+					if (valA === Infinity && valB === Infinity) return 0;
+					if (valA === Infinity) return 1;
+					if (valB === Infinity) return -1;
+					return valA - valB;
+				} else { // sortDirection === 'desc'
+					if (valA === Infinity && valB === Infinity) return 0;
+					if (valA === Infinity) return 1; 
+					if (valB === Infinity) return -1;
+					return valB - valA;
+				}
+			});
+		}
 		filteredQuests = currentFilteredQuests;
 
 		// Original sorting and normalization logic removed.
@@ -910,71 +913,7 @@
 	});
 
 	// Modify the reactive statements to be more efficient and avoid triggering excessive re-processing
-	$: filteredQuests = (() => {
-		// Create a memoized/stable reference to avoid unnecessary re-filtering
-		let currentFilteredQuests = quests.filter(([_, quest]) => {
-			if (selectedCategory !== "all" && quest.category !== selectedCategory) {
-				return false;
-			}
 
-			// Default to 'task' if type is missing, then check if it's a valid type for display.
-			const type = quest.type || 'task'; 
-			if (!['task', 'quest', 'event', 'recurring'].includes(type)) {
-				return false;
-			}
-
-			// Default to 'ongoing' if status is missing.
-			const status = quest.status || 'ongoing';
-			if (status === "completed" && !showCompleted) {
-				return false;
-			}
-
-			return true; // Quest passes all filters
-		});
-
-		// Sort by orderIndex, undefined/null values go to the end
-		currentFilteredQuests.sort(([keyA, a], [keyB, b]) => {
-			let valA: number, valB: number;
-
-			switch (sortCriteria) {
-				case 'positionX':
-					valA = a.position?.x ?? Infinity;
-					valB = b.position?.x ?? Infinity;
-					break;
-				case 'positionY':
-					valA = a.position?.y ?? Infinity;
-					valB = b.position?.y ?? Infinity;
-					break;
-				case 'orderIndex':
-				default:
-					valA = a.orderIndex ?? Infinity;
-					valB = b.orderIndex ?? Infinity;
-					// If orderIndex is the same, sort by key (ID) as a stable secondary sort.
-					// This is always ascending for orderIndex mode.
-					if (valA === valB) {
-						return keyA.localeCompare(keyB);
-					}
-					// For orderIndex, primary sort is always ascending, handled by the main return
-					break;
-			}
-
-			// General comparison for asc/desc.
-			// For orderIndex, sortDirection will always be 'asc' due to handleSortButtonClick logic.
-			if (sortDirection === 'asc') {
-				if (valA === Infinity && valB === Infinity) return 0;
-				if (valA === Infinity) return 1;
-				if (valB === Infinity) return -1;
-				return valA - valB;
-			} else { // sortDirection === 'desc'
-				if (valA === Infinity && valB === Infinity) return 0;
-				if (valA === Infinity) return 1; 
-				if (valB === Infinity) return -1;
-				return valB - valA;
-			}
-		});
-		
-		return currentFilteredQuests;
-	})();
 
 	// Save showHolograms preference to localStorage
 	$: if (typeof localStorage !== 'undefined') {
@@ -1210,7 +1149,7 @@
 							{showCompleted}
 							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
 							on:questPositionChanged={handleCanvasQuestPositionChange}
-						/> 
+						/>
 					{:else} 
 						<div class="flex items-center justify-center py-12">
 							<div class="text-center">

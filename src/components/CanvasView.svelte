@@ -55,6 +55,7 @@
     let positionAssignments = new Set<string>(); // Track which quests have been assigned positions
     let pendingPositionSaves = new Map<string, { x: number; y: number }>(); // Track pending saves
     let hologramPositions = new Map<string, { x: number; y: number }>(); // Local storage for hologram positions
+    let generatedInboxPositions = new Map<string, { x: number; y: number }>(); // Cache for generated inbox positions
 
     const CARD_WIDTH = 320; // Based on w-80 class (20rem * 16px/rem)
     const CARD_HEIGHT_ESTIMATE = 120; // Estimated height for arrow connection
@@ -63,6 +64,7 @@
     $: if (holonID) {
         positionAssignments.clear();
         pendingPositionSaves.clear();
+        generatedInboxPositions.clear(); // Clear cached inbox positions for new holon
         
         // Load hologram positions from localStorage
         try {
@@ -310,17 +312,24 @@
                 };
             }
             
-            // Generate consistent position within the inbox area for new tasks
-            const hash = key.split('').reduce((a, b) => {
-                a = ((a << 5) - a) + b.charCodeAt(0);
-                return a & a;
-            }, 0);
-            
-            // Position new tasks within the inbox area
-            const inboxPosition = {
-                x: INBOX_CENTER.x + (Math.sin(hash) * (INBOX_WIDTH / 3)),
-                y: INBOX_CENTER.y + (Math.cos(hash) * (INBOX_HEIGHT / 3))
-            };
+            // Check if we have a cached generated inbox position
+            let inboxPosition = generatedInboxPositions.get(key);
+            if (!inboxPosition) {
+                // Generate consistent position within the inbox area for new tasks
+                const hash = key.split('').reduce((a, b) => {
+                    a = ((a << 5) - a) + b.charCodeAt(0);
+                    return a & a;
+                }, 0);
+                
+                // Position new tasks within the inbox area
+                inboxPosition = {
+                    x: INBOX_CENTER.x + (Math.sin(hash) * (INBOX_WIDTH / 3)),
+                    y: INBOX_CENTER.y + (Math.cos(hash) * (INBOX_HEIGHT / 3))
+                };
+                
+                // Cache the generated position to prevent regeneration
+                generatedInboxPositions.set(key, inboxPosition);
+            }
             
             return {
                 key,
@@ -473,72 +482,81 @@
             return;
         }
         
-        // Only handle panning and card dragging when drawing is disabled
-        if (!drawingEnabled) {
-            const wasDragging = isDragging;
-            // Use draggedCard (original data) and draggedCardVisuals (final position)
-            const finalDraggedCardData = draggedCard; 
-            const finalVisualPosition = draggedCardVisuals;
-            
-            // Reset states first
-            isDragging = false;
-            draggedCard = null;
-            draggedCardVisuals = null; // Reset visual state
-            isPanning = false;
-            
-            // Then handle the update
-            if (wasDragging && finalDraggedCardData && finalVisualPosition && holonID) {
-                const newPosition = { x: finalVisualPosition.x, y: finalVisualPosition.y };
+        // Handle task clicks and dragging
+        const wasDragging = isDragging;
+        const wasPanning = isPanning;
+        // Use draggedCard (original data) and draggedCardVisuals (final position)
+        const finalDraggedCardData = draggedCard; 
+        const finalVisualPosition = draggedCardVisuals;
+        
+        // Reset states first
+        isDragging = false;
+        draggedCard = null;
+        draggedCardVisuals = null; // Reset visual state
+        isPanning = false;
+        
+        // Handle task interactions (works regardless of drawing mode)
+        if (wasDragging && finalDraggedCardData && finalVisualPosition && holonID) {
+            const newPosition = { x: finalVisualPosition.x, y: finalVisualPosition.y };
 
-                const dx = Math.abs(newPosition.x - finalDraggedCardData.x);
-                const dy = Math.abs(newPosition.y - finalDraggedCardData.y);
-                const moveThreshold = 5; // pixels
+            const dx = Math.abs(newPosition.x - finalDraggedCardData.x);
+            const dy = Math.abs(newPosition.y - finalDraggedCardData.y);
+            const moveThreshold = 5; // pixels
 
-                // Check if it was a click (not a drag)
-                if (dx < moveThreshold && dy < moveThreshold) {
-                    dispatch('taskClick', {
-                        key: finalDraggedCardData.key,
-                        quest: finalDraggedCardData.quest
-                    });
+            // Check if it was a click (not a drag)
+            if (dx < moveThreshold && dy < moveThreshold) {
+                dispatch('taskClick', {
+                    key: finalDraggedCardData.key,
+                    quest: finalDraggedCardData.quest
+                });
+            } else if (!drawingEnabled) {
+                // Only allow dragging tasks when drawing is disabled
+                // Always save position when dragged (whether it had a position before or not)
+                positionAssignments.add(finalDraggedCardData.key);
+                pendingPositionSaves.set(finalDraggedCardData.key, newPosition);
+                
+                // Clear generated inbox position since we now have a real position
+                generatedInboxPositions.delete(finalDraggedCardData.key);
+                
+                // Check if this is a hologram task (read-only from another holon)
+                if (finalDraggedCardData.quest._meta?.resolvedFromHologram) {
+                    // For holograms, we store the position locally in localStorage
+                    hologramPositions.set(finalDraggedCardData.key, newPosition);
+                    saveHologramPositions();
+                    pendingPositionSaves.delete(finalDraggedCardData.key);
+                    // Also clear from generated positions cache
+                    generatedInboxPositions.delete(finalDraggedCardData.key);
                 } else {
-                    // It was a drag, so update the position
-                    // Always save position when dragged (whether it had a position before or not)
-                    positionAssignments.add(finalDraggedCardData.key);
-                    pendingPositionSaves.set(finalDraggedCardData.key, newPosition);
+                    // Regular task - save to holosphere database
+                    const updatedQuest = { 
+                        ...finalDraggedCardData.quest,
+                        id: finalDraggedCardData.key,
+                        position: newPosition 
+                    };
                     
-                    // Check if this is a hologram task (read-only from another holon)
-                    if (finalDraggedCardData.quest._meta?.resolvedFromHologram) {
-                        // For holograms, we store the position locally in localStorage
-                        hologramPositions.set(finalDraggedCardData.key, newPosition);
-                        saveHologramPositions();
-                        pendingPositionSaves.delete(finalDraggedCardData.key);
-                    } else {
-                        // Regular task - save to holosphere database
-                        const updatedQuest = { 
-                            ...finalDraggedCardData.quest,
-                            id: finalDraggedCardData.key,
-                            position: newPosition 
-                        };
-                        
-                        // Dispatch optimistic update to parent
-                        dispatch('questPositionChanged', {
-                            key: finalDraggedCardData.key,
-                            position: newPosition
-                        });
-                        
-                        holosphere.put(holonID, 'quests', updatedQuest)
-                            .then(() => {
-                                pendingPositionSaves.delete(finalDraggedCardData.key);
-                            })
-                            .catch(error => {
-                                console.error('Error updating quest position:', error);
-                                // Revert tracking on error
-                                positionAssignments.delete(finalDraggedCardData.key);
-                                pendingPositionSaves.delete(finalDraggedCardData.key);
-                            });
-                    }
+                    // Dispatch optimistic update to parent
+                    dispatch('questPositionChanged', {
+                        key: finalDraggedCardData.key,
+                        position: newPosition
+                    });
+                    
+                    holosphere.put(holonID, 'quests', updatedQuest)
+                        .then(() => {
+                            pendingPositionSaves.delete(finalDraggedCardData.key);
+                        })
+                        .catch(error => {
+                            console.error('Error updating quest position:', error);
+                            // Revert tracking on error
+                            positionAssignments.delete(finalDraggedCardData.key);
+                            pendingPositionSaves.delete(finalDraggedCardData.key);
+                                                  });
                 }
             }
+        }
+
+        // Handle panning (only when drawing is disabled)
+        if (wasPanning && !drawingEnabled) {
+            // Panning was active, no special handling needed - already reset above
         }
     }
 
