@@ -15,12 +15,18 @@ import ExpensesIcon from './icons/ExpensesIcon.svelte';
 import GlobalHolonsIcon from './icons/GlobalHolonsIcon.svelte';
 import FederationIcon from './icons/FederationIcon.svelte';
 import ProposalsIcon from './icons/ProposalsIcon.svelte';
+import MyHolonsIcon from './icons/MyHolonsIcon.svelte';
 
 export const data = [
 	{
 		title: 'Dashboard',
 		icon: DashboardIcon,
 		link: '/dashboard'
+	},
+	{
+		title: 'My Holons',
+		icon: MyHolonsIcon,
+		link: '/my-holons'
 	},
 	{
 		title: 'Tasks',
