@@ -42,6 +42,7 @@
     let currentColor = '#3B82F6';
     let currentStroke = 3;
     let drawings: any[] = [];
+    let drawingsUpdatedAt = 0; // track last update timestamp
     let currentPath: any[] = [];
     let startPoint: { x: number; y: number } | null = null;
     let isEditingText = false;
@@ -100,9 +101,12 @@
     async function loadDrawings() {
         if (!holosphere || !holonID) return;
         try {
-            const drawingData = await holosphere.get(holonID, 'canvas', 'drawings');
-            if (drawingData && Array.isArray(drawingData)) {
-                drawings = drawingData;
+            const entry = await holosphere.get(holonID, 'canvas', 'drawings');
+            if (entry && entry.data && Array.isArray(entry.data)) {
+                drawings = entry.data;
+                drawingsUpdatedAt = entry.updatedAt || 0;
+            } else if (Array.isArray(entry)) { // backward compatibility
+                drawings = entry;
             } else {
                 drawings = [];
             }
@@ -114,8 +118,9 @@
 
     async function saveDrawings() {
         if (!holosphere || !holonID) return;
+        drawingsUpdatedAt = Date.now();
         try {
-            await holosphere.put(holonID, 'canvas', { id: 'drawings', data: drawings });
+            await holosphere.put(holonID, 'canvas', { id: 'drawings', data: drawings, updatedAt: drawingsUpdatedAt });
         } catch (error) {
             console.error('Error saving drawings:', error);
         }
@@ -347,9 +352,23 @@
         if (drawingEnabled && event.button === 0) {
             const point = getCanvasPoint(event.clientX, event.clientY);
             
+            if (currentTool === 'hand') {
+                // try select drawing
+                const idx = hitTestDrawing(point);
+                if (idx!==null) {
+                    isMovingDrawing = true;
+                    selectedDrawingIndex = idx;
+                    lastMovePoint = { ...point };
+                    return;
+                }
+            }
+
             if (currentTool === 'line') {
                 isDrawing = true;
                 startPoint = { x: point.x, y: point.y };
+            } else if (currentTool === 'free') {
+                isDrawing = true;
+                currentPath = [{ x: point.x, y: point.y }];
             } else if (currentTool === 'text') {
                 // Place text at clicked position
                 textPosition = { x: point.x, y: point.y };
@@ -406,12 +425,33 @@
         event.stopPropagation();
         
         // Handle drawing mode - only allow drawing interactions
+        if (drawingEnabled && isMovingDrawing && selectedDrawingIndex!==null) {
+            const point = getCanvasPoint(event.clientX, event.clientY);
+            const deltaX = point.x - lastMovePoint.x;
+            const deltaY = point.y - lastMovePoint.y;
+            if (deltaX===0 && deltaY===0) return;
+            const d = drawings[selectedDrawingIndex];
+            if (d.type === 'text') {
+                d.x += deltaX;
+                d.y += deltaY;
+            } else if (d.type==='line' && d.points?.length===2) {
+                d.points.forEach((p:any)=>{p.x+=deltaX; p.y+=deltaY;});
+            } else if (d.type==='path' && d.points?.length>0) {
+                d.points.forEach((p:any)=>{p.x+=deltaX; p.y+=deltaY;});
+            }
+            lastMovePoint = point;
+            return;
+        }
+        
         if (drawingEnabled && isDrawing) {
             const point = getCanvasPoint(event.clientX, event.clientY);
             
             if (currentTool === 'line' && startPoint) {
                 // Update the preview line endpoint
                 currentPath = [startPoint, { x: point.x, y: point.y }];
+            } else if (currentTool === 'free' && isDrawing) {
+                // Append points for free draw
+                currentPath.push({ x: point.x, y: point.y });
             } else if (currentTool === 'eraser') {
                 // Continue erasing
                 const eraseRadius = currentStroke * 2;
@@ -461,6 +501,13 @@
         event.stopPropagation();
         
         // Handle drawing mode - only process drawing interactions
+        if (drawingEnabled && isMovingDrawing) {
+            isMovingDrawing = false;
+            selectedDrawingIndex = null;
+            saveDrawings();
+            return;
+        }
+        
         if (drawingEnabled && isDrawing) {
             isDrawing = false;
             
@@ -474,6 +521,15 @@
                     timestamp: Date.now()
                 };
                 drawings = [...drawings, newDrawing];
+                saveDrawings();
+            } else if (currentTool === 'free' && currentPath.length > 1) {
+                drawings = [...drawings, {
+                    type: 'path',
+                    points: currentPath,
+                    color: currentColor,
+                    strokeWidth: currentStroke,
+                    timestamp: Date.now()
+                }];
                 saveDrawings();
             }
             
@@ -831,7 +887,24 @@
         document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
         document.addEventListener('MSFullscreenChange', handleFullscreenChange);
 
+        // Subscribe for real-time drawing updates
+        let drawingsOff: (()=>void)|undefined;
+        if (holosphere && holonID) {
+            holosphere.subscribe(holonID, 'canvas', (entry: any, key?: string) => {
+                if (entry && key === 'drawings') {
+                    if (entry.updatedAt && entry.updatedAt <= drawingsUpdatedAt) return; // ignore older updates
+                    if (Array.isArray(entry.data)) {
+                        drawings = entry.data;
+                        drawingsUpdatedAt = entry.updatedAt || Date.now();
+                    }
+                }
+            }).then((sub: { unsubscribe: () => void }) => {
+                drawingsOff = sub.unsubscribe;
+            }).catch(console.error);
+        }
+
         return () => {
+            if (drawingsOff) drawingsOff();
             window.removeEventListener('mousemove', handleGlobalMouseMove);
             window.removeEventListener('mouseup', handleGlobalMouseUp);
             viewContainer?.removeEventListener('wheel', handleWheel);
@@ -884,6 +957,41 @@
             default:
                 return `hsl(${hue}, 70%, 85%)`; // Original for tasks
         }
+    }
+
+    // -------- Move drawings logic --------
+    let isMovingDrawing = false;
+    let selectedDrawingIndex: number | null = null;
+    let lastMovePoint = { x: 0, y: 0 };
+
+    function hitTestDrawing(point: {x:number;y:number}): number | null {
+        // iterate from topmost
+        for (let i = drawings.length - 1; i >= 0; i--) {
+            const d = drawings[i];
+            if (d.type === 'text') {
+                const width = (d.text?.length || 4) * (d.fontSize || 16) * 0.6;
+                const height = d.fontSize || 16;
+                if (point.x >= d.x && point.x <= d.x + width && point.y >= d.y && point.y <= d.y + height) return i;
+            } else if (d.type === 'line' && d.points?.length === 2) {
+                const [p1,p2] = d.points;
+                const dist = distancePointToSegment(point, p1, p2);
+                if (dist < 6) return i;
+            } else if (d.type === 'path' && d.points?.length>1) {
+                for (let j=0;j<d.points.length-1;j++) {
+                    if (distancePointToSegment(point, d.points[j], d.points[j+1])<6) return i;
+                }
+            }
+        }
+        return null;
+    }
+
+    function distancePointToSegment(p:any, v:any, w:any) {
+        const l2 = (v.x-w.x)*(v.x-w.x)+(v.y-w.y)*(v.y-w.y);
+        if (l2===0) return Math.hypot(p.x-v.x,p.y-v.y);
+        let t = ((p.x-v.x)*(w.x-v.x)+(p.y-v.y)*(w.y-v.y))/l2;
+        t = Math.max(0, Math.min(1,t));
+        const proj = {x: v.x + t*(w.x-v.x), y: v.y + t*(w.y-v.y)};
+        return Math.hypot(p.x-proj.x, p.y-proj.y);
     }
 </script>
 
@@ -1062,7 +1170,7 @@
             {/each}
             
             <!-- Current drawing preview -->
-            {#if currentPath.length === 2 && currentTool === 'line'}
+            {#if currentTool === 'line' && currentPath.length === 2}
                 <line
                     x1={currentPath[0].x}
                     y1={currentPath[0].y}
@@ -1074,6 +1182,11 @@
                     opacity="0.6"
                 />
             {/if}
+
+            {#if currentTool === 'free' && currentPath.length > 1}
+                {@const pathD = `M ${currentPath[0].x},${currentPath[0].y} ${currentPath.slice(1).map(p => `L ${p.x},${p.y}`).join(' ')}`}
+                <path d={pathD} stroke={currentColor} stroke-width={currentStroke} fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.6" />
+            {/if}
         </svg>
 
         <!-- Text Input Field -->
@@ -1083,8 +1196,8 @@
                 bind:value={textInput}
                 on:keydown={handleTextInput}
                 class="absolute bg-white border border-gray-300 px-2 py-1 rounded text-black z-20"
-                style="left: {textPosition.x * zoom + pan.x}px; 
-                       top: {textPosition.y * zoom + pan.y}px;
+                style="left: {textPosition.x}px; 
+                       top: {textPosition.y}px;
                        font-size: {currentStroke * 4}px;"
                 placeholder="Type text and press Enter"
                 autofocus

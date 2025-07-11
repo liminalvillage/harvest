@@ -10,11 +10,9 @@
 
     // Drawing tools
     const tools = [
-        { id: 'hand', name: 'Navigate', icon: '👋' },
         { id: 'line', name: 'Line', icon: '📏' },
-        { id: 'text', name: 'Text', icon: '📝' },
-        { id: 'eraser', name: 'Eraser', icon: '🧹' },
-        { id: 'circle', name: 'Circle', icon: '⭕' }
+        { id: 'free', name: 'Draw', icon: '✒️' },
+        { id: 'text', name: 'Text', icon: '📝' }
     ];
 
     const colors = [
@@ -44,14 +42,7 @@
     }
 
     function selectTool(toolId: string) {
-        if (toolId === 'hand') {
-            dispatch('toggle', { 
-                drawingEnabled: false, 
-                currentTool: toolId 
-            });
-        } else {
-            dispatch('toolChange', { currentTool: toolId });
-        }
+        dispatch('toolChange', { currentTool: toolId });
     }
 
     function selectColor(color: string) {

@@ -857,10 +857,12 @@
 				console.error('Error setting up participation subscription:', error);
 			}
 
+			// Ensure the unsubscribe handler is callable and typed correctly
 			if (typeof off === 'function') {
+				const offFn = off as unknown as () => void;
 				questsUnsubscribe = () => {
-					off();
-					if (participationOff && typeof participationOff === 'function') {
+					offFn();
+					if (typeof participationOff === 'function') {
 						participationOff();
 					}
 				};
