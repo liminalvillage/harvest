@@ -459,7 +459,7 @@
 												)}{/if}
 										</span>
 									{:else}
-										<span /> <!-- Empty span to maintain layout if no date -->
+										<span></span> <!-- Empty span to maintain layout if no date -->
 									{/if}
 									<!-- Potential placeholder for other info if needed -->
 								</div>

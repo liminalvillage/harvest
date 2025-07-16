@@ -1180,22 +1180,22 @@
 							<div
 								class="p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
 								style="background-color: {quest.status === 'completed'
-									? '#374151'
+									? '#4B5563'
 									: getColorFromCategory(quest.category, quest.type)};
-								   opacity: {quest.status === 'completed' ? '0.7' : quest._meta?.resolvedFromHologram ? '0.75' : '1'};
+								   opacity: {quest.status === 'completed' ? '0.85' : quest._meta?.resolvedFromHologram ? '0.75' : '1'};
 								   {quest._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
 							>
 								<div class="flex items-center justify-between gap-2 sm:gap-3">
 									<div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
 										<!-- Task Icon -->
 										<div class="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-black/20 flex items-center justify-center text-xs sm:text-sm">
-											{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : '✓'}
+											{quest.status === 'completed' ? '✅' : quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : '✓'}
 										</div>
 										
 										<!-- Main Content -->
 										<div class="flex-1 min-w-0">
 											<div class="flex items-center gap-1 sm:gap-2 mb-0.5 sm:mb-1">
-												<h3 class="text-sm sm:text-base font-bold text-gray-800 truncate">
+												<h3 class="text-sm sm:text-base font-bold truncate {quest.status === 'completed' ? 'text-gray-600 line-through' : 'text-gray-800'}">
 													{quest.title}
 												</h3>
 												{#if quest._meta?.resolvedFromHologram}
@@ -1236,7 +1236,7 @@
 												</div>
 											{/if}
 											{#if quest.description}
-												<p class="text-xs sm:text-sm text-gray-700 mb-1 sm:mb-2 line-clamp-2">{quest.description}</p>
+												<p class="text-xs sm:text-sm mb-1 sm:mb-2 line-clamp-2 {quest.status === 'completed' ? 'text-gray-500' : 'text-gray-700'}">{quest.description}</p>
 											{/if}
 											{#if quest.category}
 												<span class="inline-block px-1.5 sm:px-2 py-0.5 sm:py-1 text-xs bg-black/10 text-gray-700 rounded-md">

@@ -640,6 +640,7 @@
                                     on:click={() => { selectedHolon = holon; }}
                                     class="text-gray-400 hover:text-white transition-colors p-2"
                                     title="Configure Lenses"
+                                    aria-label="Configure lenses for {holon.name || holon.id}"
                                 >
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
@@ -654,6 +655,7 @@
                                     }}
                                     class="text-gray-400 hover:text-red-400 transition-colors p-2"
                                     title="Remove Federation"
+                                    aria-label="Remove federation with {holon.name || holon.id}"
                                     disabled={saving}
                                 >
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -768,6 +770,14 @@
                                     stroke-width="3"
                                     class="cursor-pointer hover:fill-blue-500 transition-all duration-300"
                                     on:click={() => navigateToHolon(currentHolonId)}
+                                    on:keydown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            navigateToHolon(currentHolonId);
+                                        }
+                                    }}
+                                    role="button"
+                                    tabindex="0"
+                                    aria-label="Navigate to current holon"
                                     style="filter: url(#glow)"
                                 />
                                 <text 
@@ -814,6 +824,14 @@
                                         stroke-width="2"
                                         class="cursor-pointer hover:r-35 transition-all duration-300"
                                         on:click={() => navigateToHolon(holon.id)}
+                                        on:keydown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                navigateToHolon(holon.id);
+                                            }
+                                        }}
+                                        role="button"
+                                        tabindex="0"
+                                        aria-label="Navigate to {holon.name || holon.id}"
                                         style="filter: url(#glow)"
                                     />
                                     
@@ -934,6 +952,14 @@
     <div 
         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
         on:click={(e) => e.target === e.currentTarget && closeDialog()}
+        on:keydown={(e) => {
+            if (e.key === 'Escape') {
+                closeDialog();
+            }
+        }}
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
         transition:fade={{ duration: 200 }}
     >
         <div 
@@ -1025,6 +1051,14 @@
     <div 
         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
         on:click={(e) => e.target === e.currentTarget && (showAddCustomLens = false)}
+        on:keydown={(e) => {
+            if (e.key === 'Escape') {
+                showAddCustomLens = false;
+            }
+        }}
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
         transition:fade={{ duration: 200 }}
     >
         <div 
@@ -1055,7 +1089,7 @@
                         placeholder="Enter lens name..."
                         class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                         required
-                        autofocus
+                        autofocus={false}
                     />
                 </div>
 
@@ -1083,6 +1117,7 @@
                                         on:click={() => removeCustomLens(lens)}
                                         class="text-red-400 hover:text-red-300 transition-colors"
                                         title="Remove custom lens"
+                                        aria-label="Remove custom lens {lens}"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -1120,6 +1155,14 @@
     <div 
         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
         on:click={(e) => e.target === e.currentTarget && (selectedHolon = null)}
+        on:keydown={(e) => {
+            if (e.key === 'Escape') {
+                selectedHolon = null;
+            }
+        }}
+        role="dialog"
+        aria-modal="true"
+        tabindex="-1"
         transition:fade={{ duration: 200 }}
     >
         <div 
@@ -1135,6 +1178,7 @@
                 <button 
                     on:click={() => selectedHolon = null}
                     class="text-gray-400 hover:text-white transition-colors"
+                    aria-label="Close lens configuration dialog"
                 >
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>

@@ -227,7 +227,17 @@
         const participants = quest.participants.filter(
             (p: { id: string }) => p.id !== participantId,
         );
-        await updateQuest({ participants });
+        
+        // Also reset time tracking for the removed participant
+        const updatedTimeTracking = { ...quest.timeTracking };
+        if (updatedTimeTracking[participantId]) {
+            delete updatedTimeTracking[participantId];
+        }
+        
+        await updateQuest({ 
+            participants,
+            timeTracking: updatedTimeTracking
+        });
     }
 
     function isUserParticipant(usernameToTest: string): boolean {
@@ -299,22 +309,22 @@
                 }
             }
 
-            // Add time tracking to expenses when completing task
+            // Create expense entries for all time tracked
             if (quest.timeTracking) {
                 for (const [userID, hours] of Object.entries(quest.timeTracking)) {
                     const hoursAsNumber = hours as number;
                     if (hoursAsNumber > 0) {
-                        // Create expense entry for the time logged
+                        // Create expense entry for the time logged, using chatID for splitWith
                         try {
                             const messageID = `${questId}_time_${userID}_${Date.now()}`; // Unique ID for this expense
-                                                         await holosphere.put(holonId, "expenses", {
-                                 id: messageID,
-                                 chatID: holonId,
-                                 amount: hoursAsNumber, // Total hours logged
+                            await holosphere.put(holonId, "expenses", {
+                                id: messageID,
+                                chatID: holonId,
+                                amount: hoursAsNumber, // Total hours logged
                                 unit: 'hour',
                                 description: quest.title,
                                 paidBy: userID,
-                                splitWith: [6152474485], // Split with specified user ID
+                                splitWith: [holonId], // Split with the current holon (chatID)
                                 timestamp: new Date().toISOString(),
                                 fromTimeTracking: true, // Flag to identify expenses from time tracking
                                 questId: questId
@@ -1201,7 +1211,7 @@
 
                         <!-- Total time summary -->
                         {#if quest.timeTracking && Object.keys(quest.timeTracking).length > 0}
-                            {@const totalHours = Object.values(quest.timeTracking).reduce((sum, hours) => (sum as number) + (hours as number), 0)}
+                            {@const totalHours = Object.values(quest.timeTracking).reduce((sum: number, hours: any) => sum + (hours as number), 0)}
                             {#if totalHours > 0}
                                 <div class="bg-gray-700/30 p-3 rounded-lg border border-gray-600/30 mt-3">
                                     <div class="flex items-center justify-between">

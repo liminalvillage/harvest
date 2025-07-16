@@ -195,6 +195,15 @@
                     selectedProposal = proposal;
                     showModal = true;
                 }}
+                on:keydown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        selectedProposal = proposal;
+                        showModal = true;
+                    }
+                }}
+                role="button"
+                tabindex="0"
+                aria-label="View proposal: {proposal.title}"
             >
                 <div class="flex justify-between items-start mb-2">
                     <h3 class="text-lg font-semibold text-white">{proposal.title}</h3>
@@ -250,11 +259,16 @@
                 class="bg-gray-800 p-6 rounded-lg shadow-lg w-96"
             >
                 <div class="relative">
-                    <div 
+                    <button 
+                        type="button"
                         class="absolute -top-2 -right-2 text-gray-400 hover:text-white cursor-pointer"
                         on:click={() => showAddDialog = false}
-                        role="button"
-                        tabindex="0"
+                        on:keydown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                showAddDialog = false;
+                            }
+                        }}
+                        aria-label="Close dialog"
                     >
                         <svg
                             class="w-5 h-5"
@@ -269,7 +283,7 @@
                                 d="M6 18L18 6M6 6l12 12"
                             />
                         </svg>
-                    </div>
+                    </button>
                     <h3 class="text-white text-lg font-bold mb-4">New Proposal</h3>
                 </div>
                 
