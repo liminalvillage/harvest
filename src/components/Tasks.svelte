@@ -1230,6 +1230,11 @@
 													</span>
 												{/if}
 											</div>
+											{#if quest.created}
+												<div class="text-xs text-gray-500 mb-1">
+													Created: {formatDate(quest.created)}
+												</div>
+											{/if}
 											{#if quest.description}
 												<p class="text-xs sm:text-sm text-gray-700 mb-1 sm:mb-2 line-clamp-2">{quest.description}</p>
 											{/if}

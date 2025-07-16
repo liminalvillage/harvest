@@ -16,6 +16,7 @@
 	import HoloSphere from 'holosphere';
 	import { ethers } from 'ethers';
 	import { fetchHolonName } from "../utils/holonNames";
+	import { addVisitedHolon, getWalletAddress } from "../utils/localStorage";
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -29,12 +30,6 @@
 
 	let holonID: string = '';
 	let showToast = false;
-	let showDropdown = false;
-	let previousHolons: HolonInfo[] = [];
-	let filteredHolons: HolonInfo[] = [];
-	let inputValue: string = '';
-	let isEditing: boolean = false;
-	let blurTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// Ethereum wallet connection
 	async function connectWallet() {
@@ -59,43 +54,8 @@
 		// Ensure auto-transition is off by default when TopBar loads
 		autoTransitionEnabled.set(false);
 
-		const storedHolonID = $page.params.id;
-		if (storedHolonID) {
-			ID.set(storedHolonID);
-		} else {
-			showToast = true;
-		}
-
-		// Load previous holons from localStorage
+		// Add event listeners only in browser environment
 		if (browser) {
-			const stored = localStorage.getItem('previousHolons');
-			if (stored) {
-				previousHolons = JSON.parse(stored).filter((holon: HolonInfo) => !holon.id.startsWith('8'));
-				// Fetch names for holons that don't have them (batch to avoid redundant calls)
-				const holonsNeedingNames = previousHolons.filter(holon => !holon.name);
-				if (holonsNeedingNames.length > 0) {
-					// Process all missing names in parallel but only update localStorage once
-					Promise.all(holonsNeedingNames.map(async (holon) => {
-						try {
-							const holonName = await fetchHolonName(holosphere, holon.id);
-							if (holonName && !holonName.startsWith('Holon ')) {
-								holon.name = holonName;
-								return true; // Indicate this holon was updated
-							}
-						} catch (error) {
-							console.error(`Error fetching name for holon ${holon.id}:`, error);
-						}
-						return false;
-					})).then((results) => {
-						// Only update localStorage if any names were actually fetched
-						if (results.some(updated => updated)) {
-							localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
-						}
-					});
-				}
-			}
-
-			// Add event listeners only in browser environment
 			window.addEventListener('mousemove', handleActivity);
 			window.addEventListener('touchstart', handleActivity);
 			window.addEventListener('touchmove', handleActivity);
@@ -120,6 +80,11 @@
 
 	// Use centralized holon name service
 	async function updateCurrentHolonName(id: string) {
+		if (!id || id === '') {
+			currentHolonName = undefined;
+			return;
+		}
+		
 		try {
 			currentHolonName = await fetchHolonName(holosphere, id);
 		} catch (error) {
@@ -128,124 +93,95 @@
 		}
 	}
 
-	// Update the reactive statement
-	$: if ($ID) {
-		showToast = false;
-		holonID = $ID;
-		updateRoute($ID);
-		
-		// Fetch the name whenever ID changes
-		updateCurrentHolonName($ID);
-		
-		// Add to previous holons if it doesn't start with 8
-		if (!$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
-			const newHolon: HolonInfo = { id: $ID };
-			previousHolons = [...previousHolons, newHolon];
-			if (browser) {
-				localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
+	// Function to save visited holon
+	async function saveVisitedHolon(holonId: string, holonName: string) {
+		const walletAddr = getWalletAddress();
+		if (holonId && holonId !== 'undefined' && holonId !== 'null' && holonId.trim() !== '') {
+			try {
+				await addVisitedHolon(walletAddr, holonId, holonName, 'personal');
+				console.log(`Saved visited holon from TopBar: ${holonId}`);
+			} catch (err) {
+				console.warn('Failed to save visited holon from TopBar:', err);
 			}
-			
-			// Then try to fetch and update its name in the previous holons list
-			fetchHolonName(holosphere, $ID).then((holonName: string) => {
-				if (holonName && !holonName.startsWith('Holon ')) {
-					previousHolons = previousHolons.map(holon => 
-						holon.id === $ID 
-							? { ...holon, name: holonName }
-							: holon
-					);
-					if (browser) {
-						localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
-					}
-				}
-			}).catch((error: Error) => {
-				console.error(`Error fetching name for holon ${$ID}:`, error);
-			});
 		}
 	}
 
-	function selectPreviousHolon(holon: HolonInfo) {
-		if (blurTimeout) clearTimeout(blurTimeout);
+	// Reactive statement to set ID from page params
+	$: {
+		const storedHolonID = $page.params.id;
+		if (storedHolonID && storedHolonID !== 'undefined' && storedHolonID !== 'null' && storedHolonID.trim() !== '') {
+			ID.set(storedHolonID);
+		}
+	}
+	$: if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '') {
+		showToast = false;
 		
-		ID.set(holon.id);
-		isEditing = false;
-		showDropdown = false;
-		filterHolons('');
+		// Always try to resolve the holon name when we have a valid ID
+		updateCurrentHolonName($ID);
+		
+		// Save visited holon when we have a valid ID and we're not on a primary page
+		if (browser && $page.url.pathname !== '/') {
+			// Save the visited holon with the resolved name or fallback
+			const holonName = currentHolonName || `Holon ${$ID}`;
+			saveVisitedHolon($ID, holonName);
+		}
+		// Only update route if the ID actually changed AND we're not on a primary page
+		// AND we're not already on a valid path for this holon
+		else if (holonID !== $ID && $page.url.pathname !== '/') {
+			// Check if we're already on a valid path for this holon
+			const currentPath = $page.url.pathname;
+			const expectedPath = `/${$ID}`;
+			
+			// Only update if we're not already on the correct path
+			if (!currentPath.startsWith(expectedPath)) {
+				holonID = $ID;
+				// Add a small delay to avoid interfering with initial navigation
+				setTimeout(() => {
+					updateRoute($ID);
+				}, 50);
+			} else {
+				// Just update the holonID without changing the route
+				holonID = $ID;
+			}
+		}
+	} else {
+		// If ID becomes undefined, don't redirect - let the URL determine the page
+		// This prevents redirect loops
 	}
 
 	function updateRoute(id: string) {
-		let currentPath = $page.url.pathname.split('/').pop();
-		if (currentPath === holonID) currentPath = 'dashboard'; // Default to dashboard if current path is just the ID
-		// Ensure goto is only called on the client side
-		if (browser) {
-			goto(`/${id ? id : 'holonid'}/${currentPath}`);
+		if (!id || id === '' || id === 'undefined' || id === 'null' || id.trim() === '') {
+			// If no valid ID, redirect to splash screen only if not already there
+					if (browser && $page.url.pathname !== '/') {
+			goto('/');
 		}
-	}
-
-	function filterHolons(value: string) {
-		if (!value || !value.trim()) {
-			filteredHolons = previousHolons;
 			return;
 		}
 		
-		const searchTerm = value.toLowerCase();
-		filteredHolons = previousHolons.filter(holon => 
-			holon.id.toLowerCase().includes(searchTerm) || 
-			(holon.name && holon.name.toLowerCase().includes(searchTerm))
-		);
-	}
-
-	function handleBlur() {
-		blurTimeout = setTimeout(() => {
-			if (isEditing) {
-				if (inputValue.trim() && inputValue !== $ID) {
-					ID.set(inputValue.trim());
-				} else if (!inputValue.trim()) {
-					inputValue = $ID || '';
-				}
-				isEditing = false;
+		// Check if we're already on the correct path for this holon
+		const currentPath = $page.url.pathname;
+		const expectedPath = `/${id}`;
+		
+		// Only navigate if we're not already on the correct path
+		if (browser && !currentPath.startsWith(expectedPath)) {
+			// Extract the sub-path more carefully
+			const pathParts = currentPath.split('/');
+			let subPath = pathParts[pathParts.length - 1]; // Get the last part
+			
+			// Only default to dashboard if we're currently on a path that's just the holon ID
+			// or if the subPath is the old holon ID (meaning we're switching holons)
+			if (pathParts.length === 2 || subPath === holonID) {
+				subPath = 'dashboard';
 			}
-			showDropdown = false;
-			filterHolons('');
-		}, 150);
-	}
-
-	function handleFocus() {
-		if (blurTimeout) clearTimeout(blurTimeout);
-		showDropdown = true;
-		isEditing = true;
-		filterHolons(inputValue);
-	}
-
-	function handleInput() {
-		isEditing = true;
-		filterHolons(inputValue);
-	}
-
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			if (blurTimeout) clearTimeout(blurTimeout);
-
-			if (inputValue.trim() && inputValue !== $ID) {
-				ID.set(inputValue.trim());
-			} else if (!inputValue.trim()) {
-				inputValue = $ID || '';
-			}
-			isEditing = false;
-			showDropdown = false;
-			(event.target as HTMLElement).blur();
+			
+			const newPath = `/${id}/${subPath || 'dashboard'}`;
+			goto(newPath);
 		}
 	}
 
-	// Initialize filtered holons
-	$: filteredHolons = previousHolons;
-
-	// Update inputValue from store *only* when not editing
-	$: if ($ID && !isEditing) {
-		holonID = $ID;
-		inputValue = $ID;
-	}
-
+	// Check if we're on a primary page (standalone routes)
+	$: isPrimaryPage = $page.url.pathname === '/';
+	
 	// Reactive statement for walletAddress changes
 	$: if ($walletAddress) {
 		console.log('Wallet connected:', $walletAddress);
@@ -264,18 +200,7 @@
 		}
 	}
 
-	function removePreviousHolon(holonId: string, event: MouseEvent) {
-		event.preventDefault();
-		event.stopPropagation();
-		
-		// Remove the holon from the array
-		previousHolons = previousHolons.filter(holon => holon.id !== holonId);
-		
-		// Update localStorage if in browser environment
-		if (browser) {
-			localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
-		}
-	}
+
 </script>
 
 <style>
@@ -293,79 +218,7 @@
 	.toast.show {
 		opacity: 1;
 	}
-	.dropdown {
-		position: absolute;
-		top: 100%;
-		left: 0;
-		right: 0;
-		background-color: #1f2937;
-		border: 1px solid #374151;
-		border-radius: 8px;
-		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-		z-index: 100;
-		max-height: 200px;
-		overflow-y: auto;
-		margin-top: 4px;
-	}
-	.dropdown-item {
-		padding: 8px 12px;
-		cursor: pointer;
-		transition: background-color 0.2s;
-	}
-	.dropdown-item:hover {
-		background-color: #374151;
-	}
-	.input-container {
-		position: relative;
-	}
-	.dropdown::-webkit-scrollbar {
-		width: 8px;
-	}
-	.dropdown::-webkit-scrollbar-track {
-		background: #1f2937;
-		border-radius: 8px;
-	}
-	.dropdown::-webkit-scrollbar-thumb {
-		background: #4b5563;
-		border-radius: 8px;
-	}
-	.dropdown::-webkit-scrollbar-thumb:hover {
-		background: #6b7280;
-	}
-	.id-label {
-		position: absolute;
-		left: 0;
-		margin-left: 1rem;
-		color: #6b7280;
-		z-index: 101;
-		pointer-events: none;
-		line-height: 2.25rem;
-	}
-	.holon-id {
-		font-family: monospace;
-	}
-	.holon-name {
-		font-size: 0.9em;
-		color: #9ca3af;
-		font-style: italic;
-	}
-	.delete-button {
-		opacity: 0;
-		transition: opacity 0.2s;
-		color: #9ca3af;
-	}
-	.delete-button:hover {
-		color: #ef4444;
-	}
-	.dropdown-item:hover .delete-button {
-		opacity: 1;
-	}
-	.dropdown-item-content {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		width: 100%;
-	}
+
 	/* Add styles for the holon name in the top bar */
 	.flex-shrink-0 {
 		z-index: 102;
@@ -425,62 +278,24 @@
 				</button>
 			</div>
 			<div class="container flex left-0 relative w-3/4">
-				{#if currentHolonName}
-					<div class="flex items-center mr-4 flex-shrink-0">
-						<span class="text-white text-xl font-medium whitespace-nowrap">
-							{currentHolonName}
-						</span>
-					</div>
+				{#if !isPrimaryPage}
+					{#if currentHolonName}
+						<div class="flex flex-col md:flex-row md:items-center mr-4 flex-shrink-0 space-y-1 md:space-y-0 md:space-x-3">
+							<span class="text-white text-xl font-medium whitespace-nowrap">
+								{currentHolonName}
+							</span>
+							<span class="text-gray-400 text-sm font-mono bg-gray-800 px-2 py-1 rounded-md">
+								{$ID}
+							</span>
+						</div>
+					{:else}
+						<div class="flex flex-col md:flex-row md:items-center mr-4 flex-shrink-0">
+							<span class="text-gray-400 text-sm font-mono bg-gray-800 px-2 py-1 rounded-md">
+								{$ID}
+							</span>
+						</div>
+					{/if}
 				{/if}
-				<div class="group items-center relative w-full md:flex lg:w-72 flex-shrink">
-					<span class="id-label">ID:</span>
-					<div class="input-container w-full">
-						<input
-							type="text"
-							class="bg-gray-800 block leading-normal pl-12 py-1.5 pr-4 ring-opacity-90 rounded-2xl text-gray-400 w-full focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-							placeholder="Holon ID"
-							bind:value={inputValue}
-							on:keydown={handleKeydown}
-							on:input={handleInput}
-							on:blur={handleBlur}
-							on:focus={handleFocus}
-						/>
-						{#if showDropdown && filteredHolons.length > 0}
-							<div class="dropdown">
-								{#each filteredHolons as holon}
-									<div 
-										class="dropdown-item"
-										role="button"
-										tabindex="0"
-										on:mousedown|preventDefault={() => selectPreviousHolon(holon)}
-									>
-										<div class="dropdown-item-content">
-											<div class="flex-grow cursor-pointer flex flex-col">
-												{#if holon.name}
-													<span class="text-sm font-medium text-white holon-name">{holon.name}</span>
-												{/if}
-												<span class="holon-id text-xs {holon.name ? 'text-gray-400' : 'text-white'}">{holon.id}</span>
-											</div>
-											<button
-												type="button"
-												class="delete-button p-1 rounded-full hover:bg-gray-700"
-												on:mousedown|stopPropagation|preventDefault={(e) => {
-													removePreviousHolon(holon.id, e);
-													showDropdown = true;
-												}}
-												aria-label="Remove holon from history"
-											>
-												<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-												</svg>
-											</button>
-										</div>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</div>
-				</div>
 			</div>
 			<div class="flex items-center justify-end ml-auto">
 				{#if $walletAddress}

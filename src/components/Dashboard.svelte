@@ -2,8 +2,10 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
+    import { goto } from "$app/navigation";
     import Announcements from "./Announcements.svelte";
     import HoloSphere from 'holosphere';
+    import { fetchHolonName } from "../utils/holonNames";
 
 
     // Initialize holosphere
@@ -12,6 +14,7 @@
     let unsubscribe: () => void;
     let isLoading = true;
     let connectionReady = false;
+    let holonName: string | undefined = undefined;
 
     let chatCount = 0;
     let userCount = 0;
@@ -29,6 +32,15 @@
     let holonPurpose: string | null = null; // Variable to store the holon's purpose
 
     onMount(() => {
+        // Check if the holon ID is valid
+        if (!holonID || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
+            // Redirect to root if no valid holon ID, but only if not already there
+            if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+                goto('/');
+            }
+            return;
+        }
+
         // Wait for holosphere to be ready before proceeding
         const checkConnection = async () => {
             if (!holosphere) {
@@ -42,16 +54,18 @@
             
             // Set up subscription to ID store
             unsubscribe = ID.subscribe((value) => {
-                if (value) {
+                if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
                     holonID = value;
                     fetchData();
                 }
+                // Don't redirect when ID becomes invalid - let the URL determine the page
             });
 
             // Initial fetch if we have an ID
-            if (holonID) {
+            if (holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
                 fetchData();
             }
+            // Don't redirect if no ID - let the URL determine the page
         };
         
         checkConnection();
@@ -66,19 +80,34 @@
     $: {
         const newId = $page.params.id;
         if (newId && newId !== holonID && connectionReady) {
-            holonID = newId;
-            if (holosphere) {
-                fetchData();
+            // Check if the new ID is valid
+            if (newId !== 'undefined' && newId !== 'null' && newId.trim() !== '') {
+                holonID = newId;
+                if (holosphere) {
+                    fetchData();
+                }
             }
         }
+        // Don't redirect when ID becomes invalid - let the URL determine the page
     }
 
     async function fetchData(retryCount = 0) {
-        if (!holonID || !holosphere || !connectionReady) return;
+        if (!holonID || !holosphere || !connectionReady || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
+            // Don't redirect - just return without fetching data
+            return;
+        }
         
         isLoading = true;
         
         try {
+            // Fetch holon name
+            try {
+                holonName = await fetchHolonName(holosphere, holonID);
+            } catch (error) {
+                console.error(`Error fetching name for holon ${holonID}:`, error);
+                holonName = undefined;
+            }
+
             // Add sequential fetching with small delays to reduce backend load
             const chats = (await holosphere.getAll(holonID, "chats")) || {};
             await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
@@ -174,8 +203,13 @@
     <div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
         <div class="flex flex-col md:flex-row justify-between items-center">
             <div class="text-center md:text-left mb-4 md:mb-0">
-                <h1 class="text-4xl font-bold text-white mb-2">Dashboard Overview</h1>
-                <p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
+                {#if holonName}
+                    <h1 class="text-4xl font-bold text-white mb-2">{holonName}</h1>
+                    <p class="text-gray-400 text-lg font-mono">{holonID}</p>
+                {:else}
+                    <h1 class="text-4xl font-bold text-white mb-2">Holon Dashboard</h1>
+                    <p class="text-gray-400 text-lg font-mono">{holonID}</p>
+                {/if}
             </div>
             {#if holonPurpose}
                 <div class="bg-gray-600 bg-opacity-50 rounded-2xl px-6 py-3 max-w-md">

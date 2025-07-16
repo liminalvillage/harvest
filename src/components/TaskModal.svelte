@@ -3,6 +3,7 @@
     import { fade, scale } from "svelte/transition";
     import HoloSphere from "holosphere";
     import { getHologramSourceName } from "../utils/holonNames";
+    import { formatDate } from "../utils/date";
 
     export let quest: any;
     export let questId: string;
@@ -825,22 +826,42 @@
                                 <span>Cast</span>
                             </span>
                         {/if}
-                        {#if quest.category}
-                            <span
-                                class="inline-flex items-center text-sm text-gray-400"
+                        {#if quest.created}
+                        <span
+                            class="inline-flex items-center text-sm text-gray-400"
+                        >
+                            <svg
+                                class="w-4 h-4 mr-1"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
                             >
-                                <svg
-                                    class="w-4 h-4 mr-1"
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                >
-                                    <path
-                                        d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"
-                                    />
-                                </svg>
-                                {quest.category}
-                            </span>
-                        {/if}
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                />
+                            </svg>
+                            Created: {formatDate(quest.created)}
+                        </span>
+                    {/if}
+                    {#if quest.category}
+                        <span
+                            class="inline-flex items-center text-sm text-gray-400"
+                        >
+                            <svg
+                                class="w-4 h-4 mr-1"
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                            >
+                                <path
+                                    d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"
+                                />
+                            </svg>
+                            {quest.category}
+                        </span>
+                    {/if}
                     </div>
                 </div>
             </div>

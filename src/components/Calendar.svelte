@@ -592,6 +592,11 @@
                                     "
                                 >
                                     <div class="font-bold">{task.title}</div>
+                                    {#if task.created}
+                                        <div class="text-xs opacity-75">
+                                            Created: {formatDate(task.created)}
+                                        </div>
+                                    {/if}
                                     <div class="text-xs opacity-75">
                                         {position.startTime} - {position.endTime}
                                     </div>
@@ -682,6 +687,11 @@
                             "
                         >
                             <div class="font-bold">{task.title}</div>
+                            {#if task.created}
+                                <div class="text-xs opacity-75">
+                                    Created: {formatDate(task.created)}
+                                </div>
+                            {/if}
                             <div class="text-xs opacity-75">
                                 {position.startTime} - {position.endTime}
                             </div>

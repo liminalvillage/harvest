@@ -1,8 +1,11 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount, onDestroy } from 'svelte';
+    import { goto } from '$app/navigation';
     import HoloSphere from 'holosphere';
     import * as d3 from 'd3';
     import { ID } from "../dashboard/store";
+    import { fetchHolonName } from "../utils/holonNames";
+    import { addClickedHolon, addVisitedHolon, getWalletAddress } from "../utils/localStorage";
 
     interface Holon {
         name: string;
@@ -50,6 +53,9 @@
     // Debouncing variables
     let updateTimeout: any;
     let pendingUpdate = false;
+
+    // Track visit function
+
 
     function updateStatCirclesPosition() {
         d3.select(svg).selectAll('.stat-circle').each(function() {
@@ -371,7 +377,7 @@
                 const holonId = $ID;
                 if (holonId) {
                     // Navigate to the specific lens
-                    window.location.href = `/${holonId}/${d.lens}`;
+                    goto(`/${holonId}/${d.lens}`);
                 }
             })
             .on('mouseover', function() {
@@ -473,10 +479,48 @@
         if (d.data.isFederated && d.data.federatedFrom) {
             ID.set(d.data.federatedFrom);
             dispatch('holonSelect', { key: d.data.federatedFrom, holon: d.data });
+            
+            // Track this click and visit (with or without wallet)
+            const walletAddr = getWalletAddress();
+            try {
+                const holonName = await fetchHolonName(holosphere, d.data.federatedFrom);
+                
+                // Track as clicked holon (from navigator view)
+                addClickedHolon(walletAddr, d.data.federatedFrom, holonName, 'navigator');
+                
+                // Also track as visited holon
+                addVisitedHolon(walletAddr, d.data.federatedFrom, holonName, 'navigator');
+                
+                console.log(`Tracked federated holon click from navigator: ${d.data.federatedFrom}`);
+            } catch (err) {
+                console.warn('Failed to track federated holon click:', err);
+            }
+            
+            // Navigate to the dashboard
+            goto(`/${d.data.federatedFrom}/dashboard`);
         } else if (d.data.key) {
             // Switch to the clicked holon by updating the ID store
             ID.set(d.data.key);
             dispatch('holonSelect', { key: d.data.key, holon: d.data });
+            
+            // Track this click and visit (with or without wallet)
+            const walletAddr = getWalletAddress();
+            try {
+                const holonName = await fetchHolonName(holosphere, d.data.key);
+                
+                // Track as clicked holon (from navigator view)
+                addClickedHolon(walletAddr, d.data.key, holonName, 'navigator');
+                
+                // Also track as visited holon
+                addVisitedHolon(walletAddr, d.data.key, holonName, 'navigator');
+                
+                console.log(`Tracked holon click from navigator: ${d.data.key}`);
+            } catch (err) {
+                console.warn('Failed to track holon click:', err);
+            }
+            
+            // Navigate to the dashboard
+            goto(`/${d.data.key}/dashboard`);
         }
     }
 

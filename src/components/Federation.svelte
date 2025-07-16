@@ -2,8 +2,10 @@
     import { createEventDispatcher, onMount, onDestroy, getContext } from "svelte";
     import { fade, slide, fly } from "svelte/transition";
     import { flip } from "svelte/animate";
+    import { goto } from "$app/navigation";
     import HoloSphere from "holosphere";
-    import { ID } from "../dashboard/store";
+    import { ID, walletAddress } from "../dashboard/store";
+    import { fetchHolonName } from "../utils/holonNames";
 
     const dispatch = createEventDispatcher();
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -378,6 +380,83 @@
 
     function navigateToHolon(holonId: string) {
         ID.set(holonId);
+        
+        // Track this visit if wallet is connected
+        if ($walletAddress) {
+            addVisitedHolonToSeparateList(holonId);
+        }
+        
+        goto(`/${holonId}/dashboard`);
+    }
+
+    async function addVisitedHolonToSeparateList(holonId: string) {
+        if (!$walletAddress) return;
+        
+        try {
+            const holonName = await fetchHolonName(holosphere, holonId);
+            const now = Date.now();
+            
+            // Load existing visited holons from localStorage first
+            const localStorageKey = `visitedHolons_${$walletAddress}`;
+            const localData = localStorage.getItem(localStorageKey);
+            let visitedHolons: any[] = [];
+            
+            if (localData) {
+                try {
+                    const parsed = JSON.parse(localData);
+                    if (Array.isArray(parsed)) {
+                        visitedHolons = parsed;
+                    }
+                } catch (e) {
+                    console.warn('Failed to parse localStorage visited holons:', e);
+                }
+            }
+            
+            // Try to load from holosphere and merge with localStorage data
+            try {
+                const visitedData = await holosphere.get($walletAddress, 'visitedHolons', $walletAddress);
+                if (visitedData && Array.isArray(visitedData)) {
+                    visitedHolons = visitedData;
+                } else if (visitedData && visitedData.data && Array.isArray(visitedData.data)) {
+                    visitedHolons = visitedData.data;
+                }
+            } catch (err) {
+                console.warn('Failed to load from holosphere, using localStorage data:', err);
+            }
+            
+            // Check if already in visited list
+            const existingIndex = visitedHolons.findIndex((h: any) => h.id === holonId);
+            
+            if (existingIndex >= 0) {
+                // Update existing entry
+                visitedHolons[existingIndex] = {
+                    ...visitedHolons[existingIndex],
+                    lastVisited: now,
+                    visitCount: visitedHolons[existingIndex].visitCount + 1
+                };
+            } else {
+                // Add new entry
+                visitedHolons.push({
+                    id: holonId,
+                    name: holonName,
+                    lastVisited: now,
+                    visitCount: 1
+                });
+            }
+            
+            // Save to both holosphere and localStorage
+            try {
+                await holosphere.put($walletAddress, 'visitedHolons', visitedHolons);
+                localStorage.setItem(localStorageKey, JSON.stringify(visitedHolons));
+                console.log('Saved visited holon to both holosphere and localStorage');
+            } catch (err) {
+                console.warn('Failed to save to holosphere, saving to localStorage only:', err);
+                localStorage.setItem(localStorageKey, JSON.stringify(visitedHolons));
+            }
+            
+        } catch (err) {
+            console.warn('Failed to add visited holon:', err);
+        }
     }
 
     function addCustomLens() {

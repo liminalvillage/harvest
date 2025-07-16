@@ -1,8 +1,11 @@
 <script lang="ts">
     import { createEventDispatcher, onMount, onDestroy, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
+    import { goto } from "$app/navigation";
     import HoloSphere from "holosphere";
     import { ID } from "../dashboard/store";
+    import { fetchHolonName } from "../utils/holonNames";
+    import { addClickedHolon, addVisitedHolon, getWalletAddress } from "../utils/localStorage";
 
     // Initialize holosphere
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -323,7 +326,7 @@
     }
 
     // Simple function to fetch just the holon name
-    async function fetchHolonName(holonId: string): Promise<string> {
+    async function getHolonName(holonId: string): Promise<string> {
         try {
             const settings = await holosphere.get(holonId, "settings", holonId);
             return settings?.name || holonId;
@@ -603,16 +606,34 @@
         });
     }
 
-    function navigateToHolon(holonId: string) {
+    async function navigateToHolon(holonId: string) {
         // Navigate to the holon
         dispatch('navigate', { holonId });
         
         // Also update the ID store
         ID.set(holonId);
         
-        // Navigate using browser
-        window.location.href = `/${holonId}/dashboard`;
+        // Track this click and visit (with or without wallet)
+        const walletAddr = getWalletAddress();
+        try {
+            const holonName = await fetchHolonName(holosphere, holonId);
+            
+            // Track as clicked holon (from global view)
+            addClickedHolon(walletAddr, holonId, holonName, 'global');
+            
+            // Also track as visited holon
+            addVisitedHolon(walletAddr, holonId, holonName, 'global');
+            
+            console.log(`Tracked holon click from global view: ${holonId}`);
+        } catch (err) {
+            console.warn('Failed to track holon click:', err);
+        }
+        
+        // Navigate to the dashboard using SvelteKit's goto
+        goto(`/${holonId}/dashboard`);
     }
+
+
 
     function handleSort(field: string) {
         if (sortBy === field) {

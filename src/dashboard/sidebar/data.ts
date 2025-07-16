@@ -12,7 +12,7 @@ import DashboardIcon from './icons/DashboardIcon.svelte';
 import ShoppingIcon from './icons/ShoppingIcon.svelte';
 import ChecklistIcon from './icons/ChecklistIcon.svelte';
 import ExpensesIcon from './icons/ExpensesIcon.svelte';
-import GlobalHolonsIcon from './icons/GlobalHolonsIcon.svelte';
+
 import FederationIcon from './icons/FederationIcon.svelte';
 import ProposalsIcon from './icons/ProposalsIcon.svelte';
 import MyHolonsIcon from './icons/MyHolonsIcon.svelte';
@@ -22,11 +22,6 @@ export const data = [
 		title: 'Dashboard',
 		icon: DashboardIcon,
 		link: '/dashboard'
-	},
-	{
-		title: 'My Holons',
-		icon: MyHolonsIcon,
-		link: '/my-holons'
 	},
 	{
 		title: 'Tasks',
@@ -83,11 +78,7 @@ export const data = [
 		icon: StatusIcon,
 		link: '/status'
 	},
-	// {
-	// 	title: 'Global Holons',
-	// 	icon: GlobalHolonsIcon,
-	// 	link: '/global-holons'
-	// },
+
 	{
 		title: 'Federation',
 		icon: FederationIcon,

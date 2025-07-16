@@ -5,6 +5,9 @@
 
 	let store: Record<string, any> = {};
 	let selectedTable = "quests";
+	let customTableName = "";
+	let useCustomTable = false;
+	let showDropdown = false;
 	let tables = [
 		{ value: "quests", label: "Tasks" },
 		{ value: "needs", label: "Local Needs" },
@@ -37,15 +40,35 @@
 	onMount(() => {
 		ID.subscribe((value) => {
 			holonID = value;
-			subscribeToTable(selectedTable);
+			subscribeToTable(getCurrentTableName());
 		});
+
+		// Close dropdown when clicking outside
+		function handleClickOutside(event: MouseEvent) {
+			const target = event.target as HTMLElement;
+			if (!target.closest('.lens-control')) {
+				showDropdown = false;
+			}
+		}
+
+		document.addEventListener('click', handleClickOutside);
+
+		return () => {
+			document.removeEventListener('click', handleClickOutside);
+		};
 	});
+
+	function getCurrentTableName(): string {
+		return useCustomTable ? customTableName : selectedTable || "quests";
+	}
 
 	async function subscribeToTable(tableName: string) {
 		store = {};
-		if (holosphere) {
-			console.log(holonID, tableName);
-			holosphere.subscribe(holonID, tableName, (newData: any, key: string) => {
+		const safeHolonID = holonID || "";
+		if (holosphere && tableName.trim()) {
+			console.log(safeHolonID, tableName);
+			holosphere.subscribe(safeHolonID, tableName, (newData: any, key?: string) => {
+				if (typeof key !== 'string') return;
 				if (newData) {
 					store[key] = newData;
 				} else {
@@ -58,9 +81,49 @@
 
 	function handleTableChange(table: string) {
 		selectedTable = table;
+		useCustomTable = false;
+		showDropdown = false;
 		subscribeToTable(table);
 		expandedFields.clear();
 	}
+
+	function handleCustomTableChange() {
+		if (customTableName.trim()) {
+			useCustomTable = true;
+			subscribeToTable(customTableName.trim());
+			expandedFields.clear();
+		}
+	}
+
+	function toggleDropdown() {
+		showDropdown = !showDropdown;
+	}
+
+	function selectTable(table: string) {
+		selectedTable = table;
+		useCustomTable = false;
+		showDropdown = false;
+		subscribeToTable(table);
+		expandedFields.clear();
+	}
+
+	let inputValue = selectedTable;
+
+	function handleInputChange() {
+		if (inputValue.trim() && !tables.some(t => t.value === inputValue)) {
+			// If input doesn't match any predefined table, treat as custom
+			useCustomTable = true;
+			customTableName = inputValue;
+			handleCustomTableChange();
+		} else if (inputValue.trim()) {
+			// If input matches a predefined table, use that
+			useCustomTable = false;
+			selectedTable = inputValue;
+			handleTableChange(inputValue);
+		}
+	}
+
+	$: inputValue = useCustomTable ? customTableName : selectedTable;
 
 	function toggleField(fieldPath: string) {
 		if (expandedFields.has(fieldPath)) {
@@ -72,18 +135,20 @@
 	}
 
 	async function deleteEntry(key: string) {
-		if (!key || !holonID || !selectedTable) {
+		const currentTable = getCurrentTableName();
+		const safeHolonID = holonID || "";
+		if (!key || !safeHolonID || !currentTable) {
 			console.error("Cannot delete: missing parameters", {
 				key,
-				holonID,
-				selectedTable,
+				holonID: safeHolonID,
+				currentTable,
 			});
 			return;
 		}
 
 		if (confirm("Are you sure you want to delete this entry?")) {
 			try {
-				await holosphere.delete(holonID, selectedTable, key);
+				await holosphere.delete(safeHolonID, currentTable, key);
 				delete store[key];
 				store = { ...store };
 			} catch (error) {
@@ -137,6 +202,8 @@
 		try {
 			const entry = store[key];
 			let parsedValue: any;
+			const currentTable = getCurrentTableName();
+			const safeHolonID = holonID || "";
 
 			if (isArrayEditing && arrayEditIndex !== null) {
 				// Handle array element editing
@@ -144,12 +211,12 @@
 				parsedValue = inferType(editValue);
 				currentArray[arrayEditIndex] = parsedValue;
 				const updatedEntry = { ...entry, [field]: currentArray };
-				await holosphere.put(holonID, selectedTable, updatedEntry);
+				await holosphere.put(safeHolonID, currentTable, updatedEntry);
 			} else {
 				// Handle regular field editing
 				parsedValue = inferType(editValue);
 				const updatedEntry = { ...entry, [field]: parsedValue };
-				await holosphere.put(holonID, selectedTable, updatedEntry);
+				await holosphere.put(safeHolonID, currentTable, updatedEntry);
 			}
 
 			editingField = null;
@@ -177,7 +244,9 @@
 			const entry = store[key];
 			const parsedValue = inferType(editValue);
 			const updatedEntry = { ...entry, [newFieldName]: parsedValue };
-			await holosphere.put(holonID, selectedTable, updatedEntry);
+			const currentTable = getCurrentTableName();
+			const safeHolonID = holonID || "";
+			await holosphere.put(safeHolonID, currentTable, updatedEntry);
 			cancelEdit();
 		} catch (error) {
 			console.error("Error adding new field:", error);
@@ -189,7 +258,9 @@
 			const entry = store[key];
 			const newArray = [...currentArray, null];
 			const updatedEntry = { ...entry, [field]: newArray };
-			await holosphere.put(holonID, selectedTable, updatedEntry);
+			const currentTable = getCurrentTableName();
+			const safeHolonID = holonID || "";
+			await holosphere.put(safeHolonID, currentTable, updatedEntry);
 			startEditing(key, field, newArray, newArray.length - 1);
 		} catch (error) {
 			console.error("Error adding array item:", error);
@@ -203,7 +274,9 @@
 				const newArray = [...currentArray];
 				newArray.splice(index, 1);
 				const updatedEntry = { ...entry, [field]: newArray };
-				await holosphere.put(holonID, selectedTable, updatedEntry);
+				const currentTable = getCurrentTableName();
+				const safeHolonID = holonID || "";
+				await holosphere.put(safeHolonID, currentTable, updatedEntry);
 			} catch (error) {
 				console.error("Error removing array item:", error);
 			}
@@ -216,7 +289,8 @@
 		const url = URL.createObjectURL(dataBlob);
 		const link = document.createElement('a');
 		link.href = url;
-		link.download = `${selectedTable}_${new Date().toISOString().split('T')[0]}.json`;
+		const currentTable = getCurrentTableName();
+		link.download = `${currentTable}_${new Date().toISOString().split('T')[0]}.json`;
 		document.body.appendChild(link);
 		link.click();
 		document.body.removeChild(link);
@@ -244,7 +318,9 @@
 
 		try {
 			const parsedData = JSON.parse(newEntryJson);
-			await holosphere.put(holonID, selectedTable, parsedData);
+			const currentTable = getCurrentTableName();
+			const safeHolonID = holonID || "";
+			await holosphere.put(safeHolonID, currentTable, parsedData);
 			isAddingNewEntry = false;
 			newEntryJson = "{\n  \n}";
 			newEntryKey = "";
@@ -256,54 +332,83 @@
 </script>
 
 <div class="flex flex-wrap">
-	<div class="w-full lg:w-10/12 bg-gray-800 py-6 px-6 rounded-3xl">
+	<div class="w-full lg:w-10/12 bg-gray-900 border border-gray-800 py-8 px-8 rounded-3xl shadow-2xl">
 		<div class="flex justify-between text-white items-center mb-8">
 			<div class="flex items-center gap-4">
 				<p class="text-2xl font-bold">Database Explorer</p>
-				<div class="lens-control">
-					<label for="table-select" class="lens-label">Table:</label>
-					<select
-						id="table-select"
-						class="lens-select"
-						bind:value={selectedTable}
-						on:change={() => handleTableChange(selectedTable)}
-						aria-label="Select table type"
-					>
-						{#each tables as table}
-							<option value={table.value}>{table.label}</option>
-						{/each}
-					</select>
+				<div class="lens-control relative">
+					<label for="table-input" class="lens-label text-gray-300 font-medium">Table:</label>
+					<div class="relative inline-block">
+						<input
+							id="table-input"
+							type="text"
+							class="bg-gray-900 text-white border border-gray-700 rounded-lg px-4 py-2 pr-10 w-56 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 focus:outline-none transition-all duration-200"
+							placeholder="Enter table name or select..."
+							bind:value={inputValue}
+							on:input={handleInputChange}
+							aria-label="Table name input"
+						/>
+						<button
+							type="button"
+							class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors duration-200"
+							on:click={toggleDropdown}
+							aria-label="Toggle dropdown"
+						>
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+							</svg>
+						</button>
+						
+						{#if showDropdown}
+							<div class="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto backdrop-blur-sm">
+								<div class="py-1">
+									{#each tables as table}
+										<button
+											type="button"
+											class="w-full text-left px-4 py-3 hover:bg-gray-800 text-gray-200 hover:text-white transition-colors duration-150 flex items-center justify-between group"
+											on:click={() => selectTable(table.value)}
+										>
+											<span class="font-medium">{table.label}</span>
+											<span class="text-xs text-gray-500 group-hover:text-gray-400">{table.value}</span>
+										</button>
+									{/each}
+								</div>
+							</div>
+						{/if}
+					</div>
 					<button 
-						class="info-button" 
+						class="info-button ml-3 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-300 p-2 rounded-lg transition-colors duration-200" 
 						aria-label="Table information"
 						on:mouseenter={() => showTableInfo = true}
 						on:mouseleave={() => showTableInfo = false}
 					>
-						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-							<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" />
+						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
+							<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+							<circle cx="8" cy="8" r="3" fill="white" opacity="0.8"/>
+							<circle cx="16" cy="16" r="3" fill="white" opacity="0.8"/>
 						</svg>
 					</button>
 					
 					{#if showTableInfo}
-						<div class="info-tooltip">
-							<p>Tables store different types of data in the database:</p>
-							<ul>
-								<li><strong>Tasks:</strong> Active tasks and quests</li>
-								<li><strong>Local Needs:</strong> Community needs and requests</li>
-								<li><strong>Offers:</strong> Available resources and services</li>
-								<li><strong>Communities:</strong> Active local groups</li>
-								<li><strong>Organizations:</strong> Registered organizations</li>
-								<li><strong>Events:</strong> Scheduled activities</li>
-								<li><strong>People:</strong> User profiles and accounts</li>
-								<li><strong>Settings:</strong> System configuration</li>
-								<li><strong>Expenses:</strong> Financial records</li>
-								<li><strong>Profile:</strong> Personal information</li>
+						<div class="absolute top-full left-0 mt-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 p-4 max-w-md">
+							<p class="text-gray-200 font-medium mb-2">Tables store different types of data in the database:</p>
+							<ul class="text-sm text-gray-300 space-y-1">
+								<li><span class="font-semibold text-blue-400">Tasks:</span> Active tasks and quests</li>
+								<li><span class="font-semibold text-green-400">Local Needs:</span> Community needs and requests</li>
+								<li><span class="font-semibold text-yellow-400">Offers:</span> Available resources and services</li>
+								<li><span class="font-semibold text-purple-400">Communities:</span> Active local groups</li>
+								<li><span class="font-semibold text-indigo-400">Organizations:</span> Registered organizations</li>
+								<li><span class="font-semibold text-pink-400">Events:</span> Scheduled activities</li>
+								<li><span class="font-semibold text-cyan-400">People:</span> User profiles and accounts</li>
+								<li><span class="font-semibold text-orange-400">Settings:</span> System configuration</li>
+								<li><span class="font-semibold text-red-400">Expenses:</span> Financial records</li>
+								<li><span class="font-semibold text-gray-400">Profile:</span> Personal information</li>
 							</ul>
 						</div>
 					{/if}
 				</div>
 				<button
-					class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded-md flex items-center gap-2"
+					class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center gap-2 text-white font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
 					on:click={exportTableData}
 				>
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -323,7 +428,7 @@
 				</div>
 			</div>
 			<button
-				class="bg-green-600 hover:bg-green-700 px-3 py-1 rounded-md flex items-center gap-2 text-white"
+				class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg flex items-center gap-2 text-white font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
 				on:click={() => isAddingNewEntry = true}
 			>
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

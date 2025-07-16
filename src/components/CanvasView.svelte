@@ -1259,6 +1259,11 @@
                                     <h3 class="text-base font-bold text-gray-800">
                                         {card.quest.title}
                                     </h3>
+                                    {#if card.quest.created}
+                                        <div class="text-xs text-gray-500 ml-2">
+                                            Created: {formatDate(card.quest.created)}
+                                        </div>
+                                    {/if}
                                     {#if card.quest._meta?.resolvedFromHologram}
                                         <button 
                                             class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500 bg-opacity-20 text-blue-800 flex-shrink-0 hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
