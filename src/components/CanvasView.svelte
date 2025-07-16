@@ -742,6 +742,7 @@
     // Add these touch event handlers
     function handleTouchStart(event: TouchEvent) {
         event.preventDefault();
+        console.log('Touch start:', event.touches.length, 'touches');
         
         if (event.touches.length === 2) {
             // Pinch to zoom
@@ -759,8 +760,34 @@
             lastMouseX = ((touch1.clientX + touch2.clientX) / 2) - rect.left;
             lastMouseY = ((touch1.clientY + touch2.clientY) / 2) - rect.top;
         } else if (event.touches.length === 1) {
-            // Single touch for panning or dragging
+            // Check if touch is on a task card
             const touch = event.touches[0];
+            const touchElement = document.elementFromPoint(touch.clientX, touch.clientY);
+            const cardElement = touchElement?.closest('.task-card');
+            
+            if (cardElement && !drawingEnabled) {
+                // Find the card data
+                const cardKey = cardElement.getAttribute('data-key');
+                const card = questCards.find(c => c.key === cardKey);
+                
+                if (card) {
+                    isDragging = true;
+                    draggedCard = card;
+                    draggedCardVisuals = { key: card.key, x: card.x, y: card.y };
+                    
+                    const rect = canvas.getBoundingClientRect();
+                    const touchX = (touch.clientX - rect.left - pan.x) / zoom;
+                    const touchY = (touch.clientY - rect.top - pan.y) / zoom;
+                    
+                    offset = {
+                        x: touchX - card.x,
+                        y: touchY - card.y
+                    };
+                    return;
+                }
+            }
+            
+            // Single touch for panning
             startPan = {
                 x: touch.clientX - pan.x,
                 y: touch.clientY - pan.y
@@ -795,25 +822,93 @@
                 x: lastMouseX - (canvasX * zoom),
                 y: lastMouseY - (canvasY * zoom)
             };
-            
-            // Remove Panning constraints for touch zoom
-            // const rect = viewContainer.getBoundingClientRect();
-            // pan = {
-            //     x: Math.min(Math.max(pan.x, -CANVAS_WIDTH * zoom + rect.width), 0),
-            //     y: Math.min(Math.max(pan.y, -CANVAS_HEIGHT * zoom + rect.height), 0)
-            // };
-        } else if (event.touches.length === 1 && isPanning) {
-            // Handle panning - Remove Panning constraints
-            const touch = event.touches[0];
-            pan = {
-                x: touch.clientX - startPan.x,
-                y: touch.clientY - startPan.y
-            };
+        } else if (event.touches.length === 1) {
+            if (isDragging && draggedCardVisuals && canvas) {
+                // Handle card dragging
+                const touch = event.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                const touchX = (touch.clientX - rect.left - pan.x) / zoom;
+                const touchY = (touch.clientY - rect.top - pan.y) / zoom;
+                const newX = touchX - offset.x;
+                const newY = touchY - offset.y;
+
+                draggedCardVisuals.x = newX;
+                draggedCardVisuals.y = newY;
+            } else if (isPanning) {
+                // Handle panning
+                const touch = event.touches[0];
+                pan = {
+                    x: touch.clientX - startPan.x,
+                    y: touch.clientY - startPan.y
+                };
+            }
         }
     }
 
     function handleTouchEnd(event: TouchEvent) {
         if (event.touches.length === 0) {
+            // Handle card dragging completion
+            if (isDragging && draggedCard && draggedCardVisuals && holonID) {
+                const newPosition = { x: draggedCardVisuals.x, y: draggedCardVisuals.y };
+
+                const dx = Math.abs(newPosition.x - draggedCard.x);
+                const dy = Math.abs(newPosition.y - draggedCard.y);
+                const moveThreshold = 5; // pixels
+
+                // Check if it was a tap (not a drag)
+                if (dx < moveThreshold && dy < moveThreshold) {
+                    dispatch('taskClick', {
+                        key: draggedCard.key,
+                        quest: draggedCard.quest
+                    });
+                } else if (!drawingEnabled) {
+                    // Save position when dragged
+                    positionAssignments.add(draggedCard.key);
+                    pendingPositionSaves.set(draggedCard.key, newPosition);
+                    
+                    // Clear generated inbox position since we now have a real position
+                    generatedInboxPositions.delete(draggedCard.key);
+                    
+                    // Check if this is a hologram task
+                    if (draggedCard.quest._meta?.resolvedFromHologram) {
+                        hologramPositions.set(draggedCard.key, newPosition);
+                        saveHologramPositions();
+                        pendingPositionSaves.delete(draggedCard.key);
+                        generatedInboxPositions.delete(draggedCard.key);
+                    } else {
+                        // Regular task - save to holosphere database
+                        const updatedQuest = { 
+                            ...draggedCard.quest,
+                            id: draggedCard.key,
+                            position: newPosition 
+                        };
+                        
+                        dispatch('questPositionChanged', {
+                            key: draggedCard.key,
+                            position: newPosition
+                        });
+                        
+                        holosphere.put(holonID, 'quests', updatedQuest)
+                            .then(() => {
+                                if (draggedCard) {
+                                    pendingPositionSaves.delete(draggedCard.key);
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error updating quest position:', error);
+                                if (draggedCard) {
+                                    positionAssignments.delete(draggedCard.key);
+                                    pendingPositionSaves.delete(draggedCard.key);
+                                }
+                            });
+                    }
+                }
+            }
+            
+            // Reset states
+            isDragging = false;
+            draggedCard = null;
+            draggedCardVisuals = null;
             isPanning = false;
         }
     }
@@ -841,6 +936,8 @@
 
     onMount(() => {
         if (!canvas || !viewContainer) return;
+        
+        console.log('Canvas mounted, viewContainer:', viewContainer, 'canvas:', canvas);
 
         const handleGlobalMouseMove = (e: MouseEvent) => {
             if (isDragging || isPanning || isDrawing) {
@@ -857,6 +954,25 @@
         window.addEventListener('mousemove', handleGlobalMouseMove, { passive: false });
         window.addEventListener('mouseup', handleGlobalMouseUp, { passive: false });
         viewContainer.addEventListener('wheel', handleWheel, { passive: false });
+
+        // Add touch event listeners for mobile support
+        viewContainer.addEventListener('touchstart', handleTouchStart, { passive: false });
+        viewContainer.addEventListener('touchmove', handleTouchMove, { passive: false });
+        viewContainer.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+            // Mobile-specific initialization
+    let isMobile = false;
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+        isMobile = true;
+        console.log('Mobile device detected, initializing mobile-specific settings');
+        // Ensure proper sizing on mobile
+        setTimeout(() => {
+            if (viewContainer) {
+                const rect = viewContainer.getBoundingClientRect();
+                console.log('Mobile viewport size:', rect.width, 'x', rect.height);
+            }
+        }, 100);
+    }
 
         // Only center the view if there's no saved state
         if (!localStorage.getItem('canvasViewState')) {
@@ -912,7 +1028,7 @@
             document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
             document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
             
-            // Clean up touch events if needed
+            // Clean up touch events
             if (viewContainer) {
                 viewContainer.removeEventListener('touchstart', handleTouchStart);
                 viewContainer.removeEventListener('touchmove', handleTouchMove);
@@ -963,6 +1079,7 @@
     let isMovingDrawing = false;
     let selectedDrawingIndex: number | null = null;
     let lastMovePoint = { x: 0, y: 0 };
+    let isMobile = false;
 
     function hitTestDrawing(point: {x:number;y:number}): number | null {
         // iterate from topmost
@@ -1012,6 +1129,7 @@
     on:touchend|preventDefault={handleTouchEnd}
     on:contextmenu|preventDefault
     role="presentation"
+    style="touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;"
 >
     <!-- Drawing Tools Overlay -->
     <DrawingTools 
@@ -1028,6 +1146,14 @@
 
     <!-- Control Panel -->
     <div class="absolute top-4 right-4 z-10 flex flex-col gap-2">
+        <!-- Mobile indicator -->
+        {#if isMobile}
+            <div class="p-2 bg-yellow-800 bg-opacity-70 rounded-lg text-white text-xs text-center">
+                📱 Mobile<br/>
+                <span class="text-xs opacity-75">Tap & drag to move tasks</span>
+            </div>
+        {/if}
+        
         <!-- Go to Inbox button -->
         <button 
             class="p-2 bg-blue-800 bg-opacity-70 hover:bg-blue-700 rounded-lg text-white text-opacity-90 hover:text-white transition-colors"
@@ -1224,6 +1350,7 @@
                 class:cursor-move={!isDragging && !drawingEnabled}
                 class:cursor-grabbing={isDragging && draggedCardVisuals?.key === card.key}
                 class:cursor-crosshair={drawingEnabled}
+                data-key={card.key}
                 style="left: {(draggedCardVisuals && draggedCardVisuals.key === card.key ? draggedCardVisuals.x : card.x)}px; 
                        top:  {(draggedCardVisuals && draggedCardVisuals.key === card.key ? draggedCardVisuals.y : card.y)}px; 
                        width: {CARD_WIDTH}px;
@@ -1428,5 +1555,28 @@
         bottom: 0 !important;
         z-index: 999999 !important;
         background: #1a1a1a !important;
+    }
+
+    /* Mobile-specific styles */
+    @media (max-width: 768px) {
+        .task-card {
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        /* Improve touch targets on mobile */
+        .task-card > div {
+            min-height: 44px; /* iOS minimum touch target */
+        }
+        
+        /* Prevent zoom on double tap */
+        :global(*) {
+            touch-action: manipulation;
+        }
     }
 </style> 
