@@ -279,7 +279,16 @@
 			</div>
 			<div class="container flex left-0 relative w-3/4">
 				{#if !isPrimaryPage}
-					{#if currentHolonName}
+					{#if $page.url.pathname === '/my-holons'}
+						<div class="flex flex-col md:flex-row md:items-center mr-4 flex-shrink-0">
+							<span class="text-white text-xl font-medium whitespace-nowrap">
+								My Holons
+							</span>
+							<span class="text-gray-400 text-sm">
+								Manage your visited and federated holons
+							</span>
+						</div>
+					{:else if currentHolonName}
 						<div class="flex flex-col md:flex-row md:items-center mr-4 flex-shrink-0 space-y-1 md:space-y-0 md:space-x-3">
 							<span class="text-white text-xl font-medium whitespace-nowrap">
 								{currentHolonName}

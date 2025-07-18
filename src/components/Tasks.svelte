@@ -95,15 +95,16 @@
 	let showConfetti = false;
 
 	// Sort state variables
-	type SortCriteria = 'orderIndex' | 'positionX' | 'positionY';
-	let sortCriteria: SortCriteria = 'orderIndex';
-	let sortDirection: 'asc' | 'desc' = 'asc';
-	let sortButtonIconRotation = 0; 
+	type SortCriteria = 'created' | 'orderIndex' | 'positionX' | 'positionY';
+	let sortCriteria: SortCriteria = 'created';
+	let sortDirection: 'asc' | 'desc' = 'desc'; // Newest first
+	let sortButtonIconRotation = 0; // No rotation for calendar icon
 
 	// SVG Paths for sort icons
+	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"; // Calendar icon
 	const orderIndexIconPath = "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"; // Heroicons bars-3
 	const directionalSortIconPath = "M12 5v14M19 12l-7 7-7-7"; // Current arrow
-	let currentIconPath = orderIndexIconPath; // Initial icon
+	let currentIconPath = calendarIconPath; // Initial icon
 
 	// Add these variables after the existing let declarations
 	let selectedCategory = "all";
@@ -164,6 +165,10 @@
 				let valA: number, valB: number;
 
 				switch (sortCriteria) {
+					case 'created':
+						valA = a.created ? new Date(a.created).getTime() : 0;
+						valB = b.created ? new Date(b.created).getTime() : 0;
+						break;
 					case 'positionX':
 						valA = a.position?.x ?? Infinity;
 						valB = b.position?.x ?? Infinity;
@@ -225,15 +230,24 @@
 
 	// Placeholder function for the sort button
 	function handleSortButtonClick() {
-		if (sortCriteria === 'orderIndex') {
+		if (sortCriteria === 'created' && sortDirection === 'desc') {
+			sortDirection = 'asc';
+			currentIconPath = calendarIconPath;
+			sortButtonIconRotation = 180; // Calendar icon rotated for oldest first
+		} else if (sortCriteria === 'created' && sortDirection === 'asc') {
+			sortCriteria = 'orderIndex';
+			sortDirection = 'asc';
+			currentIconPath = orderIndexIconPath;
+			sortButtonIconRotation = 0; // No rotation for burger icon
+		} else if (sortCriteria === 'orderIndex') {
 			sortCriteria = 'positionX';
 			sortDirection = 'asc';
 			currentIconPath = directionalSortIconPath;
-			sortButtonIconRotation = 270; // Arrow left for X asc (reversed from typical right)
+			sortButtonIconRotation = 270; // Arrow left for X asc
 		} else if (sortCriteria === 'positionX' && sortDirection === 'asc') {
 			sortDirection = 'desc';
 			currentIconPath = directionalSortIconPath;
-			sortButtonIconRotation = 90; // Arrow right for X desc (reversed from typical left)
+			sortButtonIconRotation = 90; // Arrow right for X desc
 		} else if (sortCriteria === 'positionX' && sortDirection === 'desc') {
 			sortCriteria = 'positionY';
 			sortDirection = 'asc';
@@ -243,11 +257,11 @@
 			sortDirection = 'desc';
 			currentIconPath = directionalSortIconPath;
 			sortButtonIconRotation = 180; // Arrow up for Y desc
-		} else { // Was positionY, desc or any other combo, reset to orderIndex
-			sortCriteria = 'orderIndex';
-			sortDirection = 'asc'; // orderIndex is always ascending
-			currentIconPath = orderIndexIconPath;
-			sortButtonIconRotation = 0; // No rotation for list icon
+		} else { // Was positionY, desc, reset to created
+			sortCriteria = 'created';
+			sortDirection = 'desc'; // Newest first
+			currentIconPath = calendarIconPath;
+			sortButtonIconRotation = 0; // Calendar icon for newest first
 		}
 		console.log(`Sorting by: ${sortCriteria}` + (sortCriteria !== 'orderIndex' ? `, Direction: ${sortDirection}` : ' (Ascending)') + `, Icon: ${sortButtonIconRotation}°`);
 	}
@@ -1179,10 +1193,8 @@
 						>
 							<div
 								class="p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
-								style="background-color: {quest.status === 'completed'
-									? '#4B5563'
-									: getColorFromCategory(quest.category, quest.type)};
-								   opacity: {quest.status === 'completed' ? '0.85' : quest._meta?.resolvedFromHologram ? '0.75' : '1'};
+								style="background-color: {getColorFromCategory(quest.category, quest.type)};
+								   opacity: {quest._meta?.resolvedFromHologram ? '0.75' : '1'};
 								   {quest._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
 							>
 								<div class="flex items-center justify-between gap-2 sm:gap-3">
@@ -1195,7 +1207,7 @@
 										<!-- Main Content -->
 										<div class="flex-1 min-w-0">
 											<div class="flex items-center gap-1 sm:gap-2 mb-0.5 sm:mb-1">
-												<h3 class="text-sm sm:text-base font-bold truncate {quest.status === 'completed' ? 'text-gray-600 line-through' : 'text-gray-800'}">
+												<h3 class="text-sm sm:text-base font-bold truncate {quest.status === 'completed' ? 'text-gray-800 line-through' : 'text-gray-800'}">
 													{quest.title}
 												</h3>
 												{#if quest._meta?.resolvedFromHologram}
@@ -1230,13 +1242,9 @@
 													</span>
 												{/if}
 											</div>
-											{#if quest.created}
-												<div class="text-xs text-gray-500 mb-1">
-													Created: {formatDate(quest.created)}
-												</div>
-											{/if}
+
 											{#if quest.description}
-												<p class="text-xs sm:text-sm mb-1 sm:mb-2 line-clamp-2 {quest.status === 'completed' ? 'text-gray-500' : 'text-gray-700'}">{quest.description}</p>
+												<p class="text-xs sm:text-sm mb-1 sm:mb-2 line-clamp-2 {quest.status === 'completed' ? 'text-gray-700' : 'text-gray-700'}">{quest.description}</p>
 											{/if}
 											{#if quest.category}
 												<span class="inline-block px-1.5 sm:px-2 py-0.5 sm:py-1 text-xs bg-black/10 text-gray-700 rounded-md">
