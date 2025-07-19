@@ -107,43 +107,60 @@
 	}
 
 	// Reactive statement to set ID from page params
+	// Handle URL parameter changes with debouncing
+	let urlUpdateTimeout: NodeJS.Timeout;
 	$: {
 		const storedHolonID = $page.params.id;
 		if (storedHolonID && storedHolonID !== 'undefined' && storedHolonID !== 'null' && storedHolonID.trim() !== '') {
-			ID.set(storedHolonID);
+			// Clear any pending update
+			if (urlUpdateTimeout) clearTimeout(urlUpdateTimeout);
+			
+			// Debounce the ID store update to avoid rapid changes
+			urlUpdateTimeout = setTimeout(() => {
+				ID.set(storedHolonID);
+			}, 50);
 		}
 	}
+	// Handle ID store changes with debouncing
+	let idUpdateTimeout: NodeJS.Timeout;
 	$: if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '') {
 		showToast = false;
 		
-		// Always try to resolve the holon name when we have a valid ID
-		updateCurrentHolonName($ID);
+		// Clear any pending update
+		if (idUpdateTimeout) clearTimeout(idUpdateTimeout);
 		
-		// Save visited holon when we have a valid ID and we're not on a primary page
-		if (browser && $page.url.pathname !== '/') {
-			// Save the visited holon with the resolved name or fallback
-			const holonName = currentHolonName || `Holon ${$ID}`;
-			saveVisitedHolon($ID, holonName);
-		}
-		// Only update route if the ID actually changed AND we're not on a primary page
-		// AND we're not already on a valid path for this holon
-		else if (holonID !== $ID && $page.url.pathname !== '/') {
-			// Check if we're already on a valid path for this holon
-			const currentPath = $page.url.pathname;
-			const expectedPath = `/${$ID}`;
+		// Debounce the updates to avoid rapid changes
+		idUpdateTimeout = setTimeout(() => {
+			// Always try to resolve the holon name when we have a valid ID
+			updateCurrentHolonName($ID);
 			
-			// Only update if we're not already on the correct path
-			if (!currentPath.startsWith(expectedPath)) {
-				holonID = $ID;
-				// Add a small delay to avoid interfering with initial navigation
-				setTimeout(() => {
-					updateRoute($ID);
-				}, 50);
-			} else {
-				// Just update the holonID without changing the route
-				holonID = $ID;
+			// Save visited holon when we have a valid ID and we're not on a primary page
+			if (browser && $page.url.pathname !== '/') {
+				// Save the visited holon with the resolved name or fallback
+				const holonName = currentHolonName || `Holon ${$ID}`;
+				saveVisitedHolon($ID, holonName);
 			}
-		}
+			
+			// Only update route if the ID actually changed AND we're not on a primary page
+			// AND we're not already on a valid path for this holon
+			if (holonID !== $ID && $page.url.pathname !== '/') {
+				// Check if we're already on a valid path for this holon
+				const currentPath = $page.url.pathname;
+				const expectedPath = `/${$ID}`;
+				
+				// Only update if we're not already on the correct path
+				if (!currentPath.startsWith(expectedPath)) {
+					holonID = $ID;
+					// Add a small delay to avoid interfering with initial navigation
+					setTimeout(() => {
+						updateRoute($ID);
+					}, 100);
+				} else {
+					// Just update the holonID without changing the route
+					holonID = $ID;
+				}
+			}
+		}, 100);
 	} else {
 		// If ID becomes undefined, don't redirect - let the URL determine the page
 		// This prevents redirect loops

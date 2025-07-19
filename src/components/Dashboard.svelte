@@ -32,13 +32,12 @@
     let holonPurpose: string | null = null; // Variable to store the holon's purpose
 
     onMount(() => {
-        // Check if the holon ID is valid
-        if (!holonID || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
-            // Redirect to root if no valid holon ID, but only if not already there
-            if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-                goto('/');
-            }
-            return;
+        // Initialize with URL parameter first
+        const urlId = $page.params.id;
+        if (urlId && urlId !== 'undefined' && urlId !== 'null' && urlId.trim() !== '') {
+            holonID = urlId;
+            // Update the ID store to keep them in sync
+            ID.set(urlId);
         }
 
         // Wait for holosphere to be ready before proceeding
@@ -52,20 +51,27 @@
             await new Promise(resolve => setTimeout(resolve, 200));
             connectionReady = true;
             
-            // Set up subscription to ID store
+            // Set up subscription to ID store with debouncing
+            let updateTimeout: NodeJS.Timeout;
             unsubscribe = ID.subscribe((value) => {
                 if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
-                    holonID = value;
-                    fetchData();
+                    // Clear any pending update
+                    if (updateTimeout) clearTimeout(updateTimeout);
+                    
+                    // Debounce the update to avoid rapid changes
+                    updateTimeout = setTimeout(() => {
+                        if (value !== holonID) {
+                            holonID = value;
+                            fetchData();
+                        }
+                    }, 100);
                 }
-                // Don't redirect when ID becomes invalid - let the URL determine the page
             });
 
             // Initial fetch if we have an ID
             if (holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
                 fetchData();
             }
-            // Don't redirect if no ID - let the URL determine the page
         };
         
         checkConnection();
@@ -76,19 +82,27 @@
         };
     });
 
-    // Watch for page ID changes
+    // Watch for page ID changes with debouncing
+    let pageUpdateTimeout: NodeJS.Timeout;
     $: {
         const newId = $page.params.id;
         if (newId && newId !== holonID && connectionReady) {
             // Check if the new ID is valid
             if (newId !== 'undefined' && newId !== 'null' && newId.trim() !== '') {
-                holonID = newId;
-                if (holosphere) {
-                    fetchData();
-                }
+                // Clear any pending update
+                if (pageUpdateTimeout) clearTimeout(pageUpdateTimeout);
+                
+                // Debounce the update to avoid rapid changes
+                pageUpdateTimeout = setTimeout(() => {
+                    holonID = newId;
+                    // Update the ID store to keep them in sync
+                    ID.set(newId);
+                    if (holosphere) {
+                        fetchData();
+                    }
+                }, 100);
             }
         }
-        // Don't redirect when ID becomes invalid - let the URL determine the page
     }
 
     async function fetchData(retryCount = 0) {
@@ -100,85 +114,105 @@
         isLoading = true;
         
         try {
-            // Fetch holon name
-            try {
-                holonName = await fetchHolonName(holosphere, holonID);
-            } catch (error) {
-                console.error(`Error fetching name for holon ${holonID}:`, error);
-                holonName = undefined;
-            }
+            console.log(`Fetching data for holon: ${holonID}`);
+            
+            // Fetch holon name asynchronously (don't block on this)
+            fetchHolonName(holosphere, holonID)
+                .then(name => {
+                    holonName = name;
+                })
+                .catch(error => {
+                    console.error(`Error fetching name for holon ${holonID}:`, error);
+                    holonName = undefined;
+                });
 
-            // Add sequential fetching with small delays to reduce backend load
-            const chats = (await holosphere.getAll(holonID, "chats")) || {};
-            await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
-            
-            const users = (await holosphere.getAll(holonID, "users")) || {};
-            await new Promise(resolve => setTimeout(resolve, 50));
-            
-            const quests = (await holosphere.getAll(holonID, "quests")) || {};
-            await new Promise(resolve => setTimeout(resolve, 50));
-            
-            const shoppingItems = (await holosphere.getAll(holonID, "shopping")) || {};
-            await new Promise(resolve => setTimeout(resolve, 50));
-            
-            const checklists = (await holosphere.getAll(holonID, "checklists")) || {};
-            await new Promise(resolve => setTimeout(resolve, 50));
-            
-            const roles = (await holosphere.getAll(holonID, "roles")) || {};
+            // Fetch all data in parallel with timeouts
+            const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+                );
+                return Promise.race([promise, timeoutPromise]);
+            };
 
-            // Fetch holon purpose from config
-            const configData = await holosphere.get(holonID, "settings", holonID);
-            if (configData && typeof configData === 'object' && configData.purpose) {
-                holonPurpose = configData.purpose;
+            // Fetch all data in parallel with individual timeouts
+            const [chats, users, quests, shoppingItems, checklists, roles, configData] = await Promise.allSettled([
+                fetchWithTimeout(holosphere.getAll(holonID, "chats"), 5000),
+                fetchWithTimeout(holosphere.getAll(holonID, "users"), 5000),
+                fetchWithTimeout(holosphere.getAll(holonID, "quests"), 5000),
+                fetchWithTimeout(holosphere.getAll(holonID, "shopping"), 5000),
+                fetchWithTimeout(holosphere.getAll(holonID, "checklists"), 5000),
+                fetchWithTimeout(holosphere.getAll(holonID, "roles"), 5000),
+                fetchWithTimeout(holosphere.get(holonID, "settings", holonID), 3000)
+            ]);
+
+            // Process results safely
+            const chatsData = chats.status === 'fulfilled' ? (chats.value || {}) : {};
+            const usersData = users.status === 'fulfilled' ? (users.value || {}) : {};
+            const questsData = quests.status === 'fulfilled' ? (quests.value || {}) : {};
+            const shoppingData = shoppingItems.status === 'fulfilled' ? (shoppingItems.value || {}) : {};
+            const checklistsData = checklists.status === 'fulfilled' ? (checklists.value || {}) : {};
+            const rolesData = roles.status === 'fulfilled' ? (roles.value || {}) : {};
+            const configResult = configData.status === 'fulfilled' ? configData.value : null;
+
+            // Update holon purpose
+            if (configResult && typeof configResult === 'object' && configResult.purpose) {
+                holonPurpose = configResult.purpose;
             } else {
-                holonPurpose = null; // Ensure it's null if not found or not a string
+                holonPurpose = null;
             }
 
-            chatCount = Object.keys(chats).length;
-            userCount = Object.keys(users).length;
-            shoppingItemCount = Object.keys(shoppingItems).length;
+            // Calculate statistics
+            chatCount = Object.keys(chatsData).length;
+            userCount = Object.keys(usersData).length;
+            shoppingItemCount = Object.keys(shoppingData).length;
             
             // Count offers and requests from quests lens
-            const questValues = Object.values(quests);
+            const questValues = Object.values(questsData);
             const offersAndRequests = questValues.filter((item: any) => {
                 const type = item.type || 'task';
                 return type === 'offer' || type === 'request' || type === 'need';
             });
             offerCount = offersAndRequests.length;
             
-            checklistCount = Object.keys(checklists).length;
-            completedChecklistCount = Object.values(checklists).filter(
+            checklistCount = Object.keys(checklistsData).length;
+            completedChecklistCount = Object.values(checklistsData).filter(
                 (checklist: any) => checklist.completed === true
             ).length;
 
-            roleCount = Object.keys(roles).length;
-            unassignedRoleCount = Object.values(roles).filter(
+            roleCount = Object.keys(rolesData).length;
+            unassignedRoleCount = Object.values(rolesData).filter(
                 (role: any) => !role.participants || role.participants.length === 0
             ).length;
 
             // Process quests to separate tasks, proposals, and events
-            // Count proposals and events first
             proposalCount = questValues.filter((item: any) => item.type === "proposal").length;
             const questEvents = questValues.filter((item: any) => item.type === "event");
             
-            // Tasks are only items with type "task" (or undefined defaulting to task)
-            // Exclude offers and requests from task count since they're counted separately
             const actualTasks = questValues.filter((item: any) => {
                 const type = item.type || 'task';
                 return type === 'task' || type === 'recurring';
             });
             completedTaskCount = actualTasks.filter((task: any) => task.status === "completed").length;
             openTaskCount = actualTasks.filter((task: any) => task.status !== "completed").length;
+            
             const oneWeekAgo = new Date();
             oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
             recentEventCount = questEvents.filter(
                 (event: any) => event.when && new Date(event.when) >= oneWeekAgo
             ).length;
+
+            console.log(`Successfully fetched data for holon ${holonID}:`, {
+                users: userCount,
+                tasks: openTaskCount + completedTaskCount,
+                shopping: shoppingItemCount,
+                offers: offerCount
+            });
+
         } catch (error: any) {
             console.error('Error fetching dashboard data:', error);
             
-            // Retry on 500 errors up to 3 times with exponential backoff
-            if (retryCount < 3 && (error.message?.includes('500') || error.toString().includes('500'))) {
+            // Retry on network errors up to 3 times with exponential backoff
+            if (retryCount < 3) {
                 const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
                 console.log(`Retrying data fetch in ${delay}ms (attempt ${retryCount + 1}/3)`);
                 setTimeout(() => fetchData(retryCount + 1), delay);
