@@ -1107,9 +1107,18 @@
                         />
                         <button
                             type="button"
-                            on:click={() => showQRScanner = true}
+                            on:click={() => {
+                                // Check if we're on desktop (no camera available)
+                                const isDesktop = !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia;
+                                if (isDesktop) {
+                                    error = 'QR scanning is best used on mobile devices with cameras. Please manually enter the holon ID or use a mobile device.';
+                                    setTimeout(() => error = '', 5000);
+                                    return;
+                                }
+                                showQRScanner = true;
+                            }}
                             class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
-                            title="Scan QR Code"
+                            title="Scan QR Code (Best on mobile devices)"
                         >
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h6v6H3V3zm12 0h6v6h-6V3zM3 15h6v6H3v-6zm12 0h6v6h-6v-6zM9 3v6m0 6v6" />

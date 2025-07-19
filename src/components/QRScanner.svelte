@@ -16,12 +16,11 @@
     export let showScanner = false;
     
     $: if (showScanner) {
-        // Initialize scanner if needed when modal opens
+        // Initialize scanner if needed, then start scanning
         if (!html5QrCode) {
             initializeScanner();
-        }
-        // Start scanning if not already scanning
-        if (!isScanning) {
+        } else if (!isScanning) {
+            // Only start if not already scanning
             startScanner();
         }
     } else if (!showScanner && isScanning) {
@@ -75,81 +74,53 @@
             error = '';
             isScanning = true;
 
-            // First check camera permissions
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                stream.getTracks().forEach(track => track.stop()); // Stop the test stream
-                console.log('Camera permission granted');
-            } catch (permissionErr) {
-                console.error('Camera permission error:', permissionErr);
-                error = 'Camera permission denied. Please allow camera access and try again.';
-                isScanning = false;
-                return;
-            }
-
             const config = {
                 fps: 10,
-                qrbox: { width: 250, height: 250 },
+                qrbox: { width: 300, height: 300 },
                 aspectRatio: 1.0
             };
 
             console.log('Attempting to start camera with config:', config);
             
-            // Try back camera first, then front camera if that fails
-            try {
-                await html5QrCode.start(
-                    { facingMode: "environment" }, // Use back camera
-                    config,
-                    (decodedText: string) => {
-                        // Success callback
-                        console.log('QR Code detected:', decodedText);
-                        dispatch('scan', { decodedText });
-                        stopScanner();
-                    },
-                    (errorMessage: string) => {
-                        // Error callback - we'll handle this silently for most errors
+            // Try to start the camera with simple constraints
+            await html5QrCode.start(
+                { facingMode: "environment" }, // Use back camera
+                config,
+                (decodedText: string) => {
+                    // Success callback
+                    console.log('QR Code detected:', decodedText);
+                    dispatch('scan', { decodedText });
+                    stopScanner();
+                },
+                (errorMessage: string) => {
+                    // Only log non-parse errors (parse errors are normal when no QR code is visible)
+                    if (!errorMessage.includes('parse error') && !errorMessage.includes('NotFoundException') && !errorMessage.includes('No barcode or QR code detected')) {
                         console.log('QR scan error:', errorMessage);
                     }
-                );
-                console.log('Back camera started successfully');
-            } catch (backCameraErr) {
-                console.log('Back camera failed, trying front camera...');
-                // Try front camera as fallback
-                await html5QrCode.start(
-                    { facingMode: "user" }, // Use front camera
-                    config,
-                    (decodedText: string) => {
-                        // Success callback
-                        console.log('QR Code detected:', decodedText);
-                        dispatch('scan', { decodedText });
-                        stopScanner();
-                    },
-                    (errorMessage: string) => {
-                        // Error callback - we'll handle this silently for most errors
-                        console.log('QR scan error:', errorMessage);
-                    }
-                );
-                console.log('Front camera started successfully');
-            }
-            
+                }
+            );
             console.log('Camera started successfully');
+            
+            // Debug: Check if video element is present
+            setTimeout(() => {
+                const videoElement = document.querySelector('#qr-reader video') as HTMLVideoElement;
+                if (videoElement) {
+                    console.log('Video element found:', videoElement);
+                    console.log('Video dimensions:', videoElement.videoWidth, 'x', videoElement.videoHeight);
+                    console.log('Video display style:', window.getComputedStyle(videoElement).display);
+                    
+                    if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+                        console.log('Video appears to be black/not working');
+                        error = 'Camera feed is black. Please try refreshing the page or check camera permissions.';
+                    }
+                } else {
+                    console.log('No video element found in #qr-reader');
+                }
+            }, 2000);
         } catch (err) {
             console.error('Failed to start camera:', err);
             error = err instanceof Error ? err.message : 'Failed to start camera';
             isScanning = false;
-            
-            // Provide more specific error messages
-            if (err instanceof Error) {
-                if (err.message.includes('Permission')) {
-                    error = 'Camera permission denied. Please allow camera access and try again.';
-                } else if (err.message.includes('NotFound')) {
-                    error = 'No camera found on this device.';
-                } else if (err.message.includes('NotAllowed')) {
-                    error = 'Camera access denied. Please check your browser settings.';
-                } else {
-                    error = `Camera error: ${err.message}`;
-                }
-            }
         }
     }
 
@@ -205,17 +176,19 @@
                     <div 
                         bind:this={scannerContainer}
                         id="qr-reader"
-                        class="w-full h-64 bg-black rounded-lg overflow-hidden"
+                        class="w-full h-64 bg-black rounded-lg overflow-hidden relative"
                     >
                         {#if !isScanning}
-                            <div class="flex items-center justify-center h-full">
+                            <div class="flex items-center justify-center h-full absolute inset-0 z-10">
                                 <div class="text-center text-gray-400">
                                     <svg class="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h6v6H3V3zm12 0h6v6h-6V3zM3 15h6v6H3v-6zm12 0h6v6h-6v-6zM9 3v6m0 6v6" />
                                     </svg>
                                     <p>Camera not active</p>
                                 </div>
                             </div>
+                        {:else}
+                            <!-- Video will be inserted here by html5-qrcode -->
                         {/if}
                     </div>
                     
@@ -234,6 +207,7 @@
 
                 <div class="text-center text-sm text-gray-400">
                     <p>Position the QR code within the frame to scan</p>
+                    <p class="text-xs mt-1">Best used on mobile devices with cameras</p>
                 </div>
 
                 <div class="flex gap-3">
@@ -268,11 +242,30 @@
     /* Custom styles for the QR scanner */
     #qr-reader {
         min-height: 256px;
+        position: relative;
+        background: black;
     }
     
     #qr-reader video {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover !important;
+        border-radius: 0.5rem;
+        display: block !important;
+    }
+    
+    /* Ensure video element is visible when scanning */
+    #qr-reader:has(video) {
+        background: transparent !important;
+    }
+    
+    /* Override any html5-qrcode default styles */
+    #qr-reader > div {
+        width: 100% !important;
+        height: 100% !important;
+    }
+    
+    #qr-reader canvas {
+        display: none !important;
     }
 </style> 
