@@ -108,6 +108,7 @@
 
 	// Add these variables after the existing let declarations
 	let selectedCategory = "all";
+	let selectedUserId = "all";
 	
 	// Compute unique categories from quests
 	$: categories = [
@@ -118,6 +119,36 @@
 				.map((quest: any) => quest.category)
 		),
 	];
+
+	// Compute unique users from quests
+	$: allUsers = (() => {
+		const users = new Map<string, { id: string; name: string }>();
+		
+		Object.values(store).forEach(quest => {
+			if (quest.participants) {
+				quest.participants.forEach(p => {
+					if (p.id && !users.has(p.id)) {
+						const name = (p.firstName ? `${p.firstName} ${p.lastName || ''}` : p.username).trim();
+						if (name) { // Only add users with a name
+							users.set(p.id, { 
+								id: p.id, 
+								name: name
+							});
+						}
+					}
+				});
+			}
+		});
+		
+		const userArray = Array.from(users.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+		return [
+			{ id: 'all', name: 'All Users' },
+			{ id: 'unassigned', name: 'Unassigned' },
+			...userArray
+		];
+	})();
+		
 	// Add this variable to track the selected task
 	let selectedTask: any = null;
 
@@ -136,6 +167,19 @@
 		let currentFilteredQuests = quests.filter(([_, quest]) => {
 			if (selectedCategory !== "all" && quest.category !== selectedCategory) {
 				return false;
+			}
+
+			// Add user filtering logic
+			if (selectedUserId !== "all") {
+				if (selectedUserId === "unassigned") {
+					if (quest.participants && quest.participants.length > 0) {
+						return false;
+					}
+				} else {
+					if (!quest.participants || !quest.participants.some(p => p.id === selectedUserId)) {
+						return false;
+					}
+				}
 			}
 
 			// Show tasks and recurring tasks (default to 'task' if type is missing)
@@ -1074,6 +1118,23 @@
 									<option value={category}>
 										{category === "all" ? "All Categories" : category}
 									</option>
+								{/each}
+							</select>
+							<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+								<svg class="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+									<path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+								</svg>
+							</div>
+						</div>
+
+						<!-- User Filter -->
+						<div class="relative flex-1 w-auto min-w-[120px] max-w-[180px]">
+							<select
+								bind:value={selectedUserId}
+								class="appearance-none bg-gray-700 text-white px-3 py-1.5 pr-7 rounded-xl cursor-pointer text-sm border border-gray-600 focus:border-blue-500 focus:outline-none w-full h-9"
+							>
+								{#each allUsers as user}
+									<option value={user.id}>{user.name}</option>
 								{/each}
 							</select>
 							<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
