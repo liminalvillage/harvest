@@ -6,11 +6,12 @@
 	import { data } from './sidebar/data';
 	import { onDestroy, onMount, setContext } from 'svelte';
 	import { autoTransitionEnabled } from './store';
+	import { fade, slide } from 'svelte/transition';
 
 	import TopBar from './TopBar.svelte';
 	import Overlay from './Overlay.svelte';
 	import Sidebar from './sidebar/Sidebar.svelte';
-	import { closeSidebar, sidebarOpen } from './store';
+	import MyHolons from '../components/MyHolons.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
 
 	const style = {
@@ -21,6 +22,7 @@
 
 	let lastMouseMove = Date.now();
 	let currentRouteIndex = 0;
+	let showMyHolons = false;
 
 	// Define the allowed routes for auto-switching
 	const allowedRoutes = data.filter(item => 
@@ -30,6 +32,10 @@
 	// Handle mouse movement
 	function handleMouseMove() {
 		lastMouseMove = Date.now();
+	}
+
+	function toggleMyHolons() {
+		showMyHolons = !showMyHolons;
 	}
 
 	// Set up auto-switching if in browser
@@ -54,13 +60,13 @@
 		});
 	}
 
-	// Removed automatic sidebar closing on route changes
-	// page.subscribe(() => {
-	// 	// close Sidebar on route changes.
-	// 	if ($sidebarOpen) {
-	// 		closeSidebar();
-	// 	}
-	// });
+	// Close drawer when a holon is selected (ID changes)
+	page.subscribe((val) => {
+		if (showMyHolons) {
+			showMyHolons = false;
+		}
+	});
+
 </script>
 
 <div class={style.container} on:mousemove={handleMouseMove} role="presentation">
@@ -68,7 +74,7 @@
 		<Overlay />
 		<Sidebar mobileOrientation="start" />
 		<div class={style.mainContainer}>
-			<TopBar />
+			<TopBar {toggleMyHolons} />
 			<main class={style.main}>
 				<RouteTransition pathname={$page.url.pathname}>
 					<slot />
@@ -76,4 +82,19 @@
 			</main>
 		</div>
 	</div>
+
+	{#if showMyHolons}
+		<div
+			class="absolute inset-0 z-40"
+			on:click|self={() => showMyHolons = false}
+			role="presentation"
+			transition:fade
+		>
+			<div class="absolute top-0 left-4 right-4" transition:slide>
+				<div class="bg-gray-900/90 backdrop-blur-sm max-h-[80vh] overflow-y-auto rounded-b-xl">
+					<MyHolons />
+				</div>
+			</div>
+		</div>
+	{/if}
 </div>

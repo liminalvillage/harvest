@@ -17,6 +17,9 @@
 	import { ethers } from 'ethers';
 	import { fetchHolonName } from "../utils/holonNames";
 	import { addVisitedHolon, getWalletAddress } from "../utils/localStorage";
+	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
+
+	export let toggleMyHolons: () => void;
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -280,80 +283,45 @@
 	}
 </style>
 
-<header class="h-20 items-center relative z-10">
-	<div class="flex flex-center flex-col h-full justify-center mx-auto relative px-3 text-white z-10">
-		<div class="flex items-center pl-1 relative w-full sm:ml-0 sm:pr-2 lg:max-w-68">
-			<div class="flex group h-full items-center relative w-12">
-				<button
-					type="button"
-					aria-expanded="false"
-					aria-label="Toggle sidenav"
-					on:click={openSidebar}
-					class="text-4xl text-white focus:outline-none"
-				>
-					&#8801;
-				</button>
+<div class="top-bar-container w-full px-4 py-2 flex items-center justify-between">
+    <!-- Left side -->
+    <div class="w-1/4">
+        <button on:click={openSidebar} class="text-white lg:hidden p-2">
+            Menu
+        </button>
+    </div>
+
+    <!-- Center -->
+    <div class="w-1/2 flex flex-col items-center">
+        <button on:click={toggleMyHolons} class="p-2 rounded-full hover:ring-4 hover:ring-blue-400 ring-offset-2 transition-all cursor-pointer animate-pulse hover:animate-none" title="Open My Holons">
+            <div class="w-20 h-20">
+                <MyHolonsIcon />
+            </div>
+        </button>
+        {#if !isPrimaryPage}
+            <div class="text-center mt-1">
+                <a href={`/${$ID}/dashboard`} class="text-sm font-semibold text-white hover:underline">
+                    {currentHolonName || '...'}
+                </a>
+                <p class="text-xs text-gray-400 font-mono">{$ID || '...'}</p>
+            </div>
+        {/if}
+    </div>
+
+    <!-- Right side -->
+    <div class="w-1/4 flex justify-end">
+		{#if $walletAddress}
+			<div class="wallet-info">
+				<span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
+				<button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
 			</div>
-			<div class="container flex left-0 relative w-3/4">
-				{#if !isPrimaryPage}
-					{#if $page.url.pathname === '/my-holons'}
-						<div class="flex flex-col md:flex-row md:items-center mr-4 flex-shrink-0">
-							<span class="text-white text-xl font-medium whitespace-nowrap">
-								My Holons
-							</span>
-							<span class="text-gray-400 text-sm">
-								Manage your visited and federated holons
-							</span>
-						</div>
-					{:else if currentHolonName}
-						<div class="flex flex-col md:flex-row md:items-center mr-4 flex-shrink-0 space-y-1 md:space-y-0 md:space-x-3">
-							<span class="text-white text-xl font-medium whitespace-nowrap">
-								{currentHolonName}
-							</span>
-							<span class="text-gray-400 text-sm font-mono bg-gray-800 px-2 py-1 rounded-md">
-								{$ID}
-							</span>
-						</div>
-					{:else}
-						<div class="flex flex-col md:flex-row md:items-center mr-4 flex-shrink-0">
-							<span class="text-gray-400 text-sm font-mono bg-gray-800 px-2 py-1 rounded-md">
-								{$ID}
-							</span>
-						</div>
-					{/if}
-				{/if}
-			</div>
-			<div class="flex items-center justify-end ml-auto">
-				{#if $walletAddress}
-					<div class="wallet-info">
-						<span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
-						<button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
-					</div>
-				{:else}
-					<button on:click={connectWallet} class="wallet-button">
-						Connect Wallet
-					</button>
-				{/if}
-				<button
-					on:click={toggleAutoTransition}
-					class="p-2 rounded-full hover:bg-gray-700 transition-colors"
-					aria-label={$autoTransitionEnabled ? 'Pause auto-transition' : 'Play auto-transition'}
-				>
-					{#if $autoTransitionEnabled}
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-						</svg>
-					{:else}
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-						</svg>
-					{/if}
-				</button>
-			</div>
-		</div>
-	</div>
-</header>
+		{:else}
+			<button on:click={connectWallet} class="wallet-button">
+				Connect Wallet
+			</button>
+		{/if}
+    </div>
+</div>
 
 {#if showToast}
 	<button

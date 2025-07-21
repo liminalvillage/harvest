@@ -189,10 +189,11 @@
             // Update holon names and stats with timeout
             loadingMessage = 'Updating holon names...';
             const updatePromise = updateHolonDetails();
+            const updateVisitedPromise = updateVisitedHolonDetails();
             const updateTimeout = new Promise((_, reject) => {
                 setTimeout(() => reject(new Error('Update details timeout')), 10000);
             });
-            await Promise.race([updatePromise, updateTimeout]);
+            await Promise.race([Promise.all([updatePromise, updateVisitedPromise]), updateTimeout]);
             
             // Add current holon to visited list (only if we have a valid holon ID)
             if (currentHolonId && currentHolonId !== '' && $walletAddress) {
@@ -317,6 +318,47 @@
             console.error('Error updating holon details, restoring backup:', err);
             myHolons = backup;
             savePersonalHolonsToStorage();
+        }
+    }
+
+    async function updateVisitedHolonDetails() {
+        if (!visitedHolons || visitedHolons.length === 0) return;
+
+        const backup = [...visitedHolons];
+
+        try {
+            const nameUpdates = await Promise.allSettled(
+                visitedHolons.map(async (holon) => {
+                    try {
+                        const name = await fetchHolonName(holosphere, holon.id);
+                        return { ...holon, name: name || holon.name };
+                    } catch (err) {
+                        console.warn(`Failed to update name for visited holon ${holon.id}:`, err);
+                        return holon;
+                    }
+                })
+            );
+
+            const updatedHolons = nameUpdates.map((result, index) => {
+                if (result.status === 'fulfilled') {
+                    return result.value;
+                } else {
+                    console.warn(`Name update for visited holon ${backup[index].id} failed:`, result.reason);
+                    return backup[index]; // Keep original holon from backup
+                }
+            });
+
+            visitedHolons = updatedHolons;
+            
+            if ($walletAddress) {
+                saveVisitedHolons($walletAddress, visitedHolons);
+            }
+        } catch (err) {
+            console.error('Error updating visited holon details, restoring from backup:', err);
+            visitedHolons = backup;
+            if ($walletAddress) {
+                saveVisitedHolons($walletAddress, visitedHolons);
+            }
         }
     }
 
@@ -855,12 +897,10 @@
         {:else}
             {#if activeTab === 'personal'}
                 <!-- Personal Holons Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-8">
                     {#each filteredHolons.filter(h => h.isPersonal) as holon, index (holon.id)}
                     <div
-                        class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition-all cursor-pointer relative group"
-                        class:border-blue-500={dragOverIndex === index}
-                        class:opacity-50={draggedHolon?.id === holon.id}
+                        class="md:aspect-square"
                         draggable="true"
                         on:dragstart={(e) => handleDragStart(e, holon)}
                         on:dragover={(e) => handleDragOver(e, index)}
@@ -871,18 +911,41 @@
                         animate:flip={{ duration: 200 }}
                         in:scale={{ duration: 200 }}
                     >
-                        <!-- Holon Header -->
-                        <div class="flex items-start justify-between mb-3">
-                            <div class="flex items-center gap-2">
-                                <div class="w-6 h-6">
+                        <div
+                            class="w-full h-full bg-gray-800 rounded-lg md:rounded-full p-3 md:p-4 border-2 md:border-4 border-white hover:border-blue-400 transition-all cursor-pointer relative group flex flex-row md:flex-col items-center justify-between md:justify-center text-left md:text-center"
+                            class:border-blue-500={dragOverIndex === index}
+                            class:opacity-50={draggedHolon?.id === holon.id}
+                        >
+                            <!-- Left/Top part -->
+                            <div class="flex-grow min-w-0">
+                                <div class="hidden md:block w-10 h-10 mx-auto mb-2">
                                     <MyHolonsIcon />
                                 </div>
-                                <div>
-                                    <h3 class="font-semibold text-white truncate">{holon.name}</h3>
-                                    <p class="text-xs text-gray-400">{holon.id}</p>
+                                <div class="max-w-full">
+                                    <h3 class="font-semibold text-white text-base md:text-lg text-center whitespace-normal break-words leading-tight">{holon.name}</h3>
+                                    <p class="text-xs md:text-sm text-gray-400 truncate">{holon.id}</p>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+
+                            <!-- Right/Bottom part -->
+                            <div class="text-right md:text-center flex flex-col items-end md:items-center gap-2 flex-shrink-0">
+                                {#if holon.stats}
+                                    <div class="hidden md:flex justify-center gap-4 text-sm text-gray-400">
+                                        <span>👥{holon.stats.users}</span>
+                                        <span>📋{holon.stats.tasks}</span>
+                                        <span>🤝{holon.stats.offers}</span>
+                                    </div>
+                                {/if}
+                                <span class="hidden md:inline-block text-sm px-3 py-1 bg-gray-700 rounded-full text-gray-300 mt-2">
+                                    {getHolonTypeLabel(holon)}
+                                </span>
+                                <span class="text-xs md:text-sm text-gray-500">
+                                    {formatLastVisited(holon.lastVisited)}
+                                </span>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
                                     on:click|stopPropagation={() => togglePin(holon.id)}
                                     class="p-1 hover:bg-gray-700 rounded transition-colors"
@@ -907,38 +970,6 @@
                                 {/if}
                             </div>
                         </div>
-
-                        <!-- Holon Stats -->
-                        {#if holon.stats}
-                            <div class="flex justify-between text-sm text-gray-400 mb-3">
-                                <span>👥 {holon.stats.users}</span>
-                                <span>📋 {holon.stats.tasks}</span>
-                                <span>🤝 {holon.stats.offers}</span>
-                            </div>
-                        {/if}
-
-                        <!-- Holon Info -->
-                        <div class="flex items-center justify-between">
-                            <span class="text-xs px-2 py-1 bg-gray-700 rounded-full text-gray-300">
-                                {getHolonTypeLabel(holon)}
-                            </span>
-                            <span class="text-xs text-gray-500">
-                                {formatLastVisited(holon.lastVisited)}
-                            </span>
-                        </div>
-
-                        <!-- Federation Info -->
-                        {#if !holon.isPersonal}
-                            <div class="mt-2 pt-2 border-t border-gray-700">
-                                <div class="flex items-center gap-2 text-xs">
-                                    <span class="text-blue-400">🔗</span>
-                                    <span class="text-gray-400">Federated</span>
-                                    {#if federatedHolons.find(f => f.id === holon.id)?.bidirectional}
-                                        <span class="text-green-400">↔️</span>
-                                    {/if}
-                                </div>
-                            </div>
-                        {/if}
                     </div>
                     {/each}
                 </div>
@@ -966,7 +997,7 @@
                 {/if}
             {:else if activeTab === 'visited'}
                 <!-- Visited Holons Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-8">
                     {#each visitedHolons.filter(h => 
                         h.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         h.id.toLowerCase().includes(searchQuery.toLowerCase())
@@ -983,23 +1014,33 @@
                         return aVal > bVal ? multiplier : -multiplier;
                     }) as holon, index (holon.id)}
                         <div
-                            class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition-all cursor-pointer relative group"
+                            class="md:aspect-square"
                             on:click={() => navigateToHolon(holon.id)}
                             animate:flip={{ duration: 200 }}
                             in:scale={{ duration: 200 }}
                         >
-                            <!-- Holon Header -->
-                            <div class="flex items-start justify-between mb-3">
-                                <div class="flex items-center gap-2">
-                                    <div class="w-6 h-6">
+                            <div class="w-full h-full bg-gray-800 rounded-lg md:rounded-full p-3 md:p-4 border-2 md:border-4 border-white hover:border-blue-400 transition-all cursor-pointer relative group flex flex-row md:flex-col items-center justify-between md:justify-center text-left md:text-center">
+                                <!-- Left/Top part -->
+                                <div class="flex-grow min-w-0">
+                                    <div class="hidden md:block w-10 h-10 mx-auto mb-2">
                                         <MyHolonsIcon />
                                     </div>
-                                    <div>
-                                        <h3 class="font-semibold text-white truncate">{holon.name}</h3>
-                                        <p class="text-xs text-gray-400">{holon.id}</p>
+                                    <div class="max-w-full">
+                                        <h3 class="font-semibold text-white text-base md:text-lg text-center whitespace-normal break-words leading-tight">{holon.name}</h3>
+                                        <p class="text-xs md:text-sm text-gray-400 truncate">{holon.id}</p>
                                     </div>
                                 </div>
-                                <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <!-- Right/Bottom part -->
+                                <div class="text-right md:text-center flex flex-col items-end md:items-center gap-2 flex-shrink-0">
+                                    <span class="hidden md:inline-block text-sm px-3 py-1 bg-blue-600 rounded-full text-white mt-2">
+                                        {holon.visitCount} visits
+                                    </span>
+                                    <span class="text-xs md:text-sm text-gray-500">
+                                        {formatLastVisited(holon.lastVisited)}
+                                    </span>
+                                </div>
+                                <!-- Action Buttons -->
+                                <div class="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button
                                         on:click|stopPropagation={() => addToPersonalHolons(holon)}
                                         class="p-1 hover:bg-green-700 rounded transition-colors text-green-400"
@@ -1019,16 +1060,6 @@
                                         </svg>
                                     </button>
                                 </div>
-                            </div>
-
-                            <!-- Holon Info -->
-                            <div class="flex items-center justify-between">
-                                <span class="text-xs px-2 py-1 bg-blue-600 rounded-full text-white">
-                                    {holon.visitCount} visits
-                                </span>
-                                <span class="text-xs text-gray-500">
-                                    {formatLastVisited(holon.lastVisited)}
-                                </span>
                             </div>
                         </div>
                     {/each}
