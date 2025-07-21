@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { data } from './data';
 	import { page } from '$app/stores';
-	import { sidebarOpen } from '../store';
+	import { sidebarExpanded } from '../store';
 
 	const style = {
 		title: `mx-2 text-sm whitespace-pre`,
@@ -73,7 +73,7 @@
 						<svelte:component this={item.icon} />
 					</div>
 				</div>
-				<span class={`${style.title} ${$sidebarOpen ? style.open : style.close} truncate`}>
+				<span class={`${style.title} ${$sidebarExpanded ? style.open : style.close} truncate`}>
 					{item.title}
 				</span>
 			</a>
