@@ -1271,6 +1271,11 @@
 												<h3 class="text-sm sm:text-base font-bold truncate {quest.status === 'completed' ? 'text-gray-800 line-through' : 'text-gray-800'}">
 													{quest.title}
 												</h3>
+												{#if quest.category}
+													<span class="inline-block px-1.5 sm:px-2 py-0.5 text-xs bg-black/10 text-gray-700 rounded-md flex-shrink-0 hidden sm:inline-block">
+														{quest.category}
+													</span>
+												{/if}
 												{#if quest._meta?.resolvedFromHologram}
 													<span
 														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors cursor-pointer"
@@ -1306,11 +1311,6 @@
 
 											{#if quest.description}
 												<p class="text-xs sm:text-sm mb-1 sm:mb-2 line-clamp-2 {quest.status === 'completed' ? 'text-gray-700' : 'text-gray-700'}">{quest.description}</p>
-											{/if}
-											{#if quest.category}
-												<span class="inline-block px-1.5 sm:px-2 py-0.5 sm:py-1 text-xs bg-black/10 text-gray-700 rounded-md">
-													{quest.category}
-												</span>
 											{/if}
 										</div>
 									</div>

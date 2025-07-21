@@ -5,6 +5,7 @@
     import { page } from "$app/stores";
     import HoloSphere from "holosphere";
     import User from "./User.svelte";
+    import { calculateCurrencyBalance } from "../utils/expenseCalculations";
 
     interface User {
         id?: string;
@@ -32,12 +33,27 @@
         offers: number;
     }
 
+    interface Expense {
+        id: string;
+        amount: number;
+        currency: string;
+        description: string;
+        paidBy: string;
+        splitWith: string[];
+        date: string;
+    }
+
     let store: Record<string, User> = {};
+    let expenseStore: Record<string, Expense> = {};
+    let availableCurrencies: string[] = [];
     let holonID: string;
     let holosphere = getContext("holosphere") as HoloSphere;
     let valueEquationLoaded = false;
     let selectedUserId: string | null = null;
     let showUserModal = false;
+    let currenciesLoaded = false;
+    let expensesLoaded = false;
+    let currencyBalanceCache: Record<string, number> = {};
 
     // Initialize equation with default values
     let equation: Equation = {
@@ -76,8 +92,24 @@
             holonID = value;
                 store = {}; // Reset store
                 valueEquationLoaded = false;
+                currenciesLoaded = false;
+                expensesLoaded = false;
+                expenseStore = {};
+                availableCurrencies = [];
                 loadEquation();
                 fetchInitialUsersAndSubscribe();
+                subscribeToSettings();
+                subscribeToExpenses();
+                
+                // Fallback timeout to ensure loading completes
+                setTimeout(() => {
+                    if (!currenciesLoaded) {
+                        currenciesLoaded = true;
+                    }
+                    if (!expensesLoaded) {
+                        expensesLoaded = true;
+                    }
+                }, 5000); // 5 second timeout
             }
         });
 
@@ -90,8 +122,24 @@
                 ID.set(newId);
                 store = {}; // Reset store
                 valueEquationLoaded = false;
+                currenciesLoaded = false;
+                expensesLoaded = false;
+                expenseStore = {};
+                availableCurrencies = [];
                 loadEquation();
                 fetchInitialUsersAndSubscribe();
+                subscribeToSettings();
+                subscribeToExpenses();
+                
+                // Fallback timeout to ensure loading completes
+                setTimeout(() => {
+                    if (!currenciesLoaded) {
+                        currenciesLoaded = true;
+                    }
+                    if (!expensesLoaded) {
+                        expensesLoaded = true;
+                    }
+                }, 5000); // 5 second timeout
             }
         });
 
@@ -99,6 +147,18 @@
         if (holonID) {
             loadEquation();
             fetchInitialUsersAndSubscribe();
+            subscribeToSettings();
+            subscribeToExpenses();
+            
+            // Fallback timeout to ensure loading completes
+            setTimeout(() => {
+                if (!currenciesLoaded) {
+                    currenciesLoaded = true;
+                }
+                if (!expensesLoaded) {
+                    expensesLoaded = true;
+                }
+            }, 5000); // 5 second timeout
         }
 
         // Cleanup subscriptions
@@ -122,6 +182,91 @@
             } 
         } catch (error) {
             console.error('Error loading equation settings:', error);
+        }
+    }
+
+    async function subscribeToSettings() {
+        if (!holosphere || !holonID) return;
+
+        try {
+            // Reset and use only subscription like Expenses.svelte does
+            availableCurrencies = [];
+            
+            // Set up subscription - no getAll() needed
+            holosphere.subscribe(holonID, "settings", (settingsData: any, key?: string) => {
+                let newCurrencies: string[] = [];
+                if (settingsData && Array.isArray(settingsData.currencies)) {
+                    newCurrencies = settingsData.currencies.filter((c: unknown) => typeof c === 'string');
+                } else {
+                    // Fallback: derive currencies from existing expenses if available
+                    if (Object.keys(expenseStore).length > 0) {
+                        newCurrencies = [...new Set(Object.values(expenseStore)
+                            .map(e => e?.currency)
+                            .filter(c => c && typeof c === 'string' && c !== ''))] as string[];
+                    } else {
+                        newCurrencies = [];
+                    }
+                }
+                
+                // Only update if currencies actually changed
+                const currenciesChanged = JSON.stringify(newCurrencies.sort()) !== JSON.stringify(availableCurrencies.sort());
+                if (currenciesChanged) {
+                    availableCurrencies = [...newCurrencies]; // Force reactivity with new array
+                }
+                
+                currenciesLoaded = true;
+            });
+            
+            currenciesLoaded = true; // Mark as loaded
+        } catch (error) {
+            console.error('Error subscribing to settings:', error);
+            availableCurrencies = [];
+            currenciesLoaded = true; // Mark as loaded even on error to avoid blocking
+        }
+    }
+
+    async function subscribeToExpenses() {
+        if (!holosphere || !holonID) return;
+
+        try {
+            // Reset and use only subscription like Expenses.svelte does
+            expenseStore = {};
+            
+            // Set up subscription - no getAll() needed
+            holosphere.subscribe(holonID, "expenses", (newExpense: any, key?: string) => {
+                if (!key) return;
+                
+                if (newExpense) {
+                    try {
+                        const parsedExpense = typeof newExpense === 'string' ? JSON.parse(newExpense) : newExpense;
+                        expenseStore[key] = parsedExpense as Expense;
+                    } catch (e) {
+                        console.error('Failed to parse expense:', e);
+                    }
+                } else {
+                    delete expenseStore[key];
+                }
+                
+                expenseStore = { ...expenseStore }; // Trigger reactivity
+                
+                // Update currencies if not loaded from settings
+                if (!currenciesLoaded || (currenciesLoaded && availableCurrencies.length === 0)) {
+                    const newCurrencies = [...new Set(Object.values(expenseStore)
+                        .map(e => e?.currency)
+                        .filter(c => c && typeof c === 'string' && c !== ''))] as string[];
+                    
+                    const currenciesChanged = JSON.stringify(newCurrencies.sort()) !== JSON.stringify(availableCurrencies.sort());
+                    if (currenciesChanged) {
+                        availableCurrencies = [...newCurrencies];
+                    }
+                }
+            });
+            
+            expensesLoaded = true; // Mark as loaded
+        } catch (error) {
+            console.error('Error subscribing to expenses:', error);
+            expenseStore = {};
+            expensesLoaded = true; // Mark as loaded even on error
         }
     }
 
@@ -237,10 +382,58 @@
 
     $: maxScore = sortedUsers.length > 0 ? calculateScore(sortedUsers[0][1]) : 0;
     $: totalScore = sortedUsers.reduce((sum, [, user]) => sum + calculateScore(user), 0);
+    
+    // Simple cache invalidation when data changes
+    $: if (availableCurrencies || expenseStore) {
+        currencyBalanceCache = {};
+    }
+
+    $: dataReady = valueEquationLoaded && currenciesLoaded && expensesLoaded;
 
     function calculatePercentage(score: number): number {
         if (totalScore === 0) return 0;
         return (score / totalScore) * 100;
+    }
+
+    // Wrapper function to handle caching and data conversion for the shared utility
+    function getCurrencyBalance(userId: string, currency: string): number {
+        if (!currency || !userId) return 0;
+        
+        // Create cache key
+        const expenseCount = Object.keys(expenseStore).length;
+        const cacheKey = `${userId}-${currency}-${expenseCount}`;
+        
+        if (currencyBalanceCache[cacheKey] !== undefined) {
+            return currencyBalanceCache[cacheKey];
+        }
+        
+        // Convert user data to match utility function interface
+        const usersForCalculation = Object.values(store).map(user => ({
+            id: user.id ? parseInt(user.id.toString()) : parseInt(Object.keys(store).find(key => store[key] === user) || '0'),
+            first_name: user.first_name
+        }));
+        
+        // Call the shared utility function
+        const balance = calculateCurrencyBalance(userId, currency, expenseStore, usersForCalculation);
+        
+        // Cache and return the result
+        currencyBalanceCache[cacheKey] = balance;
+        return balance;
+    }
+
+    // Format currency amounts
+    function formatCurrencyAmount(amount: number, currency: string): string {
+        const currencyCode = currency.toUpperCase();
+        if (['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'AUD', 'CAD', 'NZD'].includes(currencyCode)) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: currencyCode,
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(amount);
+        } else {
+            return `${amount.toFixed(2)} ${currencyCode}`;
+        }
     }
 
     function openUserModal(userId: string) {
@@ -268,17 +461,17 @@
     <!-- Main Content Container -->
     <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
         <div class="p-8">
-            {#if !valueEquationLoaded}
+            {#if !dataReady}
                 <div class="flex items-center justify-center py-12 text-gray-400">
                     <svg class="animate-spin h-8 w-8 mr-3" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
                     </svg>
-                    <span>Loading value equation...</span>
+                    <span>Loading data...</span>
                 </div>
             {:else}
                 <!-- Stats Section -->
-                <div class="grid grid-cols-2 gap-4 mb-8">
+                <div class="grid grid-cols-3 gap-4 mb-8">
                     <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
                         <div class="text-2xl font-bold text-white mb-1">{sortedUsers.length}</div>
                         <div class="text-sm text-gray-400">Total Users</div>
@@ -288,6 +481,10 @@
                             {sortedUsers.filter(([, user]) => calculateScore(user) > 0).length}
                         </div>
                         <div class="text-sm text-gray-400">Active Users</div>
+                    </div>
+                    <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+                        <div class="text-2xl font-bold text-white mb-1">{availableCurrencies.length}</div>
+                        <div class="text-sm text-gray-400">Currencies</div>
                     </div>
                 </div>
 
@@ -305,6 +502,9 @@
                                     <th class="p-4 text-left font-semibold">Received</th>
                                     <th class="p-4 text-left font-semibold">Score</th>
                                     <th class="p-4 text-left font-semibold">Percentage</th>
+                                    {#each availableCurrencies as currency}
+                                        <th class="p-4 text-left font-semibold">{currency.toUpperCase()}</th>
+                                    {/each}
                                 </tr>
                             </thead>
                             <tbody>
@@ -334,17 +534,17 @@
                                                     openUserModal(userId);
                                                 }}
                                             >
-                                                <div class="relative">
+                                                <div class="relative flex-shrink-0">
                                                     <img 
                                                         src={`https://gun.holons.io/getavatar?user_id=${user.id || userId}`}
                                                         alt={`${user.first_name} ${user.last_name || ''}`}
-                                                        class="w-10 h-10 rounded-full object-cover border-2 border-gray-500"
+                                                        class="w-10 h-10 rounded-full object-cover border-2 border-gray-500 aspect-square flex-shrink-0"
                                                         on:error={(e) => {
                                                             e.currentTarget.style.display = 'none';
                                                             e.currentTarget.nextElementSibling.style.display = 'flex';
                                                         }}
                                                     />
-                                                    <div class="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center text-white text-sm font-bold border-2 border-gray-500" style="display: none;">
+                                                    <div class="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center text-white text-sm font-bold border-2 border-gray-500 aspect-square flex-shrink-0" style="display: none;">
                                                         {user.first_name ? user.first_name[0] : '?'}{user.last_name ? user.last_name[0] : ''}
                                                     </div>
                                                 </div>
@@ -392,24 +592,32 @@
                                                 </span>
                                             </div>
                                         </td>
+                                        {#each availableCurrencies as currency}
+                                            {@const balance = getCurrencyBalance(user.id || userId, currency)}
+                                            <td class="p-4">
+                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {balance > 0 ? 'bg-green-600/20 text-green-300' : balance < 0 ? 'bg-red-600/20 text-red-300' : 'bg-gray-600/20 text-gray-300'}">
+                                                    {formatCurrencyAmount(balance, currency)}
+                                                </span>
+                                            </td>
+                                        {/each}
                                     </tr>
                                 {/each}
                             </tbody>
                         </table>
                     </div>
-
-                    {#if sortedUsers.length === 0}
-                        <div class="text-center py-12">
-                            <div class="w-16 h-16 mx-auto mb-4 bg-gray-700 rounded-full flex items-center justify-center">
-                                <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
-                                </svg>
-                            </div>
-                            <h3 class="text-lg font-medium text-white mb-2">No users found</h3>
-                            <p class="text-gray-400">Users will appear here once they start participating</p>
-                        </div>
-                    {/if}
                 </div>
+
+                {#if sortedUsers.length === 0}
+                    <div class="text-center py-12">
+                        <div class="w-16 h-16 mx-auto mb-4 bg-gray-700 rounded-full flex items-center justify-center">
+                            <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-medium text-white mb-2">No users found</h3>
+                        <p class="text-gray-400">Users will appear here once they start participating</p>
+                    </div>
+                {/if}
             {/if}
         </div>
     </div>
@@ -436,3 +644,4 @@
         transition-duration: 200ms;
     }
 </style>
+

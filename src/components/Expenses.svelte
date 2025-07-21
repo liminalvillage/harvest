@@ -2,6 +2,7 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import HoloSphere from "holosphere";
+    import { calculateCreditMatrix } from "../utils/expenseCalculations";
 
     interface Expense {
         id: string;
@@ -176,33 +177,19 @@
     }
 
     function calculateCredits(currency: string): void {
-        if (!currency || users.length === 0) return;
+        if (!currency || users.length === 0) {
+            creditMatrix = [];
+            return;
+        }
         
-        currency = currency.toLowerCase().replace(/s$/, '').replace(/[^a-z]/g, '');
-        
-        creditMatrix = Array(users.length).fill(0).map(() => Array(users.length).fill(0));
-        
-        Object.values(expenses).forEach(expense => {
-            if (expense.currency.toLowerCase() === currency.toLowerCase()) {
-                const amountPerPerson = expense.amount / (expense.splitWith.length || 1);
-                const payerIndex = users.findIndex(user => user.id === parseInt(expense.paidBy));
-                
-                expense.splitWith.forEach(memberId => {
-                    const memberIndex = users.findIndex(user => user.id === parseInt(memberId));
-                    if (memberIndex === -1 || payerIndex === -1) return;
-                    
-                    if (payerIndex !== memberIndex) {
-                        creditMatrix[payerIndex][memberIndex] += amountPerPerson;
-                        creditMatrix[memberIndex][payerIndex] -= amountPerPerson;
-                    }
-                });
-            }
-        });
+        // Use the shared utility function
+        creditMatrix = calculateCreditMatrix(currency, expenses, users);
     }
 
     function deriveCurrenciesFromExpenses() {
-        const derived = [...new Set(Object.values(expenses).map(e => e.currency))] 
-                        .filter(c => typeof c === 'string' && c !== '');
+        const derived = [...new Set(Object.values(expenses)
+            .map(e => e?.currency)
+            .filter(c => c && typeof c === 'string' && c !== ''))] as string[];
         
 
         if (derived.length > 0) {
