@@ -18,6 +18,7 @@
 	import { fetchHolonName } from "../utils/holonNames";
 	import { addVisitedHolon, getWalletAddress } from "../utils/localStorage";
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
+	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
 
 	export let toggleMyHolons: () => void;
 
@@ -283,43 +284,67 @@
 	}
 </style>
 
-<div class="top-bar-container w-full px-4 py-2 flex items-center justify-between">
-    <!-- Left side -->
-    <div class="w-1/4">
-        <button on:click={openSidebar} class="text-white lg:hidden p-2">
-            Menu
+<div class="top-bar-container w-full px-4 py-2 flex items-center gap-4 relative">
+    <!-- Mobile menu button (outside bar) -->
+    <div class="lg:hidden z-10">
+        <button on:click={openSidebar} class="text-white p-2 hover:bg-gray-700 rounded-lg transition-colors">
+            <Menu size="24" />
         </button>
     </div>
 
-    <!-- Center -->
-    <div class="w-1/2 flex flex-col items-center">
-        <button on:click={toggleMyHolons} class="p-2 rounded-full hover:ring-4 hover:ring-blue-400 ring-offset-2 transition-all cursor-pointer animate-pulse hover:animate-none" title="Open My Holons">
-            <div class="w-20 h-20">
-                <MyHolonsIcon />
+    <!-- Dashboard-style bar - full width -->
+    {#if !isPrimaryPage}
+        <button 
+            on:click={toggleMyHolons} 
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 px-4 sm:px-6 py-2 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-[1.01] relative overflow-hidden flex-1"
+            title="Open My Holons"
+        >
+            <!-- Gradient overlay -->
+            <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            
+            <!-- Bar content - responsive layout -->
+            <div class="relative z-10 flex flex-col sm:flex-row items-center gap-1 sm:gap-3">
+                <!-- Holons Logo -->
+                <div class="flex-shrink-0">
+                    <div class="w-12 h-12 sm:w-20 sm:h-20 group-hover:scale-105 transition-transform">
+                        <MyHolonsIcon />
+                    </div>
+                </div>
+                
+                <!-- Title and ID -->
+                <div class="text-center sm:text-left">
+                    <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
+                        {currentHolonName || 'Loading...'}
+                    </div>
+                    <div class="text-xs sm:text-sm text-gray-400 font-mono mt-1">
+                        {$ID || '...'}
+                    </div>
+                </div>
             </div>
         </button>
-        {#if !isPrimaryPage}
-            <div class="text-center mt-1">
-                <a href={`/${$ID}/dashboard`} class="text-sm font-semibold text-white hover:underline">
-                    {currentHolonName || '...'}
-                </a>
-                <p class="text-xs text-gray-400 font-mono">{$ID || '...'}</p>
+    {:else}
+        <!-- Root page - centered logo -->
+        <div class="flex-1 flex items-center justify-center">
+            <button on:click={toggleMyHolons} class="p-2 rounded-full hover:ring-4 hover:ring-blue-400 ring-offset-2 transition-all cursor-pointer animate-pulse hover:animate-none" title="Open My Holons">
+                <div class="w-20 h-20">
+                    <MyHolonsIcon />
+                </div>
+            </button>
+        </div>
+    {/if}
+
+    <!-- Right side: Wallet (outside bar) -->
+    <div class="z-10 ml-auto">
+        {#if $walletAddress}
+            <div class="wallet-info">
+                <span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
+                <button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
             </div>
+        {:else}
+            <button on:click={connectWallet} class="wallet-button">
+                Connect Wallet
+            </button>
         {/if}
-    </div>
-
-    <!-- Right side -->
-    <div class="w-1/4 flex justify-end">
-		{#if $walletAddress}
-			<div class="wallet-info">
-				<span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
-				<button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
-			</div>
-		{:else}
-			<button on:click={connectWallet} class="wallet-button">
-				Connect Wallet
-			</button>
-		{/if}
     </div>
 </div>
 

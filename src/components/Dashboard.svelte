@@ -14,7 +14,6 @@
     let unsubscribe: () => void;
     let isLoading = true;
     let connectionReady = false;
-    let holonName: string | undefined = undefined;
 
     let chatCount = 0;
     let userCount = 0;
@@ -28,8 +27,6 @@
     let completedChecklistCount = 0;
     let roleCount = 0;
     let unassignedRoleCount = 0;
-
-    let holonPurpose: string | null = null; // Variable to store the holon's purpose
 
     onMount(() => {
         // Initialize with URL parameter first
@@ -116,16 +113,6 @@
         try {
             console.log(`Fetching data for holon: ${holonID}`);
             
-            // Fetch holon name asynchronously (don't block on this)
-            fetchHolonName(holosphere, holonID)
-                .then(name => {
-                    holonName = name;
-                })
-                .catch(error => {
-                    console.error(`Error fetching name for holon ${holonID}:`, error);
-                    holonName = undefined;
-                });
-
             // Fetch all data in parallel with timeouts
             const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
                 const timeoutPromise = new Promise((_, reject) => 
@@ -135,14 +122,13 @@
             };
 
             // Fetch all data in parallel with individual timeouts
-            const [chats, users, quests, shoppingItems, checklists, roles, configData] = await Promise.allSettled([
+            const [chats, users, quests, shoppingItems, checklists, roles] = await Promise.allSettled([
                 fetchWithTimeout(holosphere.getAll(holonID, "chats"), 5000),
                 fetchWithTimeout(holosphere.getAll(holonID, "users"), 5000),
                 fetchWithTimeout(holosphere.getAll(holonID, "quests"), 5000),
                 fetchWithTimeout(holosphere.getAll(holonID, "shopping"), 5000),
                 fetchWithTimeout(holosphere.getAll(holonID, "checklists"), 5000),
                 fetchWithTimeout(holosphere.getAll(holonID, "roles"), 5000),
-                fetchWithTimeout(holosphere.get(holonID, "settings", holonID), 3000)
             ]);
 
             // Process results safely
@@ -152,14 +138,6 @@
             const shoppingData = shoppingItems.status === 'fulfilled' ? (shoppingItems.value || {}) : {};
             const checklistsData = checklists.status === 'fulfilled' ? (checklists.value || {}) : {};
             const rolesData = roles.status === 'fulfilled' ? (roles.value || {}) : {};
-            const configResult = configData.status === 'fulfilled' ? configData.value : null;
-
-            // Update holon purpose
-            if (configResult && typeof configResult === 'object' && configResult.purpose) {
-                holonPurpose = configResult.purpose;
-            } else {
-                holonPurpose = null;
-            }
 
             // Calculate statistics
             chatCount = Object.keys(chatsData).length;
@@ -233,26 +211,6 @@
 </div>
 {:else}
 <div class="space-y-8">
-    <!-- Header Section -->
-    <div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
-        <div class="flex flex-col md:flex-row justify-between items-center">
-            <div class="text-center md:text-left mb-4 md:mb-0">
-                {#if holonName}
-                    <h1 class="text-4xl font-bold text-white mb-2">{holonName}</h1>
-                    <p class="text-gray-400 text-lg font-mono">{holonID}</p>
-                {:else}
-                    <h1 class="text-4xl font-bold text-white mb-2">Holon Dashboard</h1>
-                    <p class="text-gray-400 text-lg font-mono">{holonID}</p>
-                {/if}
-            </div>
-            {#if holonPurpose}
-                <div class="bg-gray-600 bg-opacity-50 rounded-2xl px-6 py-3 max-w-md">
-                    <p class="text-gray-200 italic text-center">"{holonPurpose}"</p>
-                </div>
-            {/if}
-        </div>
-    </div>
-
     <!-- Stats Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <!-- Users Card -->

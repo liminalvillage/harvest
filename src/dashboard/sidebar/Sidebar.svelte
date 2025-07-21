@@ -2,6 +2,8 @@
 	import { sidebarExpanded } from '../store';
 	import SidebarItems from './SidebarItems.svelte';
 	import { toggleSidebarExpanded } from '../store';
+	import ChevronLeft from 'svelte-feather-icons/src/icons/ChevronLeftIcon.svelte';
+	import ChevronRight from 'svelte-feather-icons/src/icons/ChevronRightIcon.svelte';
 
 	const style = {
 		mobileOrientation: {
@@ -25,11 +27,11 @@
 	<div class={style.container}>
 		<!-- Expand button on desktop -->
 		<div class="hidden lg:flex justify-end pr-2 pt-2">
-			<button on:click={toggleSidebarExpanded} class="text-gray-400 hover:text-white transition-colors">
+			<button on:click={toggleSidebarExpanded} class="text-gray-400 hover:text-white transition-colors p-1 rounded">
 				{#if $sidebarExpanded}
-					&laquo;
+					<ChevronLeft size="20" />
 				{:else}
-					&raquo;
+					<ChevronRight size="20" />
 				{/if}
 			</button>
 		</div>

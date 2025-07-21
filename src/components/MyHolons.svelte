@@ -79,6 +79,7 @@
     let currentHolonId: string = '';
     let activeTab: 'personal' | 'visited' = 'personal';
     let showSplashScreen = false;
+    let showHolonIdInfo = false;
 
     // Filtered holons
     $: filteredHolons = myHolons.filter(holon => 
@@ -515,6 +516,7 @@
             newHolonName = '';
             error = '';
             success = 'Holon added successfully';
+            showHolonIdInfo = false;
             console.log('Holon added successfully');
             setTimeout(() => success = '', 3000);
         } catch (err) {
@@ -1102,6 +1104,7 @@
             newHolonName = ''; 
             error = ''; 
             success = '';
+            showHolonIdInfo = false;
         }}
     >
         <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4" transition:scale>
@@ -1122,7 +1125,35 @@
             
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Holon ID *</label>
+                    <div class="flex items-center gap-2 mb-2">
+                        <label class="block text-sm font-medium text-gray-300">Holon ID *</label>
+                        <button
+                            type="button"
+                            class="text-gray-400 hover:text-white transition-colors p-1 rounded-full hover:bg-gray-700"
+                            title="How to get your Holon ID"
+                            on:click={() => showHolonIdInfo = !showHolonIdInfo}
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    {#if showHolonIdInfo}
+                        <div class="mb-3 p-3 bg-blue-900/20 border border-blue-700/50 rounded-lg text-sm">
+                            <div class="text-blue-300 font-medium mb-2">How to get your Holon ID:</div>
+                            <div class="text-gray-300 space-y-1">
+                                <div>1. Open Telegram and find @HolonsBot</div>
+                                <div>2. Send one of these commands:</div>
+                                <div class="ml-4 space-y-1">
+                                    <div>• <code class="bg-gray-700 px-2 py-1 rounded text-blue-300">/id</code> - Get your holon ID</div>
+                                    <div>• <code class="bg-gray-700 px-2 py-1 rounded text-blue-300">/dashboard</code> - Get a direct link</div>
+                                </div>
+                                <div>3. Copy the holon ID and paste it here</div>
+                            </div>
+                        </div>
+                    {/if}
+                    
                     <div class="flex gap-2">
                         <input
                             type="text"
@@ -1189,6 +1220,7 @@
                         newHolonName = ''; 
                         error = ''; 
                         success = '';
+                        showHolonIdInfo = false;
                     }}
                     class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-lg transition-colors"
                 >

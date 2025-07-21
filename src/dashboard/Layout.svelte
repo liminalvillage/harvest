@@ -17,12 +17,17 @@
 	const style = {
 		container: `bg-gray-900 h-screen overflow-hidden relative`,
 		mainContainer: `flex flex-col h-screen pl-0 w-full lg:pl-20 lg:space-y-4`,
-		main: `h-screen overflow-auto pb-36 pt-4 px-2 md:pb-8 md:pt-4 lg:pt-0 lg:px-4`
+		main: `h-screen overflow-auto pb-36 pt-4 px-2 md:pb-8 md:pt-4 lg:pt-0 lg:px-4`,
+		rootContainer: `bg-gray-900 h-screen overflow-hidden relative`,
+		rootMain: `h-screen overflow-auto p-4`
 	};
 
 	let lastMouseMove = Date.now();
 	let currentRouteIndex = 0;
 	let showMyHolons = false;
+
+	// Check if we're on the root route
+	$: isRootRoute = $page.url.pathname === '/';
 
 	// Define the allowed routes for auto-switching
 	const allowedRoutes = data.filter(item => 
@@ -69,32 +74,42 @@
 
 </script>
 
-<div class={style.container} on:mousemove={handleMouseMove} role="presentation">
-	<div class="flex items-start">
-		<Overlay />
-		<Sidebar mobileOrientation="start" />
-		<div class={style.mainContainer}>
-			<TopBar {toggleMyHolons} />
-			<main class={style.main}>
-				<RouteTransition pathname={$page.url.pathname}>
-					<slot />
-				</RouteTransition>
-			</main>
-		</div>
+{#if isRootRoute}
+	<!-- Root route layout: Clean MyHolons view -->
+	<div class={style.rootContainer}>
+		<main class={style.rootMain}>
+			<MyHolons />
+		</main>
 	</div>
-
-	{#if showMyHolons}
-		<div
-			class="absolute inset-0 z-40"
-			on:click|self={() => showMyHolons = false}
-			role="presentation"
-			transition:fade
-		>
-			<div class="absolute top-0 left-4 right-4" transition:slide>
-				<div class="bg-gray-900/90 backdrop-blur-sm max-h-[80vh] overflow-y-auto rounded-b-xl">
-					<MyHolons />
-				</div>
+{:else}
+	<!-- Normal dashboard layout -->
+	<div class={style.container} on:mousemove={handleMouseMove} role="presentation">
+		<div class="flex items-start">
+			<Overlay />
+			<Sidebar mobileOrientation="start" />
+			<div class={style.mainContainer}>
+				<TopBar {toggleMyHolons} />
+				<main class={style.main}>
+					<RouteTransition pathname={$page.url.pathname}>
+						<slot />
+					</RouteTransition>
+				</main>
 			</div>
 		</div>
-	{/if}
-</div>
+
+		{#if showMyHolons}
+			<div
+				class="absolute inset-0 z-40"
+				on:click|self={() => showMyHolons = false}
+				role="presentation"
+				transition:fade
+			>
+				<div class="absolute top-0 left-4 right-4" transition:slide>
+					<div class="bg-gray-900/90 backdrop-blur-sm max-h-[80vh] overflow-y-auto rounded-b-xl">
+						<MyHolons />
+					</div>
+				</div>
+			</div>
+		{/if}
+	</div>
+{/if}
