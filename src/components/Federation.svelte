@@ -485,28 +485,15 @@
     }, new Set<string>()).size;
 </script>
 
-<div class="min-h-screen bg-gray-900 text-white p-6">
-    <!-- Header -->
-    <div class="max-w-6xl mx-auto">
-        <div class="flex items-center justify-between mb-8">
-            <div>
-                <h1 class="text-3xl font-bold text-white mb-2">Federation Configuration</h1>
-                <p class="text-gray-400">Manage data sharing between holons</p>
+<div class="space-y-8">
+    <!-- Header Section -->
+    <div class="bg-gradient-to-r from-gray-800 to-gray-700 py-8 px-8 rounded-3xl shadow-2xl">
+        <div class="flex flex-col md:flex-row justify-between items-center">
+            <div class="text-center md:text-left mb-4 md:mb-0">
+                <h1 class="text-4xl font-bold text-white mb-2">Federation Configuration</h1>
+                <p class="text-gray-300 text-lg">Manage data sharing between holons</p>
             </div>
-            <div class="flex items-center space-x-4">
-                {#if totalFederations > 0}
-                    <div class="flex items-center space-x-4 text-sm">
-                        <div class="flex items-center space-x-2">
-                            <div class="w-3 h-3 bg-green-400 rounded-full"></div>
-                            <span class="text-gray-300">{totalFederations} Federations</span>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <div class="w-3 h-3 bg-blue-400 rounded-full"></div>
-                            <span class="text-gray-300">{activeLenses} Active Lenses</span>
-                        </div>
-                    </div>
-                {/if}
-
+            <div class="flex flex-wrap items-center gap-3">
                 <button 
                     on:click={() => showNetworkView = !showNetworkView}
                     class="bg-green-600 hover:bg-green-700 px-3 py-2 rounded-lg transition-colors flex items-center space-x-2 text-sm"
@@ -539,29 +526,48 @@
                 </button>
             </div>
         </div>
+    </div>
 
-        <!-- Status Messages -->
-        {#if error}
-            <div class="bg-red-900/50 border border-red-700 rounded-lg p-4 mb-6" transition:slide>
-                <div class="flex items-center space-x-2">
-                    <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    <span class="text-red-300">{error}</span>
-                </div>
-            </div>
-        {/if}
+    <!-- Main Content Container -->
+    <div class="bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
+        <div class="p-8">
 
-        {#if success}
-            <div class="bg-green-900/50 border border-green-700 rounded-lg p-4 mb-6" transition:slide>
-                <div class="flex items-center space-x-2">
-                    <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    <span class="text-green-300">{success}</span>
+            <!-- Status Messages -->
+            {#if error}
+                <div class="bg-red-900/50 border border-red-700 rounded-lg p-4 mb-6" transition:slide>
+                    <div class="flex items-center space-x-2">
+                        <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span class="text-red-300">{error}</span>
+                    </div>
                 </div>
-            </div>
-        {/if}
+            {/if}
+
+            {#if success}
+                <div class="bg-green-900/50 border border-green-700 rounded-lg p-4 mb-6" transition:slide>
+                    <div class="flex items-center space-x-2">
+                        <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span class="text-green-300">{success}</span>
+                    </div>
+                </div>
+            {/if}
+
+            <!-- Stats Section -->
+            {#if !loading && currentHolonId && federatedHolons.length > 0}
+                <div class="grid grid-cols-2 gap-4 mb-8">
+                    <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+                        <div class="text-2xl font-bold text-white mb-1">{totalFederations}</div>
+                        <div class="text-sm text-gray-400">Federations</div>
+                    </div>
+                    <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+                        <div class="text-2xl font-bold text-white mb-1">{activeLenses}</div>
+                        <div class="text-sm text-gray-400">Active Lenses</div>
+                    </div>
+                </div>
+            {/if}
 
         {#if loading}
             <!-- Loading State -->
@@ -944,6 +950,7 @@
                 </div>
             {/if}
         {/if}
+        </div>
     </div>
 </div>
 
@@ -1291,4 +1298,4 @@
             </div>
         </div>
     </div>
-{/if} 
+{/if}

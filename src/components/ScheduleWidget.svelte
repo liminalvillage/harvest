@@ -49,17 +49,21 @@
 
 	function subscribe() {
 		store = {};
-		holosphere.subscribe(holonID, "quests", (newquest, key) => {
-			if (newquest) {
-				// Updates the store with the new value
-				store[key] = newquest;
-			} else {
-				// A key may contain a null value (if data has been deleted/set to null)
-				// if so, we remove the item from the store
-				delete store[key];
-				store = store;
-			}
-		});
+		if (holosphere && holonID) {
+			holosphere.subscribe(holonID, "quests", (newquest, key) => {
+				if (key) {
+					if (newquest) {
+						// Updates the store with the new value
+						store[key] = newquest;
+					} else {
+						// A key may contain a null value (if data has been deleted/set to null)
+						// if so, we remove the item from the store
+						delete store[key];
+						store = store;
+					}
+				}
+			});
+		}
 	}
 
 	function getStartTime(quest: Quest) {

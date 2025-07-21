@@ -3,6 +3,7 @@
     import HoloSphere from 'holosphere';
     import { ID } from "../dashboard/store";
     import Timeline from './Timeline.svelte';
+    import { formatDate } from "../utils/date";
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -107,11 +108,11 @@
 
     // Load profiles
     function loadProfiles() {
-        if (!holosphere) return;
+        if (!holosphere || !$ID) return;
         
         try {
             // Subscribe to users
-            holosphere.subscribe($ID, "users", async (newUser, key) => {
+            holosphere.subscribe($ID, "users", async (newUser: any, key?: string) => {
                 if (!key) return; // Skip if no key
                 if (newUser) {
                     const userData =  newUser;
@@ -155,20 +156,20 @@
         const daysInMonth = lastDay.getDate();
         
         // Get previous month's spillover days
-        const prevMonthDays = [];
+        const prevMonthDays: Date[] = [];
         const prevLastDay = new Date(year, month, 0).getDate();
         for (let i = startOffset - 1; i >= 0; i--) {
             prevMonthDays.push(new Date(year, month - 1, prevLastDay - i));
         }
         
         // Get current month's days
-        const currentMonthDays = [];
+        const currentMonthDays: Date[] = [];
         for (let i = 1; i <= daysInMonth; i++) {
             currentMonthDays.push(new Date(year, month, i));
         }
         
         // Get next month's spillover days
-        const nextMonthDays = [];
+        const nextMonthDays: Date[] = [];
         const remainingCells = 42 - (prevMonthDays.length + currentMonthDays.length);
         for (let i = 1; i <= remainingCells; i++) {
             nextMonthDays.push(new Date(year, month + 1, i));
@@ -178,7 +179,7 @@
     }
 
     function getWeekData(date: Date) {
-        const week = [];
+        const week: Date[] = [];
         const firstDayOfWeek = new Date(date);
         firstDayOfWeek.setDate(date.getDate() - date.getDay());
         
@@ -201,15 +202,21 @@
     }
 
     function navigateMonth(direction: 1 | -1) {
-        currentDate = new Date(currentDate.setMonth(currentDate.getMonth() + direction));
+        const newDate = new Date(currentDate);
+        newDate.setMonth(currentDate.getMonth() + direction);
+        currentDate = newDate;
     }
 
     function navigateWeek(direction: 1 | -1) {
-        currentDate = new Date(currentDate.setDate(currentDate.getDate() + (direction * 7)));
+        const newDate = new Date(currentDate);
+        newDate.setDate(currentDate.getDate() + (direction * 7));
+        currentDate = newDate;
     }
 
     function navigateDay(direction: 1 | -1) {
-        currentDate = new Date(currentDate.setDate(currentDate.getDate() + direction));
+        const newDate = new Date(currentDate);
+        newDate.setDate(currentDate.getDate() + direction);
+        currentDate = newDate;
     }
 
     function isToday(date: Date): boolean {
@@ -231,7 +238,7 @@
             .filter(task => new Date(task.when).toDateString() === dateStr)
             .map(task => ({
                 ...task,
-                color: '#3B82F6',
+                color: '#6366f1',
             }));
         
         return [...(events[dateStr] || []), ...dayTasks];
@@ -264,11 +271,20 @@
             }));
     }
 
-    // Add interface for Profile type
+    // Add interfaces for Profile type
     interface Profile {
         arrival: string;
         departure: string;
         // ... other profile fields ...
+    }
+
+    // Add interface for User type
+    interface User {
+        id: string;
+        first_name: string;
+        last_name?: string;
+        username?: string;
+        // ... other user fields
     }
 
     // Add this helper function at the script level
@@ -311,9 +327,10 @@
     }
 
     function loadTasks() {
-        if (!holosphere) return;
+        if (!holosphere || !$ID) return;
         
-        holosphere.subscribe($ID, 'quests', (newTask, key) => {
+        holosphere.subscribe($ID, 'quests', (newTask: any, key?: string) => {
+            if (!key) return; // Skip if no key
             if (newTask) {
                 const task = newTask;
                 if (task.when) {
@@ -327,6 +344,37 @@
         });
     }
 
+    // Make monthTasks reactive to changes in tasks
+    $: {
+        const month = currentDate.getMonth();
+        const year = currentDate.getFullYear();
+        const startDate = new Date(year, month, 1);
+        const endDate = new Date(year, month + 1, 0);
+
+        // Filter tasks for current month - this will react to changes in tasks
+        monthTasks = Object.entries(tasks)
+            .filter(([_, task]) => {
+                if (!task.when) return false;
+                const taskDate = new Date(task.when);
+                return taskDate >= startDate && taskDate <= endDate;
+            })
+            .map(([key, task]) => ({ key, ...task }));
+
+        // Filter profiles for current month
+        monthProfiles = Object.entries(profiles)
+            .filter(([_, profile]) => {
+                if (!profile?.arrival || !profile?.departure) return false;
+                const arrival = new Date(profile.arrival);
+                const departure = new Date(profile.departure);
+                return (arrival <= endDate && departure >= startDate);
+            })
+            .map(([userId, profile]) => ({
+                userId,
+                profile,
+                user: users[userId] || { first_name: 'Loading...' }
+            }));
+    }
+
     function handleTaskClick(key: string, task: any) {
         selectedTask = { id: key, task };
         const date = new Date(task.when);
@@ -338,7 +386,7 @@
     }
 
     function updateDateTime() {
-        if (!selectedTask) return;
+        if (!selectedTask || !$ID) return;
         
         const newDate = new Date(`${tempDate}T${tempTime}`);
         const endDate = new Date(`${tempDate}T${tempEndTime}`);
@@ -359,7 +407,7 @@
     }
 
     function deleteSchedule() {
-        if (!selectedTask) return;
+        if (!selectedTask || !$ID) return;
 
         try {
             const updatedTask = {
@@ -400,7 +448,7 @@
 
     // Add to script section at the top
     let now = new Date();
-    let currentTimeInterval: number;
+    let currentTimeInterval: NodeJS.Timeout | number;
 
     // Update current time every minute
     onMount(() => {
@@ -506,7 +554,7 @@
                 >
                     <span 
                         class="inline-flex w-8 h-8 items-center justify-center rounded-full text-white
-                        {isToday(date) ? 'bg-blue-500' : ''}"
+                        {isToday(date) ? 'bg-indigo-500' : ''}"
                     >
                         {date.getDate()}
                     </span>
@@ -551,57 +599,50 @@
     {:else if viewMode === 'week'}
         <div class="grid grid-cols-7 gap-px bg-gray-700">
             {#each weekData as date}
-                <div class="bg-gray-800">
+                <div class="bg-gray-800 relative">
                     <div class="p-2 text-center border-b border-gray-700">
                         <div class="text-gray-400 font-medium">
                             {date.toLocaleString('default', { weekday: 'short' })}
                         </div>
                         <div 
                             class="inline-flex w-8 h-8 items-center justify-center rounded-full text-white mt-1
-                            {isToday(date) ? 'bg-blue-500' : ''}"
+                            {isToday(date) ? 'bg-indigo-500' : ''}"
                         >
                             {date.getDate()}
                         </div>
                     </div>
                     
-                    <div class="divide-y divide-gray-700">
-                        {#each Array(18) as _, i}
-                            <div 
-                                class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors"
-                                style="grid-row: {i + 1}"
-                            >
-                                <div class="text-xs text-gray-500 group-hover:text-gray-400">
-                                    {(i + 6).toString().padStart(2, '0')}:00
+                    <div class="relative">
+                        <div class="divide-y divide-gray-700">
+                            {#each Array(18) as _, i}
+                                <div 
+                                    class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
+                                >
+                                    <div class="text-xs text-gray-500 group-hover:text-gray-400">
+                                        {(i + 6).toString().padStart(2, '0')}:00
+                                    </div>
                                 </div>
-                            </div>
-                        {/each}
+                            {/each}
+                        </div>
 
+                        <!-- Tasks for this day -->
                         {#each Object.entries(tasks) as [key, task]}
-                            {#if new Date(task.when).toDateString() === date.toDateString()}
+                            {#if task.when && new Date(task.when).toDateString() === date.toDateString()}
                                 {@const position = getTaskPosition(task)}
                                 <div 
-                                    class="text-xs p-1 rounded bg-blue-500 bg-opacity-90 truncate text-white cursor-pointer hover:bg-blue-400 transition-colors absolute inset-x-0 mx-1"
+                                    class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-pointer hover:bg-indigo-400 transition-colors absolute left-1 right-1 z-10"
                                     on:click|stopPropagation={() => handleTaskClick(key, task)}
                                     on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                                     role="button"
                                     tabindex="0"
-                                    style="
-                                        grid-row: {position.gridRowStart} / {position.gridRowEnd};
-                                        top: 0;
-                                        bottom: 0;
-                                    "
+                                    style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px;"
                                 >
-                                    <div class="font-bold">{task.title}</div>
-                                    {#if task.created}
-                                        <div class="text-xs opacity-75">
-                                            Created: {formatDate(task.created)}
-                                        </div>
-                                    {/if}
+                                    <div class="font-bold truncate">{task.title}</div>
                                     <div class="text-xs opacity-75">
                                         {position.startTime} - {position.endTime}
                                     </div>
                                     {#if task.location}
-                                        <div class="text-sm opacity-75">{task.location}</div>
+                                        <div class="text-xs opacity-75 truncate">{task.location}</div>
                                     {/if}
                                 </div>
                             {/if}
@@ -647,60 +688,52 @@
                 </div>
                 <div 
                     class="inline-flex w-8 h-8 items-center justify-center rounded-full text-white mt-1
-                    {isToday(currentDate) ? 'bg-blue-500' : ''}"
+                    {isToday(currentDate) ? 'bg-indigo-500' : ''}"
                 >
                     {currentDate.getDate()}
                 </div>
             </div>
             
-            <div class="divide-y divide-gray-700 relative">
-                {#each Array(18) as _, i}
-                    <div 
-                        class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors"
-                        style="grid-row: {i + 1}"
-                        on:click={() => {
-                            const eventDate = new Date(currentDate);
-                            eventDate.setHours(i + 6);
-                            handleDateClick(eventDate);
-                        }}
-                    >
-                        <div class="text-xs text-gray-500 group-hover:text-gray-400">
-                            {(i + 6).toString().padStart(2, '0')}:00
+            <div class="relative">
+                <div class="divide-y divide-gray-700">
+                    {#each Array(18) as _, i}
+                        <div 
+                            class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
+                            on:click={() => {
+                                const eventDate = new Date(currentDate);
+                                eventDate.setHours(i + 6);
+                                handleDateClick(eventDate);
+                            }}
+                        >
+                            <div class="text-xs text-gray-500 group-hover:text-gray-400">
+                                {(i + 6).toString().padStart(2, '0')}:00
+                            </div>
                         </div>
-                    </div>
-                {/each}
+                    {/each}
+                </div>
 
+                <!-- Tasks for this day -->
                 {#each Object.entries(tasks) as [key, task]}
-                    {#if new Date(task.when).toDateString() === currentDate.toDateString()}
+                    {#if task.when && new Date(task.when).toDateString() === currentDate.toDateString()}
                         {@const position = getTaskPosition(task)}
                         <div
-                            class="text-xs p-1 rounded bg-blue-500 bg-opacity-90 truncate text-white cursor-pointer hover:bg-blue-400 transition-colors absolute inset-x-0 mx-1"
+                            class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-pointer hover:bg-indigo-400 transition-colors absolute left-1 right-1 z-10"
                             on:click|stopPropagation={() => handleTaskClick(key, task)}
                             on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                             role="button"
                             tabindex="0"
-                            style="
-                                grid-row: {position.gridRowStart} / {position.gridRowEnd};
-                                top: 0;
-                                bottom: 0;
-                                z-index: 10;
-                            "
+                            style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px;"
                         >
-                            <div class="font-bold">{task.title}</div>
-                            {#if task.created}
-                                <div class="text-xs opacity-75">
-                                    Created: {formatDate(task.created)}
-                                </div>
-                            {/if}
+                            <div class="font-bold truncate">{task.title}</div>
                             <div class="text-xs opacity-75">
                                 {position.startTime} - {position.endTime}
                             </div>
                             {#if task.location}
-                                <div class="text-sm opacity-75">{task.location}</div>
+                                <div class="text-xs opacity-75 truncate">{task.location}</div>
                             {/if}
                             {#if task.participants?.length}
-                                <div class="text-sm mt-1">
-                                    🙋‍♂️ {task.participants.length} participants
+                                <div class="text-xs mt-1">
+                                    🙋‍♂️ {task.participants.length}
                                 </div>
                             {/if}
                         </div>

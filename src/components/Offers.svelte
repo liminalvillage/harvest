@@ -468,11 +468,7 @@
 		await subscribeToOffersAndNeeds();
 	}
 
-	// Manual refresh function
-	async function refreshData() {
-		console.log("Manual refresh triggered");
-		await subscribeToOffersAndNeeds();
-	}
+
 
 	// Function to classify a task as offer or request
 	function classifyTask(item) {
@@ -595,72 +591,7 @@
 		}
 	}
 
-	// Debug function to check data
-	async function debugData() {
-		if (!holosphere || !holonID) {
-			console.log("No holosphere or holonID available");
-			return;
-		}
-		
-		console.log("=== DEBUG DATA ===");
-		console.log("Current holonID:", holonID);
-		console.log("Current store:", store);
-		console.log("Current offers:", offers);
-		console.log("Current needs:", needs);
-		
-		// Show detailed item information
-		const storeValues = Object.values(store);
-		console.log("=== DETAILED ITEM ANALYSIS ===");
-		storeValues.forEach((item, index) => {
-			console.log(`Item ${index + 1}:`, {
-				id: item.id,
-				type: item.type,
-				title: item.title,
-				description: item.description,
-				initiator: item.initiator,
-				participants: item.participants,
-				when: item.when,
-				ends: item.ends,
-				_federation: item._federation,
-				_meta: item._meta
-			});
-		});
-		
-		// Show filtering summary
-		console.log("=== FILTERING SUMMARY ===");
-		const totalItems = storeValues.length;
-		const offerItems = offers.length;
-		const needItems = needs.length;
-		const filteredOutItems = totalItems - offerItems - needItems;
-		
-		console.log(`Total items in store: ${totalItems}`);
-		console.log(`Items classified as offers: ${offerItems}`);
-		console.log(`Items classified as needs: ${needItems}`);
-		console.log(`Items filtered out: ${filteredOutItems}`);
-		
-		// Show what was filtered out
-		const filteredItems = storeValues.filter(item => {
-			const classifiedType = classifyTask(item);
-			return !classifiedType || (classifiedType !== "offer" && classifiedType !== "request" && classifiedType !== "need");
-		});
-		
-		if (filteredItems.length > 0) {
-			console.log("Filtered out items:");
-			filteredItems.forEach(item => {
-				console.log(`- ${item.id}: "${item.title}" (type: ${item.type})`);
-			});
-		}
-		
-		try {
-			const localData = await holosphere.getAll(holonID, "quests");
-			console.log("Raw local data:", localData);
-			
-			const federationInfo = await holosphere.getFederation(holonID);
-			console.log("Federation info:", federationInfo);
-		} catch (error) {
-			console.error("Error in debug:", error);
-		}
-	}
+
 
 	// Add publish functionality
 	async function publishToFederatedChats(item) {
@@ -835,24 +766,7 @@
 					<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
 				{/if}
 				
-				<!-- Debug Button -->
-				<button 
-					class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm transition-colors"
-					on:click={debugData}
-					title="Debug data state"
-				>
-					🐛 Debug
-				</button>
-				
-				<!-- Refresh Button -->
-				<button 
-					class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors"
-					on:click={refreshData}
-					title="Refresh data"
-					disabled={loadingFederated}
-				>
-					🔄 Refresh
-				</button>
+
 			</div>
 		</div>
 		</div>

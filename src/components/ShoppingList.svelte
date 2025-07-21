@@ -95,7 +95,7 @@
 			
 			const initialData = await holosphere.getAll(holonID, "shopping");
 			
-			if (typeof initialData === 'object' && initialData !== null) {
+			if (typeof initialData === 'object' && initialData !== null && !Array.isArray(initialData)) {
 				store = initialData as Record<string, ShoppingItem>;
 			}
 			
@@ -211,7 +211,7 @@
         inputText = "";
     }
 
-    function removeChecked(holonId: string): void {
+    async function removeChecked(holonId: string): Promise<void> {
         if (!holonId) return;
         const checkedItemsKeys = Object.entries(store)
             .filter(([_, item]) => item.done)
@@ -219,19 +219,32 @@
 
         if (checkedItemsKeys.length === 0) return;
 
-        const newStore = { ...store };
-        checkedItemsKeys.forEach(key => {
-            delete newStore[key];
-        });
-        store = newStore;
+        // Store original state in case we need to revert
+        const originalStore = { ...store };
 
-        checkedItemsKeys.forEach(key => {
-            holosphere.delete(
-                holonId,
-                "shopping",
-                key
+        try {
+            // Update local store optimistically
+            const newStore = { ...store };
+            checkedItemsKeys.forEach(key => {
+                delete newStore[key];
+            });
+            store = newStore;
+
+            // Delete from backend - wait for all deletions to complete
+            const deletePromises = checkedItemsKeys.map(key => 
+                holosphere.delete(holonId, "shopping", key)
             );
-        });
+            
+            await Promise.all(deletePromises);
+            
+        } catch (error) {
+            console.error("Failed to remove checked items:", error);
+            // Revert local changes if backend deletion failed
+            store = originalStore;
+            
+            // Optional: Show user-friendly error notification
+            alert("Failed to remove items. Please try again.");
+        }
     }
 </script>
 
@@ -243,6 +256,25 @@
                 <h1 class="text-4xl font-bold text-white mb-2">Shopping List</h1>
                 <p class="text-gray-300 text-lg">{new Date().toDateString()}</p>
             </div>
+            <!-- Show Holograms Toggle -->
+            <label class="flex items-center cursor-pointer">
+                <div class="relative">
+                    <input
+                        type="checkbox"
+                        class="sr-only"
+                        bind:checked={showHolograms}
+                    />
+                    <div class="w-11 h-6 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
+                    <div
+                        class="dot absolute w-4 h-4 bg-white rounded-full transition-transform duration-300 ease-in-out left-1 top-1"
+                        class:translate-x-5={showHolograms}
+                    ></div>
+                </div>
+                <div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
+                    <span class="hidden sm:inline">Show Holograms</span>
+                    <span class="sm:hidden" aria-label="Show hologram items">🔮</span>
+                </div>
+            </label>
         </div>
     </div>
 
@@ -269,31 +301,6 @@
                 </div>
             </div>
 
-            <!-- Controls Section -->
-            <div class="mb-6 space-y-4">
-                <!-- Show Holograms Toggle -->
-                <div class="flex justify-center">
-                    <label class="flex items-center cursor-pointer">
-                        <div class="relative">
-                            <input
-                                type="checkbox"
-                                class="sr-only"
-                                bind:checked={showHolograms}
-                            />
-                            <div class="w-11 h-6 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
-                            <div
-                                class="dot absolute w-4 h-4 bg-white rounded-full transition-transform duration-300 ease-in-out left-1 top-1"
-                                class:translate-x-5={showHolograms}
-                            ></div>
-                        </div>
-                        <div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
-                            <span class="hidden sm:inline">Show Holograms</span>
-                            <span class="sm:hidden" aria-label="Show hologram items">🔮</span>
-                        </div>
-                    </label>
-                </div>
-            </div>
-
             <!-- Action Buttons -->
             <div class="flex justify-center items-center gap-4 mb-6">
                 <button
@@ -306,9 +313,9 @@
                 </button>
 
                 <button 
-                    on:click={() => {
+                    on:click={async () => {
                         if (holonID) {
-                            removeChecked(holonID);
+                            await removeChecked(holonID);
                         }
                     }}
                     class="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105"
