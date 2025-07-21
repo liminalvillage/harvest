@@ -27,6 +27,6 @@
     <title>Schedule</title>
 </svelte:head>
 
-<div class="p-6">
+<div class="p-0">
     <Calendar on:dateSelect={handleDateSelect} />
 </div> 

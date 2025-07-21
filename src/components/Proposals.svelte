@@ -171,12 +171,12 @@
     }
 </script>
 
-<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl ml-0">
+<div class="w-full bg-gray-800 py-6 px-6 rounded-3xl">
     <div class="flex justify-between text-white items-center mb-8">
         <p class="text-2xl font-bold">Proposals</p>
         <button
             on:click={() => showAddDialog = true}
-            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg"
         >
             New Proposal
         </button>
@@ -227,10 +227,10 @@
                         </button>
                     </div>
                 </div>
-                <p class="text-gray-300 mb-3">{proposal.description}</p>
+                <p class="text-gray-300 mb-3 leading-relaxed">{proposal.description}</p>
                 <div class="w-full bg-gray-600 rounded-full h-2.5">
                     <div
-                        class="bg-{proposal.stoppers?.length ? 'red' : 'blue'}-600 h-2.5 rounded-full"
+                        class="bg-{proposal.stoppers?.length ? 'red' : 'indigo'}-600 h-2.5 rounded-full"
                         style="width: {(proposal.participants.length / 10) * 100}%"
                     ></div>
                 </div>
@@ -315,7 +315,7 @@
                         </button>
                         <button
                             type="submit"
-                            class="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                            class="px-4 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
                         >
                             Submit
                         </button>

@@ -749,7 +749,7 @@
             <div class="text-center mb-8">
                 <button
                     on:click={() => showAddDialog = true}
-                    class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg text-xl font-semibold transition-colors flex items-center justify-center space-x-3 mx-auto shadow-lg"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-lg text-xl font-semibold transition-colors flex items-center justify-center space-x-3 mx-auto shadow-lg"
                 >
                     <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -761,22 +761,22 @@
             <div class="space-y-8">
                 <!-- How to Add a Holon -->
                 <div class="bg-gray-700/50 border border-gray-600 rounded-lg p-6">
-                    <h2 class="text-2xl font-semibold text-blue-400 mb-4">How to Add Your First Holon</h2>
+                    <h2 class="text-2xl font-semibold text-indigo-400 mb-4">How to Add Your First Holon</h2>
                     <div class="space-y-4">
                         <div class="flex items-start space-x-4">
-                            <div class="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">1</div>
+                            <div class="flex-shrink-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold">1</div>
                             <div>
                                 <h3 class="font-semibold text-white mb-2">Start a conversation with HolonsBot</h3>
                                 <p class="text-gray-300">Start a conversation with our Telegram bot or add it to your existing group:</p>
                                 <ul class="list-disc list-inside text-gray-400 mt-2 space-y-1">
-                                    <li>Start a conversation: <a href="https://t.me/HolonsBot" class="text-blue-400 hover:text-blue-300">@HolonsBot</a></li>
+                                    <li>Start a conversation: <a href="https://t.me/HolonsBot" class="text-indigo-400 hover:text-indigo-300">@HolonsBot</a></li>
                                     <li>Or add the bot to your existing Telegram group</li>
                                 </ul>
                             </div>
                         </div>
                         
                         <div class="flex items-start space-x-4">
-                            <div class="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">2</div>
+                            <div class="flex-shrink-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold">2</div>
                             <div>
                                 <h3 class="font-semibold text-white mb-2">Get your Holon ID</h3>
                                 <p class="text-gray-300">In the chat with HolonsBot, type one of these commands:</p>
@@ -788,7 +788,7 @@
                         </div>
                         
                         <div class="flex items-start space-x-4">
-                            <div class="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">3</div>
+                            <div class="flex-shrink-0 w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold">3</div>
                             <div>
                                 <h3 class="font-semibold text-white mb-2">Add your Holon</h3>
                                 <p class="text-gray-300">Copy the holon ID and add it to the dashboard using the button above, or use the direct link from <code class="bg-gray-600 px-2 py-1 rounded">/dashboard</code></p>
@@ -813,12 +813,12 @@
     </div>
 {:else}
     <!-- Main MyHolons Interface -->
-    <div class="p-6 max-w-7xl mx-auto">
+    <div class="p-6">
         <!-- Header -->
         <div class="flex justify-end items-center mb-6">
             <button
                 on:click={() => showAddDialog = true}
-                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
             >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -831,13 +831,13 @@
         <div class="flex space-x-1 mb-6">
             <button
                 on:click={() => activeTab = 'personal'}
-                class="px-4 py-2 rounded-lg transition-colors {activeTab === 'personal' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}"
+                class="px-4 py-2 rounded-lg transition-colors {activeTab === 'personal' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}"
             >
                 Personal Holons
             </button>
             <button
                 on:click={() => activeTab = 'visited'}
-                class="px-4 py-2 rounded-lg transition-colors {activeTab === 'visited' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}"
+                class="px-4 py-2 rounded-lg transition-colors {activeTab === 'visited' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}"
             >
                 Visited Holons
             </button>
@@ -850,13 +850,13 @@
                     type="text"
                     placeholder="Search holons..."
                     bind:value={searchQuery}
-                    class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    class="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                 />
             </div>
             <div class="flex gap-2">
                 <select
                     bind:value={sortBy}
-                    class="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500"
+                    class="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-indigo-500"
                 >
                     <option value="order">Order</option>
                     <option value="name">Name</option>
@@ -887,11 +887,11 @@
         <!-- Loading State -->
         {#if isLoading}
             <div class="flex flex-col items-center justify-center py-12">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mb-4"></div>
                 <p class="text-gray-400 text-center">{loadingMessage}</p>
                 <button 
                     on:click={loadData}
-                    class="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                    class="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
                 >
                     Retry Loading
                 </button>
@@ -899,10 +899,10 @@
         {:else}
             {#if activeTab === 'personal'}
                 <!-- Personal Holons Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                     {#each filteredHolons.filter(h => h.isPersonal) as holon, index (holon.id)}
                     <div
-                        class="md:aspect-square"
+                        class="h-full"
                         draggable="true"
                         on:dragstart={(e) => handleDragStart(e, holon)}
                         on:dragover={(e) => handleDragOver(e, index)}
@@ -914,36 +914,37 @@
                         in:scale={{ duration: 200 }}
                     >
                         <div
-                            class="w-full h-full bg-gray-800 rounded-lg md:rounded-full p-3 md:p-4 border-2 md:border-4 border-white hover:border-blue-400 transition-all cursor-pointer relative group flex flex-row md:flex-col items-center justify-between md:justify-center text-left md:text-center"
-                            class:border-blue-500={dragOverIndex === index}
+                            class="bg-gray-800 hover:bg-gray-750 p-6 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 cursor-pointer relative group flex flex-col items-center justify-center text-center h-full"
+                            class:ring-2={dragOverIndex === index}
+                            class:ring-indigo-500={dragOverIndex === index}
                             class:opacity-50={draggedHolon?.id === holon.id}
                         >
-                            <!-- Left/Top part -->
-                            <div class="flex-grow min-w-0">
-                                <div class="hidden md:block w-10 h-10 mx-auto mb-2">
+                            <div class="flex-grow flex flex-col items-center justify-center">
+                                <div class="w-12 h-12 mx-auto mb-4">
                                     <MyHolonsIcon />
                                 </div>
                                 <div class="max-w-full">
-                                    <h3 class="font-semibold text-white text-base md:text-lg text-center whitespace-normal break-words leading-tight">{holon.name}</h3>
-                                    <p class="text-xs md:text-sm text-gray-400 truncate">{holon.id}</p>
+                                    <h3 class="font-semibold text-white text-lg text-center whitespace-normal break-words leading-tight">{holon.name}</h3>
+                                    <p class="text-sm text-gray-400 truncate">{holon.id}</p>
                                 </div>
                             </div>
 
-                            <!-- Right/Bottom part -->
-                            <div class="text-right md:text-center flex flex-col items-end md:items-center gap-2 flex-shrink-0">
+                            <div class="mt-4 text-center w-full">
                                 {#if holon.stats}
-                                    <div class="hidden md:flex justify-center gap-4 text-sm text-gray-400">
-                                        <span>👥{holon.stats.users}</span>
-                                        <span>📋{holon.stats.tasks}</span>
-                                        <span>🤝{holon.stats.offers}</span>
+                                    <div class="flex justify-center gap-3 text-sm text-gray-400">
+                                        <span><i class="fas fa-users"></i> {holon.stats.users}</span>
+                                        <span><i class="fas fa-tasks"></i> {holon.stats.tasks}</span>
+                                        <span><i class="fas fa-gift"></i> {holon.stats.offers}</span>
                                     </div>
                                 {/if}
-                                <span class="hidden md:inline-block text-sm px-3 py-1 bg-gray-700 rounded-full text-gray-300 mt-2">
-                                    {getHolonTypeLabel(holon)}
-                                </span>
-                                <span class="text-xs md:text-sm text-gray-500">
+                                <div class="mt-3">
+                                    <span class="inline-block text-xs px-2 py-1 bg-gray-700 rounded-full text-gray-300">
+                                        {getHolonTypeLabel(holon)}
+                                    </span>
+                                </div>
+                                <div class="text-xs text-gray-500 mt-2">
                                     {formatLastVisited(holon.lastVisited)}
-                                </span>
+                                </div>
                             </div>
 
                             <!-- Action Buttons -->
@@ -999,7 +1000,7 @@
                 {/if}
             {:else if activeTab === 'visited'}
                 <!-- Visited Holons Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                     {#each visitedHolons.filter(h => 
                         h.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         h.id.toLowerCase().includes(searchQuery.toLowerCase())
@@ -1016,30 +1017,32 @@
                         return aVal > bVal ? multiplier : -multiplier;
                     }) as holon, index (holon.id)}
                         <div
-                            class="md:aspect-square"
+                            class="h-full"
                             on:click={() => navigateToHolon(holon.id)}
                             animate:flip={{ duration: 200 }}
                             in:scale={{ duration: 200 }}
                         >
-                            <div class="w-full h-full bg-gray-800 rounded-lg md:rounded-full p-3 md:p-4 border-2 md:border-4 border-white hover:border-blue-400 transition-all cursor-pointer relative group flex flex-row md:flex-col items-center justify-between md:justify-center text-left md:text-center">
-                                <!-- Left/Top part -->
-                                <div class="flex-grow min-w-0">
-                                    <div class="hidden md:block w-10 h-10 mx-auto mb-2">
+                            <div class="bg-gray-800 hover:bg-gray-750 p-6 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 cursor-pointer relative group flex flex-col items-center justify-center text-center h-full">
+                                <!-- Top part -->
+                                <div class="flex-grow flex flex-col items-center justify-center">
+                                    <div class="w-12 h-12 mx-auto mb-4">
                                         <MyHolonsIcon />
                                     </div>
                                     <div class="max-w-full">
-                                        <h3 class="font-semibold text-white text-base md:text-lg text-center whitespace-normal break-words leading-tight">{holon.name}</h3>
-                                        <p class="text-xs md:text-sm text-gray-400 truncate">{holon.id}</p>
+                                        <h3 class="font-semibold text-white text-lg text-center whitespace-normal break-words leading-tight">{holon.name}</h3>
+                                        <p class="text-sm text-gray-400 truncate">{holon.id}</p>
                                     </div>
                                 </div>
-                                <!-- Right/Bottom part -->
-                                <div class="text-right md:text-center flex flex-col items-end md:items-center gap-2 flex-shrink-0">
-                                    <span class="hidden md:inline-block text-sm px-3 py-1 bg-blue-600 rounded-full text-white mt-2">
-                                        {holon.visitCount} visits
-                                    </span>
-                                    <span class="text-xs md:text-sm text-gray-500">
+                                <!-- Bottom part -->
+                                <div class="mt-4 text-center w-full">
+                                     <div class="mt-3">
+                                        <span class="inline-block text-xs px-2 py-1 bg-indigo-600 rounded-full text-white">
+                                            {holon.visitCount} visits
+                                        </span>
+                                    </div>
+                                    <div class="text-xs text-gray-500 mt-2">
                                         {formatLastVisited(holon.lastVisited)}
-                                    </span>
+                                    </div>
                                 </div>
                                 <!-- Action Buttons -->
                                 <div class="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1140,14 +1143,14 @@
                     </div>
                     
                     {#if showHolonIdInfo}
-                        <div class="mb-3 p-3 bg-blue-900/20 border border-blue-700/50 rounded-lg text-sm">
-                            <div class="text-blue-300 font-medium mb-2">How to get your Holon ID:</div>
+                        <div class="mb-3 p-3 bg-indigo-900/20 border border-indigo-700/50 rounded-lg text-sm">
+                            <div class="text-indigo-300 font-medium mb-2">How to get your Holon ID:</div>
                             <div class="text-gray-300 space-y-1">
                                 <div>1. Open Telegram and find @HolonsBot</div>
                                 <div>2. Send one of these commands:</div>
                                 <div class="ml-4 space-y-1">
-                                    <div>• <code class="bg-gray-700 px-2 py-1 rounded text-blue-300">/id</code> - Get your holon ID</div>
-                                    <div>• <code class="bg-gray-700 px-2 py-1 rounded text-blue-300">/dashboard</code> - Get a direct link</div>
+                                    <div>• <code class="bg-gray-700 px-2 py-1 rounded text-indigo-300">/id</code> - Get your holon ID</div>
+                                    <div>• <code class="bg-gray-700 px-2 py-1 rounded text-indigo-300">/dashboard</code> - Get a direct link</div>
                                 </div>
                                 <div>3. Copy the holon ID and paste it here</div>
                             </div>
@@ -1164,7 +1167,7 @@
                                     addNewHolon();
                                 }
                             }}
-                            class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                             autofocus
                         />
                         <button
@@ -1201,7 +1204,7 @@
                                 addNewHolon();
                             }
                         }}
-                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     />
                 </div>
             </div>
@@ -1209,7 +1212,7 @@
             <div class="flex gap-3 mt-6">
                 <button
                     on:click={addNewHolon}
-                    class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors"
+                    class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg transition-colors"
                 >
                     Add Holon
                 </button>

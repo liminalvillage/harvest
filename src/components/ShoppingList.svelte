@@ -34,12 +34,104 @@
     let showInput = false;
     let inputText = "";
     let showHolograms = true;
+    let shoppingItemsUnsubscribe: (() => void) | undefined;
+	let subscriptionState = {
+		currentHolonID: null as string | null
+	};
+    let hologramSourceNames = new Map<string, string>();
+
+    async function preResolveHologramNames(items: ShoppingItem[]) {
+		const hologramSouls = new Set<string>();
+		
+		items.forEach(item => {
+			if (item._meta?.resolvedFromHologram && item._meta.hologramSoul) {
+				if (!hologramSourceNames.has(item._meta.hologramSoul)) {
+					hologramSouls.add(item._meta.hologramSoul);
+				}
+			}
+		});
+		
+		if (hologramSouls.size === 0) return;
+		
+		const promises = Array.from(hologramSouls).map(async (hologramSoul) => {
+			try {
+				const match = hologramSoul.match(/Holons\/([^\/]+)/);
+				if (match) {
+					const holonId = match[1];
+					const { fetchHolonName } = await import('../utils/holonNames');
+					const realName = await fetchHolonName(holosphere, holonId);
+					hologramSourceNames.set(hologramSoul, realName);
+				}
+			} catch (error) {
+				const match = hologramSoul.match(/Holons\/([^\/]+)/);
+				if (match) {
+					hologramSourceNames.set(hologramSoul, `Holon ${match[1]}`);
+				}
+			}
+		});
+		
+		await Promise.allSettled(promises);
+		
+		if (hologramSouls.size > 0) {
+			hologramSourceNames = new Map(hologramSourceNames);
+            shoppingItems = [...shoppingItems]; // trigger update
+		}
+	}
+
+    async function subscribe() {
+		if (!holosphere || !holonID) return;
+		
+		if (subscriptionState.currentHolonID === holonID && shoppingItemsUnsubscribe) return;
+		
+		if (shoppingItemsUnsubscribe) {
+			shoppingItemsUnsubscribe();
+			shoppingItemsUnsubscribe = undefined;
+		}
+		
+		store = {};
+		
+		try {
+			subscriptionState.currentHolonID = holonID;
+			
+			const initialData = await holosphere.getAll(holonID, "shopping");
+			
+			if (typeof initialData === 'object' && initialData !== null) {
+				store = initialData as Record<string, ShoppingItem>;
+			}
+			
+			await preResolveHologramNames(Object.values(store));
+
+			const off = holosphere.subscribe(holonID, "shopping", (newItem: ShoppingItem | null, key?: string) => {
+				if (newItem && key) {
+					store = { ...store, [key]: newItem };
+				} else if (key) {
+					const { [key]: _, ...rest } = store;
+					store = rest;
+				}
+                if (newItem?._meta?.resolvedFromHologram) {
+                    preResolveHologramNames([newItem]);
+                }
+			});
+
+			if (typeof off === 'function') {
+				shoppingItemsUnsubscribe = off as unknown as () => void;
+			}
+
+		} catch (error) {
+			console.error('Error setting up shopping list subscription:', error);
+			subscriptionState.currentHolonID = null;
+			shoppingItemsUnsubscribe = undefined;
+		}
+	}
 
     onMount(() => {
-        ID.subscribe((value) => {
-            holonID = value;
-            subscribeToShoppingItems();
-        });
+		let mounted = true;
+		
+		const idSubscription = ID.subscribe(async (value) => {
+			if (!mounted || !value ) return;
+			holonID = value;
+			await subscribe();
+		});
 
         // Load preferences
         try {
@@ -50,6 +142,12 @@
         } catch (error) {
             console.error('Error loading preferences:', error);
         }
+
+        return () => {
+			mounted = false;
+			if (idSubscription) idSubscription();
+			if (shoppingItemsUnsubscribe) shoppingItemsUnsubscribe();
+		};
     });
 
     // Save showHolograms preference to localStorage
@@ -61,35 +159,16 @@
     function getHologramSource(hologramSoul: string | undefined): string {
         if (!hologramSoul) return '';
         
-        // Use the centralized service to get hologram source name
-        // This will return cached name immediately or trigger async fetch with callback
-        return getHologramSourceName(holosphere, hologramSoul, () => {
-            // Trigger reactivity by updating shoppingItems when name is fetched
-            console.log('[ShoppingList] Hologram source name updated, triggering reactivity');
-            shoppingItems = [...shoppingItems];
-        });
-    }
-
-    function subscribeToShoppingItems(): void {
-        store = {};
-        if (holosphere) {
-            holosphere.subscribe(
-                holonID,
-                "shopping",
-                (newItem: ShoppingItem | null, key?: string) => {
-                    if (newItem && key) {
-                        store[key] = newItem;
-                    } else if (key) {
-                        delete store[key];
-                    }
-                    store = store;
-                }
-            );
+        if (hologramSourceNames.has(hologramSoul)) {
+            return hologramSourceNames.get(hologramSoul)!;
         }
+        
+        const match = hologramSoul.match(/Holons\/([^\/]+)/);
+        return match ? `Holon ${match[1]}` : 'External Source';
     }
 
     function toggleItemStatus(key: string): void {
-        if (store[key]) {
+        if (store[key] && holonID) {
             const item = { ...store[key], done: !store[key].done };
 
             holosphere.put(
@@ -106,7 +185,7 @@
     }
 
     function handleAdd() {
-        if (!inputText.trim()) return;
+        if (!inputText.trim() || !holonID) return;
         
         const newItem: ShoppingItem = {
             id: inputText.trim(),
@@ -116,24 +195,39 @@
             addedOn: new Date().toISOString()
         };
 
+        store = { ...store, [newItem.id]: newItem };
+
         holosphere.put(
             holonID,
             "shopping",
             newItem
-        );
+        ).catch(err => {
+            console.error("Failed to add item", err);
+            const {[newItem.id]: _, ...rest} = store;
+            store = rest;
+        });;
         
         showInput = false;
         inputText = "";
     }
 
-    function removeChecked(): void {
-        const checkedItems = Object.entries(store)
+    function removeChecked(holonId: string): void {
+        if (!holonId) return;
+        const checkedItemsKeys = Object.entries(store)
             .filter(([_, item]) => item.done)
             .map(([key]) => key);
 
-        checkedItems.forEach(key => {
+        if (checkedItemsKeys.length === 0) return;
+
+        const newStore = { ...store };
+        checkedItemsKeys.forEach(key => {
+            delete newStore[key];
+        });
+        store = newStore;
+
+        checkedItemsKeys.forEach(key => {
             holosphere.delete(
-                holonID,
+                holonId,
                 "shopping",
                 key
             );
@@ -200,31 +294,28 @@
                 </div>
             </div>
 
-            <!-- Add Item Button -->
-            <div class="flex justify-center mb-6">
+            <!-- Action Buttons -->
+            <div class="flex justify-center items-center gap-4 mb-6">
                 <button
                     on:click={showAddInput}
-                    class="group flex items-center gap-3 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-medium transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl"
+                    class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105"
                     aria-label="Add new item"
                 >
-                    <div class="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-colors">
-                        <span class="text-lg font-bold leading-none">+</span>
-                    </div>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
                     <span>Add New Item</span>
                 </button>
-            </div>
 
-            <!-- Remove Checked Button -->
-            <div class="flex justify-center mb-6">
                 <button 
-                    on:click={removeChecked}
-                    class="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors shadow-lg"
+                    on:click={() => {
+                        if (holonID) {
+                            removeChecked(holonID);
+                        }
+                    }}
+                    class="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105"
                     aria-label="Remove checked items"
                 >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                    </svg>
-                    Remove Checked
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    <span>Remove Checked</span>
                 </button>
             </div>
 
@@ -238,10 +329,18 @@
                             aria-label={`Toggle ${item.id} - ${item.done ? 'completed' : 'pending'}`}
                         >
                             <div
-                                class="p-4 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
-                                style="background-color: {item.done ? '#374151' : '#E5E7EB'}; 
-                                       opacity: {item.done ? '0.7' : item._meta?.resolvedFromHologram ? '0.75' : '1'};
-                                       {item._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+                                class="p-4 rounded-xl transition-all duration-300 border hover:shadow-md transform hover:scale-[1.005]"
+                                class:bg-gray-800={item.done}
+                                class:border-gray-700={item.done}
+                                class:opacity-70={item.done}
+                                class:bg-gray-700={!item.done}
+                                class:border-transparent={!item._meta?.resolvedFromHologram}
+                                class:hover:bg-gray-600={!item.done}
+                                class:hover:border-gray-500={!item.done}
+                                class:opacity-75={!item.done && item._meta?.resolvedFromHologram}
+                                class:border-2={item._meta?.resolvedFromHologram}
+                                class:border-indigo-500={item._meta?.resolvedFromHologram}
+                                style="{item._meta?.resolvedFromHologram ? 'box-shadow: 0 0 20px rgba(99, 102, 241, 0.4), inset 0 0 20px rgba(99, 102, 241, 0.1);' : ''}"
                             >
                                 <div class="flex items-center justify-between gap-3">
                                     <div class="flex items-center gap-3 flex-1 min-w-0">
@@ -254,16 +353,16 @@
                                         <div class="flex-1 min-w-0">
                                             <div class="flex items-center gap-2 mb-1">
                                                 {#if item.quantity && item.quantity > 1}
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-black/10 text-gray-700 flex-shrink-0">
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-black/10 {item.done ? 'text-gray-400' : 'text-gray-200'} flex-shrink-0">
                                                         {item.quantity}×
                                                     </span>
                                                 {/if}
-                                                <h3 class="text-base font-bold text-gray-800 truncate">
+                                                <h3 class="text-base font-bold truncate" class:text-gray-400={item.done} class:line-through={item.done} class:text-white={!item.done}>
                                                     {item.id}
                                                 </h3>
                                                 {#if item._meta?.resolvedFromHologram}
                                                     <button 
-                                                        class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors" 
+                                                        class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/20 text-indigo-300 flex-shrink-0 hover:bg-indigo-500/30 transition-colors" 
                                                         title="Navigate to source holon: {getHologramSource(item._meta.hologramSoul)}"
                                                         on:click|stopPropagation={() => {
                                                             const match = item._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
@@ -282,7 +381,7 @@
                                                     </button>
                                                 {/if}
                                             </div>
-                                            <p class="text-sm text-gray-700">
+                                            <p class="text-sm" class:text-gray-500={item.done} class:text-gray-400={!item.done}>
                                                 Added by: {item.from}
                                             </p>
                                         </div>
@@ -296,7 +395,7 @@
                                                 checked={item.done}
                                                 on:click|stopPropagation
                                                 on:change={() => toggleItemStatus(item.id)}
-                                                class="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                                                class="w-5 h-5 text-indigo-600 bg-gray-700 border-gray-600 rounded focus:ring-indigo-500 focus:ring-2"
                                             />
                                         </div>
                                     </div>
@@ -317,7 +416,7 @@
                         <p class="text-gray-400 mb-4">Get started by adding your first item</p>
                         <button
                             on:click={showAddInput}
-                            class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors"
+                            class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors"
                         >
                             Add Item
                         </button>
@@ -368,7 +467,7 @@
                             type="text"
                             bind:value={inputText}
                             placeholder="Enter item name..."
-                            class="w-full px-4 py-3 rounded-xl bg-gray-700 text-white placeholder-gray-400 border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
+                            class="w-full px-4 py-3 rounded-xl bg-gray-700 text-white placeholder-gray-400 border border-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-colors"
                             required
                         />
                     </div>
@@ -383,7 +482,7 @@
                         </button>
                         <button
                             type="submit"
-                            class="px-6 py-2.5 text-sm font-medium rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+                            class="px-6 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
                             disabled={!inputText.trim()}
                             aria-label="Add new item"
                         >
