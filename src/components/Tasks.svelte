@@ -2,6 +2,7 @@
 	
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
+	import { page } from "$app/stores";
 	import { formatDate, formatTime } from "../utils/date";
 	import HoloSphere from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
@@ -82,6 +83,8 @@
 	// Add initialization state tracking
 	let isInitialized = false;
 	let isSubscribed = false;
+	let isLoading = true;
+	let connectionReady = false;
 
 	// Add subscription state tracking
 	let subscriptionState = {
@@ -721,6 +724,130 @@
 		// Note: handleTaskDeleted will still be called via the "close" event to clear selectedTask
 	}
 
+	// Add fetchData function with retry logic
+	async function fetchData(retryCount = 0) {
+		if (!holonID || !holosphere || !connectionReady || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
+			return;
+		}
+		
+		isLoading = true;
+		
+		try {
+			console.log(`Fetching tasks for holon: ${holonID}`);
+			
+			// Fetch tasks data with timeout
+			const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
+				const timeoutPromise = new Promise((_, reject) => 
+					setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+				);
+				return Promise.race([promise, timeoutPromise]);
+			};
+
+			const initialData = await fetchWithTimeout(holosphere.getAll(holonID, "quests"), 5000);
+			
+			// Fetch participation data for federated items
+			const participationData = await fetchWithTimeout(holosphere.getAll(holonID, "participations"), 5000);
+			
+			// Create a map of item participations
+			const participationsMap = new Map();
+			if (Array.isArray(participationData)) {
+				participationData.forEach((participation: any) => {
+					if (participation && participation.itemId) {
+						if (!participationsMap.has(participation.itemId)) {
+							participationsMap.set(participation.itemId, []);
+						}
+						participationsMap.get(participation.itemId).push(participation.participant);
+					}
+				});
+			}
+			
+			// Process initial data
+			const newStore: Store = {};
+			if (Array.isArray(initialData)) {
+				initialData.forEach((quest: any, index) => {
+					if (quest && quest.id) {
+						// Use the quest ID as the key, or generate one if missing
+						const key = quest.id || `initial_${index}`;
+						
+						// Ensure required arrays are initialized
+						if (!quest.participants) quest.participants = [];
+						if (!quest.appreciation) quest.appreciation = [];
+						
+						// Check if this quest has participation data
+						const participations = participationsMap.get(quest.id);
+						if (participations && participations.length > 0) {
+							// Merge participation data with existing participants
+							const existingParticipants = quest.participants || [];
+							const mergedParticipants = [...existingParticipants];
+							
+							// Add participations that aren't already in the participants list
+							participations.forEach((participation: any) => {
+								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
+								if (!alreadyExists) {
+									mergedParticipants.push(participation);
+								}
+							});
+							
+							quest.participants = mergedParticipants;
+						}
+						
+						newStore[key] = quest as Quest;
+					}
+				});
+			} else if (typeof initialData === 'object' && initialData !== null) {
+				// If it's already a keyed object, use it directly
+				Object.entries(initialData).forEach(([key, quest]: [string, any]) => {
+					if (quest && quest.id) {
+						// Check if this quest has participation data
+						const participations = participationsMap.get(quest.id);
+						if (participations && participations.length > 0) {
+							// Merge participation data with existing participants
+							const existingParticipants = quest.participants || [];
+							const mergedParticipants = [...existingParticipants];
+							
+							// Add participations that aren't already in the participants list
+							participations.forEach((participation: any) => {
+								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
+								if (!alreadyExists) {
+									mergedParticipants.push(participation);
+								}
+							});
+							
+							quest.participants = mergedParticipants;
+						}
+						
+						newStore[key] = quest as Quest;
+					}
+				});
+			}
+			
+			// Update store and quests
+			store = newStore;
+			quests = Object.entries(store);
+			
+			// Pre-resolve hologram names to avoid repeated resolution in templates
+			await preResolveHologramNames(quests);
+			
+			console.log(`Successfully fetched tasks for holon ${holonID}:`, Object.keys(newStore).length, 'tasks');
+
+			// Set up subscription after successful fetch
+			await subscribe();
+
+		} catch (error: any) {
+			console.error('Error fetching tasks data:', error);
+			
+			// Retry on network errors up to 3 times with exponential backoff
+			if (retryCount < 3) {
+				const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+				console.log(`Retrying tasks fetch in ${delay}ms (attempt ${retryCount + 1}/3)`);
+				setTimeout(() => fetchData(retryCount + 1), delay);
+				return;
+			}
+		} finally {
+			isLoading = false;
+		}
+	}
+
 	function handleDialogKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
 			hideDialog();
@@ -936,41 +1063,112 @@
 	onMount(() => {
 		let mounted = true;
 		
-		// Set up ID subscription only once
-		const idSubscription = ID.subscribe(async (value) => {
-			if (!mounted || !value ) return; // Removed check against subscriptionState.currentHolonID to allow re-subscription if ID changes rapidly
-			holonID = value;
-			await subscribe();
-		});
-
-		// Load preferences
-		try {
-			const storedViewMode = localStorage.getItem('taskViewMode');
-			if (storedViewMode === 'list' || storedViewMode === 'canvas') {
-				viewMode = storedViewMode as 'list' | 'canvas';
-			}
-			showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
-			const storedShowHolograms = localStorage.getItem("taskShowHolograms");
-			if (storedShowHolograms !== null) {
-				showHolograms = storedShowHolograms === "true";
-			}
-		} catch (error) {
-			console.error('Error loading preferences:', error);
-			// Defaults are already set, so just log error
+		// Initialize with URL parameter first
+		const urlId = $page.params.id;
+		if (urlId && urlId !== 'undefined' && urlId !== 'null' && urlId.trim() !== '') {
+			holonID = urlId;
+			// Update the ID store to keep them in sync
+			ID.set(urlId);
 		}
 
+		// Wait for holosphere to be ready before proceeding
+		const checkConnection = async () => {
+			if (!holosphere) {
+				setTimeout(checkConnection, 100);
+				return;
+			}
+			
+			// Add a small delay to ensure the connection is stable
+			await new Promise(resolve => setTimeout(resolve, 200));
+			connectionReady = true;
+			
+			// Set up subscription to ID store with debouncing
+			let updateTimeout: NodeJS.Timeout;
+			const idSubscription = ID.subscribe((value) => {
+				if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
+					// Clear any pending update
+					if (updateTimeout) clearTimeout(updateTimeout);
+					
+					// Debounce the update to avoid rapid changes
+					updateTimeout = setTimeout(async () => {
+						if (value !== holonID && mounted) {
+							holonID = value;
+							await fetchData();
+						}
+					}, 100);
+				}
+			});
+
+			// Initial fetch if we have an ID
+			if (holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
+				await fetchData();
+			}
+
+			// Load preferences
+			try {
+				const storedViewMode = localStorage.getItem('taskViewMode');
+				if (storedViewMode === 'list' || storedViewMode === 'canvas') {
+					viewMode = storedViewMode as 'list' | 'canvas';
+				}
+				showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
+				const storedShowHolograms = localStorage.getItem("taskShowHolograms");
+				if (storedShowHolograms !== null) {
+					showHolograms = storedShowHolograms === "true";
+				}
+			} catch (error) {
+				console.error('Error loading preferences:', error);
+				// Defaults are already set, so just log error
+			}
+
+			return () => {
+				mounted = false;
+				if (idSubscription) idSubscription();
+				if (questsUnsubscribe) questsUnsubscribe();
+				if (subscriptionState.batchTimeout) { // Clear timeout if it exists
+					clearTimeout(subscriptionState.batchTimeout);
+					subscriptionState.batchTimeout = null;
+				}
+				subscriptionState.pendingUpdates.clear();
+				// Don't nullify currentHolonID here, as it might be needed if component remounts quickly
+			};
+		};
+		
+		checkConnection();
+
+		// Cleanup subscription on unmount
 		return () => {
 			mounted = false;
-			if (idSubscription) idSubscription();
 			if (questsUnsubscribe) questsUnsubscribe();
 			if (subscriptionState.batchTimeout) { // Clear timeout if it exists
 				clearTimeout(subscriptionState.batchTimeout);
 				subscriptionState.batchTimeout = null;
 			}
 			subscriptionState.pendingUpdates.clear();
-			// Don't nullify currentHolonID here, as it might be needed if component remounts quickly
 		};
 	});
+
+	// Watch for page ID changes with debouncing
+	let pageUpdateTimeout: NodeJS.Timeout;
+	$: {
+		const newId = $page.params.id;
+		if (newId && newId !== holonID && connectionReady) {
+			// Check if the new ID is valid
+			if (newId !== 'undefined' && newId !== 'null' && newId.trim() !== '') {
+				// Clear any pending update
+				if (pageUpdateTimeout) clearTimeout(pageUpdateTimeout);
+				
+				// Debounce the update to avoid rapid changes
+				pageUpdateTimeout = setTimeout(async () => {
+					holonID = newId;
+					// Update the ID store to keep them in sync
+					ID.set(newId);
+					if (holosphere) {
+						await fetchData();
+					}
+				}, 100);
+			}
+		}
+	}
 
 	// Modify the reactive statements to be more efficient and avoid triggering excessive re-processing
 
@@ -1218,7 +1416,14 @@
 				</div>
 
 				<!-- Task Content -->
-				{#if viewMode === "canvas"}
+				{#if isLoading}
+					<div class="flex items-center justify-center py-12">
+						<div class="text-center">
+							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4 mx-auto"></div>
+							<p class="text-gray-400">Loading tasks...</p>
+						</div>
+					</div>
+				{:else if viewMode === "canvas"}
 					{#if holonID} 
 						<CanvasView
 							{filteredQuests}

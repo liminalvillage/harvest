@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
+    import { page } from "$app/stores";
     import HoloSphere from "holosphere";
     import { calculateCreditMatrix } from "../utils/expenseCalculations";
 
@@ -21,7 +22,7 @@
 
     const holosphere = getContext("holosphere") as HoloSphere;
     
-    $: holonID = $ID;
+    let holonID: string = '';
     let expenses: Record<string, Expense> = {};
     let store: Record<string, User> = {};
     let selectedCurrency: string = '';
@@ -29,6 +30,8 @@
     let currenciesFromSettingsLoaded = false;
     let creditMatrix: number[][] = [];
     let dataLoaded = false; // Track if initial data loading is complete
+    let isLoading = true;
+    let connectionReady = false;
     
     $: users = Object.values(store);
     
@@ -49,27 +52,106 @@
         unsubscribeFunctions = [];
         currentSubscriptionHolonID = null;
     }
+
+    // Add fetchData function with retry logic
+    async function fetchData(retryCount = 0) {
+        if (!holonID || !holosphere || !connectionReady || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
+            return;
+        }
+        
+        isLoading = true;
+        dataLoaded = false;
+        
+        try {
+            console.log(`Fetching expenses data for holon: ${holonID}`);
+            
+            // Fetch data with timeout
+            const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+                );
+                return Promise.race([promise, timeoutPromise]);
+            };
+
+            // Clean up previous subscriptions
+            cleanupSubscriptions();
+            
+            // Set up new subscriptions
+            await Promise.all([
+                subscribeToExpenses(),
+                subscribeToUsers(),
+                subscribeToSettings()
+            ]);
+            
+            console.log(`Successfully set up subscriptions for holon ${holonID}`);
+
+        } catch (error: any) {
+            console.error('Error fetching expenses data:', error);
+            
+            // Retry on network errors up to 3 times with exponential backoff
+            if (retryCount < 3) {
+                const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+                console.log(`Retrying expenses fetch in ${delay}ms (attempt ${retryCount + 1}/3)`);
+                setTimeout(() => fetchData(retryCount + 1), delay);
+                return;
+            }
+        } finally {
+            isLoading = false;
+        }
+    }
     
     onMount(() => {
-        const idUnsubscribe = ID.subscribe(async (value) => {
-            if (value && value !== currentSubscriptionHolonID) {
-                // Clean up previous subscriptions
-                cleanupSubscriptions();
-                
-                holonID = value;
-                currentSubscriptionHolonID = value;
-                dataLoaded = false; // Reset data loaded state
-                
-                await Promise.all([
-                    subscribeToExpenses(),
-                    subscribeToUsers(),
-                    subscribeToSettings()
-                ]);
+        // Initialize with URL parameter first
+        const urlId = $page.params.id;
+        if (urlId && urlId !== 'undefined' && urlId !== 'null' && urlId.trim() !== '') {
+            holonID = urlId;
+            // Update the ID store to keep them in sync
+            ID.set(urlId);
+        }
+
+        // Wait for holosphere to be ready before proceeding
+        const checkConnection = async () => {
+            if (!holosphere) {
+                setTimeout(checkConnection, 100);
+                return;
             }
-        });
+            
+            // Add a small delay to ensure the connection is stable
+            await new Promise(resolve => setTimeout(resolve, 200));
+            connectionReady = true;
+            
+            // Set up subscription to ID store with debouncing
+            let updateTimeout: NodeJS.Timeout;
+            const idUnsubscribe = ID.subscribe((value) => {
+                if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
+                    // Clear any pending update
+                    if (updateTimeout) clearTimeout(updateTimeout);
+                    
+                    // Debounce the update to avoid rapid changes
+                    updateTimeout = setTimeout(async () => {
+                        if (value !== holonID) {
+                            holonID = value;
+                            await fetchData();
+                        }
+                    }, 100);
+                }
+            });
+
+            // Initial fetch if we have an ID
+            if (holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
+                await fetchData();
+            }
+
+            return () => {
+                if (idUnsubscribe) idUnsubscribe();
+                cleanupSubscriptions();
+            };
+        };
         
+        checkConnection();
+
+        // Cleanup subscription on unmount
         return () => {
-            idUnsubscribe();
             cleanupSubscriptions();
         };
     });
@@ -207,6 +289,29 @@
         }
     }
 
+    // Watch for page ID changes with debouncing
+    let pageUpdateTimeout: NodeJS.Timeout;
+    $: {
+        const newId = $page.params.id;
+        if (newId && newId !== holonID && connectionReady) {
+            // Check if the new ID is valid
+            if (newId !== 'undefined' && newId !== 'null' && newId.trim() !== '') {
+                // Clear any pending update
+                if (pageUpdateTimeout) clearTimeout(pageUpdateTimeout);
+                
+                // Debounce the update to avoid rapid changes
+                pageUpdateTimeout = setTimeout(async () => {
+                    holonID = newId;
+                    // Update the ID store to keep them in sync
+                    ID.set(newId);
+                    if (holosphere) {
+                        await fetchData();
+                    }
+                }, 100);
+            }
+        }
+    }
+
     // Check if we have finished loading and have no currencies
     $: noCurrenciesAvailable = dataLoaded && availableCurrencies.length === 0;
 
@@ -308,6 +413,11 @@
             <p class="text-sm text-gray-500">
                 You can also configure currencies in your holon settings.
             </p>
+        </div>
+    {:else if isLoading}
+        <div class="text-center text-gray-500 py-10">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4 mx-auto"></div>
+            <p>Loading expense data...</p>
         </div>
     {:else}
         <div class="text-center text-gray-500 py-10">
