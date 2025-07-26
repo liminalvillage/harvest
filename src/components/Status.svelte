@@ -31,6 +31,7 @@
         collaboration: number;
         wants: number;
         offers: number;
+        currencies: Record<string, number>;
     }
 
     interface Expense {
@@ -64,8 +65,52 @@
         hours: 1,
         collaboration: 1,
         wants: 1,
-        offers: 1
+        offers: 1,
+        currencies: {}
     };
+
+    // Add state for editing
+    let isEditingEquation = false;
+    let editingEquation: Equation = { ...equation };
+
+    // Function to save equation changes
+    async function saveEquation() {
+        try {
+            const settings = await holosphere.getAll(holonID, 'settings');
+            const currentSettings = settings && settings[0] ? settings[0] : {};
+            
+            const updatedSettings = {
+                ...currentSettings,
+                valueEquation: editingEquation
+            };
+            
+            await holosphere.put(holonID, 'settings', updatedSettings);
+            equation = { ...editingEquation };
+            isEditingEquation = false;
+            console.log('Value equation updated successfully');
+        } catch (error) {
+            console.error('Error saving value equation:', error);
+        }
+    }
+
+    // Function to cancel editing
+    function cancelEditing() {
+        editingEquation = { ...equation };
+        isEditingEquation = false;
+    }
+
+    // Function to adjust value with arrows
+    function adjustValue(metric: keyof Equation, delta: number) {
+        const newValue = Math.max(0, (editingEquation[metric] || 0) + delta);
+        editingEquation = { ...editingEquation, [metric]: newValue };
+    }
+
+    // Function to adjust currency weight
+    function adjustCurrencyWeight(currency: string, delta: number) {
+        const currentWeight = editingEquation.currencies[currency] || 0;
+        const newWeight = Math.max(0, currentWeight + delta);
+        editingEquation.currencies = { ...editingEquation.currencies, [currency]: newWeight };
+    }
 
     onMount(async () => {
         // Initialize from URL params first (priority), fallback to ID store
@@ -364,19 +409,54 @@
     }
 
     function calculateScore(user: User): number {
-        return (
-            user.initiated.length * equation.initiated +
-            user.completed.length * equation.completed +
-            user.sent * equation.sent +
-            user.received * equation.received
-        );
-        // user.hours * equation.hours +
-        // user.collaboration * equation.collaboration +
-        // user.wants.length * equation.wants +
-        // user.offers.length * equation.offers;
+        let score = 0;
+        
+        // Only include metrics with values > 0
+        if (equation.initiated > 0) {
+            score += user.initiated.length * equation.initiated;
+        }
+        if (equation.completed > 0) {
+            score += user.completed.length * equation.completed;
+        }
+        if (equation.sent > 0) {
+            score += user.sent * equation.sent;
+        }
+        if (equation.received > 0) {
+            score += user.received * equation.received;
+        }
+        if (equation.hours > 0) {
+            score += user.hours * equation.hours;
+        }
+        if (equation.collaboration > 0) {
+            score += user.collaboration * equation.collaboration;
+        }
+        if (equation.wants > 0) {
+            score += user.wants.length * equation.wants;
+        }
+        if (equation.offers > 0) {
+            score += user.offers.length * equation.offers;
+        }
+        
+        // Add currency balances if their weights are > 0
+        if (equation.currencies && availableCurrencies) {
+            for (const currency of availableCurrencies) {
+                const currencyWeight = equation.currencies[currency] || 0;
+                if (currencyWeight > 0) {
+                    const balance = getCurrencyBalance(user.id || Object.keys(store).find(key => store[key] === user) || '', currency);
+                    score += balance * currencyWeight;
+                }
+            }
+        }
+        
+        return score;
     }
 
+    // Force recomputation when equation changes
+    $: equationChanged = JSON.stringify(equation);
+    
     $: sortedUsers = Object.entries(store).sort(([, a], [, b]) => {
+        // Force dependency on equation changes
+        equationChanged;
         return calculateScore(b) - calculateScore(a);
     });
 
@@ -498,13 +578,13 @@
                                     <th class="p-4 text-left font-semibold">Name</th>
                                     <th class="p-4 text-left font-semibold">Tasks Initiated</th>
                                     <th class="p-4 text-left font-semibold">Tasks Completed</th>
-                                    <th class="p-4 text-left font-semibold">Sent</th>
-                                    <th class="p-4 text-left font-semibold">Received</th>
-                                    <th class="p-4 text-left font-semibold">Score</th>
-                                    <th class="p-4 text-left font-semibold">Percentage</th>
+                                    <th class="p-4 text-left font-semibold">Appreciation Sent</th>
+                                    <th class="p-4 text-left font-semibold">Appreciation Received</th>
                                     {#each availableCurrencies as currency}
                                         <th class="p-4 text-left font-semibold">{currency.toUpperCase()}</th>
                                     {/each}
+                                    <th class="p-4 text-left font-semibold">Score</th>
+                                    <th class="p-4 text-left font-semibold">Percentage</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -576,6 +656,14 @@
                                                 {user.received}
                                             </span>
                                         </td>
+                                        {#each availableCurrencies as currency}
+                                            {@const balance = getCurrencyBalance(user.id || userId, currency)}
+                                            <td class="p-4">
+                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {balance > 0 ? 'bg-green-600/20 text-green-300' : balance < 0 ? 'bg-red-600/20 text-red-300' : 'bg-gray-600/20 text-gray-300'}">
+                                                    {formatCurrencyAmount(balance, currency)}
+                                                </span>
+                                            </td>
+                                        {/each}
                                         <td class="p-4">
                                             <span class="font-bold text-lg text-white">{score.toFixed(1)}</span>
                                         </td>
@@ -592,14 +680,6 @@
                                                 </span>
                                             </div>
                                         </td>
-                                        {#each availableCurrencies as currency}
-                                            {@const balance = getCurrencyBalance(user.id || userId, currency)}
-                                            <td class="p-4">
-                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium {balance > 0 ? 'bg-green-600/20 text-green-300' : balance < 0 ? 'bg-red-600/20 text-red-300' : 'bg-gray-600/20 text-gray-300'}">
-                                                    {formatCurrencyAmount(balance, currency)}
-                                                </span>
-                                            </td>
-                                        {/each}
                                     </tr>
                                 {/each}
                             </tbody>
@@ -618,6 +698,441 @@
                         <p class="text-gray-400">Users will appear here once they start participating</p>
                     </div>
                 {/if}
+
+                <!-- Value Equation Section -->
+                <div class="mt-8 bg-gray-700/30 rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h3 class="text-xl font-bold text-white mb-2">Value Equation</h3>
+                            <p class="text-gray-400 text-sm">Current scoring weights used to calculate user rankings</p>
+                        </div>
+                        {#if isEditingEquation}
+                            <div class="flex items-center gap-2">
+                                <button 
+                                    on:click={cancelEditing}
+                                    class="inline-flex items-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors text-sm font-medium"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                    Cancel
+                                </button>
+                                <button 
+                                    on:click={saveEquation}
+                                    class="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                    Save
+                                </button>
+                            </div>
+                        {:else}
+                            <button 
+                                on:click={() => {
+                                    editingEquation = { ...equation };
+                                    isEditingEquation = true;
+                                }}
+                                class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors text-sm font-medium"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                                Edit Equation
+                            </button>
+                        {/if}
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <!-- Tasks Initiated -->
+                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.initiated > 0 ? '' : 'opacity-50'}">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium {equation.initiated > 0 ? 'text-gray-300' : 'text-gray-400'}">Tasks Initiated</span>
+                                <span class="text-xs {equation.initiated > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                            </div>
+                            {#if isEditingEquation}
+                                <div class="flex items-center gap-2">
+                                    <button 
+                                        on:click={() => adjustValue('initiated', -1)}
+                                        class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                                        </svg>
+                                    </button>
+                                    <input 
+                                        type="number" 
+                                        bind:value={editingEquation.initiated}
+                                        min="0"
+                                        step="0.1"
+                                        class="w-16 text-center bg-gray-700 text-blue-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-blue-400 focus:outline-none"
+                                    />
+                                    <button 
+                                        on:click={() => adjustValue('initiated', 1)}
+                                        class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            {:else}
+                                <div class="text-2xl font-bold {equation.initiated > 0 ? 'text-blue-400' : 'text-gray-500'}">{equation.initiated}</div>
+                            {/if}
+                            <div class="text-xs {equation.initiated > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per initiated task</div>
+                            {#if equation.initiated === 0}
+                                <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
+                            {/if}
+                        </div>
+
+                        <!-- Tasks Completed -->
+                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.completed > 0 ? '' : 'opacity-50'}">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium {equation.completed > 0 ? 'text-gray-300' : 'text-gray-400'}">Tasks Completed</span>
+                                <span class="text-xs {equation.completed > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                            </div>
+                            {#if isEditingEquation}
+                                <div class="flex items-center gap-2">
+                                    <button 
+                                        on:click={() => adjustValue('completed', -1)}
+                                        class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                                        </svg>
+                                    </button>
+                                    <input 
+                                        type="number" 
+                                        bind:value={editingEquation.completed}
+                                        min="0"
+                                        step="0.1"
+                                        class="w-16 text-center bg-gray-700 text-green-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-green-400 focus:outline-none"
+                                    />
+                                    <button 
+                                        on:click={() => adjustValue('completed', 1)}
+                                        class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            {:else}
+                                <div class="text-2xl font-bold {equation.completed > 0 ? 'text-green-400' : 'text-gray-500'}">{equation.completed}</div>
+                            {/if}
+                            <div class="text-xs {equation.completed > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per completed task</div>
+                            {#if equation.completed === 0}
+                                <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
+                            {/if}
+                        </div>
+
+                        <!-- Sent -->
+                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.sent > 0 ? '' : 'opacity-50'}">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium {equation.sent > 0 ? 'text-gray-300' : 'text-gray-400'}">Appreciation Sent</span>
+                                <span class="text-xs {equation.sent > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                            </div>
+                            {#if isEditingEquation}
+                                <div class="flex items-center gap-2">
+                                    <button 
+                                        on:click={() => adjustValue('sent', -1)}
+                                        class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                                        </svg>
+                                    </button>
+                                    <input 
+                                        type="number" 
+                                        bind:value={editingEquation.sent}
+                                        min="0"
+                                        step="0.1"
+                                        class="w-16 text-center bg-gray-700 text-purple-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-purple-400 focus:outline-none"
+                                    />
+                                    <button 
+                                        on:click={() => adjustValue('sent', 1)}
+                                        class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            {:else}
+                                <div class="text-2xl font-bold {equation.sent > 0 ? 'text-purple-400' : 'text-gray-500'}">{equation.sent}</div>
+                            {/if}
+                            <div class="text-xs {equation.sent > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per appreciation sent</div>
+                            {#if equation.sent === 0}
+                                <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
+                            {/if}
+                        </div>
+
+                        <!-- Received -->
+                        <div class="bg-gray-600/50 rounded-xl p-4 {equation.received > 0 ? '' : 'opacity-50'}">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium {equation.received > 0 ? 'text-gray-300' : 'text-gray-400'}">Appreciation Received</span>
+                                <span class="text-xs {equation.received > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                            </div>
+                            {#if isEditingEquation}
+                                <div class="flex items-center gap-2">
+                                    <button 
+                                        on:click={() => adjustValue('received', -1)}
+                                        class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                                        </svg>
+                                    </button>
+                                    <input 
+                                        type="number" 
+                                        bind:value={editingEquation.received}
+                                        min="0"
+                                        step="0.1"
+                                        class="w-16 text-center bg-gray-700 text-orange-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-orange-400 focus:outline-none"
+                                    />
+                                    <button 
+                                        on:click={() => adjustValue('received', 1)}
+                                        class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            {:else}
+                                <div class="text-2xl font-bold {equation.received > 0 ? 'text-orange-400' : 'text-gray-500'}">{equation.received}</div>
+                            {/if}
+                            <div class="text-xs {equation.received > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per appreciation received</div>
+                            {#if equation.received === 0}
+                                <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
+                            {/if}
+                        </div>
+                    </div>
+
+                    <!-- Currency Weights -->
+                    {#if availableCurrencies.length > 0}
+                        <div class="mt-6">
+                            <h4 class="text-sm font-medium text-gray-400 mb-3">Currency Weights</h4>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {#each availableCurrencies as currency}
+                                    <div class="bg-gray-600/50 rounded-xl p-4 {equation.currencies[currency] > 0 ? '' : 'opacity-50'}">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <span class="text-sm font-medium {equation.currencies[currency] > 0 ? 'text-gray-300' : 'text-gray-400'}">{currency.toUpperCase()}</span>
+                                            <span class="text-xs {equation.currencies[currency] > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                        </div>
+                                        {#if isEditingEquation}
+                                            <div class="flex items-center gap-2">
+                                                <button 
+                                                    on:click={() => adjustCurrencyWeight(currency, -1)}
+                                                    class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                                >
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                                                    </svg>
+                                                </button>
+                                                <input 
+                                                    type="number" 
+                                                    bind:value={editingEquation.currencies[currency]}
+                                                    min="0"
+                                                    step="0.1"
+                                                    class="w-16 text-center bg-gray-700 text-emerald-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-emerald-400 focus:outline-none"
+                                                />
+                                                <button 
+                                                    on:click={() => adjustCurrencyWeight(currency, 1)}
+                                                    class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                                >
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        {:else}
+                                            <div class="text-2xl font-bold {equation.currencies[currency] > 0 ? 'text-emerald-400' : 'text-gray-500'}">{equation.currencies[currency] || 0}</div>
+                                        {/if}
+                                        <div class="text-xs {equation.currencies[currency] > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per {currency} balance</div>
+                                        {#if !equation.currencies[currency] || equation.currencies[currency] === 0}
+                                            <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
+                                        {/if}
+                                    </div>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
+
+                    <!-- Additional Metrics -->
+                    <div class="mt-6">
+                        <h4 class="text-sm font-medium text-gray-400 mb-3">Additional Metrics</h4>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <!-- Hours -->
+                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.hours > 0 ? '' : 'opacity-50'}">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-sm font-medium {equation.hours > 0 ? 'text-gray-300' : 'text-gray-400'}">Hours</span>
+                                    <span class="text-xs {equation.hours > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                </div>
+                                {#if isEditingEquation}
+                                    <div class="flex items-center gap-2">
+                                        <button 
+                                            on:click={() => adjustValue('hours', -1)}
+                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        >
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                                            </svg>
+                                        </button>
+                                        <input 
+                                            type="number" 
+                                            bind:value={editingEquation.hours}
+                                            min="0"
+                                            step="0.1"
+                                            class="w-16 text-center bg-gray-700 text-yellow-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-yellow-400 focus:outline-none"
+                                        />
+                                        <button 
+                                            on:click={() => adjustValue('hours', 1)}
+                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        >
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                {:else}
+                                    <div class="text-2xl font-bold {equation.hours > 0 ? 'text-yellow-400' : 'text-gray-500'}">{equation.hours}</div>
+                                {/if}
+                                <div class="text-xs {equation.hours > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per hour</div>
+                                {#if equation.hours === 0}
+                                    <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
+                                {/if}
+                            </div>
+
+                            <!-- Collaboration -->
+                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.collaboration > 0 ? '' : 'opacity-50'}">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-sm font-medium {equation.collaboration > 0 ? 'text-gray-300' : 'text-gray-400'}">Collaboration</span>
+                                    <span class="text-xs {equation.collaboration > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                </div>
+                                {#if isEditingEquation}
+                                    <div class="flex items-center gap-2">
+                                        <button 
+                                            on:click={() => adjustValue('collaboration', -1)}
+                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        >
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                                            </svg>
+                                        </button>
+                                        <input 
+                                            type="number" 
+                                            bind:value={editingEquation.collaboration}
+                                            min="0"
+                                            step="0.1"
+                                            class="w-16 text-center bg-gray-700 text-teal-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-teal-400 focus:outline-none"
+                                        />
+                                        <button 
+                                            on:click={() => adjustValue('collaboration', 1)}
+                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        >
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                {:else}
+                                    <div class="text-2xl font-bold {equation.collaboration > 0 ? 'text-teal-400' : 'text-gray-500'}">{equation.collaboration}</div>
+                                {/if}
+                                <div class="text-xs {equation.collaboration > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per collaboration</div>
+                                {#if equation.collaboration === 0}
+                                    <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
+                                {/if}
+                            </div>
+
+                            <!-- Wants -->
+                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.wants > 0 ? '' : 'opacity-50'}">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-sm font-medium {equation.wants > 0 ? 'text-gray-300' : 'text-gray-400'}">Wants</span>
+                                    <span class="text-xs {equation.wants > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                </div>
+                                {#if isEditingEquation}
+                                    <div class="flex items-center gap-2">
+                                        <button 
+                                            on:click={() => adjustValue('wants', -1)}
+                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        >
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                                            </svg>
+                                        </button>
+                                        <input 
+                                            type="number" 
+                                            bind:value={editingEquation.wants}
+                                            min="0"
+                                            step="0.1"
+                                            class="w-16 text-center bg-gray-700 text-pink-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-pink-400 focus:outline-none"
+                                        />
+                                        <button 
+                                            on:click={() => adjustValue('wants', 1)}
+                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        >
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                {:else}
+                                    <div class="text-2xl font-bold {equation.wants > 0 ? 'text-pink-400' : 'text-gray-500'}">{equation.wants}</div>
+                                {/if}
+                                <div class="text-xs {equation.wants > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per want</div>
+                                {#if equation.wants === 0}
+                                    <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
+                                {/if}
+                            </div>
+
+                            <!-- Offers -->
+                            <div class="bg-gray-600/50 rounded-xl p-4 {equation.offers > 0 ? '' : 'opacity-50'}">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-sm font-medium {equation.offers > 0 ? 'text-gray-300' : 'text-gray-400'}">Offers</span>
+                                    <span class="text-xs {equation.offers > 0 ? 'text-gray-400' : 'text-gray-500'}">Weight</span>
+                                </div>
+                                {#if isEditingEquation}
+                                    <div class="flex items-center gap-2">
+                                        <button 
+                                            on:click={() => adjustValue('offers', -1)}
+                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        >
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
+                                            </svg>
+                                        </button>
+                                        <input 
+                                            type="number" 
+                                            bind:value={editingEquation.offers}
+                                            min="0"
+                                            step="0.1"
+                                            class="w-16 text-center bg-gray-700 text-indigo-400 text-xl font-bold rounded-lg border border-gray-500 focus:border-indigo-400 focus:outline-none"
+                                        />
+                                        <button 
+                                            on:click={() => adjustValue('offers', 1)}
+                                            class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        >
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                {:else}
+                                    <div class="text-2xl font-bold {equation.offers > 0 ? 'text-indigo-400' : 'text-gray-500'}">{equation.offers}</div>
+                                {/if}
+                                <div class="text-xs {equation.offers > 0 ? 'text-gray-400' : 'text-gray-500'} mt-1">Points per offer</div>
+                                {#if equation.offers === 0}
+                                    <div class="text-xs text-gray-500 mt-1">⚠️ Not used in scoring</div>
+                                {/if}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 text-xs text-gray-500">
+                        <p>💡 <strong>Tip:</strong> {#if isEditingEquation}Click the arrows or type directly to adjust weights. Higher weights give more importance to that metric.{:else}Click "Edit Equation" to adjust these weights and change how user scores are calculated.{/if}</p>
+                    </div>
+                </div>
             {/if}
         </div>
     </div>

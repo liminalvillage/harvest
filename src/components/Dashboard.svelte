@@ -307,7 +307,7 @@
     </div>
 
     <!-- Secondary Stats Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
         <!-- Proposals Card -->
         <a
             href={`/${holonID}/proposals`}
@@ -406,6 +406,25 @@
                     <div class="flex-1">
                         <h3 class="text-lg font-semibold text-white group-hover:text-orange-400 transition-colors">Federation</h3>
                         <p class="text-sm text-gray-400">Configure data sharing</p>
+                    </div>
+                </div>
+            </div>
+        </a>
+
+        <!-- Settings Card -->
+        <a
+            href={`/${holonID}/settings`}
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 p-6 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-105 relative overflow-hidden"
+        >
+            <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative z-10">
+                <div class="flex items-center space-x-4">
+                    <div class="p-3 bg-emerald-500 bg-opacity-20 rounded-xl">
+                        <i class="fas fa-cog text-xl text-emerald-400"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-white group-hover:text-emerald-400 transition-colors">Settings</h3>
+                        <p class="text-sm text-gray-400">Configure holon</p>
                     </div>
                 </div>
             </div>

@@ -54,6 +54,24 @@
 		}
 	}
 
+	// Function to save visited holon
+	async function saveVisitedHolon(holonId: string, holonName: string) {
+		const walletAddr = getWalletAddress();
+		if (holonId && holonId !== 'undefined' && holonId !== 'null' && holonId.trim() !== '') {
+			try {
+				await addVisitedHolon(walletAddr, holonId, holonName, 'personal');
+				console.log(`Saved visited holon from TopBar: ${holonId}`);
+			} catch (err) {
+				console.warn('Failed to save visited holon from TopBar:', err);
+			}
+		}
+	}
+
+	// Track if we've already processed the current ID to prevent loops
+	let processedHolonId = '';
+	let isInitialized = false;
+
+	// Initialize on mount
 	onMount(() => {
 		// Ensure auto-transition is off by default when TopBar loads
 		autoTransitionEnabled.set(false);
@@ -64,6 +82,17 @@
 			window.addEventListener('touchstart', handleActivity);
 			window.addEventListener('touchmove', handleActivity);
 			window.addEventListener('scroll', handleActivity);
+		}
+
+		// Set up initial state
+		isInitialized = true;
+		
+		// Process initial ID if available
+		const initialId = $page.params.id;
+		if (initialId && initialId !== 'undefined' && initialId !== 'null' && initialId.trim() !== '') {
+			ID.set(initialId);
+			processedHolonId = initialId;
+			updateCurrentHolonName(initialId);
 		}
 	});
 
@@ -97,44 +126,27 @@
 		}
 	}
 
-	// Function to save visited holon
-	async function saveVisitedHolon(holonId: string, holonName: string) {
-		const walletAddr = getWalletAddress();
-		if (holonId && holonId !== 'undefined' && holonId !== 'null' && holonId.trim() !== '') {
-			try {
-				await addVisitedHolon(walletAddr, holonId, holonName, 'personal');
-				console.log(`Saved visited holon from TopBar: ${holonId}`);
-			} catch (err) {
-				console.warn('Failed to save visited holon from TopBar:', err);
+	// Handle URL parameter changes - only process once
+	$: {
+		const storedHolonID = $page.params.id;
+		if (storedHolonID && storedHolonID !== 'undefined' && storedHolonID !== 'null' && storedHolonID.trim() !== '' && isInitialized) {
+			// Only update if the ID actually changed
+			if (processedHolonId !== storedHolonID) {
+				ID.set(storedHolonID);
+				processedHolonId = storedHolonID;
+				updateCurrentHolonName(storedHolonID);
 			}
 		}
 	}
 
-	// Reactive statement to set ID from page params
-	// Handle URL parameter changes with debouncing
-	let urlUpdateTimeout: NodeJS.Timeout;
-	$: {
-		const storedHolonID = $page.params.id;
-		if (storedHolonID && storedHolonID !== 'undefined' && storedHolonID !== 'null' && storedHolonID.trim() !== '') {
-			// Clear any pending update
-			if (urlUpdateTimeout) clearTimeout(urlUpdateTimeout);
-			
-			// Debounce the ID store update to avoid rapid changes
-			urlUpdateTimeout = setTimeout(() => {
-				ID.set(storedHolonID);
-			}, 50);
-		}
-	}
-	// Handle ID store changes with debouncing
-	let idUpdateTimeout: NodeJS.Timeout;
-	$: if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '') {
+	// Handle ID store changes - only process once and save visited holon
+	$: if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '' && isInitialized) {
 		showToast = false;
 		
-		// Clear any pending update
-		if (idUpdateTimeout) clearTimeout(idUpdateTimeout);
-		
-		// Debounce the updates to avoid rapid changes
-		idUpdateTimeout = setTimeout(() => {
+		// Only process if this is a new ID
+		if (processedHolonId !== $ID) {
+			processedHolonId = $ID;
+			
 			// Always try to resolve the holon name when we have a valid ID
 			updateCurrentHolonName($ID);
 			
@@ -145,9 +157,8 @@
 				saveVisitedHolon($ID, holonName);
 			}
 			
-			// Only update route if the ID actually changed AND we're not on a primary page
-			// AND we're not already on a valid path for this holon
-			if (holonID !== $ID && $page.url.pathname !== '/') {
+			// Only update route if we're not on a primary page
+			if ($page.url.pathname !== '/') {
 				// Check if we're already on a valid path for this holon
 				const currentPath = $page.url.pathname;
 				const expectedPath = `/${$ID}`;
@@ -164,18 +175,15 @@
 					holonID = $ID;
 				}
 			}
-		}, 100);
-	} else {
-		// If ID becomes undefined, don't redirect - let the URL determine the page
-		// This prevents redirect loops
+		}
 	}
 
 	function updateRoute(id: string) {
 		if (!id || id === '' || id === 'undefined' || id === 'null' || id.trim() === '') {
 			// If no valid ID, redirect to splash screen only if not already there
-					if (browser && $page.url.pathname !== '/') {
-			goto('/');
-		}
+			if (browser && $page.url.pathname !== '/') {
+				goto('/');
+			}
 			return;
 		}
 		

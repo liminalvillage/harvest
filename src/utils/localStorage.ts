@@ -33,6 +33,10 @@ export interface ClickedHolon {
     visitCount: number;
 }
 
+// Simple deduplication to prevent repeated calls
+const recentVisits = new Map<string, number>();
+const VISIT_DEBOUNCE_MS = 5000; // 5 seconds
+
 // Personal Holons Management
 export function savePersonalHolons(holons: PersonalHolon[]) {
     try {
@@ -193,11 +197,31 @@ export function addClickedHolon(walletAddress: string | null, holonId: string, h
     }
 }
 
-// Add visited holon (enhanced version)
+// Add visited holon (enhanced version with deduplication)
 export function addVisitedHolon(walletAddress: string | null, holonId: string, holonName: string, source: 'global' | 'navigator' | 'personal' | 'federation' = 'personal') {
     try {
-        const visitedHolons = loadVisitedHolons(walletAddress);
         const now = Date.now();
+        const visitKey = `${walletAddress || 'anonymous'}_${holonId}`;
+        
+        // Check if we recently visited this holon
+        const lastVisit = recentVisits.get(visitKey);
+        if (lastVisit && (now - lastVisit) < VISIT_DEBOUNCE_MS) {
+            console.log(`Skipping duplicate visit to ${holonId} (visited ${now - lastVisit}ms ago)`);
+            return true;
+        }
+        
+        // Update recent visits
+        recentVisits.set(visitKey, now);
+        
+        // Clean up old entries (older than 1 minute)
+        const oneMinuteAgo = now - 60000;
+        for (const [key, timestamp] of recentVisits.entries()) {
+            if (timestamp < oneMinuteAgo) {
+                recentVisits.delete(key);
+            }
+        }
+        
+        const visitedHolons = loadVisitedHolons(walletAddress);
         
         // Check if already in visited list
         const existingIndex = visitedHolons.findIndex(h => h.id === holonId);

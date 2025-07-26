@@ -83,6 +83,11 @@ export const data = [
 		title: 'Federation',
 		icon: FederationIcon,
 		link: '/federation'
+	},
+	{
+		title: 'Settings',
+		icon: SettingsIcon,
+		link: '/settings'
 	}
 	// {
 	// 	title: 'Documentation',

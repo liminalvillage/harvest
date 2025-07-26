@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
+    import { page } from "$app/stores";
     import Schedule from "./ScheduleWidget.svelte";
     import HoloSphere from "holosphere";
 
@@ -14,11 +15,16 @@
         items: ChecklistItem[];
         creator?: string;
         created?: Date;
+        questId?: string; // Optional property to indicate if checklist is attached to a quest
     }
 
     const holosphere = getContext("holosphere") as HoloSphere;
+    let holonID: string = $page.params.id;
+    let unsubscribe: () => void;
+    let checklistsUnsubscribe: (() => void) | undefined;
+    let isLoading = true;
+    let connectionReady = false;
 
-    $: holonID = $ID;
     let checklists: Record<string, Checklist> = {};
     let selectedChecklist: string | null = null;
 
@@ -34,22 +40,156 @@
     let dialogElement: HTMLDialogElement;
 
     onMount(() => {
-        ID.subscribe((value) => {
-            holonID = value;
-            subscribeToChecklists();
-        });
+        // Initialize with URL parameter first
+        const urlId = $page.params.id;
+        if (urlId && urlId !== 'undefined' && urlId !== 'null' && urlId.trim() !== '') {
+            holonID = urlId;
+            // Update the ID store to keep them in sync
+            ID.set(urlId);
+        }
+
+        // Wait for holosphere to be ready before proceeding
+        const checkConnection = async () => {
+            if (!holosphere) {
+                setTimeout(checkConnection, 100);
+                return;
+            }
+            
+            // Add a small delay to ensure the connection is stable
+            await new Promise(resolve => setTimeout(resolve, 200));
+            connectionReady = true;
+            
+            // Set up subscription to ID store with debouncing
+            let updateTimeout: NodeJS.Timeout;
+            unsubscribe = ID.subscribe((value) => {
+                if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
+                    // Clear any pending update
+                    if (updateTimeout) clearTimeout(updateTimeout);
+                    
+                    // Debounce the update to avoid rapid changes
+                    updateTimeout = setTimeout(() => {
+                        if (value !== holonID) {
+                            holonID = value;
+                            fetchData();
+                        }
+                    }, 100);
+                }
+            });
+
+            // Initial fetch if we have an ID
+            if (holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
+                fetchData();
+            }
+        };
+        
+        checkConnection();
+
+        // Cleanup subscription on unmount
+        return () => {
+            if (unsubscribe) unsubscribe();
+            if (checklistsUnsubscribe) checklistsUnsubscribe();
+        };
     });
 
-    function subscribeToChecklists(): void {
+    // Watch for page ID changes with debouncing
+    let pageUpdateTimeout: NodeJS.Timeout;
+    $: {
+        const newId = $page.params.id;
+        if (newId && newId !== holonID && connectionReady) {
+            // Check if the new ID is valid
+            if (newId !== 'undefined' && newId !== 'null' && newId.trim() !== '') {
+                // Clear any pending update
+                if (pageUpdateTimeout) clearTimeout(pageUpdateTimeout);
+                
+                // Debounce the update to avoid rapid changes
+                pageUpdateTimeout = setTimeout(() => {
+                    holonID = newId;
+                    // Update the ID store to keep them in sync
+                    ID.set(newId);
+                    if (holosphere) {
+                        fetchData();
+                    }
+                }, 100);
+            }
+        }
+    }
+
+    async function fetchData(retryCount = 0) {
+        if (!holonID || !holosphere || !connectionReady || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
+            return;
+        }
+        
+        isLoading = true;
+        
+        try {
+            console.log(`Fetching checklists for holon: ${holonID}`);
+            
+            // Fetch checklists data with timeout
+            const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+                );
+                return Promise.race([promise, timeoutPromise]);
+            };
+
+            const checklistsResult = await fetchWithTimeout(holosphere.getAll(holonID, "checklists"), 5000);
+            
+            // Process results safely and filter out quest-attached checklists
+            const checklistsData = checklistsResult || {};
+            const filteredChecklists: Record<string, Checklist> = {};
+            
+            // Filter out checklists that are attached to quests
+            Object.entries(checklistsData).forEach(([key, checklist]) => {
+                const typedChecklist = checklist as Checklist;
+                if (!typedChecklist.questId) {
+                    filteredChecklists[key] = typedChecklist;
+                }
+            });
+            
+            checklists = filteredChecklists;
+
+            console.log(`Successfully fetched checklists for holon ${holonID}:`, Object.keys(filteredChecklists).length, 'checklists (filtered from', Object.keys(checklistsData).length, 'total)');
+
+            // Set up subscription after successful fetch
+            await subscribeToChecklists();
+
+        } catch (error: any) {
+            console.error('Error fetching checklists data:', error);
+            
+            // Retry on network errors up to 3 times with exponential backoff
+            if (retryCount < 3) {
+                const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+                console.log(`Retrying checklists fetch in ${delay}ms (attempt ${retryCount + 1}/3)`);
+                setTimeout(() => fetchData(retryCount + 1), delay);
+                return;
+            }
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    async function subscribeToChecklists(): Promise<void> {
+        // Clear existing subscription
+        if (checklistsUnsubscribe) {
+            checklistsUnsubscribe();
+            checklistsUnsubscribe = undefined;
+        }
+        
+        // Reset checklists to prevent duplicates
         checklists = {};
-        if (holosphere && holonID) {
-            holosphere.subscribe(
+        
+        if (holosphere && holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
+            const subscription = await holosphere.subscribe(
                 holonID,
                 "checklists",
                 (newItem: Checklist | null, key?: string) => {
                     if (key) {
-                        if (newItem) {
+                        if (newItem && !newItem.questId) {
+                            // Only add checklists that are not attached to quests
                             checklists[key] = newItem;
+                        } else if (newItem && newItem.questId) {
+                            // Remove quest-attached checklists if they exist
+                            delete checklists[key];
                         } else {
                             delete checklists[key];
                         }
@@ -57,6 +197,7 @@
                     }
                 }
             );
+            checklistsUnsubscribe = subscription.unsubscribe;
         }
     }
 
@@ -161,6 +302,14 @@
     }
 </script>
 
+{#if isLoading && !connectionReady}
+<div class="flex items-center justify-center min-h-screen">
+    <div class="text-center">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+        <p class="text-gray-400">Connecting to holosphere...</p>
+    </div>
+</div>
+{:else}
 <div class="flex gap-6">
     <!-- Main Checklist Content -->
     <div class="flex-1 space-y-8">
@@ -409,6 +558,7 @@
         </div>
     {/if}
 </div>
+{/if}
 
 {#if showInput}
     <div 

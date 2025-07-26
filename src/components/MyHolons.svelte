@@ -196,22 +196,17 @@
             });
             await Promise.race([Promise.all([updatePromise, updateVisitedPromise]), updateTimeout]);
             
-            // Add current holon to visited list (only if we have a valid holon ID)
-            if (currentHolonId && currentHolonId !== '' && $walletAddress) {
-                await addVisitedHolonToSeparateList(currentHolonId);
-            }
+            // Note: Removed the duplicate call to addVisitedHolonToSeparateList here
+            // as it's already handled by TopBar component
+            
+            // Save once at the end of all loading and updates
+            savePersonalHolonsToStorage();
             
         } catch (err) {
-            error = err instanceof Error ? err.message : 'Failed to load holons';
-            console.error('Error loading holons:', err);
-            
-            // Ensure we have at least the basic data loaded
-            if (myHolons.length === 0) {
-                loadPersonalHolonsFromStorage();
-            }
+            console.error('Error loading data:', err);
+            error = err instanceof Error ? err.message : 'Failed to load data';
         } finally {
             isLoading = false;
-            loadingMessage = 'Loading holons...';
         }
     }
 
@@ -309,7 +304,7 @@
             
             if (holonsWithNames.length > 0) {
                 myHolons = holonsWithNames;
-                savePersonalHolonsToStorage();
+                // Don't save here - we'll save at the end of the entire process
             }
             
             // Now update stats asynchronously without blocking
@@ -318,7 +313,7 @@
         } catch (err) {
             console.error('Error updating holon details, restoring backup:', err);
             myHolons = backup;
-            savePersonalHolonsToStorage();
+            // Don't save here - we'll save at the end of the entire process
         }
     }
 
@@ -385,8 +380,7 @@
                 const index = myHolons.findIndex(h => h.id === holon.id);
                 if (index !== -1) {
                     myHolons[index] = updatedHolon;
-                    myHolons = [...myHolons]; // Trigger reactivity
-                    savePersonalHolonsToStorage();
+                    // Don't save here - parent function will handle saving
                 }
                 
                 console.log(`Updated stats for holon ${holon.id}:`, stats);
@@ -398,8 +392,10 @@
         // Don't await this - let it run in the background
         Promise.allSettled(statsPromises).then(() => {
             console.log('All stats updates completed');
+            // Don't save here - parent function will handle saving
         }).catch(err => {
             console.error('Some stats updates failed:', err);
+            // Don't save here - parent function will handle saving
         });
     }
 
