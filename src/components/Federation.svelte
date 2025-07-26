@@ -74,7 +74,8 @@
     let showAddDialog = false;
     let newHolonId = '';
     let newHolonName = '';
-    let selectedHolon: FederatedHolon | null = null;
+    // Remove modal state and logic
+    // Remove: let selectedHolon: FederatedHolon | null = null;
     let error = '';
     let success = '';
     let showNetworkView = false;
@@ -249,7 +250,6 @@
         if (!holosphere || !currentHolonId) return;
         
         saving = true;
-        error = '';
         
         try {
             // Re-federate with updated lens config
@@ -264,12 +264,8 @@
             
             if (success) {
                 await loadFederationData();
-                showSuccess('Lens configuration updated');
-            } else {
-                error = 'Failed to update lens configuration';
             }
         } catch (err) {
-            error = err instanceof Error ? err.message : 'Failed to update lens configuration';
             console.error('Lens config update error:', err);
         } finally {
             saving = false;
@@ -558,38 +554,35 @@
                 <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                     {#each federatedHolons as holon (holon.id)}
                         <div 
-                            class="bg-gray-800 rounded-xl p-6 border border-gray-700 hover:border-gray-600 transition-all duration-200 hover:shadow-lg"
+                            class="bg-gray-800/50 rounded-xl p-6 border border-gray-700/50 hover:border-gray-600/50 transition-all duration-300 hover:shadow-xl hover:bg-gray-800/70 backdrop-blur-sm"
                             animate:flip={{ duration: 300 }}
                             in:fly={{ y: 20, duration: 300 }}
                             out:fly={{ y: -20, duration: 200 }}
                         >
                         <!-- Holon Header -->
-                        <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center justify-between mb-6">
                             <div class="flex items-center space-x-3">
-                                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                                <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg">
                                     {(holon.name && typeof holon.name === 'string') ? holon.name.charAt(0).toUpperCase() : '?'}
                                 </div>
-                                <div>
+                                <div class="flex-1 min-w-0">
                                     <button 
                                         on:click={() => navigateToHolon(holon.id)}
-                                        class="font-semibold text-white truncate hover:text-blue-400 transition-colors text-left"
+                                        class="font-semibold text-white truncate hover:text-blue-400 transition-colors text-left block w-full"
                                         title="Navigate to {holon.name || holon.id}"
                                     >
                                         {holon.name || holon.id}
                                     </button>
-                                    <div class="flex items-center space-x-2">
-                                        <div class={`w-2 h-2 rounded-full ${getStatusColor(holon.status).replace('text-', 'bg-')}`}></div>
-                                        <span class="text-sm text-gray-400 capitalize">{holon.status}</span>
-                                        {#if holon.bidirectional}
-                                            <span class="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded-full">Bidirectional</span>
-                                        {/if}
+                                    <div class="flex items-center space-x-2 mt-1">
+                                        <div class={`w-2 h-2 rounded-full ${getStatusColor(holon.status).replace('text-', 'bg-')} shadow-sm`}></div>
+                                        <span class="text-xs text-gray-400 capitalize font-medium">{holon.status}</span>
                                     </div>
                                 </div>
                             </div>
-                            <div class="flex items-center space-x-2">
+                            <div class="flex items-center space-x-1">
                                 <button 
-                                    on:click={() => { selectedHolon = holon; }}
-                                    class="text-gray-400 hover:text-white transition-colors p-2"
+                                    on:click={() => { }}
+                                    class="text-gray-400 hover:text-blue-400 transition-colors p-2 rounded-lg hover:bg-blue-900/20"
                                     title="Configure Lenses"
                                     aria-label="Configure lenses for {holon.name || holon.id}"
                                 >
@@ -604,7 +597,7 @@
                                         e.stopPropagation();
                                         removeFederation(holon.id);
                                     }}
-                                    class="text-gray-400 hover:text-red-400 transition-colors p-2"
+                                    class="text-gray-400 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-900/20"
                                     title="Remove Federation"
                                     aria-label="Remove federation with {holon.name || holon.id}"
                                     disabled={saving}
@@ -616,50 +609,126 @@
                             </div>
                         </div>
 
-                        <!-- Lens Preview -->
-                        <div class="space-y-3">
-                            <div>
-                                <h4 class="text-sm font-medium text-gray-300 mb-2">Federated Lenses</h4>
-                                {#if holon.lensConfig.federate.length > 0}
-                                    <div class="flex flex-wrap gap-1">
-                                        {#each holon.lensConfig.federate as lens}
-                                            <span class="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded-full flex items-center space-x-1">
-                                                <span>{getLensIcon(lens)}</span>
-                                                <span>{lens}</span>
-                                            </span>
-                                        {/each}
-                                    </div>
-                                {:else}
-                                    <span class="text-xs text-gray-500">No lenses configured</span>
-                                {/if}
-                            </div>
+                        <!-- Lens Configuration Table -->
+                        <div class="mt-4">
+                            <h4 class="text-sm font-medium text-gray-300 mb-3 flex items-center">
+                                <i class="fas fa-cog mr-2 text-purple-400"></i>
+                                Lens Configuration
+                            </h4>
                             
-                            <div>
-                                <h4 class="text-sm font-medium text-gray-300 mb-2">Notification Lenses</h4>
-                                {#if holon.lensConfig.notify.length > 0}
-                                    <div class="flex flex-wrap gap-1">
-                                        {#each holon.lensConfig.notify as lens}
-                                            <span class="text-xs bg-green-900 text-green-300 px-2 py-1 rounded-full flex items-center space-x-1">
-                                                <span>{getLensIcon(lens)}</span>
-                                                <span>{lens}</span>
-                                            </span>
-                                        {/each}
-                                    </div>
-                                {:else}
-                                    <span class="text-xs text-gray-500">No notifications configured</span>
-                                {/if}
-                            </div>
+                            {#if availableLenses.length > 0}
+                                <div class="bg-gray-700/30 rounded-lg border border-gray-600/50 overflow-hidden">
+                                    <table class="w-full">
+                                        <thead>
+                                            <tr class="border-b border-gray-600/50">
+                                                <th class="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                                    Lens
+                                                </th>
+                                                <th class="text-center py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                                    <div class="flex items-center justify-center space-x-1">
+                                                        <i class="fas fa-download text-blue-400 text-xs"></i>
+                                                        <span>Inbound</span>
+                                                    </div>
+                                                </th>
+                                                <th class="text-center py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
+                                                    <div class="flex items-center justify-center space-x-1">
+                                                        <i class="fas fa-upload text-green-400 text-xs"></i>
+                                                        <span>Outbound</span>
+                                                    </div>
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-600/30">
+                                            {#each availableLenses as lens}
+                                                {@const isInbound = isLensInArray(lens, holon.lensConfig.federate)}
+                                                {@const isOutbound = isLensInArray(lens, holon.lensConfig.notify)}
+                                                <tr class="hover:bg-gray-700/20 transition-colors">
+                                                    <td class="py-3 px-4">
+                                                        <div class="flex items-center space-x-2">
+                                                            <span class="text-lg">{getLensIcon(lens)}</span>
+                                                            <span class="text-sm font-medium text-gray-300 capitalize">{lens}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td class="py-3 px-4 text-center">
+                                                        <button
+                                                            class="w-6 h-6 flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                                                            disabled={saving}
+                                                            aria-pressed={isInbound}
+                                                            title={isInbound ? 'Remove inbound' : 'Add inbound'}
+                                                            on:click={async (e) => {
+                                                                e.preventDefault();
+                                                                if (saving) return;
+                                                                // Toggle inbound (federate)
+                                                                let newFederate = isInbound
+                                                                    ? holon.lensConfig.federate.filter(l => normalizeLensName(l) !== normalizeLensName(lens))
+                                                                    : [...holon.lensConfig.federate, getCanonicalLensName(lens)];
+                                                                await updateLensConfig(
+                                                                    holon.id,
+                                                                    newFederate,
+                                                                    holon.lensConfig.notify
+                                                                );
+                                                            }}
+                                                        >
+                                                            {#if isInbound}
+                                                                <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                                                                    <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                                    </svg>
+                                                                </div>
+                                                            {:else}
+                                                                <div class="w-5 h-5 border border-gray-500 rounded-full bg-gray-700/50"></div>
+                                                            {/if}
+                                                        </button>
+                                                    </td>
+                                                    <td class="py-3 px-4 text-center">
+                                                        <button
+                                                            class="w-6 h-6 flex items-center justify-center rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 transition"
+                                                            disabled={saving}
+                                                            aria-pressed={isOutbound}
+                                                            title={isOutbound ? 'Remove outbound' : 'Add outbound'}
+                                                            on:click={async (e) => {
+                                                                e.preventDefault();
+                                                                if (saving) return;
+                                                                // Toggle outbound (notify)
+                                                                let newNotify = isOutbound
+                                                                    ? holon.lensConfig.notify.filter(l => normalizeLensName(l) !== normalizeLensName(lens))
+                                                                    : [...holon.lensConfig.notify, getCanonicalLensName(lens)];
+                                                                await updateLensConfig(
+                                                                    holon.id,
+                                                                    holon.lensConfig.federate,
+                                                                    newNotify
+                                                                );
+                                                            }}
+                                                        >
+                                                            {#if isOutbound}
+                                                                <div class="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                                                                    <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                                                    </svg>
+                                                                </div>
+                                                            {:else}
+                                                                <div class="w-5 h-5 border border-gray-500 rounded-full bg-gray-700/50"></div>
+                                                            {/if}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            {/each}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {:else}
+                                <div class="flex items-center justify-center py-6 px-4 bg-gray-700/30 rounded-lg border border-gray-600/50">
+                                    <span class="text-xs text-gray-500 flex items-center">
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        No lenses available
+                                    </span>
+                                </div>
+                            {/if}
                         </div>
 
-                        <!-- Quick Actions -->
-                        <div class="mt-4 pt-4 border-t border-gray-700">
-                            <button 
-                                on:click={() => { selectedHolon = holon; }}
-                                class="w-full bg-gray-700 hover:bg-gray-600 text-gray-300 py-2 rounded-lg transition-colors text-sm"
-                            >
-                                Configure Lenses
-                            </button>
-                        </div>
+
                         </div>
                     {/each}
                 </div>
@@ -1098,149 +1167,6 @@
                     </button>
                 </div>
             </form>
-        </div>
-    </div>
-{/if}
-
-<!-- Lens Configuration Modal -->
-{#if selectedHolon}
-    <div 
-        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-        on:click={(e) => e.target === e.currentTarget && (selectedHolon = null)}
-        on:keydown={(e) => {
-            if (e.key === 'Escape') {
-                selectedHolon = null;
-            }
-        }}
-        role="dialog"
-        aria-modal="true"
-        tabindex="-1"
-        transition:fade={{ duration: 200 }}
-    >
-        <div 
-            class="bg-gray-800 rounded-xl w-full max-w-2xl max-h-[80vh] overflow-hidden"
-            transition:fly={{ y: -50, duration: 300 }}
-        >
-            <!-- Modal Header -->
-            <div class="flex items-center justify-between p-6 border-b border-gray-700">
-                <div>
-                    <h2 class="text-xl font-semibold text-white">Configure Lenses</h2>
-                    <p class="text-sm text-gray-400">Federation with {selectedHolon.name || selectedHolon.id}</p>
-                </div>
-                <button 
-                    on:click={() => selectedHolon = null}
-                    class="text-gray-400 hover:text-white transition-colors"
-                    aria-label="Close lens configuration dialog"
-                >
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                </button>
-            </div>
-
-            <!-- Modal Content -->
-            <div class="p-6 overflow-y-auto max-h-[60vh]">
-                <div class="space-y-6">
-                    <!-- Federate Section -->
-                    <div>
-                        <h3 class="text-lg font-medium text-white mb-3">Data Federation</h3>
-                        <p class="text-sm text-gray-400 mb-4">Select which lenses to share data from this holon.</p>
-                        
-                        <div class="grid grid-cols-2 gap-3">
-                            {#each availableLenses as lens}
-                                {@const isSelected = isLensInArray(lens, selectedHolon.lensConfig.federate)}
-                                <label class="flex items-center space-x-3 p-3 rounded-lg border border-gray-600 hover:border-gray-500 transition-colors cursor-pointer {isSelected ? 'bg-blue-900/30 border-blue-600' : ''}">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={isSelected}
-                                        on:change={(e) => {
-                                            if (selectedHolon && e.currentTarget.checked) {
-                                                // Remove any existing case variants first
-                                                selectedHolon.lensConfig.federate = selectedHolon.lensConfig.federate.filter(l => normalizeLensName(l) !== normalizeLensName(lens));
-                                                // Add the canonical version (lowercase)
-                                                selectedHolon.lensConfig.federate = [...selectedHolon.lensConfig.federate, getCanonicalLensName(lens)];
-                                            } else if (selectedHolon) {
-                                                selectedHolon.lensConfig.federate = selectedHolon.lensConfig.federate.filter(l => normalizeLensName(l) !== normalizeLensName(lens));
-                                            }
-                                        }}
-                                        class="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
-                                    />
-                                    <div class="flex items-center space-x-2">
-                                        <span class="text-lg">{getLensIcon(lens)}</span>
-                                        <span class="text-sm font-medium text-gray-300">{lens}</span>
-                                    </div>
-                                </label>
-                            {/each}
-                        </div>
-                    </div>
-
-                    <!-- Notify Section -->
-                    <div>
-                        <h3 class="text-lg font-medium text-white mb-3">Notifications</h3>
-                        <p class="text-sm text-gray-400 mb-4">Select which lenses to receive notifications about.</p>
-                        
-                        <div class="grid grid-cols-2 gap-3">
-                            {#each availableLenses as lens}
-                                {@const isSelected = isLensInArray(lens, selectedHolon.lensConfig.notify)}
-                                <label class="flex items-center space-x-3 p-3 rounded-lg border border-gray-600 hover:border-gray-500 transition-colors cursor-pointer {isSelected ? 'bg-green-900/30 border-green-600' : ''}">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={isSelected}
-                                        on:change={(e) => {
-                                            if (selectedHolon && e.currentTarget.checked) {
-                                                // Remove any existing case variants first
-                                                selectedHolon.lensConfig.notify = selectedHolon.lensConfig.notify.filter(l => normalizeLensName(l) !== normalizeLensName(lens));
-                                                // Add the canonical version (lowercase)
-                                                selectedHolon.lensConfig.notify = [...selectedHolon.lensConfig.notify, getCanonicalLensName(lens)];
-                                            } else if (selectedHolon) {
-                                                selectedHolon.lensConfig.notify = selectedHolon.lensConfig.notify.filter(l => normalizeLensName(l) !== normalizeLensName(lens));
-                                            }
-                                        }}
-                                        class="w-4 h-4 text-green-600 bg-gray-700 border-gray-600 rounded focus:ring-green-500"
-                                    />
-                                    <div class="flex items-center space-x-2">
-                                        <span class="text-lg">{getLensIcon(lens)}</span>
-                                        <span class="text-sm font-medium text-gray-300">{lens}</span>
-                                    </div>
-                                </label>
-                            {/each}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Modal Footer -->
-            <div class="flex justify-end space-x-3 p-6 border-t border-gray-700">
-                <button 
-                    on:click={() => selectedHolon = null}
-                    class="bg-gray-700 hover:bg-gray-600 text-gray-300 px-4 py-2 rounded-lg transition-colors"
-                    disabled={saving}
-                >
-                    Cancel
-                </button>
-                <button 
-                    on:click={() => {
-                        if (selectedHolon) {
-                            updateLensConfig(
-                                selectedHolon.id, 
-                                selectedHolon.lensConfig.federate, 
-                                selectedHolon.lensConfig.notify
-                            );
-                            selectedHolon = null;
-                        }
-                    }}
-                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                    disabled={saving}
-                >
-                    {#if saving}
-                        <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                        </svg>
-                    {/if}
-                    <span>{saving ? 'Saving...' : 'Save Changes'}</span>
-                </button>
-            </div>
         </div>
     </div>
 {/if}
