@@ -149,7 +149,7 @@
     // Further implementation if needed
   }
 
-  function renderHexes(map) {
+  function renderHexes(map: mapboxgl.Map): void {
     const latitudeMax = 90;
     const latitudeMin = -latitudeMax;
     const longitudeMax = 180;
@@ -163,6 +163,9 @@
     const h3res = getResolution(currentZoom);
     console.log("Resolution: " + JSON.stringify(h3res));
 
+    // Check if we're in browser environment before accessing window
+    if (typeof window === 'undefined') return;
+    
     const iw = window.innerWidth;
     const ih = window.innerHeight;
     const cUL = map.unproject([0, 0]).toArray(); // Upper left

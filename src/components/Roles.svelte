@@ -1,7 +1,7 @@
 <script lang="ts">
 	// @ts-nocheck
 
-	import { onMount, getContext } from "svelte";
+	import { onMount, onDestroy, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { browser } from "$app/environment";
 
@@ -10,11 +10,15 @@
 	import ItemModal from "./ItemModal.svelte";
 
 	/**
-	 * @type {string | any[]}
+	 * @type {Record<string, any>}
 	 */
 	let store = {};
+	/**
+	 * @type {Record<string, any>}
+	 */
 	let userStore = {};
-	$: holonID = $ID;
+	let activeHolonId: string | undefined; // Manages the current Holon ID for this component
+	let isUserStoreReady = false; // Tracks if userStore has been populated for the activeHolonId
 
 	$: roles = Object.entries(store || {});
 	let holosphere = getContext("holosphere") as HoloSphere;
@@ -37,47 +41,149 @@
 		}
 	}
 
-	onMount(() => {
-		ID.subscribe((value) => {
-			holonID = value;
-			subscribeToroles();
-		});
-	});
+	let idStoreUnsubscribe: (() => void) | undefined;
+	let rolesSubscriptionUnsubscribe: (() => void) | undefined;
+	let usersSubscriptionUnsubscribe: (() => void) | undefined;
 
-	// Suscribe to changes in the specified holon
-	async function subscribeToroles() {
+	async function loadAndSubscribeData(holonIdToLoad: string) {
+		console.log(`[Roles.svelte] loadAndSubscribeData called for holon: ${holonIdToLoad}`);
+		// This function is called when activeHolonId is set or changes.
+		// Ensure previous holosphere subscriptions are cleaned up before making new ones.
+		if (typeof rolesSubscriptionUnsubscribe === 'function') {
+			rolesSubscriptionUnsubscribe();
+		}
+		rolesSubscriptionUnsubscribe = undefined;
+
+		if (typeof usersSubscriptionUnsubscribe === 'function') {
+			usersSubscriptionUnsubscribe();
+		}
+		usersSubscriptionUnsubscribe = undefined;
+
+		// ALWAYS reset stores AND readiness flags before loading new data for holonIdToLoad
 		store = {};
 		userStore = {};
-		if (holosphere) {
-			holosphere.subscribe(holonID, "roles", (newrole, key) => {
-				if (newrole) {
-					try {
-						store = { ...store, [key]: newrole };
-					} catch (e) {
-						console.error("Error parsing role:", e);
+		isUserStoreReady = false;
+
+		if (!holosphere || !holonIdToLoad) {
+			console.warn("[Roles.svelte] loadAndSubscribeData called without holosphere or holonIdToLoad.");
+			return; // Nothing to do if no holosphere or id
+		}
+
+		// Fetch initial roles
+		try {
+			let initialRolesData = await holosphere.getAll(holonIdToLoad, "roles");
+			if (Array.isArray(initialRolesData)) {
+				console.warn("[Roles.svelte] holosphere.getAll('roles') returned an ARRAY. Converting to object map using 'title' as key. Ensure this key matches subscription keys.", initialRolesData);
+				store = initialRolesData.reduce((acc, role) => {
+					const roleKey = role.title; // Assuming 'title' is the unique key, matching subscription key
+					if (roleKey) {
+						acc[roleKey] = role;
+					} else {
+						console.error("[Roles.svelte] Role object from getAll is missing a 'title' for keying:", role, "Original array:", initialRolesData);
 					}
+					return acc;
+				}, {});
+			} else if (typeof initialRolesData === 'object' && initialRolesData !== null) {
+                store = initialRolesData;
+            } else {
+                console.warn("[Roles.svelte] holosphere.getAll('roles') returned unexpected data type or null. Initializing store to empty object.", initialRolesData);
+				store = {}; // Default to empty object if not array or proper object
+			}
+		} catch (e) {
+			console.error(`[Roles.svelte] Error fetching initial roles for ${holonIdToLoad}:`, e);
+			store = {}; // Reset store on error
+		}
+		console.log("[Roles.svelte] Store after initial getAll('roles') and processing:", JSON.parse(JSON.stringify(store)));
+
+		// Fetch initial users
+		try {
+			const initialUsers = await holosphere.getAll(holonIdToLoad, "users");
+			userStore = initialUsers || {}; // Assuming users will always be an object map or null
+			console.log("[Roles.svelte] User store populated:", JSON.parse(JSON.stringify(userStore)));
+					} catch (e) {
+			console.error(`[Roles.svelte] Error fetching initial users for ${holonIdToLoad}:`, e);
+			userStore = {}; // Reset store on error
+		} finally {
+			isUserStoreReady = true;
+			console.log("[Roles.svelte] isUserStoreReady set to true.");
+		}
+
+		// Subscribe to role updates
+		rolesSubscriptionUnsubscribe = holosphere.subscribe(holonIdToLoad, "roles", (newRole, key) => {
+			if (!key || key === 'undefined') {
+				console.warn(`[Roles.svelte] Subscription received update with invalid key: '${key}'. Skipping update for role:`, newRole);
+				return; 
+			}
+			console.log(`[Roles.svelte] Subscription update for holon '${holonIdToLoad}', key: '${key}'`);
+			console.log("[Roles.svelte] newRole received:", JSON.parse(JSON.stringify(newRole || {})));
+			console.log("[Roles.svelte] Store BEFORE update:", JSON.parse(JSON.stringify(store)));
+
+			if (newRole) {
+                const oldRole = store[key];
+                if (oldRole) {
+                    console.log(`[Roles.svelte] Updating existing role. Key '${key}' found in store.`);
+                } else {
+                    console.log(`[Roles.svelte] Adding new role. Key '${key}' NOT found in store (this is expected if it's truly new).`);
+                }
+				store = { ...store, [key]: newRole };
 				} else {
+				console.log(`[Roles.svelte] Deleting role with key '${key}'.`);
 					const { [key]: _, ...rest } = store;
 					store = rest;
 				}
+			console.log("[Roles.svelte] Store AFTER update:", JSON.parse(JSON.stringify(store)));
 			});
 
-			// Subscribe to users
-			holosphere.subscribe(holonID, "users", (newUser, key) => {
+		// Subscribe to user updates
+		usersSubscriptionUnsubscribe = holosphere.subscribe(holonIdToLoad, "users", (newUser, key) => {
+			if (!key || key === 'undefined') {
+				console.warn(`[Roles.svelte] Subscription received update with invalid key: '${key}' for user. Skipping update for user:`, newUser);
+				return;
+			}
 				if (newUser) {
-					try {
-						userStore[key] = newUser;
-						userStore = userStore;
-					} catch (e) {
-						console.error("Error parsing user:", e);
-					}
+				userStore = { ...userStore, [key]: newUser };
+			} else {
+				const { [key]: _, ...rest } = userStore;
+				userStore = rest;
+			}
+		});
+	}
+
+	onMount(() => {
+		// Logic for isListView from localStorage is already here and is fine.
+
+		idStoreUnsubscribe = ID.subscribe(newIdFromStore => {
+			if (newIdFromStore !== activeHolonId) { // Covers initial set, change, and clear
+				console.log(`[Roles.svelte] ID store changed. Old: ${activeHolonId}, New: ${newIdFromStore}`);
+				activeHolonId = newIdFromStore; // Update our active ID
+
+				if (activeHolonId) {
+					// Reset readiness flag here as well, loadAndSubscribeData will set it true when done
+					isUserStoreReady = false; 
+					loadAndSubscribeData(activeHolonId);
 				} else {
-					delete userStore[key];
-					userStore = userStore;
+					console.log("[Roles.svelte] ActiveHolonId cleared. Cleaning up subscriptions and stores.");
+					if (typeof rolesSubscriptionUnsubscribe === 'function') rolesSubscriptionUnsubscribe();
+					rolesSubscriptionUnsubscribe = undefined;
+					if (typeof usersSubscriptionUnsubscribe === 'function') usersSubscriptionUnsubscribe();
+					usersSubscriptionUnsubscribe = undefined;
+					store = {};
+					userStore = {};
+					isUserStoreReady = false; // Also reset here if ID is cleared
+				}
 				}
 			});
-		}
-	}
+	});
+
+	onDestroy(() => {
+		console.log("[Roles.svelte] Component destroyed. Cleaning up all subscriptions.");
+		if (typeof idStoreUnsubscribe === 'function') idStoreUnsubscribe();
+		idStoreUnsubscribe = undefined;
+		if (typeof rolesSubscriptionUnsubscribe === 'function') rolesSubscriptionUnsubscribe();
+		rolesSubscriptionUnsubscribe = undefined;
+		if (typeof usersSubscriptionUnsubscribe === 'function') usersSubscriptionUnsubscribe();
+		usersSubscriptionUnsubscribe = undefined;
+	});
 
 	// Format time for display
 	/**
@@ -334,16 +440,17 @@
 					>
 						<div class="p-2">
 							<div
-								class="p-4 rounded-3xl transition-colors"
+								class="p-4 rounded-3xl transition-colors flex flex-col items-center h-full"
 								style="background-color: {getRoleColor(
 									role
 								)}; color: white;"
 								role="button"
 								tabindex="0"
 							>
-								<div class="flex items-center justify-between">
+								<!-- Date/Time at the top -->
+								<div class="w-full flex justify-between items-center mb-2">
 									{#if role.when}
-										<span class="text-sm whitespace-nowrap">
+										<span class="text-xs opacity-80 whitespace-nowrap">
 											{formatDate(role.when)} @ {formatTime(
 												role.when
 											)}
@@ -351,55 +458,57 @@
 													role.ends
 												)}{/if}
 										</span>
+									{:else}
+										<span></span> <!-- Empty span to maintain layout if no date -->
 									{/if}
-								</div>
-								<div class="text-center mb-4 mt-5">
-									<p
-										class="text-base font-bold opacity-70 truncate"
-									>
-										{role.title}
-									</p>
+									<!-- Potential placeholder for other info if needed -->
 								</div>
 
-								{#if role.description}
-									<div
-										class="text-sm opacity-70 mb-4 line-clamp-2"
-									>
-										{role.description}
-									</div>
-								{/if}
-
-								<div class="flex justify-between pt-4">
+								<!-- Participants - Centered and Big -->
+								<div class="flex-grow flex items-center justify-center my-4">
 									{#if role.participants?.length > 0}
-										<div class="flex flex-col overflow-hidden">
-											<span class="opacity-70 font-bold text-base whitespace-nowrap mb-1">
-												🙋‍♂️ {role.participants.length}
-											</span>
-											<div class="flex -space-x-2 relative group">
+										<div class="flex -space-x-4 relative group">
 												{#each role.participants.slice(0, 3) as participant}
 													<div class="relative">
 														<img
-															class="w-6 h-6 rounded-full border-2 border-gray-300"
+														class="w-16 h-16 rounded-full border-2 border-gray-300"
 															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
 															alt={participant.username}
 														/>
-														<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
+													<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 bottom-full mb-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
 															{participant.username}
 														</div>
 													</div>
 												{/each}
 												{#if role.participants.length > 3}
-													<div class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300 relative group">
+												<div class="w-16 h-16 rounded-full bg-gray-400 flex items-center justify-center text-lg font-bold border-2 border-gray-300 relative group">
 														<span>+{role.participants.length - 3}</span>
-														<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
+													<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 bottom-full mb-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
 															{role.participants.slice(3).map((p) => p.username).join(", ")}
 														</div>
 													</div>
 												{/if}
 											</div>
+									{:else}
+										<div class="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center text-3xl opacity-50">
+											<span>👤</span>
 										</div>
 									{/if}
 								</div>
+
+								<!-- Title - Below icons -->
+								<div class="text-center mt-2 mb-1">
+									<p class="text-lg font-bold opacity-90 truncate w-full">
+										{role.title}
+									</p>
+								</div>
+
+								<!-- Description - Below title, optional -->
+								{#if role.description}
+									<div class="text-xs opacity-70 text-center line-clamp-2 mb-2">
+										{role.description}
+									</div>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -410,18 +519,38 @@
 	<Announcements />
 </div>
 
-{#if selectedRole}
+{#if selectedRole && isUserStoreReady}
 	<ItemModal
 		role={selectedRole.role}
 		roleId={selectedRole.key}
 		{userStore}
 		{holosphere}
-		holonId={holonID}
+		holonId={activeHolonId}
 		on:close={() => {
-			console.log("Closing modal");
+			console.log("[Roles.svelte] Closing ItemModal from on:close.");
 			selectedRole = null;
 		}}
+		on:deleted={(event) => {
+			const deletedRoleId = event.detail.roleId;
+			console.log(`[Roles.svelte] Role deleted event received for ID: ${deletedRoleId}`);
+			if (store[deletedRoleId]) {
+				const { [deletedRoleId]: _, ...rest } = store;
+				store = rest;
+				console.log(`[Roles.svelte] Role ${deletedRoleId} removed from local store.`);
+			}
+			selectedRole = null; // Also close the modal by resetting selectedRole
+		}}
 	/>
+{:else if selectedRole && !isUserStoreReady}
+	<div class="fixed inset-0 bg-black bg-opacity-70 z-[60] flex items-center justify-center p-4" aria-live="polite" aria-busy="true">
+		<div class="bg-gray-800 p-6 rounded-lg text-white flex items-center">
+			<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+				<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+			</svg>
+			<span>Loading user data for modal...</span>
+		</div>
+	</div>
 {/if}
 
 <style>
@@ -449,11 +578,11 @@
 	.group-hover\:visible::before {
 		content: "";
 		position: absolute;
-		top: -4px;
+		bottom: -4px; /* Changed from top: -4px for tooltips above */
 		left: 50%;
 		transform: translateX(-50%);
-		border-width: 0 4px 4px 4px;
+		border-width: 4px 4px 0 4px; /* Arrow pointing down */
 		border-style: solid;
-		border-color: transparent transparent #1f2937 transparent;
+		border-color: #1f2937 transparent transparent transparent; /* Arrow pointing down */
 	}
 </style>

@@ -14,3 +14,5 @@ radata*
 *.lock
 package-lock.json
 radata/*
+holosphere.db/*
+.netlify/*

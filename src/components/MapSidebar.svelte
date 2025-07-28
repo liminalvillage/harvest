@@ -62,7 +62,7 @@
  
 
     export let selectedLens: LensType;
-    export let hexId: string | undefined;
+    // export let hexId: string | undefined; // Prop is unused, component uses $ID store
     export let isOverlay: boolean = false; // Flag to indicate if shown as overlay
     
     let holosphere = getContext('holosphere') as HoloSphere;
