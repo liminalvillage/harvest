@@ -628,6 +628,11 @@
 										>
 											{quest.title}
 										</p>
+										{#if quest.created}
+											<p class="text-xs opacity-50 mt-1">
+												Created: {formatDate(quest.created)}
+											</p>
+										{/if}
 										{#if quest.category}
 											<p class="text-sm opacity-70 mt-1">
 												<span

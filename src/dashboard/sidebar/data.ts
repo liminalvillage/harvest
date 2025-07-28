@@ -13,6 +13,10 @@ import ShoppingIcon from './icons/ShoppingIcon.svelte';
 import ChecklistIcon from './icons/ChecklistIcon.svelte';
 import ExpensesIcon from './icons/ExpensesIcon.svelte';
 
+import FederationIcon from './icons/FederationIcon.svelte';
+import ProposalsIcon from './icons/ProposalsIcon.svelte';
+import MyHolonsIcon from './icons/MyHolonsIcon.svelte';
+
 export const data = [
 	{
 		title: 'Dashboard',
@@ -50,6 +54,11 @@ export const data = [
 		link: '/tags'
 	},
 	{
+		title: 'Proposals',
+		icon: ProposalsIcon,
+		link: '/proposals'
+	},
+	{
 		title: 'Offers & Requests',
 		icon: OffersIcon,
 		link: '/offers'
@@ -68,6 +77,17 @@ export const data = [
 		title: 'Status',
 		icon: StatusIcon,
 		link: '/status'
+	},
+
+	{
+		title: 'Federation',
+		icon: FederationIcon,
+		link: '/federation'
+	},
+	{
+		title: 'Settings',
+		icon: SettingsIcon,
+		link: '/settings'
 	}
 	// {
 	// 	title: 'Documentation',

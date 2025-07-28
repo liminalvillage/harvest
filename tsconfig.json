@@ -1,7 +1,7 @@
 {
 	"extends": "./.svelte-kit/tsconfig.json",
 	"compilerOptions": {
-		"types": ["svelte", "vite/client"],
+		"types": ["svelte", "vite/client", "node"],
 		"allowJs": true,
 		"checkJs": true,
 		"esModuleInterop": true,
@@ -10,8 +10,10 @@
 		"skipLibCheck": true,
 		"sourceMap": true,
 		"strict": true,
-		"verbatimModuleSyntax": true,
-		"moduleResolution": "bundler",
+		"verbatimModuleSyntax": false,
+		"moduleResolution": "node",
+		"module": "esnext",
+		"target": "esnext",
 		"isolatedModules": true,
 		"allowSyntheticDefaultImports": true,
 		"noImplicitAny": false,

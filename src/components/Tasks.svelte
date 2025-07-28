@@ -2,12 +2,16 @@
 	
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
+	import { page } from "$app/stores";
 	import { formatDate, formatTime } from "../utils/date";
 	import HoloSphere from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
 	import TaskModal from "./TaskModal.svelte";
 	import CanvasView from "./CanvasView.svelte";
 	import { writable } from 'svelte/store';
+	import Fireworks from "./Fireworks.svelte";
+	import Confetti from "./Confetti.svelte";
+	import { getHologramSourceName } from "../utils/holonNames";
 
 	interface Quest {
 		id: string;
@@ -15,7 +19,7 @@
 		description?: string;
 		date?: string;
 		when?: string;
-		status: 'ongoing' | 'completed';
+		status: 'ongoing' | 'completed' | 'recurring' | 'repeating';
 		category?: string;
 		participants: Array<{ 
 			id: string; 
@@ -26,10 +30,20 @@
 		appreciation: string[];
 		location?: string;
 		ends?: string;
-		type: 'task' | 'quest' | 'event';
-		position?: {
-			x: number;
-			y: number;
+		type?: 'task' | 'quest' | 'event' | 'proposal' | 'recurring';
+		orderIndex?: number;
+		position?: { x: number; y: number };
+		dependsOn?: string[];
+		initiator?: {
+			id: string;
+			username: string;
+			firstName?: string;
+			lastName?: string;
+		};
+		created?: string;
+		_meta?: {
+			resolvedFromHologram?: boolean;
+			hologramSoul?: string;
 		};
 	}
 
@@ -47,6 +61,7 @@
 	// Initialize with safe defaults
 	let viewMode: 'list' | 'canvas' = 'list';
 	let showCompleted = false;
+	let showHolograms = true;
 	let sortedQuests: [string, Quest][] = [];
 	let filteredQuests: [string, Quest][] = [];
 
@@ -68,6 +83,8 @@
 	// Add initialization state tracking
 	let isInitialized = false;
 	let isSubscribed = false;
+	let isLoading = true;
+	let connectionReady = false;
 
 	// Add subscription state tracking
 	let subscriptionState = {
@@ -76,104 +93,26 @@
 		pendingUpdates: new Map<string, Quest>()
 	};
 
-	// Remove debounce helper and throttled store updates
-	function updateStore(newStore: Store) {
-		store = newStore;
-		quests = Object.entries(store);
-	}
+	// Add state for animations
+	let showFireworks = false;
+	let showConfetti = false;
 
-	// Modify the subscribe function to use immediate updates
-	function subscribe() {
-		if (!holosphere || !holonID) return;
-		
-		// Don't resubscribe if already subscribed to this holon
-		if (subscriptionState.currentHolonID === holonID) return;
-		
-		// Clear existing store and subscription
-		if (questsUnsubscribe) {
-			questsUnsubscribe();
-			questsUnsubscribe = undefined;
-		}
-		
-		store = {};
-		quests = [];
-		
-		try {
-			// Update subscription state
-			subscriptionState.currentHolonID = holonID;
-			
-			const off = holosphere.subscribe(holonID, "quests", (newquest: Quest | null, key?: string) => {
-				// Update store immediately
-				const newStore = { ...store };
-				if (newquest && key) {
-					newStore[key] = newquest;
-				} else if (key) {
-					delete newStore[key];
-				}
-				store = newStore;
-				quests = Object.entries(store);
-			});
+	// Sort state variables
+	type SortCriteria = 'created' | 'orderIndex' | 'positionX' | 'positionY';
+	let sortCriteria: SortCriteria = 'created';
+	let sortDirection: 'asc' | 'desc' = 'desc'; // Newest first
+	let sortButtonIconRotation = 0; // No rotation for calendar icon
 
-			if (typeof off === 'function') {
-				questsUnsubscribe = off;
-			}
-		} catch (error) {
-			console.error('Error setting up quest subscription:', error);
-			subscriptionState.currentHolonID = null;
-			questsUnsubscribe = undefined;
-		}
-	}
-
-	// Modify onMount to handle subscription cleanup
-	onMount(() => {
-		let mounted = true;
-		
-		// Set up ID subscription only once
-		const idSubscription = ID.subscribe((value) => {
-			if (!mounted || !value || value === subscriptionState.currentHolonID) return;
-			holonID = value;
-			subscribe();
-		});
-
-		// Load preferences
-		try {
-			const storedViewMode = localStorage.getItem('taskViewMode');
-			if (storedViewMode === 'list' || storedViewMode === 'canvas') {
-				viewMode = storedViewMode;
-			}
-			showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
-		} catch (error) {
-			console.error('Error loading preferences:', error);
-			viewMode = 'list';
-			showCompleted = false;
-		}
-
-		return () => {
-			mounted = false;
-			if (idSubscription) idSubscription();
-			if (questsUnsubscribe) questsUnsubscribe();
-			if (subscriptionState.batchTimeout) {
-				clearTimeout(subscriptionState.batchTimeout);
-			}
-			subscriptionState.pendingUpdates.clear();
-			subscriptionState.currentHolonID = null;
-		};
-	});
-
-	// Modify the reactive statements to be more efficient
-	$: {
-		if (typeof window !== 'undefined') {
-			try {
-				localStorage.setItem('taskViewMode', viewMode);
-			} catch (error) {
-				console.error('Error saving view mode:', error);
-			}
-		}
-	}
+	// SVG Paths for sort icons
+	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"; // Calendar icon
+	const orderIndexIconPath = "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"; // Heroicons bars-3
+	const directionalSortIconPath = "M12 5v14M19 12l-7 7-7-7"; // Current arrow
+	let currentIconPath = calendarIconPath; // Initial icon
 
 	// Add these variables after the existing let declarations
 	let selectedCategory = "all";
-
+	let selectedUserId = "all";
+	
 	// Compute unique categories from quests
 	$: categories = [
 		"all",
@@ -183,69 +122,195 @@
 				.map((quest: any) => quest.category)
 		),
 	];
+
+	// Compute unique users from quests
+	$: allUsers = (() => {
+		const users = new Map<string, { id: string; name: string }>();
+		
+		Object.values(store).forEach(quest => {
+			if (quest.participants) {
+				quest.participants.forEach(p => {
+					if (p.id && !users.has(p.id)) {
+						const name = (p.firstName ? `${p.firstName} ${p.lastName || ''}` : p.username).trim();
+						if (name) { // Only add users with a name
+							users.set(p.id, { 
+								id: p.id, 
+								name: name
+							});
+						}
+					}
+				});
+			}
+		});
+		
+		const userArray = Array.from(users.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+		return [
+			{ id: 'all', name: 'All Users' },
+			{ id: 'unassigned', name: 'Unassigned' },
+			...userArray
+		];
+	})();
+		
 	// Add this variable to track the selected task
 	let selectedTask: any = null;
 
+	// Add cache for hologram source names to avoid repeated resolution
+	let hologramSourceNames = new Map<string, string>();
+
 	// Add these near the top of the script section, after the interface definitions
-	let sortField: 'x' | 'y' = 'x';
-	let sortDirection: 'asc' | 'desc' = 'desc';
+	// let sortField: 'x' | 'y' = 'x'; // Removed
+	// let sortDirection: 'asc' | 'desc' = 'desc'; // Removed
 
 	// Add a store to track updates
-	const updateTrigger = writable(0);
-
-	// Add this helper function for position normalization with 100px spacing
-	function normalizePositions(tasks: [string, Quest][]) {
-		const POSITION_STEP = 100; // Change to 100px spacing
-		return tasks.map(([key, task], index) => {
-			const normalizedPosition = {
-				x: sortField === 'x' 
-					? (sortDirection === 'desc' ? (tasks.length - index) : (index + 1)) * POSITION_STEP 
-					: (task.position?.x ?? POSITION_STEP),
-				y: sortField === 'y' 
-					? (sortDirection === 'desc' ? (tasks.length - index) : (index + 1)) * POSITION_STEP 
-					: (task.position?.y ?? POSITION_STEP)
-			};
-			return [key, { ...task, position: normalizedPosition }] as [string, Quest];
-		});
-	}
+	// const updateTrigger = writable(0); // Removed
 
 	// Modify the reactive statement for sorting
 	$: {
-		const filtered = quests.filter(([_, quest]) => {
-			if (selectedCategory !== "all" && quest.category !== selectedCategory) return false;
-			if (!['task', 'quest', 'event'].includes(quest.type)) return false;
-			return quest.status === "ongoing" || (showCompleted && quest.status === "completed");
+		let currentFilteredQuests = quests.filter(([_, quest]) => {
+			if (selectedCategory !== "all" && quest.category !== selectedCategory) {
+				return false;
+			}
+
+			// Add user filtering logic
+			if (selectedUserId !== "all") {
+				if (selectedUserId === "unassigned") {
+					if (quest.participants && quest.participants.length > 0) {
+						return false;
+					}
+				} else {
+					if (!quest.participants || !quest.participants.some(p => p.id === selectedUserId)) {
+						return false;
+					}
+				}
+			}
+
+			// Show tasks and recurring tasks (default to 'task' if type is missing)
+			const type = quest.type || 'task'; 
+			if (type !== 'task' && type !== 'recurring') {
+				return false;
+			}
+
+			// Default to 'ongoing' if status is missing.
+			const status = quest.status || 'ongoing';
+			if (status === "completed" && !showCompleted) {
+				return false;
+			}
+
+			// Filter holograms if showHolograms is false
+			if (!showHolograms && quest._meta?.resolvedFromHologram) {
+				return false;
+			}
+
+			return true; // Quest passes all filters
 		});
 
-		// Sort by position
-		sortedQuests = filtered.sort(([_, a], [__, b]) => {
-			const posA = a.position?.[sortField] ?? 0;
-			const posB = b.position?.[sortField] ?? 0;
-			return sortDirection === 'desc' ? posB - posA : posA - posB;
-		});
+		// Only sort when not in canvas view, as canvas uses absolute positioning
+		if (viewMode !== 'canvas') {
+			// Sort by orderIndex, undefined/null values go to the end
+			currentFilteredQuests.sort(([keyA, a], [keyB, b]) => {
+				let valA: number, valB: number;
 
-		// Normalize positions if needed
-		if (sortedQuests.some(([_, quest]) => !quest.position)) {
-			sortedQuests = normalizePositions(sortedQuests);
-			// Update positions in holosphere
-			sortedQuests.forEach(([key, quest]) => {
-				if (holosphere && holonID) {
-					holosphere.put(holonID, `quests/${key}`, quest).catch(console.error);
+				switch (sortCriteria) {
+					case 'created':
+						valA = a.created ? new Date(a.created).getTime() : 0;
+						valB = b.created ? new Date(b.created).getTime() : 0;
+						break;
+					case 'positionX':
+						valA = a.position?.x ?? Infinity;
+						valB = b.position?.x ?? Infinity;
+						break;
+					case 'positionY':
+						valA = a.position?.y ?? Infinity;
+						valB = b.position?.y ?? Infinity;
+						break;
+					case 'orderIndex':
+					default:
+						valA = a.orderIndex ?? Infinity;
+						valB = b.orderIndex ?? Infinity;
+						// If orderIndex is the same, sort by key (ID) as a stable secondary sort.
+						// This is always ascending for orderIndex mode.
+						if (valA === valB) {
+							return keyA.localeCompare(keyB);
+						}
+						// For orderIndex, primary sort is always ascending, handled by the main return
+						break;
+				}
+
+				// General comparison for asc/desc.
+				// For orderIndex, sortDirection will always be 'asc' due to handleSortButtonClick logic.
+				if (sortDirection === 'asc') {
+					if (valA === Infinity && valB === Infinity) return 0;
+					if (valA === Infinity) return 1;
+					if (valB === Infinity) return -1;
+					return valA - valB;
+				} else { // sortDirection === 'desc'
+					if (valA === Infinity && valB === Infinity) return 0;
+					if (valA === Infinity) return 1; 
+					if (valB === Infinity) return -1;
+					return valB - valA;
 				}
 			});
 		}
+		filteredQuests = currentFilteredQuests;
 
-		filteredQuests = sortedQuests;
+		// Original sorting and normalization logic removed.
+		// sortedQuests = filtered.sort(([_, a], [__, b]) => {
+		// 	const posA = a.position?.[sortField] ?? 0;
+		// 	const posB = b.position?.[sortField] ?? 0;
+		// 	return sortDirection === 'desc' ? posB - posA : posA - posB;
+		// });
+
+		// // Normalize positions if needed
+		// if (sortedQuests.some(([_, quest]) => !quest.position)) {
+		// 	sortedQuests = normalizePositions(sortedQuests);
+		// 	// Update positions in holosphere
+		// 	sortedQuests.forEach(([key, quest]) => {
+		// 		if (holosphere && holonID) {
+		// 			holosphere.put(holonID, `quests/${key}`, quest).catch(console.error);
+		// 		}
+		// 	});
+		// }
+
+		// filteredQuests = sortedQuests; // Now filteredQuests is directly assigned above
 	}
 
-	// Modify the toggle function to handle both field and direction
-	function toggleSort() {
-		if (sortDirection === 'desc') {
+	// Placeholder function for the sort button
+	function handleSortButtonClick() {
+		if (sortCriteria === 'created' && sortDirection === 'desc') {
 			sortDirection = 'asc';
-		} else {
+			currentIconPath = calendarIconPath;
+			sortButtonIconRotation = 180; // Calendar icon rotated for oldest first
+		} else if (sortCriteria === 'created' && sortDirection === 'asc') {
+			sortCriteria = 'orderIndex';
+			sortDirection = 'asc';
+			currentIconPath = orderIndexIconPath;
+			sortButtonIconRotation = 0; // No rotation for burger icon
+		} else if (sortCriteria === 'orderIndex') {
+			sortCriteria = 'positionX';
+			sortDirection = 'asc';
+			currentIconPath = directionalSortIconPath;
+			sortButtonIconRotation = 270; // Arrow left for X asc
+		} else if (sortCriteria === 'positionX' && sortDirection === 'asc') {
 			sortDirection = 'desc';
-			sortField = sortField === 'x' ? 'y' : 'x';
+			currentIconPath = directionalSortIconPath;
+			sortButtonIconRotation = 90; // Arrow right for X desc
+		} else if (sortCriteria === 'positionX' && sortDirection === 'desc') {
+			sortCriteria = 'positionY';
+			sortDirection = 'asc';
+			currentIconPath = directionalSortIconPath;
+			sortButtonIconRotation = 0; // Arrow down for Y asc
+		} else if (sortCriteria === 'positionY' && sortDirection === 'asc') {
+			sortDirection = 'desc';
+			currentIconPath = directionalSortIconPath;
+			sortButtonIconRotation = 180; // Arrow up for Y desc
+		} else { // Was positionY, desc, reset to created
+			sortCriteria = 'created';
+			sortDirection = 'desc'; // Newest first
+			currentIconPath = calendarIconPath;
+			sortButtonIconRotation = 0; // Calendar icon for newest first
 		}
+		console.log(`Sorting by: ${sortCriteria}` + (sortCriteria !== 'orderIndex' ? `, Direction: ${sortDirection}` : ' (Ascending)') + `, Icon: ${sortButtonIconRotation}°`);
 	}
 
 	// Fix handleTaskClick type
@@ -262,56 +327,64 @@
 		return ''+ Date.now();
 	}
 
-	// Modify handleAddTask to use 100px spacing
+	// Modify handleAddTask to use a default 'Dashboard User' initiator if user data fetch fails or returns no data, instead of throwing an error.
 	async function handleAddTask() {
 		if (!holosphere || !holonID || !newTask.title.trim()) return;
 
 		try {
-			const userData = await holosphere.get(holonID, 'users', holonID);
-			if (!userData) throw new Error('User data not found');
+			let initiatorInfo;
+			try {
+				// Attempt to get user data
+				const userData = await holosphere.get(holonID, 'users', holonID);
 
-			// Get the current top position based on sort order
-			const POSITION_STEP = 100; // Change to 100px spacing
-			let newPosition;
-
-			// If there are existing tasks, position the new one based on sort direction
-			if (sortedQuests.length > 0) {
-				const firstTask = sortedQuests[0][1];
-				const firstPosition = firstTask.position?.[sortField] ?? POSITION_STEP;
-				
-				// Calculate new position based on sort direction
-				const positionOffset = sortDirection === 'desc' ? POSITION_STEP : -POSITION_STEP;
-				
-				newPosition = {
-					x: sortField === 'x' 
-						? firstPosition + positionOffset 
-						: (firstTask.position?.x ?? POSITION_STEP),
-					y: sortField === 'y' 
-						? firstPosition + positionOffset 
-						: (firstTask.position?.y ?? POSITION_STEP)
-				};
-			} else {
-				// If no tasks exist, start with base position
-				newPosition = {
-					x: POSITION_STEP,
-					y: POSITION_STEP
+				if (userData && typeof userData === 'object' && userData !== null) {
+					initiatorInfo = {
+						id: holonID,
+						username: userData.username || "Unknown User",
+						firstName: userData.first_name || "",
+						lastName: userData.last_name || ""
+					};
+				} else {
+					// User data not found or not in expected format, use default
+					console.warn(`User data not found or in unexpected format for holonID: ${holonID}. Using default "Dashboard User" as initiator.`);
+					initiatorInfo = {
+						id: holonID, 
+						username: "Dashboard User",
+						firstName: "Dashboard", 
+						lastName: "User"      
+					};
+				}
+			} catch (fetchError) {
+				// Error during fetch, use default
+				console.error('Error fetching user data:', fetchError);
+				console.warn(`Using default "Dashboard User" as initiator due to fetch error for holonID: ${holonID}.`);
+				initiatorInfo = {
+					id: holonID,
+					username: "Dashboard User",
+					firstName: "Dashboard",
+					lastName: "User"
 				};
 			}
 
-			const task = {
+			const newOrderIndex = filteredQuests.length > 0 
+				? Math.max(...filteredQuests.map(([_, q]) => q.orderIndex ?? -1)) + 1 
+				: 0;
+
+			const task: Quest = {
 				...newTask,
-				initiator: {
-					id: holonID,
-					username: userData.username,
-					firstName: userData.first_name,
-					lastName: userData.last_name
-				},
+				initiator: initiatorInfo, // Use the determined initiatorInfo
 				created: new Date().toISOString(),
-				position: newPosition
+				orderIndex: newOrderIndex // Assign orderIndex
+				// No position assigned - let CanvasView handle positioning in inbox
 			};
 
 			// Add the task to holosphere
-			await holosphere.put(holonID, 'quests', task);
+			if (holonID) {
+				await holosphere.put(holonID, 'quests', task);
+			} else {
+				console.error("Cannot add task: holonID is null");
+				return;
+			}
 
 			// Reset form and close dialog
 			showTaskInput = false;
@@ -327,7 +400,7 @@
 			};
 
 			// Force update
-			updateTrigger.update(n => n + 1);
+			// updateTrigger.update(n => n + 1); // Removed
 		} catch (error) {
 			console.error('Error adding task:', error);
 		}
@@ -374,111 +447,125 @@
 	async function handleDrop(event: DragEvent, targetKey: string) {
 		event.preventDefault();
 		const sourceKey = event.dataTransfer?.getData('text/plain') || '';
-		if (!sourceKey || sourceKey === targetKey) return;
 
-		const sourceIndex = filteredQuests.findIndex(([key]) => key === sourceKey);
-		const targetIndex = filteredQuests.findIndex(([key]) => key === targetKey);
-		if (sourceIndex === -1 || targetIndex === -1) return;
-
-		const POSITION_STEP = 100; // Change to 100px spacing
-		const sourceQuest = filteredQuests[sourceIndex][1];
-		const targetQuest = filteredQuests[targetIndex][1];
-
-		try {
-			// Calculate new position based on surrounding tasks and sort direction
-			let newPosition;
-			
-			if ((sourceIndex > targetIndex && sortDirection === 'asc') || 
-				(sourceIndex < targetIndex && sortDirection === 'desc')) {
-				// Moving task up in ascending or down in descending
-				const prevTask = targetIndex > 0 ? filteredQuests[targetIndex - 1][1] : null;
-				const prevPos = prevTask?.position?.[sortField] ?? 
-					(sortDirection === 'desc' ? (targetQuest.position?.[sortField] ?? 0) + POSITION_STEP : (targetQuest.position?.[sortField] ?? 0) - POSITION_STEP);
-				const targetPos = targetQuest.position?.[sortField] ?? POSITION_STEP;
-				
-				// Position between prev and target
-				const newPos = prevTask 
-					? prevPos + (targetPos - prevPos) / 2 
-					: targetPos + (sortDirection === 'desc' ? POSITION_STEP : -POSITION_STEP);
-
-				newPosition = {
-					x: sortField === 'x' ? newPos : sourceQuest.position?.x ?? POSITION_STEP,
-					y: sortField === 'y' ? newPos : sourceQuest.position?.y ?? POSITION_STEP
-				};
-			} else {
-				// Moving task down in ascending or up in descending
-				const nextTask = targetIndex < filteredQuests.length - 1 
-					? filteredQuests[targetIndex + 1][1] 
-					: null;
-				const targetPos = targetQuest.position?.[sortField] ?? POSITION_STEP;
-				const nextPos = nextTask?.position?.[sortField] ?? 
-					(sortDirection === 'desc' ? targetPos - POSITION_STEP : targetPos + POSITION_STEP);
-				
-				// Position between target and next
-				const newPos = nextTask 
-					? targetPos + (nextPos - targetPos) / 2 
-					: targetPos + (sortDirection === 'desc' ? -POSITION_STEP : POSITION_STEP);
-
-				newPosition = {
-					x: sortField === 'x' ? newPos : sourceQuest.position?.x ?? POSITION_STEP,
-					y: sortField === 'y' ? newPos : sourceQuest.position?.y ?? POSITION_STEP
-				};
-			}
-
-			const updatedQuest = {
-				...sourceQuest,
-				position: newPosition
-			};
-
-			// Save to holosphere
-			await holosphere.put(holonID, `quests/${sourceKey}`, updatedQuest);
-
-			// Update local store
-			store = {
-				...store,
-				[sourceKey]: updatedQuest
-			};
-
-			// Check if positions need normalization
-			const positions = filteredQuests.map(([_, q]) => q.position?.[sortField] ?? 0);
-			const minDiff = Math.min(...positions.slice(1).map((pos, i) => Math.abs(pos - positions[i])));
-			
-			if (minDiff < POSITION_STEP / 2) { // Adjust normalization threshold
-				// Normalize all positions
-				const normalized = filteredQuests.map(([key, quest], index) => {
-					const normalizedPos = sortDirection === 'desc' 
-						? (filteredQuests.length - index) * POSITION_STEP 
-						: (index + 1) * POSITION_STEP;
-					
-					return {
-						key,
-						quest: {
-							...quest,
-							position: {
-								x: sortField === 'x' ? normalizedPos : quest.position?.x ?? POSITION_STEP,
-								y: sortField === 'y' ? normalizedPos : quest.position?.y ?? POSITION_STEP
-							}
-						}
-					};
-				});
-
-				// Save all normalized positions
-				await Promise.all(
-					normalized.map(({ key, quest }) => 
-						holosphere.put(holonID, `quests/${key}`, quest)
-					)
-				);
-
-				// Update local store with normalized positions
-				store = normalized.reduce((acc, { key, quest }) => ({
-					...acc,
-					[key]: quest
-				}), {});
-			}
-		} catch (error) {
-			console.error('Error updating quest position:', error);
+		// Ensure holonID is not null before proceeding
+		const currentHolonID = holonID; // Use the reactive holonID variable
+		if (!currentHolonID) {
+			console.error("Cannot handle drop: holonID is null.");
+			handleDragEnd();
+			return;
 		}
-		
+
+		if (!sourceKey || sourceKey === targetKey) {
+			handleDragEnd();
+			return;
+		}
+
+		if (sortCriteria === 'orderIndex') {
+			const currentQuestsArray = [...filteredQuests];
+			const sourceIndex = currentQuestsArray.findIndex(([key]) => key === sourceKey);
+			const targetIndexOriginal = currentQuestsArray.findIndex(([key]) => key === targetKey);
+
+			if (sourceIndex === -1 || targetIndexOriginal === -1) {
+				handleDragEnd();
+				return;
+			}
+
+			const [draggedItemKey, draggedItemQuest] = currentQuestsArray.splice(sourceIndex, 1)[0];
+			
+			const actualTargetIndex = sourceIndex < targetIndexOriginal ? targetIndexOriginal -1 : targetIndexOriginal;
+			
+			currentQuestsArray.splice(actualTargetIndex, 0, [draggedItemKey, draggedItemQuest]);
+
+			// Temporarily disable subscription to prevent override during update
+			let tempQuestsUnsub = questsUnsubscribe;
+			questsUnsubscribe = undefined;
+
+			const updatedQuestsPromises = currentQuestsArray.map(async ([key, questToUpdate], index) => {
+				if (questToUpdate.orderIndex !== index) {
+					const updatedQuest = { ...questToUpdate, id: key, orderIndex: index };
+					store[key] = updatedQuest;
+					console.log(`[Tasks] Updating orderIndex for quest ${key}: ${questToUpdate.orderIndex || 'undefined'} -> ${index}`);
+					return holosphere.put(currentHolonID, 'quests', updatedQuest);
+				}
+				return Promise.resolve();
+			});
+
+			try {
+				await Promise.all(updatedQuestsPromises);
+				console.log(`[Tasks] Successfully updated orderIndex for changed quests after drop`);
+				// Re-enable subscription after save
+				questsUnsubscribe = tempQuestsUnsub;
+				quests = Object.entries(store);
+			} catch (error) {
+				console.error('Error updating quest orderIndex after drop:', error);
+				// Re-enable subscription even on error
+				questsUnsubscribe = tempQuestsUnsub;
+			}
+		} else { // sortCriteria is 'positionX' or 'positionY'
+			const POSITION_STEP = 10.0;
+
+			const sourceQuestEntry = filteredQuests.find(([k]) => k === sourceKey);
+			if (!sourceQuestEntry) { 
+				handleDragEnd(); 
+				console.error('Source quest not found during drop for position sort.');
+				return; 
+			}
+			const draggedQuest = { ...sourceQuestEntry[1] }; // Mutable copy of the quest data
+
+			const otherItems = filteredQuests.filter(([k]) => k !== sourceKey);
+			const insertionIndexInOthers = otherItems.findIndex(([k]) => k === targetKey);
+
+			if (insertionIndexInOthers === -1) {
+				console.error("Error determining drop position: targetKey not found in otherItems.");
+				handleDragEnd();
+				return;
+			}
+
+			const prevTaskData = (insertionIndexInOthers > 0) ? otherItems[insertionIndexInOthers - 1][1] : null;
+			const nextTaskData = otherItems[insertionIndexInOthers][1]; // This is the quest data for targetKey
+
+			const mainAxis = sortCriteria === 'positionX' ? 'x' : 'y';
+			const crossAxis = sortCriteria === 'positionX' ? 'y' : 'x';
+
+			const prevMainCoord = prevTaskData?.position?.[mainAxis];
+			const nextMainCoord = nextTaskData?.position?.[mainAxis];
+
+			let newMainCoordValue: number;
+
+			if (prevMainCoord !== undefined && nextMainCoord !== undefined) {
+				newMainCoordValue = (prevMainCoord + nextMainCoord) / 2.0;
+			} else if (nextMainCoord !== undefined) {
+				newMainCoordValue = nextMainCoord - (POSITION_STEP * (sortDirection === 'asc' ? 1 : -1));
+			} else if (prevMainCoord !== undefined) {
+				newMainCoordValue = prevMainCoord + (POSITION_STEP * (sortDirection === 'asc' ? 1 : -1));
+			} else {
+				newMainCoordValue = draggedQuest.position?.[mainAxis] ?? 0;
+			}
+			
+			const currentFullPosition = draggedQuest.position || { x: 0, y: 0 };
+			
+			let newPosition = {
+				...currentFullPosition,
+				[mainAxis]: newMainCoordValue
+			};
+
+			if (newPosition[crossAxis] === undefined) {
+				newPosition[crossAxis] = 0;
+			}
+			draggedQuest.position = newPosition;
+
+			draggedQuest.id = sourceKey; // Ensure ID is set
+			store[sourceKey] = draggedQuest;
+			try {
+				await holosphere.put(currentHolonID, 'quests', draggedQuest);
+				quests = Object.entries(store); 
+				console.log(`[Tasks] Successfully saved position update for quest ${sourceKey}`);
+			} catch (error) {
+				console.error(`Error updating quest position after drop (sort by ${sortCriteria}):`, error);
+			}
+		}
+
 		handleDragEnd();
 	}
 
@@ -513,6 +600,65 @@
 			}
 		};
 	});
+
+	// Function to get hologram source name from cache
+	function getHologramSource(hologramSoul: string | undefined): string {
+		if (!hologramSoul) return '';
+		
+		// Return cached name if available
+		if (hologramSourceNames.has(hologramSoul)) {
+			return hologramSourceNames.get(hologramSoul)!;
+		}
+		
+		// Return fallback while loading
+		const match = hologramSoul.match(/Holons\/([^\/]+)/);
+		return match ? `Holon ${match[1]}` : 'External Source';
+	}
+
+		// Function to pre-resolve hologram names for all quests
+	async function preResolveHologramNames(questsToProcess: [string, Quest][]) {
+		const hologramSouls = new Set<string>();
+		
+		// Collect all unique hologram souls that we don't already have cached
+		questsToProcess.forEach(([_, quest]) => {
+			if (quest._meta?.resolvedFromHologram && quest._meta.hologramSoul) {
+				// Only add if we don't already have it cached
+				if (!hologramSourceNames.has(quest._meta.hologramSoul)) {
+					hologramSouls.add(quest._meta.hologramSoul);
+				}
+			}
+		});
+		
+		// Only resolve names we don't already have
+		if (hologramSouls.size === 0) return;
+		
+		// Resolve names for all new hologram souls using the async version to get real names
+		const promises = Array.from(hologramSouls).map(async (hologramSoul) => {
+			try {
+				const match = hologramSoul.match(/Holons\/([^\/]+)/);
+				if (match) {
+					const holonId = match[1];
+					// Use the async version to get the actual name directly
+					const { fetchHolonName } = await import('../utils/holonNames');
+					const realName = await fetchHolonName(holosphere, holonId);
+					hologramSourceNames.set(hologramSoul, realName);
+				}
+			} catch (error) {
+				// Error resolving hologram source name - set fallback
+				const match = hologramSoul.match(/Holons\/([^\/]+)/);
+				if (match) {
+					hologramSourceNames.set(hologramSoul, `Holon ${match[1]}`);
+				}
+			}
+		});
+		
+		await Promise.allSettled(promises);
+		
+		// Trigger reactivity only if we actually resolved new names
+		if (hologramSouls.size > 0) {
+			hologramSourceNames = new Map(hologramSourceNames);
+		}
+	}
 
 	// Add color category function
 	function getColorFromCategory(category: string | undefined, type: string = 'task') {
@@ -558,203 +704,749 @@
 		// Always set selectedTask to null when modal closes
 		selectedTask = null;
 	}
+
+	// Add function to handle task completion and show animations
+	function handleTaskCompleted(event: CustomEvent) {
+		if (event.detail?.questId) {
+			showFireworks = true;
+			showConfetti = true;
+
+			// Hide fireworks after 2.5 seconds
+			setTimeout(() => {
+				showFireworks = false;
+			}, 2500); // Show for 2.5 seconds
+
+			// Hide confetti after 10 seconds
+			setTimeout(() => {
+				showConfetti = false;
+			}, 10000); // Show for 10 seconds
+		}
+		// Note: handleTaskDeleted will still be called via the "close" event to clear selectedTask
+	}
+
+	// Add fetchData function with retry logic
+	async function fetchData(retryCount = 0) {
+		if (!holonID || !holosphere || !connectionReady || holonID === 'undefined' || holonID === 'null' || holonID.trim() === '') {
+			return;
+		}
+		
+		isLoading = true;
+		
+		try {
+			console.log(`Fetching tasks for holon: ${holonID}`);
+			
+			// Fetch tasks data with timeout
+			const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
+				const timeoutPromise = new Promise((_, reject) => 
+					setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+				);
+				return Promise.race([promise, timeoutPromise]);
+			};
+
+			const initialData = await fetchWithTimeout(holosphere.getAll(holonID, "quests"), 5000);
+			
+			// Fetch participation data for federated items
+			const participationData = await fetchWithTimeout(holosphere.getAll(holonID, "participations"), 5000);
+			
+			// Create a map of item participations
+			const participationsMap = new Map();
+			if (Array.isArray(participationData)) {
+				participationData.forEach((participation: any) => {
+					if (participation && participation.itemId) {
+						if (!participationsMap.has(participation.itemId)) {
+							participationsMap.set(participation.itemId, []);
+						}
+						participationsMap.get(participation.itemId).push(participation.participant);
+					}
+				});
+			}
+			
+			// Process initial data
+			const newStore: Store = {};
+			if (Array.isArray(initialData)) {
+				initialData.forEach((quest: any, index) => {
+					if (quest && quest.id) {
+						// Use the quest ID as the key, or generate one if missing
+						const key = quest.id || `initial_${index}`;
+						
+						// Ensure required arrays are initialized
+						if (!quest.participants) quest.participants = [];
+						if (!quest.appreciation) quest.appreciation = [];
+						
+						// Check if this quest has participation data
+						const participations = participationsMap.get(quest.id);
+						if (participations && participations.length > 0) {
+							// Merge participation data with existing participants
+							const existingParticipants = quest.participants || [];
+							const mergedParticipants = [...existingParticipants];
+							
+							// Add participations that aren't already in the participants list
+							participations.forEach((participation: any) => {
+								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
+								if (!alreadyExists) {
+									mergedParticipants.push(participation);
+								}
+							});
+							
+							quest.participants = mergedParticipants;
+						}
+						
+						newStore[key] = quest as Quest;
+					}
+				});
+			} else if (typeof initialData === 'object' && initialData !== null) {
+				// If it's already a keyed object, use it directly
+				Object.entries(initialData).forEach(([key, quest]: [string, any]) => {
+					if (quest && quest.id) {
+						// Check if this quest has participation data
+						const participations = participationsMap.get(quest.id);
+						if (participations && participations.length > 0) {
+							// Merge participation data with existing participants
+							const existingParticipants = quest.participants || [];
+							const mergedParticipants = [...existingParticipants];
+							
+							// Add participations that aren't already in the participants list
+							participations.forEach((participation: any) => {
+								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
+								if (!alreadyExists) {
+									mergedParticipants.push(participation);
+								}
+							});
+							
+							quest.participants = mergedParticipants;
+						}
+						
+						newStore[key] = quest as Quest;
+					}
+				});
+			}
+			
+			// Update store and quests
+			store = newStore;
+			quests = Object.entries(store);
+			
+			// Pre-resolve hologram names to avoid repeated resolution in templates
+			await preResolveHologramNames(quests);
+			
+			console.log(`Successfully fetched tasks for holon ${holonID}:`, Object.keys(newStore).length, 'tasks');
+
+			// Set up subscription after successful fetch
+			await subscribe();
+
+		} catch (error: any) {
+			console.error('Error fetching tasks data:', error);
+			
+			// Retry on network errors up to 3 times with exponential backoff
+			if (retryCount < 3) {
+				const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+				console.log(`Retrying tasks fetch in ${delay}ms (attempt ${retryCount + 1}/3)`);
+				setTimeout(() => fetchData(retryCount + 1), delay);
+				return;
+			}
+		} finally {
+			isLoading = false;
+		}
+	}
+
+	function handleDialogKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			hideDialog();
+		}
+	}
+
+	// Remove debounce helper and throttled store updates
+	function updateStore(newStore: Store) {
+		store = newStore;
+		quests = Object.entries(store);
+	}
+
+	// Modify the subscribe function to use immediate updates
+	async function subscribe() {
+		if (!holosphere || !holonID) return;
+		
+		// Don't resubscribe if already subscribed to this holon
+		if (subscriptionState.currentHolonID === holonID && questsUnsubscribe) return; // check questsUnsubscribe too
+		
+		// Clear existing store and subscription
+		if (questsUnsubscribe) {
+			questsUnsubscribe();
+			questsUnsubscribe = undefined;
+		}
+		
+		store = {}; // Reset store
+		quests = []; // Reset quests array
+		filteredQuests = []; // Reset filteredQuests
+		
+		try {
+			// Update subscription state
+			subscriptionState.currentHolonID = holonID;
+			
+			// Fetch initial data first
+			const initialData = await holosphere.getAll(holonID, "quests");
+			
+			// Fetch participation data for federated items
+			const participationData = await holosphere.getAll(holonID, "participations");
+			
+			// Create a map of item participations
+			const participationsMap = new Map();
+			if (Array.isArray(participationData)) {
+				participationData.forEach((participation: any) => {
+					if (participation && participation.itemId) {
+						if (!participationsMap.has(participation.itemId)) {
+							participationsMap.set(participation.itemId, []);
+						}
+						participationsMap.get(participation.itemId).push(participation.participant);
+					}
+				});
+			}
+			
+							// Process initial data
+			if (Array.isArray(initialData)) {
+				initialData.forEach((quest: any, index) => {
+					if (quest && quest.id) {
+						// Use the quest ID as the key, or generate one if missing
+						const key = quest.id || `initial_${index}`;
+						
+						// Ensure required arrays are initialized
+						if (!quest.participants) quest.participants = [];
+						if (!quest.appreciation) quest.appreciation = [];
+						
+						// Check if this quest has participation data
+						const participations = participationsMap.get(quest.id);
+						if (participations && participations.length > 0) {
+							// Merge participation data with existing participants
+							const existingParticipants = quest.participants || [];
+							const mergedParticipants = [...existingParticipants];
+							
+							// Add participations that aren't already in the participants list
+							participations.forEach((participation: any) => {
+								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
+								if (!alreadyExists) {
+									mergedParticipants.push(participation);
+								}
+							});
+							
+							quest.participants = mergedParticipants;
+						}
+						
+						store[key] = quest as Quest;
+					}
+				});
+			} else if (typeof initialData === 'object' && initialData !== null) {
+				// If it's already a keyed object, use it directly
+				Object.entries(initialData).forEach(([key, quest]: [string, any]) => {
+					if (quest && quest.id) {
+						// Check if this quest has participation data
+						const participations = participationsMap.get(quest.id);
+						if (participations && participations.length > 0) {
+							// Merge participation data with existing participants
+							const existingParticipants = quest.participants || [];
+							const mergedParticipants = [...existingParticipants];
+							
+							// Add participations that aren't already in the participants list
+							participations.forEach((participation: any) => {
+								const alreadyExists = mergedParticipants.some((p: any) => p.id === participation.id);
+								if (!alreadyExists) {
+									mergedParticipants.push(participation);
+								}
+							});
+							
+							quest.participants = mergedParticipants;
+						}
+						
+						store[key] = quest as Quest;
+					}
+				});
+			}
+			
+			// Update quests array to trigger reactivity
+			quests = Object.entries(store);
+			
+			// Pre-resolve hologram names to avoid repeated resolution in templates
+			await preResolveHologramNames(quests);
+			
+			// Set up subscription for future updates  
+			const off = holosphere.subscribe(holonID, "quests", async (newquest: Quest | null, key?: string) => {
+				// Check if this is the circular hologram that's causing issues
+				if (newquest && newquest.id === '1750286259429') {
+					console.warn('Blocking circular hologram quest:', newquest.id);
+					return;
+				}
+				
+				// Update store immediately
+				const newStore = { ...store };
+				if (newquest && key) {
+					// Ensure required arrays are initialized
+					if (!newquest.participants) newquest.participants = [];
+					if (!newquest.appreciation) newquest.appreciation = [];
+					newStore[key] = newquest;
+				} else if (key) {
+					delete newStore[key];
+				}
+				// Directly update store and quests, which will trigger reactive updates
+				store = newStore; 
+				quests = Object.entries(store);
+				
+				// Only resolve hologram names if this is a new hologram we haven't seen before
+				if (newquest && newquest._meta?.resolvedFromHologram && newquest._meta.hologramSoul && 
+					!hologramSourceNames.has(newquest._meta.hologramSoul)) {
+					await preResolveHologramNames([[key!, newquest]]);
+				}
+			});
+
+			// Also subscribe to participation updates
+			let participationOff: (() => void) | undefined;
+			try {
+				const participationSub = await holosphere.subscribe(holonID, "participations", (newParticipation: any, key?: string) => {
+					let storeUpdated = false;
+					
+					if (newParticipation && newParticipation.itemId) {
+						// Find the quest in the store and update its participants
+						const questKey = Object.keys(store).find(k => store[k].id === newParticipation.itemId);
+						if (questKey) {
+							const quest = store[questKey];
+							const existingParticipants = quest.participants || [];
+							const alreadyExists = existingParticipants.some((p: any) => p.id === newParticipation.participant.id);
+							
+							if (!alreadyExists) {
+								const updatedQuest = {
+									...quest,
+									participants: [...existingParticipants, newParticipation.participant]
+								};
+								store = {
+									...store,
+									[questKey]: updatedQuest
+								};
+								storeUpdated = true;
+							}
+						}
+					} else if (key) {
+						// For deletions, just mark that we need to update
+						// We'll avoid triggering unnecessary reactive updates
+						const hasParticipants = Object.values(store).some(quest => 
+							quest.participants && quest.participants.length > 0
+						);
+						if (hasParticipants) {
+							store = { ...store };
+							storeUpdated = true;
+						}
+					}
+					
+					// Only update quests if store was actually changed
+					if (storeUpdated) {
+						quests = Object.entries(store);
+					}
+				});
+				participationOff = participationSub?.unsubscribe;
+			} catch (error) {
+				console.error('Error setting up participation subscription:', error);
+			}
+
+			// Ensure the unsubscribe handler is callable and typed correctly
+			if (typeof off === 'function') {
+				const offFn = off as unknown as () => void;
+				questsUnsubscribe = () => {
+					offFn();
+					if (typeof participationOff === 'function') {
+						participationOff();
+					}
+				};
+			}
+		} catch (error) {
+			console.error('Error setting up quest subscription:', error);
+			subscriptionState.currentHolonID = null; // Reset on error
+			questsUnsubscribe = undefined;
+		}
+	}
+
+	// Modify onMount to handle subscription cleanup
+	onMount(() => {
+		let mounted = true;
+		
+		// Initialize with URL parameter first
+		const urlId = $page.params.id;
+		if (urlId && urlId !== 'undefined' && urlId !== 'null' && urlId.trim() !== '') {
+			holonID = urlId;
+			// Update the ID store to keep them in sync
+			ID.set(urlId);
+		}
+
+		// Wait for holosphere to be ready before proceeding
+		const checkConnection = async () => {
+			if (!holosphere) {
+				setTimeout(checkConnection, 100);
+				return;
+			}
+			
+			// Add a small delay to ensure the connection is stable
+			await new Promise(resolve => setTimeout(resolve, 200));
+			connectionReady = true;
+			
+			// Set up subscription to ID store with debouncing
+			let updateTimeout: NodeJS.Timeout;
+			const idSubscription = ID.subscribe((value) => {
+				if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
+					// Clear any pending update
+					if (updateTimeout) clearTimeout(updateTimeout);
+					
+					// Debounce the update to avoid rapid changes
+					updateTimeout = setTimeout(async () => {
+						if (value !== holonID && mounted) {
+							holonID = value;
+							await fetchData();
+						}
+					}, 100);
+				}
+			});
+
+			// Initial fetch if we have an ID
+			if (holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
+				await fetchData();
+			}
+
+			// Load preferences
+			try {
+				const storedViewMode = localStorage.getItem('taskViewMode');
+				if (storedViewMode === 'list' || storedViewMode === 'canvas') {
+					viewMode = storedViewMode as 'list' | 'canvas';
+				}
+				showCompleted = localStorage.getItem("kanbanShowCompleted") === "true";
+				const storedShowHolograms = localStorage.getItem("taskShowHolograms");
+				if (storedShowHolograms !== null) {
+					showHolograms = storedShowHolograms === "true";
+				}
+			} catch (error) {
+				console.error('Error loading preferences:', error);
+				// Defaults are already set, so just log error
+			}
+
+			return () => {
+				mounted = false;
+				if (idSubscription) idSubscription();
+				if (questsUnsubscribe) questsUnsubscribe();
+				if (subscriptionState.batchTimeout) { // Clear timeout if it exists
+					clearTimeout(subscriptionState.batchTimeout);
+					subscriptionState.batchTimeout = null;
+				}
+				subscriptionState.pendingUpdates.clear();
+				// Don't nullify currentHolonID here, as it might be needed if component remounts quickly
+			};
+		};
+		
+		checkConnection();
+
+		// Cleanup subscription on unmount
+		return () => {
+			mounted = false;
+			if (questsUnsubscribe) questsUnsubscribe();
+			if (subscriptionState.batchTimeout) { // Clear timeout if it exists
+				clearTimeout(subscriptionState.batchTimeout);
+				subscriptionState.batchTimeout = null;
+			}
+			subscriptionState.pendingUpdates.clear();
+		};
+	});
+
+	// Watch for page ID changes with debouncing
+	let pageUpdateTimeout: NodeJS.Timeout;
+	$: {
+		const newId = $page.params.id;
+		if (newId && newId !== holonID && connectionReady) {
+			// Check if the new ID is valid
+			if (newId !== 'undefined' && newId !== 'null' && newId.trim() !== '') {
+				// Clear any pending update
+				if (pageUpdateTimeout) clearTimeout(pageUpdateTimeout);
+				
+				// Debounce the update to avoid rapid changes
+				pageUpdateTimeout = setTimeout(async () => {
+					holonID = newId;
+					// Update the ID store to keep them in sync
+					ID.set(newId);
+					if (holosphere) {
+						await fetchData();
+					}
+				}, 100);
+			}
+		}
+	}
+
+	// Modify the reactive statements to be more efficient and avoid triggering excessive re-processing
+
+
+	// Save showHolograms preference to localStorage
+	$: if (typeof localStorage !== 'undefined') {
+		localStorage.setItem("taskShowHolograms", showHolograms.toString());
+	}
+
+	// Handler for optimistic position updates from CanvasView
+	function handleCanvasQuestPositionChange(event: CustomEvent) {
+		const { key, position } = event.detail;
+		if (key && position && store[key]) {
+			store = {
+				...store,
+				[key]: {
+					...store[key],
+					position: position
+				}
+			};
+			quests = Object.entries(store); // Trigger reactivity
+			// console.log('[Tasks.svelte] Optimistically updated position for key:', key, 'to', position);
+		} else {
+			// console.warn('[Tasks.svelte] Could not optimistically update position for event:', event.detail);
+		}
+	}
+
+
 </script>
 
-<div class="flex flex-wrap">
-	<div class="w-full lg:w-8/12 bg-gray-800 py-6 px-6 rounded-3xl">
-		<div class="flex justify-between text-white items-center mb-8">
-			<div class="flex items-center gap-4">
-				<p class="text-lg mt-1">Tasks Today</p>
-				<button
-					on:click={showDialog}
-					class="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 text-white text-xl font-bold flex items-center justify-center focus:outline-none transition-colors"
-					aria-label="Add new task"
-				>
-					+
-				</button>
+<div class="space-y-8">
+	<!-- Header Section -->
+	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-6 px-3 sm:py-8 sm:px-8 rounded-3xl shadow-2xl">
+		<div class="flex flex-col sm:flex-row justify-between items-center sm:gap-0 gap-2">
+			<div class="text-center sm:text-left mb-2 sm:mb-0 flex-1 min-w-0">
+				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">Tasks Overview</h1>
 			</div>
-			<p class="">{new Date().toDateString()}</p>
+			<!-- Hide date on xs screens -->
+			<p class="text-gray-300 text-base sm:text-lg flex-shrink-0 hidden sm:block">{new Date().toDateString()}</p>
 		</div>
+	</div>
 
-		<div class="flex flex-wrap justify-between items-center pb-8">
-			<div class="flex flex-wrap text-white">
-				<div class="pr-10">
-					<div class="text-2xl font-bold">
-						{quests.filter(
-							([_, quest]) =>
-								!quest.participants?.length &&
-								quest.status !== "completed"
-						).length}
+	<!-- Main Content Container -->
+	<div class="flex flex-col xl:flex-row gap-4 sm:gap-8">
+		<!-- Tasks Panel -->
+		<div class="xl:flex-1 bg-gray-800 rounded-3xl shadow-xl min-h-[600px]">
+			<div class="p-3 sm:p-8">
+				<!-- Stats Section -->
+				<div class="grid grid-cols-2 md:grid-cols-5 gap-2 sm:gap-4 mb-4 sm:mb-8">
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{quests.filter(
+								([_, quest]) =>
+									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									!quest.participants?.length &&
+									quest.status !== "completed"
+							).length}
+						</div>
+						<div class="text-sm text-gray-400">Unassigned</div>
 					</div>
-					<div class="">Unassigned</div>
-				</div>
-				<div class="pr-10">
-					<div class="text-2xl font-bold">
-						{quests.filter(
-							([_, quest]) => quest.status === "ongoing"
-						).length}
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{quests.filter(
+								([_, quest]) => 
+									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									quest.status !== "completed"
+							).length}
+						</div>
+						<div class="text-sm text-gray-400">Open Tasks</div>
 					</div>
-					<div class="">Ongoing</div>
-				</div>
-				<div class="pr-10">
-					<div class="text-2xl font-bold">
-						{quests.filter(
-							([_, quest]) => quest.status === "completed"
-						).length}
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{quests.filter(
+								([_, quest]) => 
+									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									(quest.status === "recurring" || quest.status === "repeating")
+							).length}
+						</div>
+						<div class="text-sm text-gray-400">Recurring</div>
 					</div>
-					<div class="">Completed</div>
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{quests.filter(
+								([_, quest]) => 
+									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									quest.status === "completed"
+							).length}
+						</div>
+						<div class="text-sm text-gray-400">Completed</div>
+					</div>
+					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+						<div class="text-2xl font-bold text-white mb-1">
+							{quests.filter(([_, quest]) => 
+								!quest.type || quest.type === "task"
+							).length}
+						</div>
+						<div class="text-sm text-gray-400">Total Tasks</div>
+					</div>
 				</div>
-				<div>
-					<div class="text-2xl font-bold">{quests.length}</div>
-					<div class="">Total Tasks</div>
-				</div>
-			</div>
-			<div class="flex items-center mt-4 md:mt-0">
-				<button
-					class="text-white {viewMode === 'list'
-						? 'bg-gray-700'
-						: 'bg-transparent'} p-2"
-					title="List View"
-					on:click={() => (viewMode = "list")}
-					aria-label="Switch to list view"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="24"
-						height="24"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<line x1="8" y1="6" x2="21" y2="6" />
-						<line x1="8" y1="12" x2="21" y2="12" />
-						<line x1="8" y1="18" x2="21" y2="18" />
-						<line x1="3" y1="6" x2="3.01" y2="6" />
-						<line x1="3" y1="12" x2="3.01" y2="12" />
-						<line x1="3" y1="18" x2="3.01" y2="18" />
-					</svg>
-				</button>
-				<button
-					class="text-white {viewMode === 'canvas'
-						? 'bg-gray-700'
-						: 'bg-transparent'} p-2 ml-2"
-					title="Canvas View"
-					on:click={() => (viewMode = "canvas")}
-					aria-label="Switch to canvas view"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="20"
-						height="20"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<path d="M5 9l-3 3 3 3"></path>
-						<path d="M9 5l3-3 3 3"></path>
-						<path d="M9 19l3 3 3-3"></path>
-						<path d="M19 9l3 3-3 3"></path>
-						<path d="M2 12h20"></path>
-						<path d="M12 2v20"></path>
-					</svg>
-				</button>
-			</div>
-		</div>
 
-		<div class="flex flex-col sm:flex-row sm:justify-end mb-4 items-center gap-4">
-			<!-- Category Filter -->
-			<div class="relative w-full sm:w-auto">
-				<select
-					bind:value={selectedCategory}
-					class="w-full sm:w-auto appearance-none bg-gray-600 text-white px-4 py-1.5 pr-8 rounded-full cursor-pointer text-sm"
-				>
-					{#each categories as category}
-						<option value={category}>
-							{category === "all" ? "All Categories" : category}
-						</option>
-					{/each}
-				</select>
-				<div
-					class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white"
-				>
-					<svg
-						class="fill-current h-4 w-4"
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 20 20"
+				<!-- Controls Section -->
+				<div class="mb-4 sm:mb-6">
+					<div class="flex flex-wrap sm:flex-nowrap items-center gap-1 sm:gap-2 justify-between compact-toolbar">
+						<!-- View Mode Toggle -->
+						<div class="flex items-center bg-gray-700 rounded-xl p-0.5 h-9">
+							<button
+								class="flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors text-sm h-7 {viewMode === 'list' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'}"
+								on:click={() => (viewMode = 'list')}
+								aria-label="Switch to list view"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<line x1="8" y1="6" x2="21" y2="6" />
+									<line x1="8" y1="12" x2="21" y2="12" />
+									<line x1="8" y1="18" x2="21" y2="18" />
+									<line x1="3" y1="6" x2="3.01" y2="6" />
+									<line x1="3" y1="12" x2="3.01" y2="12" />
+									<line x1="3" y1="18" x2="3.01" y2="18" />
+								</svg>
+								<span>List</span>
+							</button>
+							<button
+								class="flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors text-sm h-7 {viewMode === 'canvas' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'}"
+								on:click={() => (viewMode = 'canvas')}
+								aria-label="Switch to canvas view"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M5 9l-3 3 3 3"></path>
+									<path d="M9 5l3-3 3 3"></path>
+									<path d="M9 19l3 3 3-3"></path>
+									<path d="M19 9l3 3-3 3"></path>
+									<path d="M2 12h20"></path>
+									<path d="M12 2v20"></path>
+								</svg>
+								<span>Canvas</span>
+							</button>
+						</div>
+
+						<!-- Category Filter -->
+						<div class="relative flex-1 w-auto min-w-[120px] max-w-[180px]">
+							<select
+								bind:value={selectedCategory}
+								class="appearance-none bg-gray-700 text-white px-3 py-1.5 pr-7 rounded-xl cursor-pointer text-sm border border-gray-600 focus:border-blue-500 focus:outline-none w-full h-9"
+							>
+								{#each categories as category}
+									<option value={category}>
+										{category === "all" ? "All Categories" : category}
+									</option>
+								{/each}
+							</select>
+							<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+								<svg class="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+									<path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+								</svg>
+							</div>
+						</div>
+
+						<!-- User Filter -->
+						<div class="relative flex-1 w-auto min-w-[120px] max-w-[180px]">
+							<select
+								bind:value={selectedUserId}
+								class="appearance-none bg-gray-700 text-white px-3 py-1.5 pr-7 rounded-xl cursor-pointer text-sm border border-gray-600 focus:border-blue-500 focus:outline-none w-full h-9"
+							>
+								{#each allUsers as user}
+									<option value={user.id}>{user.name}</option>
+								{/each}
+							</select>
+							<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+								<svg class="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+									<path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+								</svg>
+							</div>
+						</div>
+
+						<!-- Sort Button -->
+						<button
+							class="flex items-center justify-center gap-1 px-3 py-1.5 bg-gray-700 text-white rounded-xl text-sm hover:bg-gray-600 transition-colors border border-gray-600 w-auto min-w-[80px] h-9"
+							on:click={handleSortButtonClick}
+							aria-label="Sort tasks"
+						>
+							<span>Sort</span>
+							{#key currentIconPath}
+								<svg
+									class="w-3 h-3 transform transition-transform"
+									style="transform: rotate({sortButtonIconRotation}deg)"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								>
+									<path d={currentIconPath}></path>
+								</svg>
+							{/key}
+						</button>
+
+						<!-- Toggle Switches -->
+						<div class="flex flex-row gap-2 items-center ml-2">
+							<!-- Show Completed Toggle -->
+							<label class="flex items-center cursor-pointer text-sm">
+								<div class="relative">
+									<input
+										type="checkbox"
+										class="sr-only"
+										bind:checked={showCompleted}
+									/>
+									<div class="w-8 h-4 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
+									<div
+										class="dot absolute w-3 h-3 bg-white rounded-full transition-transform duration-300 ease-in-out left-0.5 top-0.5"
+										class:translate-x-4={showCompleted}
+									></div>
+								</div>
+								<span class="ml-1 text-white font-medium">Show Completed</span>
+							</label>
+
+							<!-- Show Holograms Toggle -->
+							<label class="flex items-center cursor-pointer text-sm">
+								<div class="relative">
+									<input
+										type="checkbox"
+										class="sr-only"
+										bind:checked={showHolograms}
+									/>
+									<div class="w-8 h-4 bg-gray-600 rounded-full shadow-inner border border-gray-500"></div>
+									<div
+										class="dot absolute w-3 h-3 bg-white rounded-full transition-transform duration-300 ease-in-out left-0.5 top-0.5"
+										class:translate-x-4={showHolograms}
+									></div>
+								</div>
+								<span class="ml-1 text-white font-medium">Show Holograms</span>
+							</label>
+						</div>
+					</div>
+				</div>
+
+				<!-- Add Task Button -->
+				<div class="flex justify-center mb-6">
+					<button
+						on:click={showDialog}
+						class="w-12 h-12 bg-gray-600 hover:bg-gray-500 text-white rounded-full flex items-center justify-center transition-all duration-300 transform hover:scale-110 shadow-lg hover:shadow-xl"
+						aria-label="Add new task"
 					>
-						<path
-							d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+						<span class="text-xl font-bold leading-none">+</span>
+					</button>
+				</div>
+
+				<!-- Task Content -->
+				{#if isLoading}
+					<div class="flex items-center justify-center py-12">
+						<div class="text-center">
+							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4 mx-auto"></div>
+							<p class="text-gray-400">Loading tasks...</p>
+						</div>
+					</div>
+				{:else if viewMode === "canvas"}
+					{#if holonID} 
+						<CanvasView
+							{filteredQuests}
+							{holonID}
+							{showCompleted}
+							on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
+							on:questPositionChanged={handleCanvasQuestPositionChange}
 						/>
-					</svg>
-				</div>
-			</div>
-
-			<div class="flex w-full sm:w-auto justify-between sm:justify-end items-center gap-4">
-				<!-- Sort Button -->
-				<button
-					class="flex items-center gap-1 px-3 py-1.5 bg-gray-600 text-white rounded-full text-sm hover:bg-gray-500 transition-colors"
-					on:click={toggleSort}
-					aria-label="Toggle sort order"
-				>
-					Sort
-					<svg
-						class="w-4 h-4 transform transition-transform"
-						style="transform: rotate({sortField === 'x' 
-							? (sortDirection === 'desc' ? '90' : '270') 
-							: (sortDirection === 'desc' ? '180' : '0')}deg)"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<path d="M12 5v14M19 12l-7 7-7-7"></path>
-					</svg>
-				</button>
-
-				<!-- Show Completed Toggle -->
-				<label class="flex items-center cursor-pointer">
-					<div class="relative">
-						<input
-							type="checkbox"
-							class="sr-only"
-							bind:checked={showCompleted}
-						/>
-						<div class="w-10 h-6 bg-gray-600 rounded-full shadow-inner"></div>
-						<div
-							class="dot absolute w-4 h-4 bg-white rounded-full transition left-1 top-1"
-							class:translate-x-4={showCompleted}
-						></div>
-					</div>
-					<div class="ml-3 text-sm font-medium text-white whitespace-nowrap">
-						<span class="hidden sm:inline">Show Completed</span>
-						<span class="sm:hidden" aria-label="Show completed tasks">✓</span>
-					</div>
-				</label>
-			</div>
-		</div>
-
-		{#if viewMode === "canvas"}
-			<CanvasView
-				{filteredQuests}
-				{holonID}
-				{showCompleted}
-				on:taskClick={(e) => handleTaskClick(e.detail.key, e.detail.quest)}
-			/>
-		{:else}
-			<div class="space-y-2">
-				{#each filteredQuests as [key, quest]}
-					{#if quest.status === "ongoing" || (showCompleted && quest.status === "completed")}
+					{:else} 
+						<div class="flex items-center justify-center py-12">
+							<div class="text-center">
+								<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4 mx-auto"></div>
+								<p class="text-gray-400">Loading canvas...</p>
+							</div>
+						</div>
+					{/if}
+				{:else}
+					<div class="space-y-2 sm:space-y-3">
+										{#each filteredQuests as [key, quest]}
+					{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
 						<button
 							id={key}
-							class="w-full task-card relative text-left"
+							class="w-full task-card relative text-left group"
 							on:click|stopPropagation={() => handleTaskClick(key, quest)}
 							draggable="true"
 							on:dragstart={(e) => handleDragStart(e, key)}
@@ -766,158 +1458,185 @@
 							class:drag-over={$dragState.dragOverId === key}
 						>
 							<div
-								class="p-3 rounded-lg transition-colors"
-								style="background-color: {quest.status === 'completed'
-									? '#9CA3AF'
-									: getColorFromCategory(quest.category, quest.type)}; 
-									   opacity: {quest.status === 'completed' ? '0.6' : '1'}"
+								class="p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
+								style="background-color: {getColorFromCategory(quest.category, quest.type)};
+								   opacity: {quest._meta?.resolvedFromHologram ? '0.75' : '1'};
+								   {quest._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
 							>
-								<div
-									class="flex justify-between items-center gap-4"
-								>
-									<div class="flex-1 min-w-0">
-										<h3
-											class="text-base font-bold opacity-70 truncate flex items-center gap-2"
-										>
-											<span class="hidden sm:inline-block text-sm px-2 py-0.5 rounded-full bg-black/20">
-												{quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : '✓'}
-												{quest.type}
-											</span>
-											{quest.title}
-										</h3>
-										{#if quest.description}
-											<p
-												class="text-sm opacity-70 truncate"
-											>
-												{quest.description}
-											</p>
-										{/if}
-										{#if quest.category}
-											<p class="hidden sm:block text-sm opacity-70 mt-1">
-												<span
-													class="inline-flex items-center"
-												>
-													<svg
-														class="w-4 h-4 mr-1"
-														viewBox="0 0 24 24"
-														fill="currentColor"
+								<div class="flex items-center justify-between gap-2 sm:gap-3">
+									<div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+										<!-- Task Icon -->
+										<div class="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-black/20 flex items-center justify-center text-xs sm:text-sm">
+											{quest.status === 'completed' ? '✅' : quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : '✓'}
+										</div>
+										
+										<!-- Main Content -->
+										<div class="flex-1 min-w-0">
+											<div class="flex items-center gap-1 sm:gap-2 mb-0.5 sm:mb-1">
+												<h3 class="text-sm sm:text-base font-bold truncate {quest.status === 'completed' ? 'text-gray-800 line-through' : 'text-gray-800'}">
+													{quest.title}
+												</h3>
+												{#if quest.category}
+													<span class="inline-block px-1.5 sm:px-2 py-0.5 text-xs bg-black/10 text-gray-700 rounded-md flex-shrink-0 hidden sm:inline-block">
+														{quest.category}
+													</span>
+												{/if}
+												{#if quest._meta?.resolvedFromHologram}
+													<span
+														class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-800 flex-shrink-0 hover:bg-blue-500/30 transition-colors cursor-pointer"
+														title="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
+														on:click|stopPropagation={() => {
+															const match = quest._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
+															if (match) {
+																window.location.href = `/${match[1]}/tasks`;
+															}
+														}}
+														on:keydown|stopPropagation={(e) => {
+															if (e.key === 'Enter' || e.key === ' ') {
+																const match = quest._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
+																if (match) {
+																	window.location.href = `/${match[1]}/tasks`;
+																}
+															}
+														}}
+														tabindex="0"
+														role="button"
+														aria-label="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
 													>
-														<path
-															d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"
-														/>
-													</svg>
-													{quest.category}
-												</span>
-											</p>
-										{/if}
-									</div>
+														<svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+															<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+														</svg>
+														{getHologramSource(quest._meta.hologramSoul)}
+														<svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+														</svg>
+													</span>
+												{/if}
+											</div>
 
-									<div class="flex items-center gap-4 text-sm whitespace-nowrap">
-										{#if quest.location}
-											<div class="opacity-70">
-												📍 {quest.location.split(
-													","
-												)[0]}
+											{#if quest.description}
+												<p class="text-xs sm:text-sm mb-1 sm:mb-2 line-clamp-2 {quest.status === 'completed' ? 'text-gray-700' : 'text-gray-700'}">{quest.description}</p>
+											{/if}
+										</div>
+									</div>
+									
+									<!-- Right Side Content -->
+									<div class="flex items-center gap-1.5 sm:gap-3 text-xs sm:text-sm text-gray-700">
+										{#if quest.when}
+											<div class="text-center hidden sm:block" title="Scheduled time">
+												<span class="block text-xs opacity-75">
+													{formatDate(quest.when)} @ {formatTime(quest.when)}
+													{#if quest.ends}- {formatTime(quest.ends)}{/if}
+												</span>
 											</div>
 										{/if}
-
-										<div class="flex items-center gap-1">
-											<span class="opacity-70">🙋‍♂️</span>
-											<div
-												class="flex -space-x-2 relative group"
-												title={quest.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}
-											>
+										
+										{#if quest.participants && quest.participants.length > 0}
+											<div class="flex -space-x-1 relative" title={quest.participants.map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}>
 												{#each quest.participants.slice(0, 3) as participant}
-													<div class="relative">
-														<img
-															class="w-6 h-6 rounded-full border-2 border-gray-300"
-															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
-															alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
+													{#if participant.id}
+														<img 
+															class="w-5 h-5 sm:w-7 sm:h-7 rounded-full border-1 sm:border-2 border-white object-cover" 
+															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`} 
+															alt={participant.firstName || participant.username || 'User'} 
+															title={`${participant.firstName || participant.username} ${participant.lastName || ''}`}
 														/>
-													</div>
+													{:else}
+														<div class="w-5 h-5 sm:w-7 sm:h-7 rounded-full border-1 sm:border-2 border-white flex items-center justify-center text-xs font-medium bg-blue-500 text-white">
+															{participant.firstName ? participant.firstName[0] : (participant.username ? participant.username[0] : '?')}
+														</div>
+													{/if}
 												{/each}
 												{#if quest.participants.length > 3}
-													<div
-														class="w-6 h-6 rounded-full bg-gray-400 flex items-center justify-center text-xs border-2 border-gray-300 relative group"
-														title={quest.participants.slice(3).map(p => `${p.firstName || p.username} ${p.lastName ? p.lastName[0] + '.' : ''}`).join(', ')}
-													>
+													<div class="w-5 h-5 sm:w-7 sm:h-7 rounded-full border-1 sm:border-2 border-white flex items-center justify-center text-xs font-medium bg-gray-500 text-white">
 														<span>+{quest.participants.length - 3}</span>
 													</div>
 												{/if}
 											</div>
-										</div>
-
-										{#if quest.when}
-											<div class="text-sm font-medium">
-												{formatTime(quest.when)}
-												{#if quest.ends}- {formatTime(
-														quest.ends
-													)}{/if}
-											</div>
 										{/if}
 
-										{#if quest.appreciation.length > 0}
-											<div
-												class="opacity-70 font-bold text-base cursor-help"
-												title={`${quest.appreciation.length} appreciations`}
-											>
-												👍
+										{#if quest.appreciation && quest.appreciation.length > 0}
+											<div class="flex items-center gap-0.5 sm:gap-1" title={`${quest.appreciation.length} appreciations`}>
+												<span class="text-xs">👍</span>
+												<span class="text-xs sm:text-sm">{quest.appreciation.length}</span>
 											</div>
 										{/if}
 									</div>
 								</div>
 							</div>
 						</button>
-					{/if}
-				{/each}
+							{/if}
+						{/each}
+						
+						{#if filteredQuests.length === 0}
+							<div class="text-center py-12">
+								<div class="w-16 h-16 mx-auto mb-4 bg-gray-700 rounded-full flex items-center justify-center">
+									<svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+									</svg>
+								</div>
+								<h3 class="text-lg font-medium text-white mb-2">No tasks found</h3>
+								<p class="text-gray-400 mb-4">Get started by creating your first task</p>
+								<button
+									on:click={showDialog}
+									class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors"
+								>
+									Create Task
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
-		{/if}
+		</div>
+
+		<!-- Schedule Panel -->
+		<div class="hidden xl:block xl:w-80 xl:flex-shrink-0">
+			<div class="bg-gray-800 rounded-3xl shadow-xl">
+				<Schedule />
+			</div>
+		</div>
 	</div>
-	<Schedule />
+</div>
 
-	{#if selectedTask}
-		<TaskModal
-			quest={selectedTask.quest}
-			questId={selectedTask.key}
-			holonId={holonID}
-			on:close={handleTaskDeleted}
-		/>
-	{/if}
+{#if selectedTask && holonID}
+	<TaskModal
+		quest={selectedTask.quest}
+		questId={selectedTask.key}
+		holonId={holonID}
+		on:close={handleTaskDeleted}
+		on:taskCompleted={handleTaskCompleted}
+	/>
+{/if}
 
-	
-	<!-- Replace dialog with div modal -->
-	{#if showTaskInput}
+<!-- Modern Task Input Modal -->
+{#if showTaskInput}
+	<div 
+		class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+		on:click|self={hideDialog}
+		on:keydown={handleDialogKeydown} 
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1" 
+	>
 		<div 
-			class="fixed inset-0 z-50 overflow-auto bg-black bg-opacity-50 flex items-center justify-center"
-			on:click|self={hideDialog}
-			role="dialog"
-			aria-modal="true"
+			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700"
+			aria-labelledby="task-input-title"
 		>
-			<div 
-				class="bg-gray-800 p-6 rounded-lg shadow-lg w-96 relative"
-				role="dialog"
-				aria-labelledby="task-input-title"
-			>
-				<button
-					on:click={hideDialog}
-					class="absolute -top-2 -right-2 text-gray-400 hover:text-white"
-					aria-label="Close task input dialog"
-				>
-					<svg
-						class="w-5 h-5"
-						fill="none"
-						stroke="currentColor"
-						viewBox="0 0 24 24"
+			<div class="p-6">
+				<div class="flex items-center justify-between mb-6">
+					<h3 id="task-input-title" class="text-white text-xl font-bold">Add New Task</h3>
+					<button
+						on:click={hideDialog}
+						class="text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-gray-700"
+						aria-label="Close task input dialog"
 					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M6 18L18 6M6 6l12 12"
-						></path>
-					</svg>
-				</button>
-				<h3 id="task-input-title" class="text-white text-lg font-bold mb-4">Add New Task</h3>
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+				
 				<form 
 					on:submit|preventDefault={async (e) => {
 						await handleAddTask();
@@ -926,32 +1645,32 @@
 					class="space-y-4"
 				>
 					<div>
-						<label for="task-title" class="sr-only">Task title</label>
+						<label for="task-title" class="block text-sm font-medium text-gray-300 mb-2">Task Title</label>
 						<input
 							id="task-title"
 							type="text"
 							bind:value={newTask.title}
-							placeholder="Task title..."
-							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600"
+							placeholder="Enter task title..."
+							class="w-full px-4 py-3 rounded-xl bg-gray-700 text-white placeholder-gray-400 border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 							required
 						/>
 					</div>
 					<div>
-						<label for="task-description" class="sr-only">Task description</label>
+						<label for="task-description" class="block text-sm font-medium text-gray-300 mb-2">Description</label>
 						<textarea
 							id="task-description"
 							bind:value={newTask.description}
-							placeholder="Description..."
-							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white placeholder-gray-400 border-gray-600 resize-none"
+							placeholder="Enter task description..."
+							class="w-full px-4 py-3 rounded-xl bg-gray-700 text-white placeholder-gray-400 border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors resize-none"
 							rows="3"
 						></textarea>
 					</div>
 					<div>
-						<label for="task-category" class="sr-only">Task category</label>
+						<label for="task-category" class="block text-sm font-medium text-gray-300 mb-2">Category</label>
 						<select
 							id="task-category"
 							bind:value={newTask.category}
-							class="w-full px-3 py-2 text-sm rounded-md focus:outline-none bg-gray-700 text-white border-gray-600"
+							class="w-full px-4 py-3 rounded-xl bg-gray-700 text-white border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
 						>
 							<option value="">Select category...</option>
 							{#each categories.filter(cat => cat !== 'all') as category}
@@ -959,66 +1678,63 @@
 							{/each}
 						</select>
 					</div>
-					<div class="flex justify-end gap-2">
+					<div class="flex justify-end gap-3 pt-4">
 						<button
 							type="button"
 							on:click={hideDialog}
-							class="px-4 py-2 text-sm rounded-md bg-gray-700 text-white hover:bg-gray-600"
+							class="px-6 py-2.5 text-sm font-medium rounded-xl bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white transition-colors"
 							aria-label="Cancel adding task"
 						>
 							Cancel
 						</button>
 						<button
 							type="submit"
-							class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+							class="px-6 py-2.5 text-sm font-medium rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
 							disabled={!newTask.title.trim()}
 							aria-label="Add new task"
 						>
-							Add Task
+							Create Task
 						</button>
 					</div>
 				</form>
 			</div>
 		</div>
-	{/if}
-</div>
+	</div>
+{/if}
+
+<!-- Add animation components -->
+{#if showFireworks}
+	<Fireworks />
+{/if}
+{#if showConfetti}
+	<Confetti />
+{/if}
 
 <style>
-	/* Add smooth transition for the toggle switch dot */
+	/* Toggle switch styling */
 	.dot {
 		transition: transform 0.3s ease-in-out;
 	}
-	.translate-x-4 {
-		transform: translateX(1rem);
-	}
 
+	/* Task card styling */
 	.task-card {
 		position: relative;
-		transition: transform 0.2s ease;
 		cursor: grab;
 	}
 
-	.task-card.dragging {
-		opacity: 0.5;
-		cursor: grabbing;
-		z-index: 10;
+	.task-card:hover {
+		cursor: pointer;
 	}
 
-	.task-card.drag-over {
-		transform: translateY(10px);
+	/* Text truncation utilities */
+	.line-clamp-2 {
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 
-	.task-card.drag-over::before {
-		content: '';
-		position: absolute;
-		top: -5px;
-		left: 0;
-		right: 0;
-		height: 2px;
-		background-color: #4F46E5;
-		border-radius: 2px;
-	}
-
+	/* Smooth animations */
 	@keyframes slideDown {
 		from {
 			opacity: 0;
@@ -1030,26 +1746,19 @@
 		}
 	}
 
-	/* Add tooltip arrow */
-	.group-hover\:visible {
-		position: absolute;
-		pointer-events: none;
+	.compact-toolbar {
+		gap: 0.5rem !important;
 	}
-
-	.group-hover\:visible::before {
-		content: "";
-		position: absolute;
-		top: -4px;
-		left: 50%;
-		transform: translateX(-50%);
-		border-width: 0 4px 4px 4px;
-		border-style: solid;
-		border-color: transparent transparent #1f2937 transparent;
+	.compact-toolbar select,
+	.compact-toolbar button {
+		font-size: 0.95rem;
+		padding-top: 0.25rem;
+		padding-bottom: 0.25rem;
+		padding-left: 0.75rem;
+		padding-right: 0.75rem;
+		height: 2.25rem;
 	}
-
-	/* Update transform styles */
-	.transform {
-		transform-origin: center;
-		transition: transform 0.3s ease;
+	.compact-toolbar .dot {
+		transition: transform 0.3s ease-in-out;
 	}
 </style>

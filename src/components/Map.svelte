@@ -27,6 +27,7 @@
 	let isDragging = false;
 	let dragOffset = { x: 0, y: 0 };
 	let lastSidebarPosition: { x: number, y: number } | null = null;
+	let showLensInfo = false;
 	let lensData: Record<LensType, Set<string>> = {
 		quests: new Set<string>(),
 		needs: new Set<string>(),
@@ -189,9 +190,12 @@
 
 		// Update the highlighted hexagons if any are visible at current resolution
 		if (visibleHighlightedHexes.size > 0) {
-			map.getSource("highlighted-hexagons")?.setData(
-				highlightHexagons(visibleHighlightedHexes, highlightColor)
-			);
+			const highlightedSource = map.getSource("highlighted-hexagons");
+			if (highlightedSource) {
+				highlightedSource.setData(
+					highlightHexagons(visibleHighlightedHexes, highlightColor)
+				);
+			}
 		}
 
 		const h3res = getResolution(currentZoom);
@@ -213,30 +217,30 @@
 					const boundary = h3.cellToBoundary(hexagon, true);
 					const [lat, lng] = h3.cellToLatLng(hexagon);
 					const [vertexLat, vertexLng] = boundary[0];
-					
+					const centerLng = lng; // Use center longitude for reference
+
 					// Check if the hexagon crosses the antimeridian by looking for large jumps
 					let needsNormalization = false;
 					for (let i = 0; i < boundary.length; i++) {
 						const j = (i + 1) % boundary.length;
-						const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
+						const lngDiff = Math.abs(boundary[i][0] - boundary[j][0]);
 						if (lngDiff > 180) {
 							needsNormalization = true;
 							break;
 						}
 					}
 
-					// If we need to normalize, shift coordinates that are on the wrong side
+					// If we need to normalize, shift coordinates based on center longitude
 					let normalizedBoundary = boundary;
 					if (needsNormalization) {
-						const avgLng = boundary.reduce((sum: number, [_, lng]: [number, number]) => sum + lng, 0) / boundary.length;
-						normalizedBoundary = boundary.map(([lat, lng]: [number, number]) => {
-							if (avgLng < 0 && lng > 0) {
-								return [lat, lng - 360];
+						normalizedBoundary = boundary.map(([vertLng, vertLat]: [number, number]) => {
+							if (centerLng < 0 && vertLng > 90) { // Hex center is west, vertex is far east -> shift vertex west
+								return [vertLng - 360, vertLat];
 							}
-							if (avgLng > 0 && lng < 0) {
-								return [lat, lng + 360];
+							if (centerLng > 0 && vertLng < -90) { // Hex center is east, vertex is far west -> shift vertex east
+								return [vertLng + 360, vertLat];
 							}
-							return [lat, lng];
+							return [vertLng, vertLat];
 						});
 					}
 
@@ -299,30 +303,30 @@
 				const boundary = h3.cellToBoundary(hexagon, true);
 				const [lat, lng] = h3.cellToLatLng(hexagon);
 				const hexSize = h3.getHexagonEdgeLengthAvg(h3.getResolution(hexagon), 'km') * 1000;
-				
+				const centerLng = lng; // Use center longitude for reference
+
 				// Check for antimeridian crossing
 				let needsNormalization = false;
 				for (let i = 0; i < boundary.length; i++) {
 					const j = (i + 1) % boundary.length;
-					const lngDiff = Math.abs(boundary[i][1] - boundary[j][1]);
+					const lngDiff = Math.abs(boundary[i][0] - boundary[j][0]);
 					if (lngDiff > 180) {
 						needsNormalization = true;
 						break;
 					}
 				}
 
-				// Normalize if needed
+				// Normalize if needed based on center longitude
 				let normalizedBoundary = boundary;
 				if (needsNormalization) {
-					const avgLng = boundary.reduce((sum: number, [_, lng]: [number, number]) => sum + lng, 0) / boundary.length;
-					normalizedBoundary = boundary.map(([lat, lng]: [number, number]) => {
-						if (avgLng < 0 && lng > 0) {
-							return [lat, lng - 360];
+					normalizedBoundary = boundary.map(([vertLng, vertLat]: [number, number]) => {
+						if (centerLng < 0 && vertLng > 90) { // Hex center is west, vertex is far east -> shift vertex west
+							return [vertLng - 360, vertLat];
 						}
-						if (avgLng > 0 && lng < 0) {
-							return [lat, lng + 360];
+						if (centerLng > 0 && vertLng < -90) { // Hex center is east, vertex is far west -> shift vertex east
+							return [vertLng + 360, vertLat];
 						}
-						return [lat, lng];
+						return [vertLng, vertLat];
 					});
 				}
 
@@ -363,15 +367,27 @@
 		const hexagons = generateHexagons(h3res);
 		const hexagonsLower = generateHexagons(h3resLower);
 
-		map.getSource("hexagon-grid")?.setData({
-			type: "FeatureCollection",
-			features: hexagonsToFeatures(hexagons)
-		});
+		// Add safety checks to ensure sources exist before updating them
+		const hexagonGridSource = map.getSource("hexagon-grid");
+		const hexagonGridLowerSource = map.getSource("hexagon-grid-lower");
+		
+		if (hexagonGridSource) {
+			hexagonGridSource.setData({
+				type: "FeatureCollection",
+				features: hexagonsToFeatures(hexagons)
+			});
+		} else {
+			console.warn('[Map] hexagon-grid source not ready yet');
+		}
 
-		map.getSource("hexagon-grid-lower")?.setData({
-			type: "FeatureCollection",
-			features: hexagonsToFeatures(hexagonsLower)
-		});
+		if (hexagonGridLowerSource) {
+			hexagonGridLowerSource.setData({
+				type: "FeatureCollection",
+				features: hexagonsToFeatures(hexagonsLower)
+			});
+		} else {
+			console.warn('[Map] hexagon-grid-lower source not ready yet');
+		}
 	}
 
 	function goToHex(hex: string) {
@@ -452,7 +468,32 @@
 		// No need to implement this function as the isLoading variable is no longer used
 	}
 
-	// Replace subscription model with simple data fetching
+	// Update the lens selection to use fetch instead of subscribe
+	$: if (map && selectedLens) {
+		// Add a console log to track lens changes
+		console.log(`[Map] Lens selection triggered: ${selectedLens}`);
+		
+		// Clear only the highlighted hexagons visually
+		map.getSource("highlighted-hexagons")?.setData({
+			type: "FeatureCollection",
+			features: []
+		});
+		
+		// Cancel any existing fetch timeout
+		clearMoveTimeout();
+		
+		// Schedule a fetch after a short delay
+		moveTimeout = window.setTimeout(() => {
+			console.log(`[Map] Fetching data for lens: ${selectedLens}`);
+			// Clear only the previous lens data before fetching new data
+			lensData[selectedLens] = new Set<string>();
+			fetchLensData(selectedLens);
+		}, 500);
+		
+		// Don't render hexes immediately since we just cleared the visual data
+		// The fetchLensData call will trigger a render when it has new data
+	}
+
 	function fetchLensData(lens: string) {
 		// Implement throttling
 		const now = Date.now();
@@ -506,7 +547,7 @@
 		let fetchesInProgress = 0;
 		let fetchesCompleted = 0;
 		
-		// When all fetches are done, hide the loading indicator
+		// When all fetches are done, update the display
 		const checkAllFetchesComplete = () => {
 			fetchesCompleted++;
 			if (fetchesCompleted === fetchesInProgress) {
@@ -516,6 +557,7 @@
 					lensData[currentLens as LensType] = hexagonsWithContent;
 					
 					// Render the updated hexes
+					console.log(`[Map] Rendering ${hexagonsWithContent.size} hexagons for ${currentLens}`);
 					renderHexes(map, currentLens);
 					
 					console.log(`[Map] Found ${hexagonsWithContent.size} hexagons with ${currentLens} data (${fetchesCompleted}/${fetchesInProgress} fetches)`);
@@ -539,7 +581,6 @@
 					console.log(`[Map Debug] Retrieved ${items?.length || 0} items for hexagon: ${hex}, lens: ${lens}`);
 					if (items && items.length > 0) {
 						console.log(`[Map Debug] Adding hexagon with content: ${hex}`);
-						// Always add the hexagon to show highlights - temporary fix
 						hexagonsWithContent.add(hex);
 					}
 					checkAllFetchesComplete();
@@ -615,7 +656,16 @@
 	function initializeMap() {
 		if (mapInitialized || !browser) return;
 		
-		mapboxgl.accessToken = "pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
+		// Validate Mapbox access token
+		const accessToken = "pk.eyJ1IjoicnZhbGVudGkiLCJhIjoiY2tncnMxeG81MDNjaTJybWpxOWhrOWpmZiJ9.v2W_bicM22r4YX4pCyRvHQ";
+		if (!accessToken || accessToken.length < 50) {
+			console.error('[Map] Invalid Mapbox access token');
+			return;
+		}
+		
+		mapboxgl.accessToken = accessToken;
+		console.log('[Map] Initializing map with access token:', accessToken.substring(0, 20) + '...');
+		
 		map = new mapboxgl.Map({
 			container: mapContainer,
 			style: "mapbox://styles/mapbox/satellite-streets-v12",
@@ -626,46 +676,82 @@
 		});
 
 		// Add geocoder (search box)
-		const geocoder = new MapboxGeocoder({
-			accessToken: mapboxgl.accessToken,
-			mapboxgl: mapboxgl,
-			marker: false,
-			placeholder: "Search for a location",
-		});
+		try {
+			const geocoder = new MapboxGeocoder({
+				accessToken: mapboxgl.accessToken,
+				mapboxgl: mapboxgl,
+				marker: false,
+				placeholder: "Search for a location",
+				types: "poi,address,place,locality,neighborhood,region,country,postcode",
+			});
 
-		// Add geolocate control
-		const geolocate = new mapboxgl.GeolocateControl({
-			positionOptions: {
-				enableHighAccuracy: true,
-			},
-			trackUserLocation: true,
-			showUserHeading: true,
-		});
+			// Add geolocate control
+			const geolocate = new mapboxgl.GeolocateControl({
+				positionOptions: {
+					enableHighAccuracy: true,
+				},
+				trackUserLocation: true,
+				showUserHeading: true,
+			});
 
-		map.addControl(geocoder, "top-right");
-		map.addControl(geolocate, "top-right");
+			map.addControl(geocoder, "top-right");
+			map.addControl(geolocate, "top-right");
+			
+			// Debug: Check if geocoder was added successfully
+			console.log('[Map] Geocoder added to map');
+			
+			// Ensure geocoder is visible
+			setTimeout(() => {
+				const geocoderElement = mapContainer.querySelector('.mapboxgl-ctrl-geocoder');
+				if (geocoderElement) {
+					console.log('[Map] Geocoder element found:', geocoderElement);
+					geocoderElement.style.display = 'block';
+					geocoderElement.style.visibility = 'visible';
+					geocoderElement.style.opacity = '1';
+				} else {
+					console.warn('[Map] Geocoder element not found');
+				}
+			}, 1000);
+		} catch (error) {
+			console.error('[Map] Error adding geocoder:', error);
+		}
 
 		map.on("style.load", () => {
+			console.log("Map style loaded");
+			
 			map.setFog({
-				color: "rgb(186, 210, 235)",
-				"high-color": "rgb(36, 92, 223)",
-				"horizon-blend": 0.02,
-				"space-color": "rgb(11, 11, 25)",
-				"star-intensity": 0.6,
+				color: "rgb(255, 255, 255)",       // Lower atmosphere white
+				"high-color": "rgb(255, 255, 255)", // Upper atmosphere white
+				"horizon-blend": 0.03,          // Slightly increase blend for thickness
+				"space-color": "rgb(17, 24, 39)", // Keep space dark
+				"star-intensity": 0.6
 			});
-		});
-
-		map.on("load", () => {
-			console.log("Map loaded");
 			
 			// Check if sources already exist and remove them
 			try {
-				if (map.getSource("hexagon-grid")) {
-					console.log('[Map] Removing existing hexagon-grid source');
-					// Need to remove layers first
-					if (map.getLayer("hexagon-grid-outline-layer")) map.removeLayer("hexagon-grid-outline-layer");
-					if (map.getLayer("hexagon-grid-circle-layer")) map.removeLayer("hexagon-grid-circle-layer");
-					map.removeSource("hexagon-grid");
+				// Define all sources and their associated layers
+				const sourceLayerMap = {
+					"hexagon-grid": ["hexagon-grid-outline-layer", "hexagon-grid-circle-layer"],
+					"hexagon-grid-lower": ["hexagon-grid-lower-outline-layer", "hexagon-grid-lower-circle-layer"],
+					"highlighted-hexagons": ["highlighted-hexagons-fill-layer", "highlighted-hexagons-outline-layer", "highlighted-hexagons-circle-layer"],
+					"selected-hexagon": ["selected-hexagon-fill-layer", "selected-hexagon-outline-layer", "selected-hexagon-circle-layer"]
+				};
+				
+				// Remove all existing layers and sources systematically
+				for (const [sourceId, layerIds] of Object.entries(sourceLayerMap)) {
+					// Remove layers first (they depend on sources)
+					for (const layerId of layerIds) {
+						if (map.getLayer(layerId)) {
+							console.log(`[Map] Removing existing layer: ${layerId}`);
+							map.removeLayer(layerId);
+						}
+					}
+					
+					// Then remove the source
+					if (map.getSource(sourceId)) {
+						console.log(`[Map] Removing existing source: ${sourceId}`);
+						map.removeSource(sourceId);
+					}
 				}
 				
 				// Base hexagon grid layers
@@ -850,9 +936,19 @@
 						]
 					}
 				});
+				
+				// Now that sources are ready, render initial hexes
+				if (selectedLens) {
+					console.log('[Map] Rendering initial hexes after style load');
+					renderHexes(map, selectedLens);
+				}
 			} catch (e) {
 				console.error('[Map] Error cleaning up existing sources/layers:', e);
 			}
+		});
+
+		map.on("load", () => {
+			console.log("Map loaded");
 			
 			// Initial data fetch after map is fully loaded
 			console.log('[Map] Map initialized, scheduling initial data fetch');
@@ -863,7 +959,6 @@
 					fetchLensData(selectedLens);
 				}
 			}, 500);
-			renderHexes(map, selectedLens);
 			mapInitialized = true;
 		});
 
@@ -906,37 +1001,8 @@
 			const newHexId = h3.latLngToCell(lat, lng, resolution);
 			console.log("Hexagon ID:", newHexId);
 			
-			// Only calculate a new position if we don't have a saved one
-			if (!lastSidebarPosition) {
-				// Calculate sidebar position based on click point
-				const point = e.point;
-				const mapRect = mapContainer.getBoundingClientRect();
-				
-				// Calculate the initial width for the sidebar
-				const sidebarWidth = Math.min(400, mapRect.width * 0.4); // 40% of map width up to 400px max
-				const sidebarHeight = Math.min(500, mapRect.height * 0.7); // 70% of map height up to 500px max
-				
-				// Calculate position relative to the map (not the page)
-				let posX, posY;
-				
-				// Position the sidebar to avoid going off-screen
-				// Place it to the right of the click  if there's room, otherwise to the left
-				if (point.x + sidebarWidth + 20 < mapRect.width) {
-					// Enough room to the right
-					posX = point.x + 20; // 20px offset from click point
-				} else {
-					// Place to the left
-					posX = Math.max(point.x - sidebarWidth - 20, 10); // 20px offset left, minimum 10px from left edge
-				}
-				
-				// Position vertically - try to center it on the click point
-				posY = Math.max(10, Math.min(mapRect.height - sidebarHeight - 10, point.y - (sidebarHeight / 2)));
-				
-				// Update the sidebar position
-				sidebarPosition = { x: posX, y: posY };
-				// Store this as the last position
-				lastSidebarPosition = { ...sidebarPosition };
-			}
+			// Update sidebar position
+			updateSidebarPosition();
 			
 			// Only update if it's a valid H3 cell
 			if (isH3Cell(newHexId)) {
@@ -953,6 +1019,23 @@
 					console.error(`Error fetching ${selectedLens} data:`, error);
 				});
 		});
+	}
+
+	// Update the sidebar position calculation
+	function updateSidebarPosition() {
+		if (mapContainer) {
+			const mapRect = mapContainer.getBoundingClientRect();
+			const geolocateControl = mapContainer.querySelector('.mapboxgl-ctrl-geolocate');
+			
+			if (geolocateControl) {
+				const geoRect = geolocateControl.getBoundingClientRect();
+				sidebarPosition = {
+					x: mapRect.width - 420, // 400px width + 20px margin
+					y: geoRect.bottom + 20 // Position below geolocate with some margin
+				};
+				lastSidebarPosition = { ...sidebarPosition };
+			}
+		}
 	}
 
 	// Function to make sure the sidebar position is within map bounds
@@ -1022,39 +1105,28 @@
 			
 			// Try to clean up layers and sources to prevent ID conflicts
 			try {
-				// Remove layers before removing sources
-				const layersToRemove = [
-					"hexagon-grid-outline-layer",
-					"hexagon-grid-circle-layer",
-					"hexagon-grid-lower-outline-layer",
-					"hexagon-grid-lower-circle-layer",
-					"highlighted-hexagons-fill-layer",
-					"highlighted-hexagons-outline-layer",
-					"highlighted-hexagons-circle-layer",
-					"selected-hexagon-fill-layer",
-					"selected-hexagon-outline-layer",
-					"selected-hexagon-circle-layer"
-				];
+				// Define all sources and their associated layers
+				const sourceLayerMap = {
+					"hexagon-grid": ["hexagon-grid-outline-layer", "hexagon-grid-circle-layer"],
+					"hexagon-grid-lower": ["hexagon-grid-lower-outline-layer", "hexagon-grid-lower-circle-layer"],
+					"highlighted-hexagons": ["highlighted-hexagons-fill-layer", "highlighted-hexagons-outline-layer", "highlighted-hexagons-circle-layer"],
+					"selected-hexagon": ["selected-hexagon-fill-layer", "selected-hexagon-outline-layer", "selected-hexagon-circle-layer"]
+				};
 				
-				for (const layer of layersToRemove) {
-					if (map.getLayer(layer)) {
-						console.log(`[Map] Removing layer: ${layer}`);
-						map.removeLayer(layer);
+				// Remove all existing layers and sources systematically
+				for (const [sourceId, layerIds] of Object.entries(sourceLayerMap)) {
+					// Remove layers first (they depend on sources)
+					for (const layerId of layerIds) {
+						if (map.getLayer(layerId)) {
+							console.log(`[Map] Removing layer: ${layerId}`);
+							map.removeLayer(layerId);
+						}
 					}
-				}
-				
-				// Now remove sources
-				const sourcesToRemove = [
-					"hexagon-grid",
-					"hexagon-grid-lower",
-					"highlighted-hexagons",
-					"selected-hexagon"
-				];
-				
-				for (const source of sourcesToRemove) {
-					if (map.getSource(source)) {
-						console.log(`[Map] Removing source: ${source}`);
-						map.removeSource(source);
+					
+					// Then remove the source
+					if (map.getSource(sourceId)) {
+						console.log(`[Map] Removing source: ${sourceId}`);
+						map.removeSource(sourceId);
 					}
 				}
 			} catch (e) {
@@ -1084,31 +1156,42 @@
 	}
 
 	// Update ID store subscription
-	$: if ($ID && $ID !== hexId && isVisible) {
+	$: if ($ID && $ID !== hexId && isH3Cell($ID)) {
+		console.log(`[Map] ID changed to hexagon: ${$ID}`);
 		hexId = $ID;
 		dispatch('holonChange', { id: $ID });
-		// Only update map if we're visible and it's a valid H3 cell
-		if (map && isH3Cell($ID)) {
+		
+		// If map is ready and visible, navigate immediately
+		if (map && isVisible && mapInitialized) {
+			console.log(`[Map] Navigating to hexagon: ${$ID}`);
 			updateSelectedHexagon($ID);
+		} else if (isVisible && !mapInitialized && browser) {
+			// If map isn't ready yet but we're visible, initialize it and then navigate
+			console.log(`[Map] Map not ready, initializing and will navigate to: ${$ID}`);
+			window.setTimeout(() => {
+				if (map && mapInitialized) {
+					console.log(`[Map] Map now ready, navigating to: ${$ID}`);
+					updateSelectedHexagon($ID);
+				}
+			}, 200);
 		}
 	}
 
-	// Update the lens selection to use fetch instead of subscribe
-	$: if (map && selectedLens) {
-		// Add a console log to track lens changes
-		console.log(`[Map] Lens selection triggered: ${selectedLens}`);
+	// Handle navigation when map becomes ready and there's already a hexagon ID
+	$: if (map && mapInitialized && isVisible && hexId && isH3Cell(hexId)) {
+		// Check if we need to navigate to the current hexagon
+		const currentCenter = map.getCenter();
+		const [hexLat, hexLng] = h3.cellToLatLng(hexId);
+		const distance = Math.sqrt(
+			Math.pow(currentCenter.lat - hexLat, 2) + 
+			Math.pow(currentCenter.lng - hexLng, 2)
+		);
 		
-		// Cancel any existing fetch timeout
-		clearMoveTimeout();
-		
-		// Schedule a fetch after a short delay
-		moveTimeout = window.setTimeout(() => {
-			console.log(`[Map] Fetching data for lens: ${selectedLens}`);
-			fetchLensData(selectedLens);
-		}, 500);
-		
-		// Always render hexes with existing data for immediate feedback
-		renderHexes(map, selectedLens);
+		// If we're not already at the hexagon (within a small threshold), navigate to it
+		if (distance > 0.01) { // About 1km threshold
+			console.log(`[Map] Map ready, navigating to existing hexagon: ${hexId}`);
+			updateSelectedHexagon(hexId);
+		}
 	}
 
 	// Watch for visibility changes
@@ -1175,6 +1258,17 @@
 
 	// Drag handling functions
 	function handleDragStart(event: MouseEvent) {
+		// If the target is an input, button, select, or anchor, or has such an ancestor, don't start drag
+		const targetElement = event.target as HTMLElement;
+		if (targetElement.tagName === 'INPUT' ||
+			targetElement.tagName === 'BUTTON' ||
+			targetElement.tagName === 'SELECT' ||
+			targetElement.tagName === 'A' ||
+			targetElement.closest('button, input, select, a')) {
+			isDragging = false; // Ensure not in dragging state
+			return;
+		}
+
 		isDragging = true;
 		const sidebarElement = event.currentTarget as HTMLElement;
 		const rect = sidebarElement.getBoundingClientRect();
@@ -1185,7 +1279,7 @@
 			y: event.clientY - rect.top
 		};
 		
-		// Prevent text selection during drag
+		// Prevent text selection during drag only if drag actually starts
 		event.preventDefault();
 	}
 	
@@ -1244,8 +1338,10 @@
 
 	<!-- Lens Selector -->
 	<div class="lens-selector">
-		<div class="mapboxgl-ctrl mapboxgl-ctrl-group">
+		<div class="lens-control">
+			<label for="lens-select" class="lens-label">Lens:</label>
 			<select 
+				id="lens-select"
 				bind:value={selectedLens}
 				class="lens-select"
 				aria-label="Select lens type"
@@ -1254,11 +1350,33 @@
 					<option value={option.value}>{option.label}</option>
 				{/each}
 			</select>
-			<div class="select-arrow">
+			<button 
+				class="info-button" 
+				aria-label="Lens information"
+				on:mouseenter={() => showLensInfo = true}
+				on:mouseleave={() => showLensInfo = false}
+			>
 				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-					<path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+					<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" />
 				</svg>
-			</div>
+			</button>
+			
+			{#if showLensInfo}
+				<div class="info-tooltip">
+					<p>Lenses filter the map to show different types of data:</p>
+					<ul>
+						<li><strong>Tasks:</strong> View active tasks and quests</li>
+						<li><strong>Local Needs:</strong> Community needs and requests</li>
+						<li><strong>Offers:</strong> Available resources and services</li>
+						<li><strong>Communities:</strong> Active local groups</li>
+						<li><strong>Organizations:</strong> Registered organizations</li>
+						<li><strong>Projects:</strong> Ongoing initiatives</li>
+						<li><strong>Currencies:</strong> Local exchange systems</li>
+						<li><strong>People:</strong> Community members</li>
+						<li><strong>Holons:</strong> Nested organizational units</li>
+					</ul>
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -1267,18 +1385,16 @@
 		<div 
 			class="sidebar-overlay"
 			style="left: {sidebarPosition.x}px; top: {sidebarPosition.y}px;"
+			on:mousedown={handleDragStart}
+			role="dialog" 
+			aria-modal="true"
+			aria-labelledby="sidebar-header-title"
+			tabindex="0" 
+			on:keydown={(e) => { if (e.key === 'Escape') closeSidebar(); }}
 		>
-			<div class="sidebar-header" 
-				on:mousedown={handleDragStart}
-				role="button"
-				tabindex="0"
-				on:keydown={e => e.key === 'Enter' && handleDragStart(e)}
-			>
+			<div class="sidebar-header">
 				<div class="flex items-center">
-					<svg class="drag-handle mr-2" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-						<path d="M5 9H19M5 15H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-					</svg>
-					<span class="text-white font-medium cursor-move">Hexagon {hexId}</span>
+					<span id="sidebar-header-title" class="text-white font-medium">Hexagon {hexId}</span>
 				</div>
 				<button 
 					class="text-gray-300 hover:text-white" 
@@ -1288,7 +1404,7 @@
 			<div class="sidebar-content">
 				<MapSidebar 
 					{selectedLens}
-					{hexId}
+					
 					isOverlay={true}
 				/>
 			</div>
@@ -1323,8 +1439,8 @@
 	/* Sidebar overlay styles */
 	.sidebar-overlay {
 		position: absolute;
-		width: min(400px, 40vw);
-		max-height: 90vh;
+		width: 400px;
+		max-height: calc(90vh - 120px); /* Account for top controls */
 		background-color: #1f2937;
 		border-radius: 0.75rem;
 		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
@@ -1332,6 +1448,7 @@
 		z-index: 1000;
 		display: flex;
 		flex-direction: column;
+		cursor: move; /* Add cursor style */
 	}
 
 	.sidebar-header {
@@ -1341,17 +1458,6 @@
 		padding: 0.75rem 1rem;
 		background-color: #111827;
 		border-bottom: 1px solid #374151;
-		cursor: move; /* Indicate draggable */
-		user-select: none; /* Prevent text selection during drag */
-	}
-
-	.sidebar-header .drag-handle {
-		color: #9ca3af; /* gray-400 */
-		cursor: grab;
-	}
-	
-	.sidebar-header:active .drag-handle {
-		cursor: grabbing;
 	}
 
 	.sidebar-header button {
@@ -1369,21 +1475,49 @@
 		max-height: 70vh;
 	}
 
-	:global(.mapboxgl-ctrl-top-right) {
-		top: 10px !important;
-		right: 10px !important;
-	}
+	/* .custom-control-container {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		z-index: 2;
+		display: flex;
+		gap: 10px;
+		background: white;
+		padding: 10px;
+		border-radius: 4px;
+		box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+	} */
 
-	:global(.mapboxgl-ctrl-geocoder) {
-		min-width: 250px;
-	}
+	/* .lens-container {
+		display: flex;
+		align-items: center;
+	} */
 
-	/* Lens selector styling */
 	.lens-selector {
 		position: absolute;
 		top: 10px;
-		right: 320px; /* Position to the left of the search box */
+		left: 50%;
+		transform: translateX(-50%);
 		z-index: 10;
+	}
+
+	.lens-control {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 0 8px;
+		min-height: 36px;
+		background: white;
+		border-radius: 4px;
+		box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
+		white-space: nowrap;
+	}
+
+	.lens-label {
+		color: #333;
+		font-weight: 500;
+		font-size: 14px;
+		white-space: nowrap;
 	}
 
 	.lens-select {
@@ -1391,22 +1525,82 @@
 		background: transparent;
 		color: #333;
 		border: none;
-		padding: 7px 30px 7px 10px;
+		padding: 4px 24px 4px 8px;
 		font-size: 14px;
 		cursor: pointer;
-		width: 100%;
+		min-width: 120px;
 	}
 
-	.select-arrow {
+	/* .select-arrow {
 		position: absolute;
-		right: 8px;
+		right: 36px;
 		top: 50%;
 		transform: translateY(-50%);
 		pointer-events: none;
 		color: #333;
+	} */
+
+	.info-button {
+		background: none;
+		border: none;
+		padding: 4px;
+		color: #000;
+		cursor: pointer;
+		transition: color 0.2s;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 	}
 
-	.mapboxgl-ctrl.mapboxgl-ctrl-group {
+	.info-button:hover {
+		color: #333;
+	}
+
+	.info-tooltip {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		background: white;
+		border-radius: 4px;
+		box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+		padding: 12px;
+		width: 280px;
+		font-size: 13px;
+		color: #333;
+		z-index: 1000;
+		transform: translateX(50%); /* Center the tooltip */
+	}
+
+	.info-tooltip::before {
+		content: '';
+		position: absolute;
+		top: -6px;
+		right: 50%;
+		width: 12px;
+		height: 12px;
+		background: white;
+		transform: rotate(45deg);
+		box-shadow: -2px -2px 4px rgba(0,0,0,0.05);
+	}
+
+	.info-tooltip p {
+		margin: 0 0 8px 0;
+	}
+
+	.info-tooltip ul {
+		margin: 0;
+		padding-left: 16px;
+	}
+
+	.info-tooltip li {
+		margin: 4px 0;
+	}
+
+	.info-tooltip strong {
+		color: #000;
+	}
+
+	:global(.mapboxgl-ctrl.mapboxgl-ctrl-group) {
 		position: relative;
 		background: #fff;
 		border-radius: 4px;
@@ -1414,6 +1608,61 @@
 
 	select:focus {
 		outline: none;
+	}
+
+	:global(.mapboxgl-ctrl-geocoder) {
+		min-width: 250px !important;
+		width: auto !important;
+		max-width: 360px !important;
+		font-size: 14px !important;
+		line-height: 20px !important;
+		box-shadow: 0 0 0 2px rgba(0,0,0,0.1) !important;
+		display: block !important;
+		visibility: visible !important;
+		opacity: 1 !important;
+		z-index: 1000 !important;
+	}
+
+	:global(.mapboxgl-ctrl-geocoder input[type='text']) {
+		height: 36px !important;
+		padding: 6px 35px !important;
+	}
+
+	:global(.mapboxgl-ctrl-geocoder--icon) {
+		top: 8px !important;
+	}
+
+	:global(.mapboxgl-ctrl-geocoder--button) {
+		top: 3px !important;
+	}
+
+	/* Ensure geolocate control doesn't overlap */
+	:global(.mapboxgl-ctrl-top-right) {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		z-index: 1000 !important;
+	}
+
+	/* Ensure proper spacing between controls */
+	:global(.mapboxgl-ctrl-top-right .mapboxgl-ctrl) {
+		margin: 10px 10px 0 0;
+		display: block !important;
+		visibility: visible !important;
+	}
+
+	/* Ensure the geocoder doesn't wrap */
+	:global(.mapboxgl-ctrl-geocoder.mapboxgl-ctrl) {
+		margin-top: 10px !important;
+		display: block !important;
+		visibility: visible !important;
+	}
+
+	/* Ensure the geolocate control appears below */
+	:global(.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate) {
+		margin-top: 10px !important;
+		display: block !important;
+		visibility: visible !important;
 	}
 </style>
 

@@ -15,7 +15,7 @@
     let chart: HTMLDivElement;
     let width = 0;
     let height = 300;
-    const margin = { top: 20, right: 10, bottom: 30, left: 100 }; // Significantly reduced margins
+    const margin = { top: 20, right: 10, bottom: 30, left: 350 }; // Increased left margin
 
     let selectedProposal: typeof proposals[0] | null = null;
     let showModal = false;
@@ -27,6 +27,9 @@
     $: if (proposals) {
         renderChart();
     }
+
+    // New reactive statement to calculate bar height
+    $: barHeight = Math.max(300, proposals.length * 50);
 
     function handleBarClick(proposal: typeof proposals[0]) {
         selectedProposal = proposal;
@@ -45,23 +48,30 @@
             let line: string[] = [];
             let lineNumber = 0;
             let tspan = text.text(null).append("tspan")
-                .attr("x", -5) // Reduced text padding
+                .attr("x", -5)
                 .attr("y", y)
                 .attr("dy", dy + "em");
             
-            while (word = words.pop()) {
+            while ((word = words.pop()) && lineNumber < 2) {
                 line.push(word);
                 tspan.text(line.join(" "));
-                if (tspan.node()?.getComputedTextLength()! > width) {
+                if (tspan.node()!.getComputedTextLength() > width) {
                     line.pop();
                     tspan.text(line.join(" "));
                     line = [word];
-                    tspan = text.append("tspan")
-                        .attr("x", -5) // Reduced text padding
-                        .attr("y", y)
-                        .attr("dy", ++lineNumber * lineHeight + dy + "em")
-                        .text(word);
+                    lineNumber++;
+                    if (lineNumber < 2) {
+                        tspan = text.append("tspan")
+                            .attr("x", -5)
+                            .attr("y", y)
+                            .attr("dy", `${lineNumber * lineHeight + dy}em`)
+                            .text(word);
+                    }
                 }
+            }
+
+            if (words.length > 0) {
+                tspan.text(tspan.text() + "...");
             }
         });
     }
@@ -107,7 +117,7 @@
             .attr("x", 0)
             .attr("height", y.bandwidth())
             .attr("width", d => x(d.participants.length))
-            .attr("fill", d => d.stoppers?.length ? "#ef4444" : "#3b82f6") // Red if blocked, blue otherwise
+            .attr("fill", d => d.stoppers?.length ? "#ef4444" : "#4f46e5") // Red if blocked, indigo otherwise
             .attr("rx", 4) // Rounded corners
             .attr("ry", 4)
             .style("cursor", "pointer")
@@ -193,7 +203,7 @@
 
 <div 
     bind:this={chart} 
-    class="w-full h-[300px] bg-gray-800 rounded-lg p-1"
+    class="w-full h-[{barHeight}px] bg-gray-800 rounded-lg p-1 overflow-y-auto"
 >
 </div>
 

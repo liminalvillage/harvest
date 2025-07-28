@@ -1,10 +1,26 @@
+<script context="module" lang="ts">
+	// Extend Window interface for MetaMask
+	interface MetaMaskWindow extends Window {
+		ethereum?: any; // You can use a more specific type if you have one for ethers provider
+	}
+
+	declare let window: MetaMaskWindow;
+</script>
+
 <script lang="ts">
-	import { openSidebar, ID, autoTransitionEnabled } from './store';
+	import { openSidebar, ID, autoTransitionEnabled, walletAddress } from './store';
 	import { onMount, onDestroy, getContext } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import  HoloSphere  from 'holosphere';
+	import HoloSphere from 'holosphere';
+	import { ethers } from 'ethers';
+	import { fetchHolonName } from "../utils/holonNames";
+	import { addVisitedHolon, getWalletAddress } from "../utils/localStorage";
+	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
+	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
+
+	export let toggleMyHolons: () => void;
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
@@ -18,43 +34,65 @@
 
 	let holonID: string = '';
 	let showToast = false;
-	let showDropdown = false;
-	let previousHolons: HolonInfo[] = [];
 
-	onMount(() => {
-		const storedHolonID = $page.params.id;
-		if (storedHolonID) {
-			ID.set(storedHolonID);
-		} else {
-			ID.set('demo');
-		}
-
-		// Load previous holons from localStorage only in browser
-		if (browser) {
-			const stored = localStorage.getItem('previousHolons');
-			if (stored) {
-				previousHolons = JSON.parse(stored).filter((holon: HolonInfo) => !holon.id.startsWith('8'));
-				// Fetch names for holons that don't have them
-				previousHolons.forEach(async (holon) => {
-					if (!holon.name) {
-						try {
-							const data = await holosphere.getAll(holon.id, 'settings');
-							if (data && data[0] && data[0].name) {
-								holon.name = data[0].name;
-								localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
-							}
-						} catch (error) {
-							console.error(`Error fetching name for holon ${holon.id}:`, error);
-						}
-					}
-				});
+	// Ethereum wallet connection
+	async function connectWallet() {
+		if (browser && typeof window.ethereum !== 'undefined') {
+			try {
+				const provider = new ethers.BrowserProvider(window.ethereum);
+				await provider.send("eth_requestAccounts", []);
+				const signer = await provider.getSigner();
+				const address = await signer.getAddress();
+				walletAddress.set(address);
+			} catch (error) {
+				console.error('Error connecting to wallet:', error);
+				// Handle error (e.g., show a message to the user)
 			}
+		} else {
+			console.log('MetaMask is not installed!');
+			// Handle case where MetaMask (or other provider) is not available
+		}
+	}
 
-			// Add event listeners only in browser environment
+	// Function to save visited holon
+	async function saveVisitedHolon(holonId: string, holonName: string) {
+		const walletAddr = getWalletAddress();
+		if (holonId && holonId !== 'undefined' && holonId !== 'null' && holonId.trim() !== '') {
+			try {
+				await addVisitedHolon(walletAddr, holonId, holonName, 'personal');
+				console.log(`Saved visited holon from TopBar: ${holonId}`);
+			} catch (err) {
+				console.warn('Failed to save visited holon from TopBar:', err);
+			}
+		}
+	}
+
+	// Track if we've already processed the current ID to prevent loops
+	let processedHolonId = '';
+	let isInitialized = false;
+
+	// Initialize on mount
+	onMount(() => {
+		// Ensure auto-transition is off by default when TopBar loads
+		autoTransitionEnabled.set(false);
+
+		// Add event listeners only in browser environment
+		if (browser) {
 			window.addEventListener('mousemove', handleActivity);
 			window.addEventListener('touchstart', handleActivity);
 			window.addEventListener('touchmove', handleActivity);
 			window.addEventListener('scroll', handleActivity);
+		}
+
+		// Set up initial state
+		isInitialized = true;
+		
+		// Process initial ID if available
+		const initialId = $page.params.id;
+		if (initialId && initialId !== 'undefined' && initialId !== 'null' && initialId.trim() !== '') {
+			ID.set(initialId);
+			processedHolonId = initialId;
+			updateCurrentHolonName(initialId);
 		}
 	});
 
@@ -67,108 +105,117 @@
 		}
 	});
 
-	// Move the name fetching logic into a separate function
-	async function fetchHolonName(id: string) {
+	// Function to disconnect wallet
+	function disconnectWallet() {
+		walletAddress.set(null);
+		// Potentially clear other related stored data if needed
+	}
+
+	// Use centralized holon name service
+	async function updateCurrentHolonName(id: string) {
+		if (!id || id === '') {
+			currentHolonName = undefined;
+			return;
+		}
+		
 		try {
-			const settings = await holosphere.getAll(id, 'settings');
-			if (settings && settings.length > 0 && settings[0].name) {
-				currentHolonName = settings[0].name;
-			} else {
-				currentHolonName = undefined;
-			}
+			currentHolonName = await fetchHolonName(holosphere, id);
 		} catch (error) {
 			console.error(`Error fetching name for holon ${id}:`, error);
 			currentHolonName = undefined;
 		}
 	}
 
-	// Update the reactive statement
-	$: if ($ID) {
-		showToast = false;
-		holonID = $ID;
-		
-		// Only update route if not at root URL
-		if ($page.url.pathname !== '/') {
-			updateRoute($ID);
+	// Handle URL parameter changes - only process once
+	$: {
+		const storedHolonID = $page.params.id;
+		if (storedHolonID && storedHolonID !== 'undefined' && storedHolonID !== 'null' && storedHolonID.trim() !== '' && isInitialized) {
+			// Only update if the ID actually changed
+			if (processedHolonId !== storedHolonID) {
+				ID.set(storedHolonID);
+				processedHolonId = storedHolonID;
+				updateCurrentHolonName(storedHolonID);
+			}
 		}
-		
-		// Fetch the name whenever ID changes
-		fetchHolonName($ID);
-		
-		// Add to previous holons if it doesn't start with 8
-		if (browser && !$ID.startsWith('8') && !previousHolons.some(h => h.id === $ID)) {
-			const newHolon: HolonInfo = { id: $ID };
-			previousHolons = [...previousHolons, newHolon];
-			localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
-			
-			// Then try to fetch and update its name in the previous holons list
-			holosphere.getAll($ID, 'settings').then((settings: any) => {
-				if (settings && settings[0] && settings[0].name) {
-					previousHolons = previousHolons.map(holon => 
-						holon.id === $ID 
-							? { ...holon, name: settings[0].name }
-							: holon
-					);
-					if (browser) {
-						localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
-					}
-				}
-			}).catch((error: Error) => {
-				console.error(`Error fetching name for holon ${$ID}:`, error);
-			});
-		}
-	} else {
-		// If ID becomes undefined or empty, set it to demo
-		ID.set('demo');
 	}
 
-	function selectPreviousHolon(holon: HolonInfo) {
-		ID.set(holon.id);
-		showDropdown = false;
+	// Handle ID store changes - only process once and save visited holon
+	$: if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '' && isInitialized) {
+		showToast = false;
+		
+		// Only process if this is a new ID
+		if (processedHolonId !== $ID) {
+			processedHolonId = $ID;
+			
+			// Always try to resolve the holon name when we have a valid ID
+			updateCurrentHolonName($ID);
+			
+			// Save visited holon when we have a valid ID and we're not on a primary page
+			if (browser && $page.url.pathname !== '/') {
+				// Save the visited holon with the resolved name or fallback
+				const holonName = currentHolonName || `Holon ${$ID}`;
+				saveVisitedHolon($ID, holonName);
+			}
+			
+			// Only update route if we're not on a primary page
+			if ($page.url.pathname !== '/') {
+				// Check if we're already on a valid path for this holon
+				const currentPath = $page.url.pathname;
+				const expectedPath = `/${$ID}`;
+				
+				// Only update if we're not already on the correct path
+				if (!currentPath.startsWith(expectedPath)) {
+					holonID = $ID;
+					// Add a small delay to avoid interfering with initial navigation
+					setTimeout(() => {
+						updateRoute($ID);
+					}, 100);
+				} else {
+					// Just update the holonID without changing the route
+					holonID = $ID;
+				}
+			}
+		}
 	}
 
 	function updateRoute(id: string) {
-		// Don't redirect if we're at the root URL
-		if ($page.url.pathname === '/') {
-			return;
-		}
-
-		let currentPath = $page.url.pathname.split('/').pop();
-		
-		// If no ID is provided, redirect to demo
-		if (!id && currentPath && currentPath !== '') {
-			if (browser) {
-				goto(`/demo/${currentPath}`);
+		if (!id || id === '' || id === 'undefined' || id === 'null' || id.trim() === '') {
+			// If no valid ID, redirect to splash screen only if not already there
+			if (browser && $page.url.pathname !== '/') {
+				goto('/');
 			}
 			return;
 		}
-
-		if (currentPath === holonID) currentPath = 'dashboard';
 		
-		// Show landing page when switching TO demo holon FROM another holon
-		if (id === 'demo' && browser && holonID !== '' && holonID !== 'demo') {
-			if (currentPath !== '') {
-				goto('/?from=demo');
-				return;
+		// Check if we're already on the correct path for this holon
+		const currentPath = $page.url.pathname;
+		const expectedPath = `/${id}`;
+		
+		// Only navigate if we're not already on the correct path
+		if (browser && !currentPath.startsWith(expectedPath)) {
+			// Extract the sub-path more carefully
+			const pathParts = currentPath.split('/');
+			let subPath = pathParts[pathParts.length - 1]; // Get the last part
+			
+			// Only default to dashboard if we're currently on a path that's just the holon ID
+			// or if the subPath is the old holon ID (meaning we're switching holons)
+			if (pathParts.length === 2 || subPath === holonID) {
+				subPath = 'dashboard';
 			}
-		}
-
-		if (browser) {
-			goto(`/${id || 'demo'}/${currentPath}`);
+			
+			const newPath = `/${id}/${subPath || 'dashboard'}`;
+			goto(newPath);
 		}
 	}
 
-	function handleInput(event: Event) {
-		const target = event.target as HTMLInputElement;
-		// If input is empty or undefined, set to demo
-		ID.set(target.value || 'demo');
-		showDropdown = false;
-	}
-
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			handleInput(event);
-		}
+	// Check if we're on a primary page (standalone routes)
+	$: isPrimaryPage = $page.url.pathname === '/';
+	
+	// Reactive statement for walletAddress changes
+	$: if ($walletAddress) {
+		console.log('Wallet connected:', $walletAddress);
+		// You can add logic here if something needs to happen when the wallet connects,
+		// e.g., fetching user-specific data based on wallet address.
 	}
 
 	function toggleAutoTransition() {
@@ -182,18 +229,7 @@
 		}
 	}
 
-	function removePreviousHolon(holonId: string, event: MouseEvent) {
-		event.preventDefault();
-		event.stopPropagation();
-		
-		// Remove the holon from the array
-		previousHolons = previousHolons.filter(holon => holon.id !== holonId);
-		
-		// Update localStorage if in browser environment
-		if (browser) {
-			localStorage.setItem('previousHolons', JSON.stringify(previousHolons));
-		}
-	}
+
 </script>
 
 <style>
@@ -211,79 +247,7 @@
 	.toast.show {
 		opacity: 1;
 	}
-	.dropdown {
-		position: absolute;
-		top: 100%;
-		left: 0;
-		right: 0;
-		background-color: #1f2937;
-		border: 1px solid #374151;
-		border-radius: 8px;
-		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-		z-index: 100;
-		max-height: 200px;
-		overflow-y: auto;
-		margin-top: 4px;
-	}
-	.dropdown-item {
-		padding: 8px 12px;
-		cursor: pointer;
-		transition: background-color 0.2s;
-	}
-	.dropdown-item:hover {
-		background-color: #374151;
-	}
-	.input-container {
-		position: relative;
-	}
-	.dropdown::-webkit-scrollbar {
-		width: 8px;
-	}
-	.dropdown::-webkit-scrollbar-track {
-		background: #1f2937;
-		border-radius: 8px;
-	}
-	.dropdown::-webkit-scrollbar-thumb {
-		background: #4b5563;
-		border-radius: 8px;
-	}
-	.dropdown::-webkit-scrollbar-thumb:hover {
-		background: #6b7280;
-	}
-	.id-label {
-		position: absolute;
-		left: 0;
-		margin-left: 1rem;
-		color: #6b7280;
-		z-index: 101;
-		pointer-events: none;
-		line-height: 2.25rem;
-	}
-	.holon-id {
-		font-family: monospace;
-	}
-	.holon-name {
-		font-size: 0.9em;
-		color: #9ca3af;
-		font-style: italic;
-	}
-	.delete-button {
-		opacity: 0;
-		transition: opacity 0.2s;
-		color: #9ca3af;
-	}
-	.delete-button:hover {
-		color: #ef4444;
-	}
-	.dropdown-item:hover .delete-button {
-		opacity: 1;
-	}
-	.dropdown-item-content {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		width: 100%;
-	}
+
 	/* Add styles for the holon name in the top bar */
 	.flex-shrink-0 {
 		z-index: 102;
@@ -292,100 +256,105 @@
 		border-radius: 0.5rem;
 		margin-right: 1rem;
 	}
+	.wallet-button {
+		background-color: #4a5568; /* gray-700 */
+		color: white;
+		padding: 0.5rem 1rem;
+		border-radius: 0.375rem; /* rounded-md */
+		font-weight: 500; /* font-medium */
+		margin-left: 1rem; /* ml-4 */
+		transition: background-color 0.2s;
+	}
+	.wallet-button:hover {
+		background-color: #2d3748; /* gray-800 */
+	}
+	.wallet-info {
+		color: white;
+		margin-left: 1rem; /* ml-4 */
+		font-size: 0.875rem; /* text-sm */
+		display: flex;
+		align-items: center;
+	}
+	.disconnect-button {
+		background-color: transparent;
+		color: #cbd5e0; /* gray-400 */
+		border: 1px solid #cbd5e0; /* gray-400 */
+		padding: 0.25rem 0.5rem;
+		border-radius: 0.375rem; /* rounded-md */
+		margin-left: 0.5rem; /* ml-2 */
+		font-size: 0.75rem; /* text-xs */
+		cursor: pointer;
+	}
+	.disconnect-button:hover {
+		background-color: #ef4444; /* red-500 */
+		color: white;
+		border-color: #ef4444; /* red-500 */
+	}
 </style>
 
-<header class="h-20 items-center relative z-10">
-	<div class="flex flex-center flex-col h-full justify-center mx-auto relative px-3 text-white z-10">
-		<div class="flex items-center pl-1 relative w-full sm:ml-0 sm:pr-2 lg:max-w-68">
-			<div class="flex group h-full items-center relative w-12">
-				<button
-					type="button"
-					aria-expanded="false"
-					aria-label="Toggle sidenav"
-					on:click={openSidebar}
-					class="text-4xl text-white focus:outline-none"
-				>
-					&#8801;
-				</button>
-			</div>
-			<div class="container flex left-0 relative w-3/4">
-				{#if currentHolonName}
-					<div class="flex items-center mr-4 flex-shrink-0">
-						<span class="text-white text-xl font-medium whitespace-nowrap">
-							{currentHolonName}
-						</span>
-					</div>
-				{/if}
-				<div class="group items-center relative w-full md:flex lg:w-72 flex-shrink">
-					<span class="id-label">ID:</span>
-					<div class="input-container w-full">
-						<input
-							type="text"
-							class="bg-gray-800 block leading-normal pl-12 py-1.5 pr-4 ring-opacity-90 rounded-2xl text-gray-400 w-full focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-							placeholder="Holon ID"
-							on:keydown={handleKeydown}
-							on:blur={handleInput}
-							on:focus={() => showDropdown = true}
-							value={holonID}
-						/>
-						{#if showDropdown && previousHolons.length > 0}
-							<div class="dropdown">
-								{#each previousHolons as holon}
-									<div 
-										class="dropdown-item"
-										role="button"
-										tabindex="0"
-										on:mousedown|preventDefault={() => selectPreviousHolon(holon)}
-									>
-										<div class="dropdown-item-content">
-											<div class="flex-grow cursor-pointer flex flex-col">
-												{#if holon.name}
-													<span class="text-sm font-medium text-white holon-name">{holon.name}</span>
-												{/if}
-												<span class="holon-id text-xs {holon.name ? 'text-gray-400' : 'text-white'}">{holon.id}</span>
-											</div>
-											<button
-												type="button"
-												class="delete-button p-1 rounded-full hover:bg-gray-700"
-												on:mousedown|stopPropagation|preventDefault={(e) => {
-													removePreviousHolon(holon.id, e);
-													showDropdown = true;
-												}}
-												aria-label="Remove holon from history"
-											>
-												<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-												</svg>
-											</button>
-										</div>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</div>
-				</div>
-			</div>
-			<div class="flex items-center justify-end ml-auto">
-				<button
-					on:click={toggleAutoTransition}
-					class="p-2 rounded-full hover:bg-gray-700 transition-colors"
-					aria-label={$autoTransitionEnabled ? 'Pause auto-transition' : 'Play auto-transition'}
-				>
-					{#if $autoTransitionEnabled}
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-						</svg>
-					{:else}
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-						</svg>
-					{/if}
-				</button>
-			</div>
-		</div>
-	</div>
-</header>
+<div class="top-bar-container w-full px-4 py-2 flex items-center gap-4 relative">
+    <!-- Mobile menu button (outside bar) -->
+    <div class="lg:hidden z-10">
+        <button on:click={openSidebar} class="text-white p-2 hover:bg-gray-700 rounded-lg transition-colors">
+            <Menu size="24" />
+        </button>
+    </div>
+
+    <!-- Dashboard-style bar - full width -->
+    {#if !isPrimaryPage}
+        <button 
+            on:click={toggleMyHolons} 
+            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 px-4 sm:px-6 py-2 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-[1.01] relative overflow-hidden flex-1"
+            title="Open My Holons"
+        >
+            <!-- Gradient overlay -->
+            <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            
+            <!-- Bar content - responsive layout -->
+            <div class="relative z-10 flex flex-col sm:flex-row items-center gap-1 sm:gap-3">
+                <!-- Holons Logo -->
+                <div class="flex-shrink-0">
+                    <div class="w-12 h-12 sm:w-20 sm:h-20 group-hover:scale-105 transition-transform">
+                        <MyHolonsIcon />
+                    </div>
+                </div>
+                
+                <!-- Title and ID -->
+                <div class="text-center sm:text-left">
+                    <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
+                        {currentHolonName || 'Loading...'}
+                    </div>
+                    <div class="text-xs sm:text-sm text-gray-400 font-mono mt-1">
+                        {$ID || '...'}
+                    </div>
+                </div>
+            </div>
+        </button>
+    {:else}
+        <!-- Root page - centered logo -->
+        <div class="flex-1 flex items-center justify-center">
+            <button on:click={toggleMyHolons} class="p-2 rounded-full hover:ring-4 hover:ring-blue-400 ring-offset-2 transition-all cursor-pointer animate-pulse hover:animate-none" title="Open My Holons">
+                <div class="w-20 h-20">
+                    <MyHolonsIcon />
+                </div>
+            </button>
+        </div>
+    {/if}
+
+    <!-- Right side: Wallet (outside bar) -->
+    <div class="z-10 ml-auto">
+        {#if $walletAddress}
+            <div class="wallet-info">
+                <span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
+                <button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
+            </div>
+        {:else}
+            <button on:click={connectWallet} class="wallet-button">
+                Connect Wallet
+            </button>
+        {/if}
+    </div>
+</div>
 
 {#if showToast}
 	<button

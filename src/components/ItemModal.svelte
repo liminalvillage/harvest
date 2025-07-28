@@ -30,10 +30,22 @@
     
     let userStore: UserStore = {};
 
-    onMount(() => {
+    onMount(async () => {
         document.addEventListener('click', handleClickOutside);
         
         if (holosphere) {
+            // First, fetch all existing users
+            try {
+                const initialUsers = await holosphere.getAll(holonId, "users");
+                if (initialUsers) {
+                    userStore = initialUsers;
+                    console.log("[ItemModal] Loaded initial users:", Object.keys(userStore).length);
+                }
+            } catch (error) {
+                console.error("[ItemModal] Error fetching initial users:", error);
+            }
+
+            // Then subscribe to future updates
             holosphere.subscribe(holonId, "users", (newUser: any, key: string) => {
                 if (newUser) {
                     const parsedUser = newUser;
@@ -202,8 +214,15 @@
                                         <img 
                                             src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
                                             alt={participant.username || participant.first_name}
-                                            class="w-8 h-8 rounded-full"
+                                            class="w-8 h-8 rounded-full object-cover border border-gray-500"
+                                            on:error={(e) => {
+                                                e.currentTarget.style.display = 'none';
+                                                e.currentTarget.nextElementSibling.style.display = 'flex';
+                                            }}
                                         />
+                                        <div class="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center text-white text-sm font-bold border border-gray-500" style="display: none;">
+                                            {participant.first_name ? participant.first_name[0] : '?'}{participant.last_name ? participant.last_name[0] : ''}
+                                        </div>
                                         <span>{participant.username || `${participant.first_name} ${participant.last_name || ''}`}</span>
                                     </div>
                                     <button 
@@ -232,10 +251,17 @@
                                 >
                                     <div class="flex items-center gap-2 flex-1">
                                         <img 
-                                            src={`https://gun.holons.io/getavatar?user_id=${userId}`}
+                                            src={`https://gun.holons.io/getavatar?user_id=${user.id || userId}`}
                                             alt={user.first_name}
-                                            class="w-6 h-6 rounded-full"
+                                            class="w-6 h-6 rounded-full object-cover border border-gray-500"
+                                            on:error={(e) => {
+                                                e.currentTarget.style.display = 'none';
+                                                e.currentTarget.nextElementSibling.style.display = 'flex';
+                                            }}
                                         />
+                                        <div class="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-white text-xs font-bold border border-gray-500" style="display: none;">
+                                            {user.first_name ? user.first_name[0] : '?'}{user.last_name ? user.last_name[0] : ''}
+                                        </div>
                                         <span>{user.first_name} {user.last_name || ''}</span>
                                     </div>
                                     {#if isUserParticipant(userId)}

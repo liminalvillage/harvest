@@ -1,0 +1,623 @@
+<script lang="ts">
+  import { onMount, getContext } from 'svelte';
+
+  // Types
+  interface User {
+    id: number;
+    username: string;
+    first_name: string;
+    last_name: string;
+  }
+  interface Settings {
+    id: string | null;
+    name: string;
+    hex: string;
+    version: number;
+    timezone: string;
+    language: string;
+    theme: string;
+    level: number;
+    admin: string;
+    roles: string[];
+    values: string[];
+    purpose: string;
+    domains: string[];
+    currencies: string[];
+    maxTasks: number;
+    users: User[];
+  }
+
+  export let holonId: string;
+
+  let holosphere: any;
+  let loading = true;
+  let error: string | null = null;
+  let notifications: Array<{id: number, message: string, type: string}> = [];
+  let notificationId = 0;
+
+  function getDefaultSettings(id: string): Settings {
+    return {
+      id,
+      name: '',
+      hex: '',
+      version: 1.0,
+      timezone: '',
+      language: 'en',
+      theme: 'green',
+      level: 1,
+      admin: '',
+      roles: [],
+      values: [],
+      purpose: '',
+      domains: [],
+      currencies: [],
+      maxTasks: 13,
+      users: []
+    };
+  }
+
+  let settings: Settings = getDefaultSettings('');
+
+  // UI state
+  let activeSection: string = 'general';
+  let editMode: Record<string, boolean> = {};
+  let newItemInputs: Record<string, string> = {};
+  let realUserCount: number = 0;
+  let realUsers: User[] = [];
+
+  // Available options (unchanged)
+  const languages = [
+    { code: 'en', name: 'English', flag: '🇬🇧' },
+    { code: 'it', name: 'Italian', flag: '🇮🇹' },
+    { code: 'es', name: 'Spanish', flag: '🇪🇸' },
+    { code: 'fr', name: 'French', flag: '🇫🇷' },
+    { code: 'ru', name: 'Russian', flag: '🇷🇺' },
+    { code: 'de', name: 'German', flag: '🇩🇪' }
+  ];
+  const themes = [
+    { id: 'light', name: 'Light', icon: '☀️', description: 'Clean and bright interface with light colors' },
+    { id: 'dark', name: 'Dark', icon: '🌙', description: 'Dark interface for reduced eye strain' },
+    { id: 'green', name: 'Green', icon: '🌿', description: 'Natural green theme inspired by nature' }
+  ];
+  const timezones = {
+    'Europe': [
+      'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+      'Europe/Rome', 'Europe/Madrid', 'Europe/Moscow'
+    ],
+    'Americas': [
+      'America/New_York', 'America/Chicago', 'America/Denver',
+      'America/Los_Angeles', 'America/Toronto', 'America/Sao_Paulo'
+    ],
+    'Asia/Pacific': [
+      'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Singapore',
+      'Asia/Dubai', 'Australia/Sydney', 'Pacific/Auckland'
+    ]
+  };
+  const maxTaskOptions = [0, 3, 5, 8, 13, 21, 34];
+
+  // Notification helpers
+  function showNotification(message: string, type: 'success' | 'error' | 'info' = 'info') {
+    const id = notificationId++;
+    notifications = [...notifications, { id, message, type }];
+    setTimeout(() => {
+      notifications = notifications.filter(n => n.id !== id);
+    }, 3000);
+  }
+  function removeNotification(id: number) {
+    notifications = notifications.filter(n => n.id !== id);
+  }
+
+  // Holosphere logic
+  async function loadSettings() {
+    try {
+      loading = true;
+      const data = await holosphere.getAll(holonId, 'settings');
+      
+      if (data && data[0]) {
+        settings = { ...getDefaultSettings(holonId), ...data[0] };
+      } else {
+        settings = getDefaultSettings(holonId);
+      }
+      
+      // Fetch real user count from holosphere
+      await fetchRealUserCount();
+      
+    } catch (err) {
+      console.error('Error loading settings:', err);
+      error = 'Failed to load settings';
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function fetchRealUserCount() {
+    try {
+      const users = await holosphere.getAll(holonId, 'users');
+      if (Array.isArray(users)) {
+        realUserCount = users.length;
+        realUsers = users;
+      } else if (typeof users === 'object' && users !== null) {
+        realUserCount = Object.keys(users).length;
+        realUsers = Object.values(users);
+      } else {
+        realUserCount = 0;
+        realUsers = [];
+      }
+    } catch (err) {
+      console.error('Error fetching user count:', err);
+      realUserCount = 0;
+      realUsers = [];
+    }
+  }
+
+  async function saveSettings() {
+    try {
+      if (!holosphere || !holonId) throw new Error('Holosphere or holonId missing');
+      
+      // Save settings to holonId/settings/holonId with the holonId as the key
+      const settingsToSave = { ...settings, id: holonId };
+      console.log('Saving settings to holosphere:', settingsToSave);
+      
+      await holosphere.put(holonId, 'settings', settingsToSave);
+      showNotification('Settings saved successfully!', 'success');
+    } catch (err) {
+      console.error('Error saving settings:', err);
+      showNotification('Failed to save settings', 'error');
+    }
+  }
+
+  async function resetSettings() {
+    try {
+      if (!holosphere || !holonId) throw new Error('Holosphere or holonId missing');
+      settings = getDefaultSettings(holonId);
+      
+      // Save reset settings to holonId/settings/holonId
+      const settingsToSave = { ...settings, id: holonId };
+      console.log('Resetting settings in holosphere:', settingsToSave);
+      
+      await holosphere.put(holonId, 'settings', settingsToSave);
+      showNotification('Settings reset to defaults!', 'success');
+    } catch (err) {
+      console.error('Error resetting settings:', err);
+      showNotification('Failed to reset settings', 'error');
+    }
+  }
+
+  // React to holonId changes
+  $: if (holonId) {
+    holosphere = getContext('holosphere');
+    loadSettings();
+  }
+
+  // UI logic (unchanged except saveSettings now calls holosphere)
+  function updateSetting(key, value) {
+    settings = {
+      ...settings,
+      [key]: value
+    };
+    saveSettings();
+  }
+  function addArrayItem(arrayName, item) {
+    if (item.trim() && !settings[arrayName].includes(item.trim())) {
+      settings = {
+        ...settings,
+        [arrayName]: [...settings[arrayName], item.trim()]
+      };
+      newItemInputs[arrayName] = '';
+      saveSettings();
+    }
+  }
+  function removeArrayItem(arrayName, index) {
+    settings = {
+      ...settings,
+      [arrayName]: settings[arrayName].filter((_, i) => i !== index)
+    };
+    saveSettings();
+  }
+  function addMultipleItems(arrayName, text) {
+    const items = text.split(/[\,\n]/)
+      .map(item => item.trim())
+      .filter(item => item && !settings[arrayName].includes(item));
+    settings = {
+      ...settings,
+      [arrayName]: [...settings[arrayName], ...items]
+    };
+    newItemInputs[arrayName] = '';
+    saveSettings();
+  }
+
+  function setAdmin(userId) {
+    settings = {
+      ...settings,
+      admin: userId.toString()
+    };
+    saveSettings();
+  }
+  function getSettingIcon(type) {
+    const icons = {
+      values: '💫',
+      domains: '🗺️',
+      roles: '👥',
+      purpose: '🎯',
+      language: '🌐',
+      theme: '🎨',
+      timezone: '🕒',
+      admin: '👑',
+      users: '👪',
+      hex: '✡️',
+      level: '📊',
+      maxTasks: '📋'
+    };
+    return icons[type] || '⚙️';
+  }
+  function formatTimezone(timezone) {
+    return timezone ? timezone.split('/')[1].replace('_', ' ') : 'Not set';
+  }
+</script>
+
+<!-- Header Section - Simple header aligned with main content -->
+<div class="bg-gray-800 rounded-2xl shadow-xl p-6 mb-8">
+	<div class="flex items-center gap-4">
+		<!-- Settings Icon -->
+		<div class="flex-shrink-0">
+			<div class="w-12 h-12 flex items-center justify-center">
+				<span class="text-3xl">⚙️</span>
+			</div>
+		</div>
+		
+		<!-- Title and Subtitle -->
+		<div class="flex-1">
+			<div class="text-2xl font-bold text-white">
+				Settings Overview
+			</div>
+			<div class="text-sm text-gray-400 font-mono mt-1">
+				{settings.id || 'No ID'}
+			</div>
+		</div>
+	</div>
+</div>
+
+	<!-- Loading/Error/Notification UI -->
+	{#if loading}
+		<div class="flex items-center justify-center py-12">
+			<div class="text-center">
+				<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4 mx-auto"></div>
+				<p class="text-gray-400">Loading settings...</p>
+			</div>
+		</div>
+	{:else if error}
+		<div class="flex items-center justify-center py-12">
+			<div class="text-center">
+				<div class="text-4xl mb-4">⚠️</div>
+				<h3 class="text-white text-lg font-medium mb-2">Error Loading Settings</h3>
+				<p class="text-gray-400 mb-4">{error}</p>
+				<button class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors" on:click={loadSettings}>
+					🔄 Try Again
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Notifications -->
+	{#if notifications.length > 0}
+		<div class="fixed top-5 right-5 z-50 flex flex-col gap-2">
+			{#each notifications as notification (notification.id)}
+				<div class="flex items-center justify-between p-4 rounded-xl shadow-lg max-w-sm {notification.type === 'success' ? 'bg-green-500 text-white' : notification.type === 'error' ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'}">
+					<span class="text-sm font-medium">{notification.message}</span>
+					<button 
+						class="ml-3 text-white hover:text-gray-200 transition-colors" 
+						on:click={() => removeNotification(notification.id)}
+					>
+						×
+					</button>
+				</div>
+			{/each}
+		</div>
+	{/if}
+
+	{#if !loading && !error}
+		<!-- Statistics Section -->
+		<section class="mb-8">
+			<h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">📊 Statistics</h2>
+			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
+				<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+					<div class="text-2xl font-bold text-white mb-1">{realUserCount}</div>
+					<div class="text-sm text-gray-400">Total Users</div>
+				</div>
+				<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+					<div class="text-2xl font-bold text-white mb-1">{settings.values.length}</div>
+					<div class="text-sm text-gray-400">Values</div>
+				</div>
+				<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+					<div class="text-2xl font-bold text-white mb-1">{settings.domains.length}</div>
+					<div class="text-sm text-gray-400">Domains</div>
+				</div>
+				<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
+					<div class="text-2xl font-bold text-white mb-1">{settings.maxTasks}</div>
+					<div class="text-sm text-gray-400">Max Tasks</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Settings Sections -->
+		<div class="space-y-8">
+					<!-- General Settings -->
+					<section class="bg-gray-700/50 rounded-2xl p-8">
+						<h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">🏠 General Settings</h2>
+						
+						<!-- Holon Identity -->
+						<div class="mb-6">
+							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">🆔 Holon Identity</h3>
+							
+							<div class="space-y-4">
+								<div>
+									<label class="block text-sm font-medium text-gray-300 mb-2">Holon ID</label>
+									<div class="px-4 py-3 bg-gray-600 text-gray-300 rounded-xl font-mono">
+										{settings.id || 'Not set'}
+									</div>
+								</div>
+
+								<div>
+									<label class="block text-sm font-medium text-gray-300 mb-2">Name</label>
+									<input 
+										type="text" 
+										bind:value={settings.name}
+										on:blur={() => updateSetting('name', settings.name)}
+										placeholder="Enter holon name"
+										class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
+									/>
+								</div>
+
+								<div>
+									<label class="block text-sm font-medium text-gray-300 mb-2">Hex Address</label>
+									<input 
+										type="text" 
+										bind:value={settings.hex}
+										on:blur={() => updateSetting('hex', settings.hex)}
+										placeholder="Enter hex address"
+										class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
+									/>
+								</div>
+							</div>
+						</div>
+
+						<!-- Localization -->
+						<div class="mb-6">
+							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">🌐 Localization</h3>
+							
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div>
+									<label class="block text-sm font-medium text-gray-300 mb-2">Language <span class="text-xs text-gray-400">(for Telegram bot only)</span></label>
+									<select bind:value={settings.language} on:change={() => updateSetting('language', settings.language)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+										{#each languages as lang}
+											<option value={lang.code}>{lang.flag} {lang.name}</option>
+										{/each}
+									</select>
+								</div>
+
+								<div>
+									<label class="block text-sm font-medium text-gray-300 mb-2">Timezone</label>
+									<select bind:value={settings.timezone} on:change={() => updateSetting('timezone', settings.timezone)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+										<option value="">Select timezone</option>
+										{#each Object.entries(timezones) as [region, tzs]}
+											<optgroup label={region}>
+												{#each tzs as tz}
+													<option value={tz}>{formatTimezone(tz)}</option>
+												{/each}
+											</optgroup>
+										{/each}
+									</select>
+								</div>
+							</div>
+						</div>
+
+						<!-- Appearance -->
+						<div class="mb-6">
+							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">🎨 Appearance</h3>
+							<div>
+								<label class="block text-sm font-medium text-gray-300 mb-2">Theme <span class="text-xs text-gray-400">(for Telegram bot only)</span></label>
+								<div class="flex gap-2 flex-wrap">
+									{#each themes as theme}
+										<button 
+											class="px-4 py-3 rounded-xl border-2 transition-all duration-200 {settings.theme === theme.id ? 'border-blue-500 bg-blue-500/20 text-white' : 'border-gray-500 bg-gray-600 text-gray-300 hover:border-gray-400 hover:bg-gray-500'}"
+											on:click={() => updateSetting('theme', theme.id)}
+											title={theme.description}
+										>
+											{theme.icon} {theme.name}
+										</button>
+									{/each}
+								</div>
+							</div>
+						</div>
+
+						<!-- Limits -->
+						<div>
+							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">📋 Task Limits</h3>
+							
+							<div>
+								<label class="block text-sm font-medium text-gray-300 mb-2">Maximum Tasks</label>
+								<select bind:value={settings.maxTasks} on:change={() => updateSetting('maxTasks', settings.maxTasks)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+									{#each maxTaskOptions as option}
+										<option value={option}>
+											{option === 0 ? 'Unlimited' : option}
+										</option>
+									{/each}
+								</select>
+							</div>
+						</div>
+					</section>
+
+					<!-- Community Settings -->
+					<section class="bg-gray-700/50 rounded-2xl p-8">
+						<h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">👥 Community Settings</h2>
+
+						<!-- Purpose -->
+						<div class="mb-6">
+							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">🎯 Purpose</h3>
+							<textarea 
+								bind:value={settings.purpose}
+								on:blur={() => updateSetting('purpose', settings.purpose)}
+								placeholder="Define your holon's purpose..."
+								rows="3"
+								class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors resize-none"
+							></textarea>
+						</div>
+
+						<!-- Values -->
+						<div class="mb-6">
+							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">💫 Values ({settings.values.length})</h3>
+							<div class="space-y-4">
+								<div class="flex gap-2">
+									<input 
+										type="text" 
+										bind:value={newItemInputs.values}
+										placeholder="Add values (comma-separated)"
+										on:keydown={(e) => e.key === 'Enter' && addMultipleItems('values', newItemInputs.values)}
+										class="flex-1 px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
+									/>
+									<button on:click={() => addMultipleItems('values', newItemInputs.values)} class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium">Add</button>
+								</div>
+								<div class="space-y-2">
+									{#each settings.values as value, i}
+										<div class="flex items-center justify-between p-3 bg-gray-600 rounded-xl">
+											<span class="text-white">• {value}</span>
+											<button class="text-red-400 hover:text-red-300 transition-colors" on:click={() => removeArrayItem('values', i)}>❌</button>
+										</div>
+									{/each}
+								</div>
+							</div>
+						</div>
+
+						<!-- Domains -->
+						<div class="mb-6">
+							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">🗺️ Domains ({settings.domains.length})</h3>
+							<div class="space-y-4">
+								<div class="flex gap-2">
+									<input 
+										type="text" 
+										bind:value={newItemInputs.domains}
+										placeholder="Add domains (comma-separated)"
+										on:keydown={(e) => e.key === 'Enter' && addMultipleItems('domains', newItemInputs.domains)}
+										class="flex-1 px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
+									/>
+									<button on:click={() => addMultipleItems('domains', newItemInputs.domains)} class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium">Add</button>
+								</div>
+								<div class="space-y-2">
+									{#each settings.domains as domain, i}
+										<div class="flex items-center justify-between p-3 bg-gray-600 rounded-xl">
+											<span class="text-white">• {domain}</span>
+											<button class="text-red-400 hover:text-red-300 transition-colors" on:click={() => removeArrayItem('domains', i)}>❌</button>
+										</div>
+									{/each}
+								</div>
+							</div>
+						</div>
+
+						<!-- Roles -->
+						<div class="mb-6">
+							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">👥 Roles ({settings.roles.length})</h3>
+							<div class="space-y-4">
+								<div class="flex gap-2">
+									<input 
+										type="text" 
+										bind:value={newItemInputs.roles}
+										placeholder="Add roles (comma-separated)"
+										on:keydown={(e) => e.key === 'Enter' && addMultipleItems('roles', newItemInputs.roles)}
+										class="flex-1 px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
+									/>
+									<button on:click={() => addMultipleItems('roles', newItemInputs.roles)} class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium">Add</button>
+								</div>
+								<div class="space-y-2">
+									{#each settings.roles as role, i}
+										<div class="flex items-center justify-between p-3 bg-gray-600 rounded-xl">
+											<span class="text-white">• {role}</span>
+											<button class="text-red-400 hover:text-red-300 transition-colors" on:click={() => removeArrayItem('roles', i)}>❌</button>
+										</div>
+									{/each}
+								</div>
+							</div>
+						</div>
+
+						<!-- Currencies -->
+						<div class="mb-6">
+							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">💱 Currencies ({settings.currencies.length})</h3>
+							<div class="space-y-4">
+								<div class="flex gap-2">
+									<input 
+										type="text" 
+										bind:value={newItemInputs.currencies}
+										placeholder="Add currencies (singular form, e.g., euro, dollar)"
+										on:keydown={(e) => e.key === 'Enter' && addMultipleItems('currencies', newItemInputs.currencies)}
+										class="flex-1 px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors"
+									/>
+									<button on:click={() => addMultipleItems('currencies', newItemInputs.currencies)} class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors font-medium">Add</button>
+								</div>
+								<div class="space-y-2">
+									{#each settings.currencies as currency, i}
+										<div class="flex items-center justify-between p-3 bg-gray-600 rounded-xl">
+											<span class="text-white">• {currency}</span>
+											<button class="text-red-400 hover:text-red-300 transition-colors" on:click={() => removeArrayItem('currencies', i)}>❌</button>
+										</div>
+									{/each}
+								</div>
+							</div>
+						</div>
+
+						<!-- Users & Admin -->
+						<div>
+							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">👪 Users & Administration</h3>
+							
+							<!-- User Count -->
+							<div class="mb-2 text-sm text-gray-400">Total users in holon: <span class="font-bold text-white">{realUserCount}</span></div>
+
+							<!-- Admin Selection -->
+							<div class="mb-4">
+								<label class="block text-sm font-medium text-gray-300 mb-2">Administrator</label>
+								<select bind:value={settings.admin} on:change={() => updateSetting('admin', settings.admin)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+									<option value="">Select admin</option>
+									{#each realUsers as user}
+										<option value={user.id || user.username}>{user.first_name || user.username || `User ${user.id}`}</option>
+									{/each}
+								</select>
+							</div>
+
+							<!-- User List (Read-only) -->
+							<div class="space-y-2">
+								<h4 class="text-sm font-medium text-gray-300 mb-3">Users in Holon</h4>
+								{#each realUsers as user}
+									<div class="flex items-center justify-between p-3 bg-gray-600 rounded-xl">
+										<span class="text-white">
+											👤 {user.first_name || user.username || `User ${user.id}`}
+											{#if settings.admin === (user.id || user.username)}
+												<span class="ml-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded-md">👑 Admin</span>
+											{/if}
+										</span>
+										<div class="flex gap-2">
+											{#if settings.admin !== (user.id || user.username)}
+												<button class="text-yellow-400 hover:text-yellow-300 transition-colors" on:click={() => setAdmin(user.id || user.username)} title="Make admin">👑</button>
+											{/if}
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+					</section>
+				</div>
+			{/if}
+
+<style>
+	/* Responsive design */
+	@media (max-width: 768px) {
+		.grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
+		
+		.flex {
+			flex-direction: column;
+		}
+		
+		.gap-2 {
+			gap: 0.5rem;
+		}
+	}
+</style> 

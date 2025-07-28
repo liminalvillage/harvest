@@ -1,11 +1,12 @@
 <script lang="ts">
-
+    // @ts-nocheck
 
     $: if (role && !role.participants) {
+        console.log("[RoleModal.svelte] Initializing role.participants as [] because it was falsy.");
         role.participants = [];
     }
 
-    import { createEventDispatcher } from 'svelte';
+    import { createEventDispatcher, onMount } from 'svelte';
     import { fade, scale } from 'svelte/transition';
     
     export let role: any;
@@ -14,8 +15,41 @@
     export let holosphere: any;
     export let holonId: string;
 
+    console.log("[RoleModal.svelte] Script run/init. Role ID:", roleId);
+    console.log("[RoleModal.svelte] Initial role prop:", JSON.parse(JSON.stringify(role || {})));
+    console.log("[RoleModal.svelte] Initial userStore prop:", JSON.parse(JSON.stringify(userStore || {})));
+
+    onMount(() => {
+        console.log("[RoleModal.svelte] Mounted. Role ID:", roleId);
+        console.log("[RoleModal.svelte] role prop onMount:", JSON.parse(JSON.stringify(role || {})));
+        console.log("[RoleModal.svelte] userStore prop onMount:", JSON.parse(JSON.stringify(userStore || {})));
+    });
+
     const dispatch = createEventDispatcher();
     let showAddParticipants = false;
+
+    // Reactive statement to calculate available users
+    $: availableUsersToList = (() => {
+        if (!userStore || Object.keys(userStore).length === 0) {
+            return [];
+        }
+        
+        if (!role?.participants) {
+            // If no participants yet, show all users
+            return Object.entries(userStore);
+        }
+        
+        // Filter out users who are already participants
+        return Object.entries(userStore).filter(([userId, _user]) => !isUserParticipant(userId));
+    })();
+
+    // Debug logging when dropdown is shown
+    $: if (showAddParticipants) {
+        console.log("[RoleModal.svelte] Add Participants dropdown opened");
+        console.log("[RoleModal.svelte] userStore keys:", Object.keys(userStore || {}));
+        console.log("[RoleModal.svelte] role.participants:", role?.participants || []);
+        console.log("[RoleModal.svelte] availableUsersToList count:", availableUsersToList.length);
+    }
 
     async function updateRole(updates: any) {
         const updatedRole = { ...role, ...updates };
@@ -26,6 +60,7 @@
     async function deleteRole() {
         if (confirm('Are you sure you want to delete this role?')) {
             await holosphere.delete(holonId, 'roles', roleId);
+            dispatch('deleted', { roleId: roleId });
             dispatch('close');
         }
     }
@@ -46,8 +81,7 @@
         if (!participants.some((p: { id: string }) => p.id === userId)) {
             participants.push({
                 id: userId,
-                username: user.first_name + (user.last_name ? ' ' + user.last_name : ''),
-                picture: user.picture
+                username: user.first_name + (user.last_name ? ' ' + user.last_name : '')
             });
             await updateRole({ participants });
         }
@@ -97,8 +131,15 @@
                         <button 
                             class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-full text-sm transition-colors"
                             on:click={() => showAddParticipants = !showAddParticipants}
+                            disabled={Object.keys(userStore || {}).length === 0 && !showAddParticipants && holosphere}
                         >
-                            {showAddParticipants ? 'Cancel' : '+ Add Participant'}
+                            {#if Object.keys(userStore || {}).length === 0 && !showAddParticipants && holosphere}
+                                Loading Users...
+                            {:else if showAddParticipants}
+                                Cancel
+                            {:else}
+                                + Add Participant
+                            {/if}
                         </button>
                     </div>
 
@@ -108,13 +149,18 @@
                             {#each role.participants as participant}
                                 <div class="flex items-center justify-between bg-gray-700 p-2 rounded-lg">
                                     <div class="flex items-center gap-2">
-                                        {#if participant.picture}
                                             <img 
-                                                src={participant.picture} 
+                                            src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
                                                 alt={participant.username}
-                                                class="w-8 h-8 rounded-full"
-                                            />
-                                        {/if}
+                                            class="w-8 h-8 rounded-full object-cover border border-gray-500"
+                                            on:error={(e) => {
+                                                e.currentTarget.style.display = 'none';
+                                                e.currentTarget.nextElementSibling.style.display = 'flex';
+                                            }}
+                                        />
+                                        <div class="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center text-white text-sm font-bold border border-gray-500" style="display: none;">
+                                            {participant.username ? participant.username[0] : '?'}
+                                        </div>
                                         <span>{participant.username}</span>
                                     </div>
                                     <button 
@@ -135,23 +181,32 @@
                     <!-- Add Participants Dropdown -->
                     {#if showAddParticipants}
                         <div class="bg-gray-700 rounded-lg overflow-hidden mt-2">
-                            {#each Object.entries(userStore) as [userId, user]}
-                                {#if !isUserParticipant(userId)}
+                            {#if Object.keys(userStore || {}).length === 0 && holosphere}
+                                <p class="p-3 text-sm text-gray-400">Loading users or no users found in this holon.</p>
+                            {:else if availableUsersToList.length === 0 && Object.keys(userStore || {}).length > 0}
+                                <p class="p-3 text-sm text-gray-400">All available users are already participants or no other users to add.</p>
+                            {:else}
+                                {#each availableUsersToList as [userId, user]}
                                     <button
-                                        class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2"
+                                        class="w-full text-left px-4 py-2 hover:bg-gray-600 transition-colors flex items-center gap-2 text-gray-200"
                                         on:click={() => addParticipant(userId)}
                                     >
-                                        {#if user.picture}
                                             <img 
-                                                src={user.picture} 
+                                            src={`https://gun.holons.io/getavatar?user_id=${user.id || userId}`}
                                                 alt={user.first_name}
-                                                class="w-6 h-6 rounded-full"
-                                            />
-                                        {/if}
+                                            class="w-6 h-6 rounded-full object-cover border border-gray-500"
+                                            on:error={(e) => {
+                                                e.currentTarget.style.display = 'none';
+                                                e.currentTarget.nextElementSibling.style.display = 'flex';
+                                            }}
+                                        />
+                                        <div class="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-xs text-white border border-gray-500" style="display: none;">
+                                            {user.first_name ? user.first_name[0] : '?'}{user.last_name ? user.last_name[0] : ''}
+                                            </div>
                                         <span>{user.first_name} {user.last_name || ''}</span>
                                     </button>
-                                {/if}
-                            {/each}
+                                {/each}
+                            {/if}
                         </div>
                     {/if}
                 </div>

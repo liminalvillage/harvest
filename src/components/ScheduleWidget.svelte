@@ -19,6 +19,7 @@
 	let selectedQuest: { id: string; quest: Quest } | null = null;
 	let tempDate: string;
 	let tempTime: string;
+	let dialogElement: HTMLDialogElement;
 
 	const dispatch = createEventDispatcher();
 
@@ -48,17 +49,21 @@
 
 	function subscribe() {
 		store = {};
-		holosphere.subscribe(holonID, "quests", (newquest, key) => {
-			if (newquest) {
-				// Updates the store with the new value
-				store[key] = newquest;
-			} else {
-				// A key may contain a null value (if data has been deleted/set to null)
-				// if so, we remove the item from the store
-				delete store[key];
-				store = store;
-			}
-		});
+		if (holosphere && holonID) {
+			holosphere.subscribe(holonID, "quests", (newquest, key) => {
+				if (key) {
+					if (newquest) {
+						// Updates the store with the new value
+						store[key] = newquest;
+					} else {
+						// A key may contain a null value (if data has been deleted/set to null)
+						// if so, we remove the item from the store
+						delete store[key];
+						store = store;
+					}
+				}
+			});
+		}
 	}
 
 	function getStartTime(quest: Quest) {
@@ -127,13 +132,13 @@
 	function update(hex) {
 		// Filter ongoing and scheduled quests
 		const filteredQuests = quests.filter(
-			(quest) =>
-				quest.status === "ongoing"
+			([key, questObj]) =>
+				questObj.status === "ongoing"
 		);
 
 		// Sort quests by when property
 		const sortedQuests = filteredQuests.sort(
-			(a, b) => new Date(a.when) - new Date(b.when)
+			([keyA, questA], [keyB, questB]) => new Date(questA.when).getTime() - new Date(questB.when).getTime()
 		);
 
 		return sortedQuests;
@@ -221,13 +226,13 @@
 	}
 </script>
 
-<div class="w-full mt-8 lg:mt-0 lg:w-4/12 lg:pl-4">
-	<div class="bg-gray-800 rounded-3xl px-6 pt-6">
+<div class="w-full h-full">
+	<div class="p-6 h-full flex flex-col">
 		<div class="flex text-white text-2xl pb-6 font-bold">
 			<p>Schedule</p>
 		</div>
 		<div 
-			class="scheduleContainer"
+			class="scheduleContainer flex-1 overflow-y-auto"
 			role="grid"
 			aria-label="Daily schedule"
 		>
@@ -322,14 +327,13 @@
 	<dialog 
 		class="fixed inset-0 bg-black/75 z-50"
 		bind:this={dialogElement}
-		on:close={() => handleClickOutside()}
+		on:close={() => { showDatePicker = false; selectedQuest = null; }}
 		open
 	>
 		<div class="fixed inset-0 flex items-center justify-center">
 			<form 
 				method="dialog"
 				class="bg-gray-800 p-6 rounded-xl schedule-modal border border-gray-700 shadow-xl max-w-md w-full"
-				role="dialog"
 				aria-labelledby="modal-title"
 				aria-describedby="modal-description"
 			>

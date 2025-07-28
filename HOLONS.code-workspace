@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../holosphere"
+		},
+		{
+			"path": "../HolonsBot"
+		},
+		{
+			"path": "../website"
+		}
+	],
+	"settings": {}
+}
