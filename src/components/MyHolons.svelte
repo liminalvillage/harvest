@@ -228,7 +228,7 @@
         }
         
         try {
-            const federationInfo = await holosphere.getFederation(currentHolonId);
+            const federationInfo = await holosphere?.getFederation(currentHolonId);
             federatedHolons = [];
             
             if (federationInfo) {
@@ -363,9 +363,9 @@
         const statsPromises = myHolons.map(async (holon) => {
             try {
                 const [users, tasks, offers] = await Promise.allSettled([
-                    holosphere.getAll(holon.id, "users").catch(() => ({})),
-                    holosphere.getAll(holon.id, "quests").catch(() => ({})),
-                    holosphere.getAll(holon.id, "offers").catch(() => ({}))
+                    holosphere?.getAll(holon.id, "users").catch(() => ({})),
+                    holosphere?.getAll(holon.id, "quests").catch(() => ({})),
+                    holosphere?.getAll(holon.id, "offers").catch(() => ({}))
                 ]);
                 
                 const stats = {

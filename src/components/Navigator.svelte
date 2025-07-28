@@ -411,11 +411,10 @@
             .text(d => `${d.icon} ${d.value}`);
     }
 
-    async function handleHolonClick(d: d3.HierarchyCircularNode<Holon>) {
+    async function handleHolonClick(d: d3.HierarchyCircularNode<Holon>, event?: Event) {
         // Use proper event handling
-        const e = window.event;
-        if (e) {
-            e.stopPropagation();
+        if (event) {
+            event.stopPropagation();
         }
         focus = d;
         zoomToNode(d);
