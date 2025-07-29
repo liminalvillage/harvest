@@ -154,6 +154,7 @@
 		
 	// Add this variable to track the selected task
 	let selectedTask: any = null;
+	let selectedTaskId: string | null = null; // For URL parameter support
 
 	// Add cache for hologram source names to avoid repeated resolution
 	let hologramSourceNames = new Map<string, string>();
@@ -320,6 +321,11 @@
 			return;
 		}
 		selectedTask = { key, quest };
+		
+		// Update URL with task parameter
+		const url = new URL(window.location.href);
+		url.searchParams.set('task', key);
+		window.history.replaceState({}, '', url.toString());
 	}
 
 	// Add this helper function after the existing functions
@@ -703,6 +709,11 @@
 		}
 		// Always set selectedTask to null when modal closes
 		selectedTask = null;
+		
+		// Clear the task parameter from URL
+		const url = new URL(window.location.href);
+		url.searchParams.delete('task');
+		window.history.replaceState({}, '', url.toString());
 	}
 
 	// Add function to handle task completion and show animations
@@ -722,6 +733,11 @@
 			}, 10000); // Show for 10 seconds
 		}
 		// Note: handleTaskDeleted will still be called via the "close" event to clear selectedTask
+		
+		// Clear the task parameter from URL
+		const url = new URL(window.location.href);
+		url.searchParams.delete('task');
+		window.history.replaceState({}, '', url.toString());
 	}
 
 	// Add fetchData function with retry logic
@@ -832,6 +848,16 @@
 
 			// Set up subscription after successful fetch
 			await subscribe();
+
+			// Open task modal if we have a selectedTaskId from URL
+			if (selectedTaskId && store[selectedTaskId]) {
+				selectedTask = { key: selectedTaskId, quest: store[selectedTaskId] };
+				// Clear the task parameter from URL
+				const url = new URL(window.location.href);
+				url.searchParams.delete('task');
+				window.history.replaceState({}, '', url.toString());
+				selectedTaskId = null; // Reset after opening
+			}
 
 		} catch (error: any) {
 			console.error('Error fetching tasks data:', error);
@@ -1069,6 +1095,14 @@
 			holonID = urlId;
 			// Update the ID store to keep them in sync
 			ID.set(urlId);
+		}
+
+		// Check for task parameter in URL
+		const urlParams = new URLSearchParams(window.location.search);
+		const taskParam = urlParams.get('task');
+		if (taskParam) {
+			// Store the task ID to open after data is loaded
+			selectedTaskId = taskParam;
 		}
 
 		// Wait for holosphere to be ready before proceeding
