@@ -16,6 +16,7 @@
         creator?: string;
         created?: Date;
         questId?: string; // Optional property to indicate if checklist is attached to a quest
+        roleId?: string; // Optional property to indicate if checklist is attached to a role
     }
 
     const holosphere = getContext("holosphere") as HoloSphere;
@@ -27,12 +28,36 @@
 
     let checklists: Record<string, Checklist> = {};
     let selectedChecklist: string | null = null;
+    let roles: Record<string, any> = {};
+    let quests: Record<string, any> = {};
+    let allChecklists: Record<string, Checklist> = {}; // Store all checklists including attached ones
+    let activeFilter: string = 'all';
 
     $: checklistEntries = Object.entries(checklists);
     $: selectedChecklistData = selectedChecklist ? checklists[selectedChecklist] : null;
     $: completedItems = selectedChecklistData ? selectedChecklistData.items.filter(item => item.checked).length : 0;
     $: totalItems = selectedChecklistData ? selectedChecklistData.items.length : 0;
     $: pendingItems = totalItems - completedItems;
+
+    // Filter checklists based on active filter
+    $: filteredChecklists = (() => {
+        const entries = Object.entries(allChecklists);
+        
+        switch (activeFilter) {
+            case 'standalone':
+                return entries.filter(([_, checklist]) => !checklist.questId && !checklist.roleId);
+            case 'roles':
+                return entries.filter(([_, checklist]) => checklist.roleId);
+            case 'quests':
+                return entries.filter(([_, checklist]) => checklist.questId);
+            case 'all':
+            default:
+                return entries;
+        }
+    })();
+
+    // Update checklists based on filtered results
+    $: checklists = Object.fromEntries(filteredChecklists);
 
     let showInput = false;
     let inputText = "";
@@ -46,6 +71,13 @@
             holonID = urlId;
             // Update the ID store to keep them in sync
             ID.set(urlId);
+        }
+
+        // Check for checklist parameter in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const checklistParam = urlParams.get('checklist');
+        if (checklistParam) {
+            selectedChecklist = checklistParam;
         }
 
         // Wait for holosphere to be ready before proceeding
@@ -132,21 +164,18 @@
                 return Promise.race([promise, timeoutPromise]);
             };
 
-            const checklistsResult = await fetchWithTimeout(holosphere.getAll(holonID, "checklists"), 5000);
+            // Fetch checklists, roles, and quests in parallel
+            const [checklistsResult, rolesResult, questsResult] = await Promise.all([
+                fetchWithTimeout(holosphere.getAll(holonID, "checklists"), 5000),
+                fetchWithTimeout(holosphere.getAll(holonID, "roles"), 5000),
+                fetchWithTimeout(holosphere.getAll(holonID, "quests"), 5000)
+            ]);
             
-            // Process results safely and filter out quest-attached checklists
+            // Process results safely - store all checklists
             const checklistsData = checklistsResult || {};
-            const filteredChecklists: Record<string, Checklist> = {};
-            
-            // Filter out checklists that are attached to quests
-            Object.entries(checklistsData).forEach(([key, checklist]) => {
-                const typedChecklist = checklist as Checklist;
-                if (!typedChecklist.questId) {
-                    filteredChecklists[key] = typedChecklist;
-                }
-            });
-            
-            checklists = filteredChecklists;
+            allChecklists = checklistsData;
+            roles = rolesResult || {};
+            quests = questsResult || {};
 
             console.log(`Successfully fetched checklists for holon ${holonID}:`, Object.keys(filteredChecklists).length, 'checklists (filtered from', Object.keys(checklistsData).length, 'total)');
 
@@ -176,7 +205,7 @@
         }
         
         // Reset checklists to prevent duplicates
-        checklists = {};
+        allChecklists = {};
         
         if (holosphere && holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
             const subscription = await holosphere.subscribe(
@@ -184,20 +213,38 @@
                 "checklists",
                 (newItem: Checklist | null, key?: string) => {
                     if (key) {
-                        if (newItem && !newItem.questId) {
-                            // Only add checklists that are not attached to quests
-                            checklists[key] = newItem;
-                        } else if (newItem && newItem.questId) {
-                            // Remove quest-attached checklists if they exist
-                            delete checklists[key];
+                        if (newItem) {
+                            // Add all checklists to allChecklists
+                            allChecklists[key] = newItem;
                         } else {
-                            delete checklists[key];
+                            delete allChecklists[key];
                         }
-                        checklists = checklists;
+                        allChecklists = allChecklists;
                     }
                 }
             );
             checklistsUnsubscribe = subscription.unsubscribe;
+
+            // Also subscribe to roles and quests updates to keep titles current
+            holosphere.subscribe(holonID, "roles", (newRole: any, key?: string) => {
+                if (key && newRole) {
+                    roles[key] = newRole;
+                    roles = roles;
+                } else if (key) {
+                    const { [key]: _, ...rest } = roles;
+                    roles = rest;
+                }
+            });
+
+            holosphere.subscribe(holonID, "quests", (newQuest: any, key?: string) => {
+                if (key && newQuest) {
+                    quests[key] = newQuest;
+                    quests = quests;
+                } else if (key) {
+                    const { [key]: _, ...rest } = quests;
+                    quests = rest;
+                }
+            });
         }
     }
 
@@ -220,6 +267,10 @@
 
     function selectChecklist(checklistId: string): void {
         selectedChecklist = checklistId;
+        // Update URL with checklist parameter
+        const url = new URL(window.location.href);
+        url.searchParams.set('checklist', checklistId);
+        window.history.replaceState({}, '', url.toString());
     }
 
     async function clearChecklist(checklistId: string | null): Promise<void> {
@@ -276,6 +327,37 @@
         }
     }
 
+    // Add function to create checklist for a specific task
+    async function createChecklistForTask(taskId: string, taskTitle: string): Promise<void> {
+        if (!holonID || !holosphere) return;
+
+        try {
+            const newChecklistId = `task_${taskId}_checklist`;
+            const newChecklist = {
+                id: newChecklistId,
+                items: [],
+                creator: "Dashboard User",
+                created: new Date().toISOString(),
+                questId: taskId // Link to the specific task
+            };
+
+            await holosphere.put(holonID, "checklists", newChecklist);
+            
+            // Update the task to include the checklist ID
+            const task = await holosphere.get(holonID, "quests", taskId);
+            if (task) {
+                await holosphere.put(holonID, "quests", {
+                    ...task,
+                    checklistId: newChecklistId
+                });
+            }
+            
+            console.log(`Created checklist for task ${taskId}: ${newChecklistId}`);
+        } catch (error) {
+            console.error("Error creating checklist for task:", error);
+        }
+    }
+
     async function deleteChecklist(checklistId: string): Promise<void> {
         if (!holonID) return;
         
@@ -300,6 +382,21 @@
             console.error("Failed to remove item:", error);
         }
     }
+
+    function getChecklistDisplayTitle(checklist: Checklist): string {
+        // If checklist is associated with a role, use the role title
+        if (checklist.roleId && roles[checklist.roleId]) {
+            return roles[checklist.roleId].title || checklist.id;
+        }
+        
+        // If checklist is associated with a quest, use the quest title
+        if (checklist.questId && quests[checklist.questId]) {
+            return quests[checklist.questId].title || checklist.id;
+        }
+        
+        // Fallback to checklist ID
+        return checklist.id;
+    }
 </script>
 
 {#if isLoading && !connectionReady}
@@ -319,7 +416,7 @@
                 <div class="text-center md:text-left mb-4 md:mb-0">
                     <h1 class="text-4xl font-bold text-white mb-2">
                         {#if selectedChecklist && checklists[selectedChecklist]}
-                            {checklists[selectedChecklist].id}
+                            {getChecklistDisplayTitle(checklists[selectedChecklist])}
                         {:else}
                             Checklists
                         {/if}
@@ -352,7 +449,13 @@
                     <!-- Navigation and Actions -->
                     <div class="flex justify-between items-center mb-6">
                         <button
-                            on:click={() => (selectedChecklist = null)}
+                            on:click={() => {
+                                selectedChecklist = null;
+                                // Clear the checklist parameter from URL
+                                const url = new URL(window.location.href);
+                                url.searchParams.delete('checklist');
+                                window.history.replaceState({}, '', url.toString());
+                            }}
                             class="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
                         >
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -467,21 +570,75 @@
                     <div class="grid grid-cols-1 gap-4 mb-8">
                         <div class="bg-gray-700/50 rounded-2xl p-4 text-center">
                             <div class="text-2xl font-bold text-white mb-1">{checklistEntries.length}</div>
-                            <div class="text-sm text-gray-400">Total Checklists</div>
+                            <div class="text-sm text-gray-400">
+                                {activeFilter === 'all' ? 'Total Checklists' : 
+                                 activeFilter === 'standalone' ? 'Standalone Checklists' :
+                                 activeFilter === 'roles' ? 'Role Checklists' :
+                                 'Task Checklists'}
+                            </div>
                         </div>
                     </div>
 
+                    <!-- Filter Tabs -->
                     <div class="flex justify-center mb-6">
-                        <button
-                            on:click={() => showAddInput(true)}
-                            class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105"
-                        >
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-                            </svg>
-                            Create New Checklist
-                        </button>
+                        <div class="flex bg-gray-700 rounded-lg p-1">
+                            <button
+                                on:click={() => activeFilter = 'all'}
+                                class="px-4 py-2 rounded-md text-sm font-medium transition-colors {activeFilter === 'all' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:text-white'}"
+                            >
+                                All ({Object.keys(allChecklists).length})
+                            </button>
+                            <button
+                                on:click={() => activeFilter = 'standalone'}
+                                class="px-4 py-2 rounded-md text-sm font-medium transition-colors {activeFilter === 'standalone' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:text-white'}"
+                            >
+                                Checklists ({Object.entries(allChecklists).filter(([_, checklist]) => !checklist.questId && !checklist.roleId).length})
+                            </button>
+                            <button
+                                on:click={() => activeFilter = 'roles'}
+                                class="px-4 py-2 rounded-md text-sm font-medium transition-colors {activeFilter === 'roles' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:text-white'}"
+                            >
+                                Roles ({Object.entries(allChecklists).filter(([_, checklist]) => checklist.roleId).length})
+                            </button>
+                            <button
+                                on:click={() => activeFilter = 'quests'}
+                                class="px-4 py-2 rounded-md text-sm font-medium transition-colors {activeFilter === 'quests' ? 'bg-indigo-600 text-white' : 'text-gray-300 hover:text-white'}"
+                            >
+                                Tasks ({Object.entries(allChecklists).filter(([_, checklist]) => checklist.questId).length})
+                            </button>
+                        </div>
                     </div>
+
+                    {#if activeFilter === 'all' || activeFilter === 'standalone'}
+                        <div class="flex justify-center mb-6">
+                            <button
+                                on:click={() => showAddInput(true)}
+                                class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105"
+                            >
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                                </svg>
+                                Create New Checklist
+                            </button>
+                        </div>
+                    {/if}
+
+                    {#if activeFilter === 'quests'}
+                        <div class="flex justify-center mb-6">
+                            <div class="text-center">
+                                <p class="text-gray-400 text-sm mb-3">Task-attached checklists are created from tasks</p>
+                                <button
+                                    on:click={() => window.location.href = `/${holonID}/tasks`}
+                                    class="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-colors shadow-lg transform hover:scale-105 mx-auto"
+                                >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                    </svg>
+                                    Go to Tasks
+                                </button>
+                            </div>
+                        </div>
+                    {/if}
 
                     <!-- Checklists Grid -->
                     <div class="space-y-3">
@@ -493,7 +650,7 @@
                                     on:keydown={(e) => e.key === 'Enter' && selectChecklist(key)}
                                     role="button"
                                     tabindex="0"
-                                    aria-label={`Open checklist: ${checklist.id}`}
+                                    aria-label={`Open checklist: ${getChecklistDisplayTitle(checklist)}`}
                                 >
                                     <div class="flex items-center justify-between gap-3">
                                         <div class="flex items-center gap-3 flex-1 min-w-0">
@@ -506,9 +663,17 @@
 
                                             <!-- Main Content -->
                                             <div class="flex-1 min-w-0">
-                                                <h3 class="text-base font-bold text-white mb-1 truncate">
-                                                    {checklist.id}
-                                                </h3>
+                                                <div class="flex items-center gap-2 mb-1">
+                                                    <h3 class="text-base font-bold text-white truncate">
+                                                        {getChecklistDisplayTitle(checklist)}
+                                                    </h3>
+                                                    {#if checklist.roleId}
+                                                        <span class="px-2 py-1 bg-cyan-600 text-white text-xs rounded-full">Role</span>
+                                                    {/if}
+                                                    {#if checklist.questId}
+                                                        <span class="px-2 py-1 bg-purple-600 text-white text-xs rounded-full">Task</span>
+                                                    {/if}
+                                                </div>
                                                 <p class="text-sm text-gray-400">
                                                     {checklist.items.filter(item => item.checked).length}/{checklist.items.length} completed
                                                 </p>
@@ -535,14 +700,26 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                                     </svg>
                                 </div>
-                                <h3 class="text-lg font-medium text-white mb-2">No checklists found</h3>
-                                <p class="text-gray-400 mb-4">Create your first checklist to get organized</p>
-                                <button
-                                    on:click={() => showAddInput(true)}
-                                    class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors"
-                                >
-                                    Create Checklist
-                                </button>
+                                <h3 class="text-lg font-medium text-white mb-2">
+                                    {activeFilter === 'all' ? 'No checklists found' :
+                                     activeFilter === 'standalone' ? 'No standalone checklists' :
+                                     activeFilter === 'roles' ? 'No role checklists' :
+                                     'No task checklists'}
+                                </h3>
+                                <p class="text-gray-400 mb-4">
+                                    {activeFilter === 'all' ? 'Create your first checklist to get organized' :
+                                     activeFilter === 'standalone' ? 'Standalone checklists are created independently' :
+                                     activeFilter === 'roles' ? 'Role checklists are created from roles' :
+                                     'Task checklists are created from tasks'}
+                                </p>
+                                {#if activeFilter === 'all' || activeFilter === 'standalone'}
+                                    <button
+                                        on:click={() => showAddInput(true)}
+                                        class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors"
+                                    >
+                                        Create Checklist
+                                    </button>
+                                {/if}
                             </div>
                         {/if}
                     </div>

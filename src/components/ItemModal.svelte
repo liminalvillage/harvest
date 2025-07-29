@@ -1,6 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount } from 'svelte';
     import { fade, scale } from 'svelte/transition';
+    import { goto } from '$app/navigation';
     import HoloSphere from "holosphere";
     // Allow either quest or role to be passed
     export let quest: any = undefined;
@@ -30,35 +31,50 @@
     
     let userStore: UserStore = {};
 
-    onMount(async () => {
+    onMount(() => {
         document.addEventListener('click', handleClickOutside);
         
-        if (holosphere) {
-            // First, fetch all existing users
-            try {
-                const initialUsers = await holosphere.getAll(holonId, "users");
-                if (initialUsers) {
-                    userStore = initialUsers;
-                    console.log("[ItemModal] Loaded initial users:", Object.keys(userStore).length);
+        const initializeUsers = async () => {
+            if (holosphere) {
+                // First, fetch all existing users
+                try {
+                    const initialUsers = await holosphere.getAll(holonId, "users");
+                    if (initialUsers) {
+                        // Convert array to object if needed
+                        if (Array.isArray(initialUsers)) {
+                            const userObject: UserStore = {};
+                            initialUsers.forEach((user, index) => {
+                                if (user && user.id) {
+                                    userObject[user.id] = user;
+                                }
+                            });
+                            userStore = userObject;
+                        } else {
+                            userStore = initialUsers as UserStore;
+                        }
+                        console.log("[ItemModal] Loaded initial users:", Object.keys(userStore).length);
+                    }
+                } catch (error) {
+                    console.error("[ItemModal] Error fetching initial users:", error);
                 }
-            } catch (error) {
-                console.error("[ItemModal] Error fetching initial users:", error);
-            }
 
-            // Then subscribe to future updates
-            holosphere.subscribe(holonId, "users", (newUser: any, key: string) => {
-                if (newUser) {
-                    const parsedUser = newUser;
-                    userStore = {
-                        ...userStore,
-                        [key]: parsedUser
-                    };
-                } else {
-                    const { [key]: _, ...rest } = userStore;
-                    userStore = rest;
-                }
-            });
-        }
+                // Then subscribe to future updates
+                holosphere.subscribe(holonId, "users", (newUser: any, key?: string) => {
+                    if (key && newUser) {
+                        const parsedUser = newUser;
+                        userStore = {
+                            ...userStore,
+                            [key]: parsedUser
+                        };
+                    } else if (key) {
+                        const { [key]: _, ...rest } = userStore;
+                        userStore = rest;
+                    }
+                });
+            }
+        };
+
+        initializeUsers();
 
         return () => {
             document.removeEventListener('click', handleClickOutside);
@@ -159,6 +175,12 @@
             showDropdown = false;
         }
     }
+
+    function navigateToChecklist() {
+        if (role && role.checklistId) {
+            goto(`/${holonId}/checklists?checklist=${role.checklistId}`);
+        }
+    }
 </script>
 
 <div 
@@ -192,6 +214,33 @@
             <div class="space-y-6 text-gray-300">
                 {#if item.description}
                     <p class="text-sm">{item.description}</p>
+                {/if}
+
+                {#if role && role.checklistId}
+                    <div class="bg-gray-700/50 p-4 rounded-lg">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-lg bg-teal-600/20 flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h4 class="text-sm font-semibold text-white">Associated Checklist</h4>
+                                    <p class="text-xs text-gray-400">This role has a linked checklist</p>
+                                </div>
+                            </div>
+                            <button 
+                                class="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm transition-colors flex items-center gap-2"
+                                on:click={navigateToChecklist}
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                </svg>
+                                View Checklist
+                            </button>
+                        </div>
+                    </div>
                 {/if}
 
                 <div class="space-y-4">

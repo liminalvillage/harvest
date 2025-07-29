@@ -2,10 +2,11 @@
   import { getContext, onDestroy, onMount } from 'svelte';
   import { ID } from '../dashboard/store';
   import { writable, get } from 'svelte/store';
+  import { browser } from '$app/environment';
   import HoloSphere from 'holosphere';
 
   // Access the global holosphere instance provided via context
-  const holosphere = getContext('holosphere') as HoloSphere | undefined;
+  let holosphere = getContext('holosphere') as HoloSphere | undefined;
 
   // Map survey IDs to question texts
   const questionLabel: Record<string, string> = {
@@ -40,6 +41,11 @@
   const sortField = writable<string>('');
   const sortAsc = writable<boolean>(true);
 
+  // Loading and error states
+  let isLoading = true;
+  let error = '';
+  let connectionReady = false;
+
   // Helper: derive sorted data whenever sort settings or rows change
   let sortedRows: any[] = [];
   const updateSorted = () => {
@@ -68,6 +74,31 @@
   const unsubSortField = sortField.subscribe(updateSorted);
   const unsubSortDir = sortAsc.subscribe(updateSorted);
   const unsubRows = rows.subscribe(updateSorted);
+
+  // Wait for holosphere to be ready
+  async function waitForHolosphere(): Promise<boolean> {
+    if (holosphere) {
+      return true;
+    }
+    
+    let retries = 0;
+    const maxRetries = 10;
+    
+    while (retries < maxRetries) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+      try {
+        holosphere = getContext("holosphere");
+        if (holosphere) {
+          return true;
+        }
+      } catch (error) {
+        // Silently handle context errors
+      }
+      retries++;
+    }
+    
+    return false;
+  }
 
   /**
    * Export current table data to CSV file.
@@ -112,9 +143,24 @@
 
   // Fetch questionnaires whenever the current holon ID changes
   async function loadQuestionnaires(holonId: string | null) {
-    if (!holosphere || !holonId) return;
+    if (!holonId) {
+      isLoading = false;
+      return;
+    }
+
+    isLoading = true;
+    error = '';
+
     try {
-      const data = await holosphere.getAll(holonId, 'questionnaires');
+      // Wait for holosphere to be ready
+      const holosphereAvailable = await waitForHolosphere();
+      if (!holosphereAvailable) {
+        error = 'Connection not available. Please refresh the page.';
+        isLoading = false;
+        return;
+      }
+
+      const data = await holosphere?.getAll(holonId, 'questionnaires');
       // "data" is expected to be an object map ⇒ convert to array
       const list: any[] = data ? Object.values(data) : [];
 
@@ -172,18 +218,41 @@
       if (cols.length > 0) {
         sortField.set(cols[0]);
       }
+
+      console.log(`Successfully loaded questionnaires for holon ${holonId}:`, expandedList.length, 'responses');
+
     } catch (err) {
       console.error('Failed to load questionnaires:', err);
+      error = 'Failed to load questionnaires. Please try again.';
       rows.set([]);
       columns.set([]);
+    } finally {
+      isLoading = false;
     }
   }
 
   // Initial load + reactive to ID changes
   let idUnsub: () => void;
-  onMount(() => {
+  onMount(async () => {
+    // Wait for holosphere to be ready
+    const holosphereAvailable = await waitForHolosphere();
+    if (!holosphereAvailable) {
+      error = 'Connection not available. Please refresh the page.';
+      isLoading = false;
+      return;
+    }
+
+    connectionReady = true;
+
+    // Initial load
     loadQuestionnaires(get(ID));
-    idUnsub = ID.subscribe((val) => loadQuestionnaires(val));
+    
+    // Set up ID subscription
+    idUnsub = ID.subscribe((val) => {
+      if (val) {
+        loadQuestionnaires(val);
+      }
+    });
   });
 
   onDestroy(() => {
@@ -246,7 +315,30 @@
   }
 </style>
 
-{#if $columns.length === 0}
+{#if isLoading}
+  <div class="flex items-center justify-center py-12">
+    <div class="text-center">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+      <p class="text-gray-400">Loading questionnaires...</p>
+    </div>
+  </div>
+{:else if error}
+  <div class="text-center py-12">
+    <div class="w-16 h-16 mx-auto mb-4 bg-red-700/20 rounded-full flex items-center justify-center">
+      <svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+    </div>
+    <h3 class="text-lg font-medium text-white mb-2">Error Loading Questionnaires</h3>
+    <p class="text-gray-400 mb-4">{error}</p>
+    <button 
+      class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+      on:click={() => loadQuestionnaires(get(ID))}
+    >
+      Try Again
+    </button>
+  </div>
+{:else if $columns.length === 0}
   <p class="text-gray-400">No questionnaires found for this holon.</p>
 {:else}
   <button class="export-btn" on:click={exportCSV}>Export CSV</button>
