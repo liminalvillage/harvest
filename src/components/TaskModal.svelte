@@ -1,6 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher, getContext, onMount } from "svelte";
     import { fade, scale } from "svelte/transition";
+    import { goto } from '$app/navigation';
     import HoloSphere from "holosphere";
     import { getHologramSourceName } from "../utils/holonNames";
     import { formatDate } from "../utils/date";
@@ -661,6 +662,40 @@
         return participants;
     }
 
+    // Add checklist navigation function
+    function navigateToChecklist() {
+        if (quest && quest.checklistId) {
+            goto(`/${holonId}/checklists?checklist=${quest.checklistId}`);
+        }
+    }
+
+    // Add function to create checklist for this task
+    async function createChecklistForTask() {
+        if (!holosphere || !holonId || !questId) {
+            console.error("Cannot create checklist: missing parameters");
+            return;
+        }
+
+        try {
+            const newChecklist = {
+                id: `task_${questId}_checklist`,
+                items: [],
+                creator: "Dashboard User",
+                created: new Date().toISOString(),
+                questId: questId // Link to this task
+            };
+
+            await holosphere.put(holonId, "checklists", newChecklist);
+            
+            // Update the quest to include the checklist ID
+            await updateQuest({ checklistId: newChecklist.id });
+            
+            console.log(`Created checklist for task ${questId}: ${newChecklist.id}`);
+        } catch (error) {
+            console.error("Error creating checklist for task:", error);
+        }
+    }
+
     // Add publish functionality
     let isPublishing = false;
     let publishStatus = '';
@@ -1261,7 +1296,80 @@
                     {/if}
                 </div>
 
+                <!-- Checklist Section -->
+                <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-lg font-semibold flex items-center gap-2">
+                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                            </svg>
+                            Checklist
+                        </h3>
+                        {#if !quest.checklistId}
+                            <button
+                                class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                on:click={createChecklistForTask}
+                                on:touchstart={handleButtonTouchStart}
+                                on:touchend={handleButtonTouchEnd}
+                                on:touchcancel={handleButtonTouchCancel}
+                                type="button"
+                            >
+                                + Create Checklist
+                            </button>
+                        {/if}
+                    </div>
 
+                    {#if quest.checklistId}
+                        <div class="bg-gray-700/50 p-4 rounded-lg">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-lg bg-teal-600/20 flex items-center justify-center">
+                                        <svg class="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h4 class="text-sm font-semibold text-white">Associated Checklist</h4>
+                                        <p class="text-xs text-gray-400">This task has a linked checklist</p>
+                                    </div>
+                                </div>
+                                <button
+                                    class="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm transition-colors flex items-center gap-2"
+                                    on:click={navigateToChecklist}
+                                    on:touchstart={handleButtonTouchStart}
+                                    on:touchend={handleButtonTouchEnd}
+                                    on:touchcancel={handleButtonTouchCancel}
+                                    type="button"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                    </svg>
+                                    View Checklist
+                                </button>
+                            </div>
+                        </div>
+                    {:else}
+                        <div class="text-center py-6">
+                            <div class="w-12 h-12 mx-auto mb-3 bg-gray-700 rounded-full flex items-center justify-center">
+                                <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                </svg>
+                            </div>
+                            <h4 class="text-sm font-medium text-white mb-1">No checklist yet</h4>
+                            <p class="text-xs text-gray-400 mb-3">Create a checklist to track progress</p>
+                            <button
+                                class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm transition-colors"
+                                on:click={createChecklistForTask}
+                                on:touchstart={handleButtonTouchStart}
+                                on:touchend={handleButtonTouchEnd}
+                                on:touchcancel={handleButtonTouchCancel}
+                                type="button"
+                            >
+                                Create Checklist
+                            </button>
+                        </div>
+                    {/if}
+                </div>
 
                 <!-- Action Buttons -->
                 <div class="flex gap-2 pt-4">
