@@ -2,6 +2,7 @@
 
 	import { onMount, getContext } from 'svelte';
 	import { ID } from '../dashboard/store';
+	import { browser } from '$app/environment';
 	
 	import Announcements from './Announcements.svelte';
 
@@ -10,70 +11,117 @@
 	import HoloSphere from 'holosphere';
 	let holosphere = getContext('holosphere') as HoloSphere;
 
-	$: holonID = $ID;
+	let holonID: string = '';
 	let store: Record<string, Quest> = {};
+	let isLoading = true;
+	let error = '';
+	let unsubscribe: (() => void) | null = null;
+
 	$: quests = Object.entries(store);
 
-	let unsubscribe: () => void;
-	let questsUnsubscribe: () => void;
-
-	// Add Quest interface at the top of the script
-	interface Quest {
-		id: string;
-		title: string;
-		description?: string;
-		when?: string;
-		ends?: string;
-		status: 'ongoing' | 'completed';
-		type: 'task' | 'quest' | 'event';
-		participants: Array<{ id: string; username: string }>;
-		location?: string;
-		end?: string;
+	// Wait for holosphere to be ready
+	async function waitForHolosphere(): Promise<boolean> {
+		if (holosphere) {
+			return true;
+		}
+		
+		let retries = 0;
+		const maxRetries = 10;
+		
+		while (retries < maxRetries) {
+			await new Promise(resolve => setTimeout(resolve, 200));
+			try {
+				holosphere = getContext("holosphere");
+				if (holosphere) {
+					return true;
+				}
+			} catch (error) {
+				// Silently handle context errors
+			}
+			retries++;
+		}
+		
+		return false;
 	}
 
-	onMount(() => {
-		// Subscribe to ID changes
-		unsubscribe = ID.subscribe((value) => {
-			holonID = value;
-			if (questsUnsubscribe) {
-				questsUnsubscribe(); // Clean up old subscription
-			}
-			subscribe(); // Set up new subscription
-		});
+	// Load initial data and subscribe to changes
+	async function loadScheduleData() {
+		if (!holonID || !holosphere) {
+			isLoading = false;
+			return;
+		}
 
-		return () => {
-			// Clean up subscriptions on component unmount
-			if (unsubscribe) unsubscribe();
-			if (questsUnsubscribe) questsUnsubscribe();
-		};
-	});
-
-	function subscribe() {
-		if (!holosphere || !holonID) return;
-		
-		// Clear existing store
+		isLoading = true;
+		error = '';
 		store = {};
-		
+
 		try {
-			const off = holosphere.subscribe(holonID, 'quests', (newquest: Quest | null, key: string) => {
+			// Load initial quests data
+			const initialQuestsData = await holosphere.getAll(holonID, "quests");
+			if (initialQuestsData && typeof initialQuestsData === 'object') {
+				store = initialQuestsData;
+			}
+
+			// Subscribe to quest updates
+			unsubscribe = holosphere.subscribe(holonID, 'quests', (newquest, key) => {
 				if (newquest) {
-					store = { ...store, [key]: newquest };
+					const parsedQuest = newquest;
+					// Updates the store with the new value
+					store = { ...store, [key]: parsedQuest };
 				} else {
+					// A key may contain a null value (if data has been deleted/set to null)
+					// if so, we remove the item from the store
 					const { [key]: _, ...rest } = store;
 					store = rest;
 				}
 			});
 
-			if (typeof off === 'function') {
-				if (questsUnsubscribe) {
-					questsUnsubscribe(); // Clean up any existing subscription
-				}
-				questsUnsubscribe = off;
-			}
-		} catch (error) {
-			console.error('Error setting up quest subscription:', error);
+			console.log(`Successfully loaded schedule for holon ${holonID}:`, Object.keys(store).length, 'quests');
+
+		} catch (err) {
+			console.error('Error loading schedule data:', err);
+			error = 'Failed to load schedule. Please try again.';
+		} finally {
+			isLoading = false;
 		}
 	}
+
+	onMount(async () => {
+		// Wait for holosphere to be ready
+		const holosphereAvailable = await waitForHolosphere();
+		if (!holosphereAvailable) {
+			error = 'Connection not available. Please refresh the page.';
+			isLoading = false;
+			return;
+		}
+
+		// Set up ID subscription
+		const idUnsubscribe = ID.subscribe(async (value) => {
+			if (value && value !== holonID) {
+				holonID = value;
+				// Clean up previous subscription
+				if (unsubscribe) {
+					unsubscribe();
+					unsubscribe = null;
+				}
+				await loadScheduleData();
+			}
+		});
+
+		// Initial load if we have an ID
+		if ($ID) {
+			holonID = $ID;
+			await loadScheduleData();
+		}
+
+		// Cleanup on unmount
+		return () => {
+			idUnsubscribe();
+			if (unsubscribe) {
+				unsubscribe();
+			}
+		};
+	});
 
 	function getStartTime(quest: Quest): string {
 		const date = new Date(quest.when || '');
@@ -180,25 +228,31 @@
 			<div class="time start-2300">23:00</div>
 			<div class="time start-2330">23:30</div>
 
-			{#each quests as [key, quest]}
-				{#if quest && quest.when && isToday(quest)}
-					<div
-						id={key}
-						class="event stage-{getDay(quest)} start-{getStartTime(quest)} end-{getEndTime(quest)} length-4"
-					>
-						{quest.title} <span>{quest.location || ''}</span>
-						<span>
-							<p class="mb-0 text-muted">🙋‍♂️ {quest.participants.length}</p>
-							{#each quest.participants as participant}
-								<p>{@html `@${participant.username}`}</p>
-							{/each}
-						</span>
-					</div>
-				{/if}
-			{/each}
+			{#if isLoading}
+				<div class="event stage-today">Loading schedule...</div>
+			{/if}
+			{#if error}
+				<div class="event stage-today text-red-500">{error}</div>
+			{/if}
+				{#each quests as [key, quest]}
+					{#if quest && quest.when && isToday(quest)}
+						<div
+							id={key}
+							class="event stage-{getDay(quest)} start-{getStartTime(quest)} end-{getEndTime(quest)} length-4"
+						>
+							{quest.title} <span>{quest.location || ''}</span>
+							<span>
+								<p class="mb-0 text-muted">🙋‍♂️ {quest.participants.length}</p>
+								{#each quest.participants as participant}
+									<p>{@html `@${participant.username}`}</p>
+								{/each}
+							</span>
+						</div>
+					{/if}
+				{/each}
 
-			<!-- EVENTS -->
-			<!-- <div class="event stage-saturn start-800 end-930 length-4">Arrival and registration <span>Registration Area</span></div>
+				<!-- EVENTS -->
+				<!-- <div class="event stage-saturn start-800 end-930 length-4">Arrival and registration <span>Registration Area</span></div>
 	<div class="event stage-earth start-1000 end-1000 length-4">Welcome <span>Earth Stage</span></div>
 	<div class="event stage-earth start-1030 end-1030 length-4">Speaker One <span>Earth Stage</span></div>
 	<div class="event stage-earth start-1100 end-1100 length-4">Speaker Two <span>Earth Stage</span></div>
