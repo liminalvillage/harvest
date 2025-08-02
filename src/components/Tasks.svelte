@@ -3,6 +3,7 @@
 	import { onMount, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
+	import { replaceState } from "$app/navigation";
 	import { formatDate, formatTime } from "../utils/date";
 	import HoloSphere from "holosphere";
 	import Schedule from "./ScheduleWidget.svelte";
@@ -325,7 +326,7 @@
 		// Update URL with task parameter
 		const url = new URL(window.location.href);
 		url.searchParams.set('task', key);
-		window.history.replaceState({}, '', url.toString());
+		replaceState(url.toString(), { replaceState: true });
 	}
 
 	// Add this helper function after the existing functions
@@ -713,7 +714,7 @@
 		// Clear the task parameter from URL
 		const url = new URL(window.location.href);
 		url.searchParams.delete('task');
-		window.history.replaceState({}, '', url.toString());
+		replaceState(url.toString(), { replaceState: true });
 	}
 
 	// Add function to handle task completion and show animations
@@ -737,7 +738,7 @@
 		// Clear the task parameter from URL
 		const url = new URL(window.location.href);
 		url.searchParams.delete('task');
-		window.history.replaceState({}, '', url.toString());
+		replaceState(url.toString(), { replaceState: true });
 	}
 
 	// Add fetchData function with retry logic
@@ -855,7 +856,7 @@
 				// Clear the task parameter from URL
 				const url = new URL(window.location.href);
 				url.searchParams.delete('task');
-				window.history.replaceState({}, '', url.toString());
+				replaceState(url.toString(), { replaceState: true });
 				selectedTaskId = null; // Reset after opening
 			}
 

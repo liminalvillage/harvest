@@ -2,6 +2,7 @@
     import { onMount, getContext } from "svelte";
     import { ID } from "../dashboard/store";
     import { page } from "$app/stores";
+    import { replaceState } from "$app/navigation";
     import Schedule from "./ScheduleWidget.svelte";
     import HoloSphere from "holosphere";
 
@@ -270,7 +271,7 @@
         // Update URL with checklist parameter
         const url = new URL(window.location.href);
         url.searchParams.set('checklist', checklistId);
-        window.history.replaceState({}, '', url.toString());
+        replaceState(url.toString(), { replaceState: true });
     }
 
     async function clearChecklist(checklistId: string | null): Promise<void> {
@@ -454,7 +455,7 @@
                                 // Clear the checklist parameter from URL
                                 const url = new URL(window.location.href);
                                 url.searchParams.delete('checklist');
-                                window.history.replaceState({}, '', url.toString());
+                                replaceState(url.toString(), { replaceState: true });
                             }}
                             class="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
                         >
