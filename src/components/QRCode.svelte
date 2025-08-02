@@ -51,104 +51,184 @@
 	}
 </script>
 
-<div class="qr-container">
-	<div class="qr-header">
-		<h2 class="text-xl font-bold text-white mb-4">QR Badge</h2>
-		<div class="badge-info text-white mb-4">
-			<p><strong>Action:</strong> {action}</p>
-			<p><strong>Title:</strong> {title}</p>
-			<p><strong>Chat ID:</strong> {chatId}</p>
-			{#if desc}
-				<p><strong>Description:</strong> {desc}</p>
+<div class="role-card">
+	<!-- Title Section -->
+	<div class="card-title">
+		<span class="title-text">BADGE</span>
+	</div>
+	
+	<!-- Icon/QR Code Section -->
+	<div class="card-icon-section">
+		<div class="icon-background">
+			<div class="circuit-pattern"></div>
+			{#if qrCode}
+				<img 
+					src={qrCode} 
+					alt="QR Code for {title}" 
+					class="qr-icon"
+					width="200" 
+					height="200"
+				/>
+			{:else}
+				<div class="qr-placeholder">
+					<div class="loading-spinner"></div>
+				</div>
 			{/if}
 		</div>
 	</div>
 	
-	<div class="qr-code-wrapper" bind:this={qrContainer}>
-		{#if qrCode}
-			<img 
-				src={qrCode} 
-				alt="QR Code for {title}" 
-				class="qr-code-image"
-				width="300" 
-				height="300"
-			/>
-		{:else}
-			<div class="qr-placeholder">
-				<p class="text-gray-400">Generating QR code...</p>
-			</div>
-		{/if}
-	</div>
-	
-	<div class="qr-footer mt-4">
-		<p class="text-sm text-gray-400 mb-4">
-			Scan this QR code to access the badge information
-		</p>
+	<!-- Description Section -->
+	<div class="card-description">
+		<h3 class="role-name">{title}</h3>
+		<p class="role-desc">{desc || `QR Code for ${title} badge`}</p>
+		
+		<!-- Action Info -->
+		<div class="action-info">
+			<p><strong>Action:</strong> {action}</p>
+			<p><strong>Chat ID:</strong> {chatId}</p>
+		</div>
+		
+		<!-- Download Button -->
 		<button 
 			on:click={downloadQRCode}
 			class="download-btn"
 			disabled={!qrCode}
 		>
-			📥 Download {title}.svg
+			📥 Download QR Code
 		</button>
 	</div>
 </div>
 
 <style lang="scss">
-	.qr-container {
+	.role-card {
+		background: linear-gradient(135deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+		border-radius: 1rem;
+		padding: 1.5rem;
+		width: 320px;
+		height: 420px;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		padding: 2rem;
-		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-		border-radius: 1rem;
-		min-height: 400px;
-		justify-content: center;
+		box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		position: relative;
+		overflow: hidden;
 	}
 
-	.qr-header {
+	.card-title {
 		text-align: center;
-		margin-bottom: 2rem;
+		margin-bottom: 1rem;
 	}
 
-	.badge-info {
-		background: rgba(255, 255, 255, 0.1);
-		padding: 1rem;
+	.title-text {
+		background: rgba(255, 255, 255, 0.9);
+		color: #16a34a;
+		padding: 0.5rem 1rem;
 		border-radius: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.card-icon-section {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-bottom: 1rem;
+	}
+
+	.icon-background {
+		position: relative;
+		width: 200px;
+		height: 200px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(255, 255, 255, 0.95);
+		border-radius: 1rem;
+		box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+		overflow: hidden;
+	}
+
+	.circuit-pattern {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-image: 
+			linear-gradient(90deg, rgba(34, 197, 94, 0.1) 1px, transparent 1px),
+			linear-gradient(rgba(34, 197, 94, 0.1) 1px, transparent 1px);
+		background-size: 20px 20px;
+		opacity: 0.3;
+	}
+
+	.qr-icon {
+		position: relative;
+		z-index: 2;
+		border-radius: 0.5rem;
+		background: white;
+		padding: 0.5rem;
+	}
+
+	.qr-placeholder {
+		position: relative;
+		z-index: 2;
+		width: 100px;
+		height: 100px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(34, 197, 94, 0.1);
+		border-radius: 0.5rem;
+	}
+
+	.loading-spinner {
+		width: 40px;
+		height: 40px;
+		border: 3px solid rgba(34, 197, 94, 0.3);
+		border-top: 3px solid #16a34a;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
+	@keyframes spin {
+		0% { transform: rotate(0deg); }
+		100% { transform: rotate(360deg); }
+	}
+
+	.card-description {
+		text-align: center;
+		color: white;
+	}
+
+	.role-name {
+		font-size: 1.125rem;
+		font-weight: 700;
+		margin-bottom: 0.5rem;
+		line-height: 1.3;
+	}
+
+	.role-desc {
+		font-size: 0.875rem;
+		line-height: 1.4;
+		margin-bottom: 1rem;
+		opacity: 0.95;
+	}
+
+	.action-info {
+		background: rgba(255, 255, 255, 0.15);
+		padding: 0.75rem;
+		border-radius: 0.5rem;
+		margin-bottom: 1rem;
+		font-size: 0.75rem;
 		backdrop-filter: blur(10px);
 		
 		p {
 			margin: 0.25rem 0;
-			font-size: 0.9rem;
+			line-height: 1.3;
 		}
-	}
-
-	.qr-code-wrapper {
-		display: flex;
-		justify-content: center;
-		align-items: center;
-		background: white;
-		padding: 1rem;
-		border-radius: 0.5rem;
-		box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-	}
-
-	.qr-code-image {
-		border-radius: 0.25rem;
-	}
-
-	.qr-placeholder {
-		width: 300px;
-		height: 300px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: #f3f4f6;
-		border-radius: 0.25rem;
-	}
-
-	.qr-footer {
-		text-align: center;
 	}
 
 	.download-btn {
@@ -157,11 +237,12 @@
 		border: 1px solid rgba(255, 255, 255, 0.3);
 		padding: 0.75rem 1.5rem;
 		border-radius: 0.5rem;
-		font-size: 0.9rem;
-		font-weight: 500;
+		font-size: 0.875rem;
+		font-weight: 600;
 		cursor: pointer;
 		transition: all 0.2s ease;
 		backdrop-filter: blur(10px);
+		width: 100%;
 
 		&:hover:not(:disabled) {
 			background: rgba(255, 255, 255, 0.3);

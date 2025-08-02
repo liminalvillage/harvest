@@ -28,6 +28,9 @@
 
 	// Check if we're on the root route
 	$: isRootRoute = $page.url.pathname === '/';
+	
+	// Check if we're on a QR route
+	$: isQrRoute = $page.url.pathname.includes('/qr');
 
 	// Define the allowed routes for auto-switching
 	const allowedRoutes = data.filter(item => 
@@ -79,6 +82,15 @@
 	<div class={style.rootContainer}>
 		<main class={style.rootMain}>
 			<MyHolons />
+		</main>
+	</div>
+{:else if isQrRoute}
+	<!-- QR route layout: Clean view without topbar/sidebar -->
+	<div class={style.rootContainer}>
+		<main class={style.rootMain}>
+			<RouteTransition pathname={$page.url.pathname}>
+				<slot />
+			</RouteTransition>
 		</main>
 	</div>
 {:else}
