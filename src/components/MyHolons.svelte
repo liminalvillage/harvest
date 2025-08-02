@@ -56,6 +56,12 @@
         name: string;
         lastVisited: number;
         visitCount: number;
+        stats?: {
+            users: number;
+            tasks: number;
+            offers: number;
+            lastActivity: number;
+        };
     }
 
     // State
@@ -107,17 +113,12 @@
         const personalHolonsCount = myHolons.filter(h => h.isPersonal).length;
         const visitedHolonsCount = visitedHolons.length;
         showSplashScreen = !isLoading && personalHolonsCount === 0 && visitedHolonsCount === 0;
-        console.log('Splash screen logic:', {
-            isLoading,
-            personalHolonsCount,
-            visitedHolonsCount,
-            myHolonsLength: myHolons.length,
-            showSplashScreen
-        });
     }
 
     // Subscribe to current holon ID
     let idStoreUnsubscribe: (() => void) | undefined;
+    let lastProcessedId = '';
+    let updateTimeout: NodeJS.Timeout | null = null;
 
     onMount(async () => {
         // Wait for holosphere to be ready with timeout
@@ -130,13 +131,21 @@
             await new Promise(resolve => setTimeout(resolve, 200));
             connectionReady = true;
             
-            // Subscribe to ID store
+            // Subscribe to ID store with debouncing
             idStoreUnsubscribe = ID.subscribe(async (newId) => {
-                // Update current holon ID even if it's undefined/null
-                if (newId !== currentHolonId) {
-                    currentHolonId = newId || '';
-                    await loadData();
+                // Debounce rapid ID changes
+                if (updateTimeout) {
+                    clearTimeout(updateTimeout);
                 }
+                
+                updateTimeout = setTimeout(async () => {
+                    // Only update if ID actually changed
+                    if (newId !== lastProcessedId) {
+                        lastProcessedId = newId || '';
+                        currentHolonId = newId || '';
+                        await loadData();
+                    }
+                }, 300); // 300ms debounce
             });
 
             // Load initial data with timeout
@@ -159,6 +168,9 @@
     onDestroy(() => {
         if (idStoreUnsubscribe) {
             idStoreUnsubscribe();
+        }
+        if (updateTimeout) {
+            clearTimeout(updateTimeout);
         }
     });
 
@@ -187,17 +199,13 @@
             });
             await Promise.race([federatedPromise, federatedTimeout]);
             
-            // Update holon names and stats with timeout
+            // Update holon names FIRST and immediately
             loadingMessage = 'Updating holon names...';
-            const updatePromise = updateHolonDetails();
-            const updateVisitedPromise = updateVisitedHolonDetails();
-            const updateTimeout = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('Update details timeout')), 10000);
-            });
-            await Promise.race([Promise.all([updatePromise, updateVisitedPromise]), updateTimeout]);
+            await updateHolonNames(myHolons, false);
+            await updateHolonNames(visitedHolons, true);
             
-            // Note: Removed the duplicate call to addVisitedHolonToSeparateList here
-            // as it's already handled by TopBar component
+            // Update stats in background (non-blocking)
+            updateHolonStatsAsync(myHolons, false);
             
             // Save once at the end of all loading and updates
             savePersonalHolonsToStorage();
@@ -214,7 +222,6 @@
         try {
             const loadedHolons = loadPersonalHolons();
             myHolons = loadedHolons;
-            console.log('myHolons after loading:', myHolons);
         } catch (err) {
             console.warn('Failed to load personal holons from localStorage:', err);
         }
@@ -269,14 +276,16 @@
         }
     }
 
-    async function updateHolonDetails() {
+    async function updateHolonNames(holons: MyHolon[] | VisitedHolon[], isVisited = false) {
+        if (!holons || holons.length === 0) return;
+        
         // Create a backup before updating
-        const backup = [...myHolons];
+        const backup = [...holons];
         
         try {
-            // First, update names quickly without stats
+            // Update names quickly and immediately
             const nameUpdates = await Promise.allSettled(
-                myHolons.map(async (holon) => {
+                holons.map(async (holon) => {
                     try {
                         const name = await fetchHolonName(holosphere, holon.id);
                         return {
@@ -284,7 +293,7 @@
                             name
                         };
                     } catch (err) {
-                        console.warn(`Failed to update name for holon ${holon.id}:`, err);
+                        console.warn(`Failed to update name for ${isVisited ? 'visited ' : ''}holon ${holon.id}:`, err);
                         return holon; // Return original holon if name update fails
                     }
                 })
@@ -296,71 +305,55 @@
                     if (result.status === 'fulfilled') {
                         return result.value;
                     } else {
-                        console.warn(`Name update failed for holon ${myHolons[index].id}:`, result.reason);
-                        return myHolons[index]; // Keep original holon
+                        console.warn(`Name update failed for ${isVisited ? 'visited ' : ''}holon ${backup[index].id}:`, result.reason);
+                        return backup[index]; // Keep original holon
                     }
                 })
                 .filter(Boolean);
             
             if (holonsWithNames.length > 0) {
-                myHolons = holonsWithNames;
-                // Don't save here - we'll save at the end of the entire process
-            }
-            
-            // Now update stats asynchronously without blocking
-            updateStatsAsync();
-            
-        } catch (err) {
-            console.error('Error updating holon details, restoring backup:', err);
-            myHolons = backup;
-            // Don't save here - we'll save at the end of the entire process
-        }
-    }
-
-    async function updateVisitedHolonDetails() {
-        if (!visitedHolons || visitedHolons.length === 0) return;
-
-        const backup = [...visitedHolons];
-
-        try {
-            const nameUpdates = await Promise.allSettled(
-                visitedHolons.map(async (holon) => {
-                    try {
-                        const name = await fetchHolonName(holosphere, holon.id);
-                        return { ...holon, name: name || holon.name };
-                    } catch (err) {
-                        console.warn(`Failed to update name for visited holon ${holon.id}:`, err);
-                        return holon;
+                if (isVisited) {
+                    visitedHolons = holonsWithNames as VisitedHolon[];
+                    if ($walletAddress) {
+                        saveVisitedHolons($walletAddress, visitedHolons);
                     }
-                })
-            );
-
-            const updatedHolons = nameUpdates.map((result, index) => {
-                if (result.status === 'fulfilled') {
-                    return result.value;
                 } else {
-                    console.warn(`Name update for visited holon ${backup[index].id} failed:`, result.reason);
-                    return backup[index]; // Keep original holon from backup
+                    myHolons = holonsWithNames as MyHolon[];
                 }
-            });
-
-            visitedHolons = updatedHolons;
-            
-            if ($walletAddress) {
-                saveVisitedHolons($walletAddress, visitedHolons);
             }
+            
+            // Update stats in background
+            updateHolonStatsAsync(holonsWithNames, isVisited);
+            
         } catch (err) {
-            console.error('Error updating visited holon details, restoring from backup:', err);
-            visitedHolons = backup;
-            if ($walletAddress) {
-                saveVisitedHolons($walletAddress, visitedHolons);
+            console.error(`Error updating ${isVisited ? 'visited ' : ''}holon names, restoring backup:`, err);
+            if (isVisited) {
+                visitedHolons = backup as VisitedHolon[];
+                if ($walletAddress) {
+                    saveVisitedHolons($walletAddress, visitedHolons);
+                }
+            } else {
+                myHolons = backup as MyHolon[];
             }
         }
     }
 
-    async function updateStatsAsync() {
+    // Track if stats updates are in progress to prevent multiple simultaneous updates
+    let statsUpdateInProgress = false;
+    let visitedStatsUpdateInProgress = false;
+
+    async function updateHolonStatsAsync(holons: MyHolon[] | VisitedHolon[], isVisited = false) {
+        // Prevent multiple simultaneous stats updates
+        if (isVisited) {
+            if (visitedStatsUpdateInProgress) return;
+            visitedStatsUpdateInProgress = true;
+        } else {
+            if (statsUpdateInProgress) return;
+            statsUpdateInProgress = true;
+        }
+
         // Update stats in the background without blocking the UI
-        const statsPromises = myHolons.map(async (holon) => {
+        const statsPromises = holons.map(async (holon) => {
             try {
                 const [users, tasks, offers] = await Promise.allSettled([
                     holosphere?.getAll(holon.id, "users").catch(() => ({})),
@@ -377,25 +370,46 @@
                 
                 // Update the specific holon with new stats
                 const updatedHolon = { ...holon, stats };
-                const index = myHolons.findIndex(h => h.id === holon.id);
-                if (index !== -1) {
-                    myHolons[index] = updatedHolon;
-                    // Don't save here - parent function will handle saving
+                if (isVisited) {
+                    const index = visitedHolons.findIndex(h => h.id === holon.id);
+                    if (index !== -1) {
+                        visitedHolons[index] = updatedHolon as VisitedHolon;
+                    }
+                } else {
+                    const index = myHolons.findIndex(h => h.id === holon.id);
+                    if (index !== -1) {
+                        myHolons[index] = updatedHolon as MyHolon;
+                    }
                 }
-                
-                console.log(`Updated stats for holon ${holon.id}:`, stats);
             } catch (err) {
-                console.warn(`Failed to update stats for holon ${holon.id}:`, err);
+                console.warn(`Failed to update stats for ${isVisited ? 'visited ' : ''}holon ${holon.id}:`, err);
             }
         });
         
         // Don't await this - let it run in the background
         Promise.allSettled(statsPromises).then(() => {
-            console.log('All stats updates completed');
-            // Don't save here - parent function will handle saving
+            // Save after stats are updated
+            if (isVisited) {
+                if ($walletAddress) {
+                    saveVisitedHolons($walletAddress, visitedHolons);
+                }
+                visitedStatsUpdateInProgress = false;
+            } else {
+                savePersonalHolonsToStorage();
+                statsUpdateInProgress = false;
+            }
         }).catch(err => {
-            console.error('Some stats updates failed:', err);
-            // Don't save here - parent function will handle saving
+            console.error(`Some ${isVisited ? 'visited ' : ''}stats updates failed:`, err);
+            // Save even if some stats failed
+            if (isVisited) {
+                if ($walletAddress) {
+                    saveVisitedHolons($walletAddress, visitedHolons);
+                }
+                visitedStatsUpdateInProgress = false;
+            } else {
+                savePersonalHolonsToStorage();
+                statsUpdateInProgress = false;
+            }
         });
     }
 
@@ -427,7 +441,6 @@
     function savePersonalHolonsToStorage() {
         try {
             const personalHolons = myHolons.filter(h => h.isPersonal);
-            console.log('Saving personal holons:', personalHolons);
             savePersonalHolons(personalHolons);
         } catch (err) {
             console.warn('Failed to save personal holons:', err);
@@ -448,7 +461,6 @@
                     savePersonalHolonsToStorage();
                     success = 'Holograms restored from backup successfully';
                     setTimeout(() => success = '', 5000);
-                    console.log('Restored holograms from backup:', myHolons);
                     return true;
                 }
             }
@@ -473,24 +485,18 @@
     }
 
     async function addNewHolon() {
-        console.log('addNewHolon called with:', { newHolonId, newHolonName });
-        
         if (!newHolonId.trim()) {
             error = 'Please enter a holon ID';
-            console.log('Error: No holon ID provided');
             return;
         }
         
         if (myHolons.find(h => h.id === newHolonId)) {
             error = 'Holon already exists in your list';
-            console.log('Error: Holon already exists');
             return;
         }
         
         try {
-            console.log('Attempting to add holon:', newHolonId);
             const name = newHolonName.trim() || await fetchHolonName(holosphere, newHolonId);
-            console.log('Holon name resolved:', name);
             
             const newHolon = {
                 id: newHolonId,
@@ -502,9 +508,7 @@
                 color: '#3B82F6'
             };
             
-            console.log('Adding new holon:', newHolon);
             myHolons = [...myHolons, newHolon];
-            console.log('myHolons after adding:', myHolons);
             
             savePersonalHolonsToStorage();
             showAddDialog = false;
@@ -513,7 +517,6 @@
             error = '';
             success = 'Holon added successfully';
             showHolonIdInfo = false;
-            console.log('Holon added successfully');
             setTimeout(() => success = '', 3000);
         } catch (err) {
             console.error('Error adding holon:', err);
@@ -523,7 +526,6 @@
 
     function handleQRScan(event: CustomEvent<{ decodedText: string }>) {
         const { decodedText } = event.detail;
-        console.log('QR Code scanned:', decodedText);
         
         // Extract holon ID from the scanned text
         let holonId = decodedText;
@@ -575,29 +577,24 @@
 
     function handleQRScanError(event: CustomEvent<{ message: string }>) {
         const { message } = event.detail;
-        console.error('QR scan error:', message);
         error = `QR scan error: ${message}`;
         setTimeout(() => error = '', 5000);
         showQRScanner = false;
     }
 
-    function removeHolon(holonId: string) {
-        if (confirm('Are you sure you want to remove this holon from your list?')) {
-            myHolons = myHolons.filter(h => h.id !== holonId);
-            savePersonalHolonsToStorage();
-            success = 'Holon removed successfully';
-            setTimeout(() => success = '', 3000);
-        }
-    }
-
-    function removeVisitedHolon(holonId: string) {
-        if (confirm('Are you sure you want to remove this holon from your visited list?')) {
+    function removeHolon(holonId: string, isVisited = false) {
+        if (isVisited) {
             visitedHolons = visitedHolons.filter(h => h.id !== holonId);
             // Save the updated visited holons list
             const walletAddr = $walletAddress;
             saveVisitedHolons(walletAddr, visitedHolons);
-            success = 'Visited holon removed successfully';
-            setTimeout(() => success = '', 3000);
+        } else {
+            if (confirm('Are you sure you want to remove this holon from your list?')) {
+                myHolons = myHolons.filter(h => h.id !== holonId);
+                savePersonalHolonsToStorage();
+            } else {
+                return; // Don't proceed if cancelled
+            }
         }
     }
 
@@ -610,7 +607,7 @@
             return;
         }
 
-        // Add to personal holons
+        // Add to personal holons with stats preserved
         const newPersonalHolon: MyHolon = {
             id: visitedHolon.id,
             name: visitedHolon.name,
@@ -620,7 +617,7 @@
             order: myHolons.length,
             color: undefined,
             description: undefined,
-            stats: undefined
+            stats: visitedHolon.stats // Preserve stats from visited holon
         };
 
         myHolons = [...myHolons, newPersonalHolon];
@@ -1031,7 +1028,14 @@
                                 </div>
                                 <!-- Bottom part -->
                                 <div class="mt-4 text-center w-full">
-                                     <div class="mt-3">
+                                    {#if holon.stats}
+                                        <div class="flex justify-center gap-3 text-sm text-gray-400 mb-3">
+                                            <span><i class="fas fa-users"></i> {holon.stats.users}</span>
+                                            <span><i class="fas fa-tasks"></i> {holon.stats.tasks}</span>
+                                            <span><i class="fas fa-gift"></i> {holon.stats.offers}</span>
+                                        </div>
+                                    {/if}
+                                    <div class="mt-3">
                                         <span class="inline-block text-xs px-2 py-1 bg-indigo-600 rounded-full text-white">
                                             {holon.visitCount} visits
                                         </span>
@@ -1052,7 +1056,7 @@
                                         </svg>
                                     </button>
                                     <button
-                                        on:click|stopPropagation={() => removeVisitedHolon(holon.id)}
+                                        on:click|stopPropagation={() => removeHolon(holon.id, true)}
                                         class="p-1 hover:bg-red-700 rounded transition-colors text-red-400"
                                         title="Remove from visited list"
                                     >

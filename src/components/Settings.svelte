@@ -318,7 +318,6 @@
 	{#if !loading && !error}
 		<!-- Statistics Section -->
 		<section class="mb-8">
-			<h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">📊 Statistics</h2>
 			<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
 				<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 					<div class="text-2xl font-bold text-white mb-1">{realUserCount}</div>

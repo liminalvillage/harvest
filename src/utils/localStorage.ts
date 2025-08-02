@@ -23,6 +23,12 @@ export interface VisitedHolon {
     lastVisited: number;
     visitCount: number;
     source?: 'global' | 'navigator' | 'personal' | 'federation'; // Track where the visit came from
+    stats?: {
+        users: number;
+        tasks: number;
+        offers: number;
+        lastActivity: number;
+    };
 }
 
 export interface ClickedHolon {
@@ -41,7 +47,6 @@ const VISIT_DEBOUNCE_MS = 5000; // 5 seconds
 export function savePersonalHolons(holons: PersonalHolon[]) {
     try {
         const personalHolons = holons.filter(h => h.isPersonal);
-        console.log('Saving personal holons to localStorage:', personalHolons);
         localStorage.setItem('myHolons', JSON.stringify(personalHolons));
         
         // Create backup with timestamp
@@ -50,7 +55,6 @@ export function savePersonalHolons(holons: PersonalHolon[]) {
             data: personalHolons
         };
         localStorage.setItem('myHolons_backup', JSON.stringify(backup));
-        console.log('Personal holons saved to localStorage with backup');
         return true;
     } catch (err) {
         console.warn('Failed to save personal holons:', err);
@@ -61,10 +65,8 @@ export function savePersonalHolons(holons: PersonalHolon[]) {
 export function loadPersonalHolons(): PersonalHolon[] {
     try {
         const stored = localStorage.getItem('myHolons');
-        console.log('Loading personal holons from localStorage:', stored);
         if (stored) {
             const parsedHolons = JSON.parse(stored);
-            console.log('Parsed personal holons:', parsedHolons);
             return parsedHolons.map((holon: any, index: number) => ({
                 ...holon,
                 order: holon.order ?? index,
@@ -72,13 +74,11 @@ export function loadPersonalHolons(): PersonalHolon[] {
             }));
         } else {
             // Try to restore from backup
-            console.log('No main data found, checking for backup...');
             const backupData = localStorage.getItem('myHolons_backup');
             if (backupData) {
                 try {
                     const backup = JSON.parse(backupData);
                     if (backup.data && Array.isArray(backup.data) && backup.data.length > 0) {
-                        console.log('Restoring from backup:', backup.data);
                         const restored = backup.data.map((holon: any, index: number) => ({
                             ...holon,
                             order: holon.order ?? index,
@@ -104,7 +104,6 @@ export function saveVisitedHolons(walletAddress: string | null, visitedHolons: V
     try {
         const localStorageKey = walletAddress ? `visitedHolons_${walletAddress}` : 'visitedHolons_anonymous';
         localStorage.setItem(localStorageKey, JSON.stringify(visitedHolons));
-        console.log('Saved visited holons to localStorage:', visitedHolons);
         return true;
     } catch (err) {
         console.warn('Failed to save visited holons to localStorage:', err);
@@ -119,7 +118,6 @@ export function loadVisitedHolons(walletAddress: string | null): VisitedHolon[] 
         if (localData) {
             const parsed = JSON.parse(localData);
             if (Array.isArray(parsed)) {
-                console.log('Loaded visited holons from localStorage:', parsed);
                 return parsed;
             }
         }
@@ -134,7 +132,6 @@ export function saveClickedHolons(walletAddress: string | null, clickedHolons: C
     try {
         const localStorageKey = walletAddress ? `clickedHolons_${walletAddress}` : 'clickedHolons_anonymous';
         localStorage.setItem(localStorageKey, JSON.stringify(clickedHolons));
-        console.log('Saved clicked holons to localStorage:', clickedHolons);
         return true;
     } catch (err) {
         console.warn('Failed to save clicked holons to localStorage:', err);
@@ -149,7 +146,6 @@ export function loadClickedHolons(walletAddress: string | null): ClickedHolon[] 
         if (localData) {
             const parsed = JSON.parse(localData);
             if (Array.isArray(parsed)) {
-                console.log('Loaded clicked holons from localStorage:', parsed);
                 return parsed;
             }
         }
@@ -189,7 +185,6 @@ export function addClickedHolon(walletAddress: string | null, holonId: string, h
         
         // Save to localStorage
         saveClickedHolons(walletAddress, clickedHolons);
-        console.log(`Added clicked holon: ${holonId} from ${source}`);
         return true;
     } catch (err) {
         console.warn('Failed to add clicked holon:', err);
@@ -206,7 +201,6 @@ export function addVisitedHolon(walletAddress: string | null, holonId: string, h
         // Check if we recently visited this holon
         const lastVisit = recentVisits.get(visitKey);
         if (lastVisit && (now - lastVisit) < VISIT_DEBOUNCE_MS) {
-            console.log(`Skipping duplicate visit to ${holonId} (visited ${now - lastVisit}ms ago)`);
             return true;
         }
         
@@ -247,7 +241,6 @@ export function addVisitedHolon(walletAddress: string | null, holonId: string, h
         
         // Save to localStorage
         saveVisitedHolons(walletAddress, visitedHolons);
-        console.log(`Added visited holon: ${holonId} from ${source}`);
         return true;
     } catch (err) {
         console.warn('Failed to add visited holon:', err);
@@ -286,7 +279,8 @@ export function mergeHolonLists(personalHolons: PersonalHolon[], visitedHolons: 
                 isPinned: false,
                 isPersonal: false, // These are not personal holons
                 order: merged.size,
-                color: '#10B981' // Green for visited holons
+                color: '#10B981', // Green for visited holons
+                stats: visited.stats // Preserve stats from visited holons
             });
         }
     });

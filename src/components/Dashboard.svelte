@@ -108,11 +108,23 @@
             return;
         }
         
+        // Reset all counters to 0 before fetching new data
+        chatCount = 0;
+        userCount = 0;
+        completedTaskCount = 0;
+        openTaskCount = 0;
+        proposalCount = 0;
+        recentEventCount = 0;
+        shoppingItemCount = 0;
+        offerCount = 0;
+        checklistCount = 0;
+        completedChecklistCount = 0;
+        roleCount = 0;
+        unassignedRoleCount = 0;
+        
         isLoading = true;
         
         try {
-            console.log(`Fetching data for holon: ${holonID}`);
-            
             // Fetch all data in parallel with timeouts
             const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
                 const timeoutPromise = new Promise((_, reject) => 
@@ -178,13 +190,6 @@
             recentEventCount = questEvents.filter(
                 (event: any) => event.when && new Date(event.when) >= oneWeekAgo
             ).length;
-
-            console.log(`Successfully fetched data for holon ${holonID}:`, {
-                users: userCount,
-                tasks: openTaskCount + completedTaskCount,
-                shopping: shoppingItemCount,
-                offers: offerCount
-            });
 
         } catch (error: any) {
             console.error('Error fetching dashboard data:', error);
