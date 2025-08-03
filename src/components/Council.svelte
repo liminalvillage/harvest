@@ -3,6 +3,10 @@
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import HoloSphere from "holosphere";
+	import { getAdvisor, getRandomAIEcosystemCouncilMembers } from '../data/advisor-library';
+	import type { CouncilAdvisorExtended, ArchetypeAdvisor } from '../types/advisor-schema';
+	import { createCouncilContext, analyzeUserMessage, type UserContext, type ConversationFlowContext } from '../utils/council-context';
+	import LLMService from '../utils/llm-service';
 
 	interface CouncilMember {
 		id: string;
@@ -306,9 +310,44 @@
 		showMemberModal = false;
 	}
 
-	// Handle circle click to start editing
+	// Handle circle click to start editing or open chat
 	function startEditingCircle(circleId: string) {
 		console.log('Circle clicked:', circleId);
+		
+		// Special handling for center circle when AI Ecosystem Council is summoned
+		if (circleId === 'center' && aiEcosystemCouncilSummoned && circleInputs[circleId] === 'Converse with the council') {
+			showCouncilChat = true;
+			// Initialize council chat with the welcome message
+			if (councilChatMessages.length === 0) {
+				councilChatMessages = [{
+					role: 'assistant',
+					content: `[The council chamber hums with anticipation as the AI Ecosystem Council assembles. Each member takes their place around the Metatron table, their presence commanding attention. The air crackles with the energy of diverse perspectives and ancient wisdom.]
+
+Welcome, seeker. The AI Ecosystem Council is now in session. We are twelve unique egregores, each embodying different aspects of human storytelling and philosophical tradition. We stand ready to guide you through the complexities of your journey, using Systems Thinking, Liberating Structures, and the wisdom of the Sombrero Hat metaphor.
+
+What matter brings you before the council today?`,
+					timestamp: new Date()
+				}];
+			}
+			return;
+		}
+		
+		// Check if this circle has an advisor
+		const advisorName = circleInputs[circleId];
+		if (advisorName) {
+			// Try to get full advisor from library
+			const advisorKey = advisorName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+			const fullAdvisor = getAdvisor(advisorKey);
+			
+			if (fullAdvisor) {
+				// Open chat interface for individual advisor
+				selectedAdvisorForChat = fullAdvisor;
+				showAdvisorChat = true;
+				return;
+			}
+		}
+		
+		// Fall back to editing mode if no advisor found
 		editingCircle = circleId;
 		if (!circleInputs[circleId]) {
 			circleInputs[circleId] = '';
@@ -723,54 +762,77 @@
 	}
 
 	// Initialize on mount
-	onMount(() => {
-		// Initialize with URL parameter first
-		const urlId = $page.params.id;
-		if (urlId && urlId !== 'undefined' && urlId !== 'null' && urlId.trim() !== '') {
-			holonID = urlId;
-			// Update the ID store to keep them in sync
-			ID.set(urlId);
-		}
-
-		// Wait for holosphere to be ready before proceeding
-		const checkConnection = async () => {
-			if (!holosphere) {
-				setTimeout(checkConnection, 100);
-				return;
-			}
-			
-			// Add a small delay to ensure the connection is stable
-			await new Promise(resolve => setTimeout(resolve, 200));
-			connectionReady = true;
-			
-			// Set up subscription to ID store with debouncing
-			let updateTimeout: NodeJS.Timeout;
-			const idSubscription = ID.subscribe((value) => {
-				if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
-					// Clear any pending update
-					if (updateTimeout) clearTimeout(updateTimeout);
-					
-					// Debounce the update to avoid rapid changes
-					updateTimeout = setTimeout(async () => {
-						if (value !== holonID) {
-							holonID = value;
-							await fetchData();
-						}
-					}, 100);
-				}
-			});
-
-			// Initial fetch if we have an ID
-			if (holonID && holonID !== 'undefined' && holonID !== 'null' && holonID.trim() !== '') {
-				await fetchData();
-			}
-
-			return () => {
-				if (idSubscription) idSubscription();
-			};
-		};
+	onMount(async () => {
+		console.log('Council component mounted');
 		
-		checkConnection();
+		// Initialize LLM service
+		try {
+			llmService = new LLMService();
+		} catch (error) {
+			console.error('Failed to initialize LLM service:', error);
+		}
+		
+		// Get holon ID from route
+		holonID = $page.params.id || '';
+		console.log('Holon ID:', holonID);
+		
+		if (holonID && holosphere) {
+			try {
+				// Subscribe to council data
+				const councilDataSub = await holosphere.subscribe(holonID, "council_data", (data: any) => {
+					console.log('Council data updated:', data);
+					if (data) {
+						councilData = data;
+					}
+				});
+				
+				// Subscribe to advisor data
+				const advisorDataSub = await holosphere.subscribe(holonID, "council_advisors", (data: any) => {
+					console.log('Advisor data updated:', data);
+					if (data) {
+						circleInputs = { ...circleInputs, ...data };
+					}
+				});
+				
+				// Subscribe to AI Ecosystem Council data
+				const aiCouncilSub = await holosphere.subscribe(holonID, "ai_ecosystem_council", (data: any) => {
+					console.log('AI Ecosystem Council data updated:', data);
+					if (data) {
+						circleInputs = { ...circleInputs, ...data };
+						aiEcosystemCouncilSummoned = true;
+					}
+				});
+				
+				// Load initial data
+				const [councilDataResult, advisorDataResult, aiCouncilDataResult] = await Promise.all([
+					holosphere.get(holonID, "council_data"),
+					holosphere.get(holonID, "council_advisors"),
+					holosphere.get(holonID, "ai_ecosystem_council")
+				]);
+				
+				if (councilDataResult) {
+					councilData = councilDataResult;
+				}
+				
+				if (advisorDataResult) {
+					circleInputs = { ...circleInputs, ...advisorDataResult };
+				}
+				
+				if (aiCouncilDataResult) {
+					circleInputs = { ...circleInputs, ...aiCouncilDataResult };
+					aiEcosystemCouncilSummoned = true;
+				}
+				
+				connectionReady = true;
+				isLoading = false;
+				
+			} catch (error) {
+				console.error('Error loading council data:', error);
+				isLoading = false;
+			}
+		} else {
+			isLoading = false;
+		}
 	});
 
 	// Watch for page ID changes with debouncing
@@ -814,6 +876,183 @@
 			}
 		}
 	}
+
+	// AI Ecosystem Council state
+	let aiEcosystemCouncilSummoned = false;
+
+	// User context for council interactions
+	let userContext: UserContext = {
+		user_profile: {
+			interests: [],
+			values: [],
+			current_challenges: [],
+			goals: [],
+			conversation_history: [],
+			preferred_council_members: [],
+			avoided_topics: [],
+			communication_style: 'Direct'
+		},
+		session_context: {
+			current_topic: '',
+			session_start_time: new Date().toISOString(),
+			council_members_present: [],
+			conversation_flow: 'initial',
+			user_emotional_state: 'curious',
+			urgency_level: 5
+		}
+	};
+
+	// LLM service for council interactions
+	let llmService: LLMService;
+
+	async function generateCouncilResponse(userMessage: string): Promise<string> {
+		if (!llmService) {
+			return "The council is momentarily unavailable. Please try again.";
+		}
+
+		// Get the current council members from the circles
+		const councilMembers: CouncilAdvisorExtended[] = [];
+		const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
+		
+		outerPositions.forEach(position => {
+			const memberName = circleInputs[position];
+			if (memberName) {
+				const advisorKey = memberName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+				const fullAdvisor = getAdvisor(advisorKey);
+				if (fullAdvisor) {
+					councilMembers.push(fullAdvisor);
+				}
+			}
+		});
+
+		// Analyze user message to determine which characters should respond
+		const respondingMembers = analyzeUserMessage(userMessage, councilMembers);
+		
+		// Update user context with current session info
+		userContext.session_context.current_topic = userMessage;
+		userContext.session_context.council_members_present = councilMembers.map(m => m.name.split(',')[0].trim());
+		
+		// Create conversation flow context
+		const conversationFlow: ConversationFlowContext = {
+			present_members: councilMembers.map(m => m.name.split(',')[0].trim()),
+			conversation_topic: userMessage,
+			previous_responses: councilChatMessages.filter(m => m.role === 'assistant').map(m => m.content),
+			user_interests: userContext.user_profile.interests,
+			appropriate_responding_members: respondingMembers.map(m => m.name.split(',')[0].trim())
+		};
+
+		// Create the complete kaleidoscope context
+		const systemPrompt = createCouncilContext(userContext, respondingMembers, conversationFlow, userMessage);
+
+		try {
+			// Send to LLM with the complete context
+			const response = await llmService.sendMessage([
+				{ role: 'system', content: systemPrompt },
+				{ role: 'user', content: userMessage }
+			]);
+
+			// Update conversation history
+			userContext.user_profile.conversation_history.push({
+				timestamp: new Date().toISOString(),
+				topic: userMessage,
+				user_message: userMessage,
+				council_response: response.content,
+				responding_members: respondingMembers.map(m => m.name.split(',')[0].trim())
+			});
+
+			return response.content;
+		} catch (error) {
+			console.error('Error generating council response:', error);
+			return "The council is momentarily silent. Please try again.";
+		}
+	}
+
+	// Council chat state
+	let showCouncilChat = false;
+	let councilChatMessages: Array<{role: 'user' | 'assistant', content: string, timestamp: Date}> = [];
+	let currentCouncilMessage = '';
+	let isCouncilResponding = false;
+
+	async function summonAIEcosystemCouncil() {
+		// Get Omnia for the head position (top)
+		const omnia = getAdvisor('omnia');
+		const randomMembers = getRandomAIEcosystemCouncilMembers(true); // Exclude Omnia from random selection
+		
+		if (omnia) {
+			// Extract just the first part of the name (before the comma)
+			const getCleanName = (fullName: string) => {
+				return fullName.split(',')[0].trim();
+			};
+			
+			// Set Omnia at the head of the table (top position)
+			circleInputs['outer-top'] = getCleanName(omnia.name);
+			
+			// Populate the remaining 5 outer positions with random members
+			const outerPositions = ['outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
+			randomMembers.forEach((member, index) => {
+				if (index < outerPositions.length) {
+					circleInputs[outerPositions[index]] = getCleanName(member.name);
+				}
+			});
+			
+			// Set the center circle to "Converse with the council"
+			circleInputs['center'] = 'Converse with the council';
+			aiEcosystemCouncilSummoned = true;
+			
+			// Save to HoloSphere
+			if (holosphere && holonID) {
+				holosphere.put(holonID, "ai_ecosystem_council", circleInputs);
+			}
+			
+			console.log('AI Ecosystem Council summoned:', { 
+				omnia: getCleanName(omnia.name), 
+				members: randomMembers.map(m => getCleanName(m.name)) 
+			});
+		}
+	}
+
+	function closeCouncilChat() {
+		showCouncilChat = false;
+	}
+
+	async function sendCouncilMessage() {
+		if (!currentCouncilMessage.trim() || isCouncilResponding) return;
+
+		const userMessage = currentCouncilMessage.trim();
+		currentCouncilMessage = '';
+
+		councilChatMessages = [...councilChatMessages, {
+			role: 'user',
+			content: userMessage,
+			timestamp: new Date()
+		}];
+
+		isCouncilResponding = true;
+
+		try {
+			// Generate council response using the new kaleidoscope context system
+			const councilResponse = await generateCouncilResponse(userMessage);
+			
+			councilChatMessages = [...councilChatMessages, {
+				role: 'assistant',
+				content: councilResponse,
+				timestamp: new Date()
+			}];
+		} catch (error) {
+			console.error('Error generating council response:', error);
+			councilChatMessages = [...councilChatMessages, {
+				role: 'assistant',
+				content: 'The council is momentarily silent. Please try again.',
+				timestamp: new Date()
+			}];
+		} finally {
+			isCouncilResponding = false;
+		}
+	}
+
+	// Individual advisor chat state
+	let showAdvisorChat = false;
+	let selectedAdvisorForChat: CouncilAdvisorExtended | null = null;
 </script>
 
 <div class="space-y-8">
@@ -890,8 +1129,19 @@
 							{/each}
 						</div>
 
-						<!-- Ritual Button -->
-						<div class="flex justify-center mt-8">
+						<!-- Ritual Buttons -->
+						<div class="flex justify-center gap-4 mt-8">
+							<button 
+								on:click={summonAIEcosystemCouncil}
+								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-green-500/50 hover:border-green-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-green-500/25 backdrop-blur-sm"
+							>
+								<div class="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-xl group-hover:bg-green-500 transition-colors duration-300">
+									🎭
+								</div>
+								Summon AI Ecosystem Council
+								<div class="absolute inset-0 bg-gradient-to-r from-green-500/10 to-emerald-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
+							</button>
+							
 							<button 
 								on:click={startRitual}
 								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-indigo-500/50 hover:border-indigo-400 text-white py-6 px-12 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-xl font-medium shadow-2xl hover:shadow-indigo-500/25 backdrop-blur-sm"
@@ -1662,4 +1912,86 @@
 		overflow: hidden;
 		line-height: 1.2;
 	}
-</style> 
+</style>
+
+<!-- Council Chat Modal -->
+{#if showCouncilChat}
+	<div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] relative border border-gray-700 flex flex-col">
+			<!-- Header -->
+			<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-green-600 to-emerald-600 rounded-t-2xl">
+				<div class="flex items-center gap-3">
+					<div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl">
+						🎭
+					</div>
+					<div>
+						<h3 class="text-white text-xl font-bold">AI Ecosystem Council</h3>
+						<p class="text-green-100 text-sm">Multi-member consultation in progress</p>
+					</div>
+				</div>
+				<button
+					on:click={closeCouncilChat}
+					class="text-white hover:text-green-200 transition-colors p-2 rounded-lg hover:bg-white/10"
+				>
+					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+					</svg>
+				</button>
+			</div>
+			
+			<!-- Chat Messages -->
+			<div class="flex-1 overflow-y-auto p-6 space-y-4">
+				{#each councilChatMessages as message}
+					<div class="flex {message.role === 'user' ? 'justify-end' : 'justify-start'}">
+						<div class="max-w-[80%] {message.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-100'} rounded-2xl px-4 py-3 shadow-lg">
+							<div class="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</div>
+							<div class="text-xs opacity-60 mt-2">
+								{message.timestamp.toLocaleTimeString()}
+							</div>
+						</div>
+					</div>
+				{/each}
+				
+				{#if isCouncilResponding}
+					<div class="flex justify-start">
+						<div class="bg-gray-700 text-gray-100 rounded-2xl px-4 py-3 shadow-lg">
+							<div class="flex items-center gap-2">
+								<div class="animate-pulse">🤔</div>
+								<div class="text-sm">The council is deliberating...</div>
+							</div>
+						</div>
+					</div>
+				{/if}
+			</div>
+			
+			<!-- Input Area -->
+			<div class="p-6 border-t border-gray-700">
+				<div class="flex gap-3">
+					<input
+						type="text"
+						bind:value={currentCouncilMessage}
+						placeholder="Ask the council for guidance..."
+						class="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+						on:keydown={(e) => {
+							if (e.key === 'Enter' && !e.shiftKey) {
+								e.preventDefault();
+								sendCouncilMessage();
+							}
+						}}
+						disabled={isCouncilResponding}
+					/>
+					<button
+						on:click={sendCouncilMessage}
+						disabled={!currentCouncilMessage.trim() || isCouncilResponding}
+						class="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-xl transition-colors flex items-center gap-2"
+					>
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+						</svg>
+						Send
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
