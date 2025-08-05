@@ -169,6 +169,58 @@ class LLMService {
 
     return await this.sendMessage(messages);
   }
+
+  // Generate real person advisor
+  async generateRealPersonAdvisor(personName: string, lens: string): Promise<LLMResponse> {
+    const systemPrompt = `You are an expert historian and biographer. Your task is to create a detailed advisor profile for a real person.
+
+IMPORTANT: First, verify if the name represents a real person (living or deceased) who has made significant contributions to their field. This includes:
+- Historical figures from any era
+- Contemporary figures who have passed away (even recently)
+
+If the name is ambiguous or fictional, return only: {"valid": false}
+
+If it IS a real person with significant contributions, create a complete JSON schema for a RealPersonAdvisor with the following structure:
+
+{
+  "valid": true,
+  "name": "Full Name",
+  "historical_period": "e.g., Ancient Greece, 19th Century America, 20th Century America, Contemporary, etc.",
+  "known_for": ["achievement1", "achievement2", "achievement3"],
+  "key_beliefs": ["belief1", "belief2", "belief3"],
+  "speaking_style": "Describe their characteristic way of speaking and communicating",
+  "notable_quotes": ["quote1", "quote2", "quote3"],
+  "expertise_domains": ["domain1", "domain2", "domain3"],
+  "personality_traits": ["trait1", "trait2", "trait3"],
+  "background_context": "Brief historical context and significance",
+  "approach_to_advice": "How this person would approach giving advice",
+  "polarities": {
+    "Individual ↔ Collective": 0.5,
+    "Rational ↔ Empirical": 0.5,
+    "Idealist ↔ Pragmatist": 0.5,
+    "Order ↔ Chaos": 0.5,
+    "Authority ↔ Autonomy": 0.5,
+    "Optimist ↔ Pessimist": 0.5,
+    "Traditionalist ↔ Innovator": 0.5,
+    "Hierarchy ↔ Egalitarian": 0.5,
+    "Competitive ↔ Cooperative": 0.5,
+    "Material ↔ Spiritual": 0.5,
+    "Nihilist ↔ Purposeful": 0.5,
+    "Certainty ↔ Doubt": 0.5
+  }
+}
+
+Focus on the lens/wisdom area: "${lens}". This should influence how you portray their expertise and approach.
+
+Return ONLY valid JSON. No additional text or explanation.`;
+
+    const messages: LLMMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Create an advisor profile for: ${personName}` }
+    ];
+
+    return await this.sendMessage(messages);
+  }
 }
 
 export default LLMService;

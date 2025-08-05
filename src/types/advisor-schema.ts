@@ -20,6 +20,7 @@ export interface ArchetypeAdvisor {
 
 export interface CouncilAdvisorExtended {
   // Base advisor properties
+  id?: string; // Optional unique identifier for HoloSphere storage
   name: string;
   type: 'real' | 'mythic' | 'archetype';
   lens: string;

@@ -626,4 +626,111 @@ export function getRandomAIEcosystemCouncilMembers(excludeOmnia: boolean = true)
   // Shuffle and take first 5
   const shuffled = [...availableMembers].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, 5);
+}
+
+// HoloSphere integration functions
+export async function putAdvisorToHoloSphere(
+  holosphere: any, 
+  holonID: string, 
+  advisor: CouncilAdvisorExtended,
+  creatorUserID: string = 'QBFRANK' // Default for non-custom advisors
+): Promise<void> {
+  if (!holosphere || !holonID) {
+    console.error("Cannot put advisor: holosphere or holonID is null");
+    return;
+  }
+
+  try {
+    // Generate a unique ID for the advisor if it doesn't have one
+    const advisorWithId = {
+      ...advisor,
+      id: advisor.id || `${advisor.name}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      _metadata: {
+        holonID: holonID,
+        creatorUserID: creatorUserID,
+        created: new Date().toISOString(),
+        // TODO: Add usage tracking here
+        // TODO: Add tags/categories here
+      }
+    };
+
+    // Store individual advisor (following the same pattern as quests/tasks)
+    await holosphere.put(holonID, 'advisor_library', advisorWithId);
+    console.log(`Saved advisor ${advisor.name} to holosphere for holon ${holonID}`);
+  } catch (error) {
+    console.error('Error putting advisor to HoloSphere:', error);
+    throw error;
+  }
+}
+
+export async function deleteAdvisorFromHoloSphere(
+  holosphere: any, 
+  holonID: string, 
+  advisorName: string
+): Promise<void> {
+  if (!holosphere || !holonID) {
+    console.error("Cannot delete advisor: holosphere or holonID is null");
+    return;
+  }
+
+  try {
+    // Get all advisors first
+    const allAdvisors = await getAdvisorsFromHoloSphere(holosphere, holonID);
+    
+    // Find the advisor to delete
+    const advisorToDelete = allAdvisors.find(advisor => advisor.name === advisorName);
+    
+    if (advisorToDelete && advisorToDelete.id) {
+      // Delete the specific advisor using its ID (following the same pattern as quests/tasks)
+      await holosphere.delete(holonID, 'advisor_library', advisorToDelete.id);
+      console.log(`Deleted advisor ${advisorName} from holosphere for holon ${holonID}`);
+    } else {
+      console.warn(`Advisor ${advisorName} not found for deletion or missing ID`);
+    }
+  } catch (error) {
+    console.error('Error deleting advisor from HoloSphere:', error);
+    throw error;
+  }
+}
+
+export async function getAdvisorsFromHoloSphere(
+  holosphere: any, 
+  holonID: string
+): Promise<CouncilAdvisorExtended[]> {
+  if (!holosphere || !holonID) {
+    console.error("Cannot get advisors: holosphere or holonID is null");
+    return [];
+  }
+
+  try {
+    // Get all advisors from the collection (following the same pattern as quests/tasks)
+    const advisorsData = await holosphere.getAll(holonID, 'advisor_library');
+    console.log('Retrieved advisors data:', advisorsData);
+    
+    if (advisorsData && Array.isArray(advisorsData)) {
+      // Process the array of advisors
+      const advisors = advisorsData.map((advisor: any) => {
+        // Remove metadata for external use
+        const { _metadata, ...cleanAdvisor } = advisor;
+        return cleanAdvisor as CouncilAdvisorExtended;
+      });
+      console.log('Processed advisors:', advisors);
+      return advisors;
+    }
+    return [];
+  } catch (error) {
+    console.error('Error getting advisors from HoloSphere:', error);
+    return [];
+  }
+}
+
+// Helper function to get all advisors (both static and from HoloSphere)
+export async function getAllAdvisors(
+  holosphere: any, 
+  holonID: string
+): Promise<CouncilAdvisorExtended[]> {
+  const staticAdvisors = Object.values(ADVISOR_LIBRARY);
+  const holosphereAdvisors = await getAdvisorsFromHoloSphere(holosphere, holonID);
+  
+  return [...staticAdvisors, ...holosphereAdvisors];
 } 

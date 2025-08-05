@@ -3,7 +3,7 @@
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import HoloSphere from "holosphere";
-	import { getAdvisor, getRandomAIEcosystemCouncilMembers, putAdvisorToHoloSphere, deleteAdvisorFromHoloSphere, getAdvisorsFromHoloSphere, getAllAdvisors } from '../data/advisor-library';
+	import { getAdvisor, getRandomAIEcosystemCouncilMembers } from '../data/advisor-library';
 	import type { CouncilAdvisorExtended, ArchetypeAdvisor } from '../types/advisor-schema';
 	import { createCouncilContext, analyzeUserMessage, type UserContext, type ConversationFlowContext, THEATRICAL_PRESENTATION_INSTRUCTIONS } from '../utils/council-context';
 	import LLMService from '../utils/llm-service';
@@ -322,23 +322,16 @@
 		if (circleId === 'center' && aiEcosystemCouncilSummoned && circleInputs[circleId] === 'Converse with the council') {
 			showCouncilChat = true;
 			// Initialize council chat with the welcome message
-			if (councilChatMessages.length === 0) {
-				const councilIntroMessage = {
-					role: 'assistant' as const,
+			if (chatMessages.length === 0) {
+				chatMessages = [{
+					role: 'assistant',
 					content: `[The council chamber hums with anticipation as the Holonic Ecosystem Council assembles. Each member takes their place around the Metatron table, their presence commanding attention. The air crackles with the energy of diverse perspectives and ancient wisdom.]
 
 Welcome, seeker. The Holonic Ecosystem Council is now in session. We are twelve unique egregores, each embodying different aspects of human storytelling and philosophical tradition. We stand ready to guide you through the complexities of your journey, using Systems Thinking, Liberating Structures, and the wisdom of the Sombrero Hat metaphor.
 
 What matter brings you before the council today?`,
-					displayContent: '',
-					isTyping: true,
-					timestamp: new Date(),
-					advisor: 'Council'
-				};
-				
-				councilChatMessages = [councilIntroMessage];
-				// Apply typing effect to the introduction
-				typeMessage(councilIntroMessage, 'council');
+					timestamp: new Date()
+				}];
 			}
 			return;
 		}
@@ -447,179 +440,26 @@ What matter brings you before the council today?`,
 		ritualSession.declared_values = ritualSession.declared_values.filter((_, i) => i !== index);
 	}
 
-	// Add loading state for advisor generation
-	let isGeneratingAdvisor = false;
-	let generationProgress = '';
-
-	// Advisor management state
-	let holonAdvisors: CouncilAdvisorExtended[] = [];
-
-	async function addAdvisor() {
+	function addAdvisor() {
 		if (currentAdvisorName.trim() && currentAdvisorLens.trim() && ritualSession.advisors.length < 5) {
-			
-			// Handle real person generation
-			if (selectedAdvisorType === 'real') {
-				await generateRealPersonAdvisor();
-			} else {
-				// Handle other advisor types (existing logic)
-				const newAdvisor = {
-					name: currentAdvisorName.trim(),
-					type: selectedAdvisorType,
-					lens: currentAdvisorLens.trim()
-				};
-				ritualSession.advisors = [...ritualSession.advisors, newAdvisor];
-				
-				// Add to history if not already present
-				const advisorExists = previousAdvisors.some(advisor => 
-					advisor.name === newAdvisor.name && advisor.lens === newAdvisor.lens
-				);
-				if (!advisorExists) {
-					previousAdvisors = [...previousAdvisors, newAdvisor];
-				}
-				
-				currentAdvisorName = '';
-				currentAdvisorLens = '';
-				saveHistoryData();
-			}
-		}
-	}
-
-	async function generateRealPersonAdvisor() {
-		if (!holosphere || !holonID) {
-			console.error("Cannot generate advisor: holosphere or holonID is null");
-			return;
-		}
-
-		isGeneratingAdvisor = true;
-		generationProgress = `Summoning the spirit of ${currentAdvisorName.trim()}...`;
-
-		try {
-			const llmService = new LLMService();
-			const response = await llmService.generateRealPersonAdvisor(
-				currentAdvisorName.trim(), 
-				currentAdvisorLens.trim()
-			);
-
-			if (response.error) {
-				throw new Error(response.error);
-			}
-
-			// Parse the JSON response
-			let advisorData;
-			try {
-				advisorData = JSON.parse(response.content);
-			} catch (parseError) {
-				throw new Error('Invalid JSON response from LLM');
-			}
-
-			// Check if the person is valid
-			if (!advisorData.valid) {
-				throw new Error('Please try again with a real person\'s name.');
-			}
-
-			// Create the full advisor structure
-			const newAdvisor: CouncilAdvisorExtended = {
-				name: advisorData.name,
-				type: 'real',
-				lens: currentAdvisorLens.trim(),
-				characterSpec: advisorData
-			};
-
-			// Store in HoloSphere
-			await putAdvisorToHoloSphere(holosphere, holonID, newAdvisor, holonID);
-
-			// Add to ritual session
-			ritualSession.advisors = [...ritualSession.advisors, {
-				name: advisorData.name,
-				type: 'real',
+			const newAdvisor = {
+				name: currentAdvisorName.trim(),
+				type: selectedAdvisorType,
 				lens: currentAdvisorLens.trim()
-			}];
-
+			};
+			ritualSession.advisors = [...ritualSession.advisors, newAdvisor];
+			
 			// Add to history if not already present
 			const advisorExists = previousAdvisors.some(advisor => 
 				advisor.name === newAdvisor.name && advisor.lens === newAdvisor.lens
 			);
 			if (!advisorExists) {
-				previousAdvisors = [...previousAdvisors, {
-					name: advisorData.name,
-					type: 'real',
-					lens: currentAdvisorLens.trim()
-				}];
+				previousAdvisors = [...previousAdvisors, newAdvisor];
 			}
-
-			// Clear form
+			
 			currentAdvisorName = '';
 			currentAdvisorLens = '';
 			saveHistoryData();
-			
-			// Reload advisors list
-			await loadHolonAdvisors();
-
-		} catch (error) {
-			console.error('Error generating real person advisor:', error);
-			// Show error to user (you might want to add a toast notification here)
-			alert(error instanceof Error ? error.message : 'Failed to generate advisor');
-		} finally {
-			isGeneratingAdvisor = false;
-			generationProgress = '';
-		}
-	}
-
-	// Load advisors from HoloSphere
-	async function loadHolonAdvisors() {
-		if (!holosphere || !holonID) {
-			console.log('Cannot load advisors: holosphere or holonID is null');
-			return;
-		}
-		
-		try {
-			console.log('Loading advisors for holonID:', holonID);
-			holonAdvisors = await getAdvisorsFromHoloSphere(holosphere, holonID);
-			console.log('Loaded holon advisors:', holonAdvisors);
-		} catch (error) {
-			console.error('Error loading holon advisors:', error);
-		}
-	}
-
-	// Delete advisor from HoloSphere
-	async function deleteHolonAdvisor(advisorKey: string) {
-		if (!holosphere || !holonID) return;
-		
-		if (confirm(`Are you sure you want to delete ${advisorKey}?`)) {
-			try {
-				await deleteAdvisorFromHoloSphere(holosphere, holonID, advisorKey);
-				await loadHolonAdvisors(); // Reload the list
-			} catch (error) {
-				console.error('Error deleting advisor:', error);
-			}
-		}
-	}
-
-	// Open chat with advisor
-	async function openAdvisorChat(advisor: CouncilAdvisorExtended) {
-		selectedAdvisorForChat = advisor;
-		showAdvisorChat = true;
-		advisorChatMessages = []; // Clear previous messages
-		
-		// Add immediate introduction
-		await addImmediateAdvisorIntroduction(advisor);
-	}
-
-	// Add advisor to ritual
-	function addAdvisorToRitual(advisor: CouncilAdvisorExtended) {
-		const newAdvisor = {
-			name: advisor.name,
-			type: advisor.type,
-			lens: advisor.lens
-		};
-		
-		// Check if already in ritual
-		const exists = ritualSession.advisors.some(a => 
-			a.name === advisor.name && a.lens === advisor.lens
-		);
-		
-		if (!exists && ritualSession.advisors.length < 5) {
-			ritualSession.advisors = [...ritualSession.advisors, newAdvisor];
 		}
 	}
 
@@ -990,9 +830,6 @@ What matter brings you before the council today?`,
 				connectionReady = true;
 				isLoading = false;
 				
-				// Load holon advisors
-				await loadHolonAdvisors();
-				
 			} catch (error) {
 				console.error('Error loading council data:', error);
 				isLoading = false;
@@ -1092,11 +929,6 @@ What matter brings you before the council today?`,
 			}
 		});
 
-		// Assign colors to council members if not already assigned
-		if (Object.keys(councilMemberColors).length === 0) {
-			assignCouncilMemberColors(councilMembers);
-		}
-
 		// Analyze user message to determine which characters should respond
 		const respondingMembers = analyzeUserMessage(userMessage, councilMembers);
 		
@@ -1108,7 +940,7 @@ What matter brings you before the council today?`,
 		const conversationFlow: ConversationFlowContext = {
 			present_members: councilMembers.map(m => m.name.split(',')[0].trim()),
 			conversation_topic: userMessage,
-			previous_responses: councilChatMessages.filter(m => m.role === 'assistant').map(m => m.content),
+			previous_responses: chatMessages.filter(m => m.role === 'assistant').map(m => m.content),
 			user_interests: userContext.user_profile.interests,
 			appropriate_responding_members: respondingMembers.map(m => m.name.split(',')[0].trim())
 		};
@@ -1139,7 +971,7 @@ What matter brings you before the council today?`,
 		}
 	}
 
-	async function addImmediateAdvisorIntroduction(advisor: CouncilAdvisorExtended) {
+	function addImmediateAdvisorIntroduction(advisor: CouncilAdvisorExtended) {
 		// Generate immediate introduction based on advisor type and characteristics
 		let stageDirections = '';
 		let introduction = '';
@@ -1162,17 +994,16 @@ What matter brings you before the council today?`,
 		const cleanName = advisor.name.split(',')[0].trim();
 		introduction = `Greetings, seeker. I am ${cleanName}, and I bring the wisdom of ${advisor.lens} to our conversation. What question or concern brings you to seek my counsel today?`;
 		
-		const introMessage: typeof advisorChatMessages[0] = {
-			role: 'assistant' as const,
+		const introMessage: ChatMessage = {
+			role: 'assistant',
 			content: `${stageDirections} ${introduction}`,
-			displayContent: '',
-			isTyping: true,
+			displayContent: `${stageDirections} ${introduction}`,
+			isTyping: false,
 			timestamp: new Date(),
 			advisor: advisor.name
 		};
 
-		advisorChatMessages = [...advisorChatMessages, introMessage];
-		await typeMessage(introMessage, 'advisor');
+		chatMessages = [...chatMessages, introMessage];
 	}
 
 	async function addAdvisorIntroduction(advisor: CouncilAdvisorExtended) {
@@ -1203,8 +1034,8 @@ Keep it warm, welcoming, and in character.
 				{ role: 'user', content: 'Greet me and introduce yourself.' }
 			]);
 
-			const introMessage: typeof advisorChatMessages[0] = {
-				role: 'assistant' as const,
+			const introMessage: ChatMessage = {
+				role: 'assistant',
 				content: response.content,
 				displayContent: '',
 				isTyping: true,
@@ -1212,14 +1043,14 @@ Keep it warm, welcoming, and in character.
 				advisor: advisor.name
 			};
 
-			advisorChatMessages = [...advisorChatMessages, introMessage];
-			await typeMessage(introMessage, 'advisor');
+			chatMessages = [...chatMessages, introMessage];
+			await typeMessage(introMessage);
 
 		} catch (error) {
 			console.error('Error generating advisor introduction:', error);
 			// Fallback introduction
-			const fallbackIntro: typeof advisorChatMessages[0] = {
-				role: 'assistant' as const,
+			const fallbackIntro: ChatMessage = {
+				role: 'assistant',
 				content: `[appears with a gentle presence] Greetings, seeker. I am ${advisor.name}, and I bring the wisdom of ${advisor.lens} to our conversation. What question or concern brings you to seek my counsel today?`,
 				displayContent: '',
 				isTyping: true,
@@ -1227,8 +1058,8 @@ Keep it warm, welcoming, and in character.
 				advisor: advisor.name
 			};
 
-			advisorChatMessages = [...advisorChatMessages, fallbackIntro];
-			await typeMessage(fallbackIntro, 'advisor');
+			chatMessages = [...chatMessages, fallbackIntro];
+			await typeMessage(fallbackIntro);
 		}
 	}
 
@@ -1266,28 +1097,98 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 		}
 	}
 
-	// Council chat state
-	let showCouncilChat = false;
-	// Color assignment for council members in current chat session
-	let councilMemberColors: Record<string, string> = {};
-	let colorIndex = 0;
-	const councilColors = [
-		'bg-purple-600', 'bg-blue-600', 'bg-green-600', 'bg-yellow-600', 
-		'bg-red-600', 'bg-indigo-600', 'bg-pink-600', 'bg-teal-600'
-	];
-
-	let councilChatMessages: Array<{
+	// --- UNIFIED CHAT SYSTEM START ---
+	interface ChatMessage {
 		role: 'user' | 'assistant';
 		content: string;
 		displayContent?: string;
 		isTyping?: boolean;
 		timestamp: Date;
 		advisor?: string;
-		speaker?: string;
-		speakerColor?: string;
-	}> = [];
-	let currentCouncilMessage = '';
-	let isCouncilResponding = false;
+	}
+
+	let chatMessages: ChatMessage[] = [];
+	let currentChatType: 'council' | 'advisor' | null = null;
+	let currentAdvisorForChat: CouncilAdvisorExtended | null = null;
+	let isChatResponding = false;
+	let showCouncilChat = false;
+	let showAdvisorChat = false;
+
+	function openCouncilChat() {
+		currentChatType = 'council';
+		currentAdvisorForChat = null;
+		chatMessages = [];
+		showCouncilChat = true;
+	}
+
+	function openAdvisorChat(advisor: CouncilAdvisorExtended) {
+		currentChatType = 'advisor';
+		currentAdvisorForChat = advisor;
+		chatMessages = [];
+		showAdvisorChat = true;
+		addImmediateAdvisorIntroduction(advisor);
+	}
+
+	function closeChat() {
+		currentChatType = null;
+		currentAdvisorForChat = null;
+		chatMessages = [];
+		showCouncilChat = false;
+		showAdvisorChat = false;
+	}
+
+	async function typeMessage(message: ChatMessage, delayMs: number = 15) {
+		message.isTyping = true;
+		message.displayContent = '';
+		chatMessages = [...chatMessages];
+		for (let i = 0; i < message.content.length; i++) {
+			message.displayContent += message.content[i];
+			chatMessages = [...chatMessages];
+			await new Promise(resolve => setTimeout(resolve, delayMs));
+		}
+		message.isTyping = false;
+		chatMessages = [...chatMessages];
+	}
+
+	async function sendChatMessage(userMessage: string) {
+		if (isChatResponding) return;
+		isChatResponding = true;
+		try {
+			let response: string;
+			if (currentChatType === 'council') {
+				response = await generateCouncilResponse(userMessage);
+			} else if (currentChatType === 'advisor') {
+				response = await generateIndividualAdvisorResponse(userMessage);
+			} else {
+				throw new Error('No active chat context');
+			}
+			const aiMessage: ChatMessage = {
+				role: 'assistant',
+				content: response,
+				displayContent: '',
+				isTyping: true,
+				timestamp: new Date(),
+				advisor: currentChatType === 'advisor' ? currentAdvisorForChat?.name : 'Council'
+			};
+			chatMessages = [...chatMessages, aiMessage];
+			await typeMessage(aiMessage);
+		} catch (error) {
+			console.error('Error generating response:', error);
+			const errorMessage: ChatMessage = {
+				role: 'assistant',
+				content: 'I am momentarily silent. Please try again.',
+				displayContent: '',
+				isTyping: true,
+				timestamp: new Date(),
+				advisor: currentChatType === 'advisor' ? currentAdvisorForChat?.name : 'Council'
+			};
+			chatMessages = [...chatMessages, errorMessage];
+			await typeMessage(errorMessage);
+		} finally {
+			isChatResponding = false;
+		}
+	}
+	// --- UNIFIED CHAT SYSTEM END ---
 
 	async function summonAIEcosystemCouncil() {
 		// Get Omnia for the head position (top)
@@ -1327,22 +1228,6 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 		}
 	}
 
-	// Assign colors to council members for the current chat session
-	function assignCouncilMemberColors(members: CouncilAdvisorExtended[]) {
-		councilMemberColors = {};
-		colorIndex = 0;
-		
-		members.forEach(member => {
-			const cleanName = member.name.split(',')[0].trim();
-			if (!councilMemberColors[cleanName]) {
-				councilMemberColors[cleanName] = councilColors[colorIndex % councilColors.length];
-				colorIndex++;
-			}
-		});
-		
-		console.log('Assigned colors to council members:', councilMemberColors);
-	}
-
 	function closeCouncilChat() {
 		showCouncilChat = false;
 	}
@@ -1350,7 +1235,7 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 	function closeAdvisorChat() {
 		showAdvisorChat = false;
 		selectedAdvisorForChat = null;
-		advisorChatMessages = [];
+		chatMessages = [];
 	}
 
 	function closeCircleSelectionModal() {
@@ -1370,8 +1255,8 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 			showAdvisorChat = true;
 			
 			// Add immediate introduction message if this is a new chat
-			if (advisorChatMessages.length === 0) {
-				await addImmediateAdvisorIntroduction(fullAdvisor);
+			if (chatMessages.length === 0) {
+				addImmediateAdvisorIntroduction(fullAdvisor);
 			}
 		}
 		
@@ -1391,16 +1276,16 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 	}
 
 	async function sendAdvisorMessage(userMessage: string) {
-		if (!selectedAdvisorForChat || isAdvisorResponding) return;
+		if (!selectedAdvisorForChat || isChatResponding) return;
 
-		isAdvisorResponding = true;
+		isChatResponding = true;
 
 		try {
 			// Generate advisor response using LLM with stage directions
 			const advisorResponse = await generateIndividualAdvisorResponse(userMessage);
 			
-			const aiMessage: typeof advisorChatMessages[0] = {
-				role: 'assistant' as const,
+			const aiMessage: ChatMessage = {
+				role: 'assistant',
 				content: advisorResponse,
 				displayContent: '',
 				isTyping: true,
@@ -1408,13 +1293,13 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 				advisor: selectedAdvisorForChat.name
 			};
 			
-			advisorChatMessages = [...advisorChatMessages, aiMessage];
-			await typeMessage(aiMessage, 'advisor');
+			chatMessages = [...chatMessages, aiMessage];
+			await typeMessage(aiMessage);
 			
 		} catch (error) {
 			console.error('Error generating advisor response:', error);
-			const errorMessage: typeof advisorChatMessages[0] = {
-				role: 'assistant' as const,
+			const errorMessage: ChatMessage = {
+				role: 'assistant',
 				content: 'I am momentarily silent. Please try again.',
 				displayContent: '',
 				isTyping: true,
@@ -1422,138 +1307,37 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 				advisor: selectedAdvisorForChat?.name || 'Advisor'
 			};
 			
-			advisorChatMessages = [...advisorChatMessages, errorMessage];
-			await typeMessage(errorMessage, 'advisor');
+			chatMessages = [...chatMessages, errorMessage];
+			await typeMessage(errorMessage);
 		} finally {
-			isAdvisorResponding = false;
+			isChatResponding = false;
 		}
-	}
-
-	// Unified typing function that works for both council and advisor messages
-	async function typeMessage(message: any, chatType: 'council' | 'advisor', delayMs: number = 15) {
-		message.isTyping = true;
-		message.displayContent = '';
-		
-		// Update the appropriate message array
-		if (chatType === 'council') {
-			councilChatMessages = [...councilChatMessages];
-		} else if (chatType === 'advisor') {
-			advisorChatMessages = [...advisorChatMessages];
-		}
-		
-		for (let i = 0; i < message.content.length; i++) {
-			message.displayContent += message.content[i];
-			
-			// Update the appropriate message array
-			if (chatType === 'council') {
-				councilChatMessages = [...councilChatMessages];
-			} else if (chatType === 'advisor') {
-				advisorChatMessages = [...advisorChatMessages];
-			}
-			
-			await new Promise(resolve => setTimeout(resolve, delayMs));
-		}
-		
-		message.isTyping = false;
-		
-		// Final update to the appropriate message array
-		if (chatType === 'council') {
-			councilChatMessages = [...councilChatMessages];
-		} else if (chatType === 'advisor') {
-			advisorChatMessages = [...advisorChatMessages];
-		}
-	}
-
-	// Parse structured council response and create individual speaker messages
-	function parseCouncilResponse(response: string): Array<{
-		speaker: string;
-		content: string;
-		stageDirections?: string;
-	}> {
-		const speakers: Array<{speaker: string; content: string; stageDirections?: string}> = [];
-		
-		// Split by speaker pattern (e.g., "Speaker Name: content")
-		const speakerPattern = /^([^:]+):\s*(.+)$/gm;
-		let match;
-		
-		while ((match = speakerPattern.exec(response)) !== null) {
-			const speaker = match[1].trim();
-			let content = match[2].trim();
-			
-			// Extract stage directions if present
-			let stageDirections = '';
-			const stageDirectionPattern = /^\[([^\]]+)\]\s*(.+)$/;
-			const stageMatch = content.match(stageDirectionPattern);
-			
-			if (stageMatch) {
-				stageDirections = stageMatch[1];
-				content = stageMatch[2];
-			}
-			
-			speakers.push({
-				speaker,
-				content,
-				stageDirections
-			});
-		}
-		
-		return speakers;
 	}
 
 	async function sendCouncilMessage(userMessage: string) {
-		if (isCouncilResponding) return;
+		if (isChatResponding) return;
 
-		isCouncilResponding = true;
+		isChatResponding = true;
 
 		try {
 			const councilResponse = await generateCouncilResponse(userMessage);
 			
-			// Parse the response into individual speaker messages
-			const speakers = parseCouncilResponse(councilResponse);
+			const aiMessage: ChatMessage = {
+				role: 'assistant',
+				content: councilResponse,
+				displayContent: '',
+				isTyping: true,
+				timestamp: new Date(),
+				advisor: 'Council'
+			};
 			
-			if (speakers.length === 0) {
-				// Fallback: treat as single council message
-				const aiMessage: typeof councilChatMessages[0] = {
-					role: 'assistant' as const,
-					content: councilResponse,
-					displayContent: '',
-					isTyping: true,
-					timestamp: new Date(),
-					advisor: 'Council'
-				};
-				
-				councilChatMessages = [...councilChatMessages, aiMessage];
-				await typeMessage(aiMessage, 'council');
-			} else {
-				// Create individual messages for each speaker
-				for (const speakerData of speakers) {
-					const speakerName = speakerData.speaker;
-					const speakerColor = councilMemberColors[speakerName] || 'bg-gray-600';
-					
-					const fullContent = speakerData.stageDirections 
-						? `[${speakerData.stageDirections}] ${speakerData.content}`
-						: speakerData.content;
-					
-					const speakerMessage: typeof councilChatMessages[0] = {
-						role: 'assistant' as const,
-						content: fullContent,
-						displayContent: '',
-						isTyping: true,
-						timestamp: new Date(),
-						advisor: 'Council',
-						speaker: speakerName,
-						speakerColor: speakerColor
-					};
-					
-					councilChatMessages = [...councilChatMessages, speakerMessage];
-					await typeMessage(speakerMessage, 'council');
-				}
-			}
+			chatMessages = [...chatMessages, aiMessage];
+			await typeMessage(aiMessage);
 			
 		} catch (error) {
 			console.error('Error generating council response:', error);
-			const errorMessage: typeof councilChatMessages[0] = {
-				role: 'assistant' as const,
+			const errorMessage: ChatMessage = {
+				role: 'assistant',
 				content: 'The council is momentarily silent. Please try again.',
 				displayContent: '',
 				isTyping: true,
@@ -1561,60 +1345,662 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 				advisor: 'Council'
 			};
 			
-			councilChatMessages = [...councilChatMessages, errorMessage];
-			await typeMessage(errorMessage, 'council');
+			chatMessages = [...chatMessages, errorMessage];
+			await typeMessage(errorMessage);
 		} finally {
-			isCouncilResponding = false;
+			isChatResponding = false;
 		}
 	}
 
 	// Individual advisor chat state
-	let showAdvisorChat = false;
 	let selectedAdvisorForChat: CouncilAdvisorExtended | null = null;
-	let advisorChatMessages: Array<{
-		role: 'user' | 'assistant';
-		content: string;
-		displayContent?: string;
-		isTyping?: boolean;
-		timestamp: Date;
-		advisor?: string;
-	}> = [];
-	let isAdvisorResponding = false;
 
+	// Ritual Interface Modal
+	#if showRitual
+		<div class="fixed inset-0 z-50 overflow-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+			<div class="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl relative border border-gray-700">
+				<!-- Ritual Header -->
+				<div class="p-6 border-b border-gray-700">
+					<div class="flex items-center justify-between">
+						<div class="flex items-center gap-4">
+							<div class="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-2xl">
+								{#if ritualStage === 0}✨{:else if ritualStage === 1}💠{:else if ritualStage === 2}🧙‍♀️{:else if ritualStage === 3}🔍{:else if ritualStage === 4}🛠{:else}🎴{/if}
+							</div>
+							<div>
+								<h2 class="text-2xl font-bold text-white">Council Ritual</h2>
+								<p class="text-gray-300">
+									{#if ritualStage === 0}Initiation - Speak Your Wish
+									{:else if ritualStage === 1}Value Naming - Sacred Words
+									{:else if ritualStage === 2}Advisor Summoning - Call Your Guides
+									{:else if ritualStage === 3}Council Dialogue - Listen to Wisdom
+									{:else if ritualStage === 4}Design Streams - Pathways Forward
+									{:else}Closure & Gift - Your Sacred Artifact
+									{/if}
+								</p>
+							</div>
+						</div>
+						<button
+							on:click={closeRitual}
+							class="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-700"
+						>
+							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+							</svg>
+						</button>
+					</div>
+					<!-- Progress Bar -->
+					<div class="mt-6 w-full bg-gray-700 rounded-full h-2">
+						<div class="bg-indigo-500 h-2 rounded-full transition-all duration-500" style="width: {((ritualStage + 1) / 6) * 100}%"></div>
+					</div>
+				</div>
 
+				<!-- Ritual Content -->
+				<div class="p-8 min-h-[400px]">
+					{#if ritualStage === 0}
+						<!-- Stage 1: Initiation -->
+						<div class="text-center space-y-6">
+							<div class="text-6xl mb-4">✨</div>
+							<h3 class="text-3xl font-bold text-white mb-4">Welcome to the Circle</h3>
+							<p class="text-gray-300 text-lg max-w-2xl mx-auto leading-relaxed">
+								Enter this sacred space with intention. Here, imagination meets implementation. 
+								Your wish will be witnessed, your values honored, and your path illuminated by wise council.
+							</p>
+							<div class="mt-8 space-y-4">
+								<label class="block text-gray-300 text-lg font-medium">Speak your wish. What do you seek to bring into being?</label>
+								<textarea
+									bind:value={ritualSession.wish_statement}
+									placeholder="I wish to create..."
+									class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent min-h-[120px] resize-none"
+									use:focusOnMount
+								></textarea>
+							</div>
+						</div>
 
-	// Test function to verify HoloSphere advisor integration
-	async function testHoloSphereAdvisorIntegration() {
-		if (!holosphere || !holonID) {
-			console.error("Cannot test: holosphere or holonID is null");
-			return;
+					{:else if ritualStage === 1}
+						<!-- Stage 2: Value Naming -->
+						<div class="space-y-6">
+							<div class="text-center">
+								<div class="text-5xl mb-4">💠</div>
+								<h3 class="text-3xl font-bold text-white mb-4">Name Your Sacred Values</h3>
+								<p class="text-gray-300 text-lg">These are not checkboxes, but sacred words that will guide your journey.</p>
+							</div>
+							
+							<div class="flex gap-4 mb-6">
+								<input
+									bind:value={currentValue}
+									placeholder="Enter a core value..."
+									class="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+									on:keydown={(e) => e.key === 'Enter' && addValue()}
+									use:focusOnMount
+								/>
+								<button
+									on:click={addValue}
+									disabled={!currentValue.trim() || ritualSession.declared_values.length >= 5}
+									class="group relative bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-gray-600 disabled:to-gray-600 text-white px-8 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg hover:shadow-xl disabled:hover:shadow-lg transform hover:scale-105 disabled:hover:scale-100"
+								>
+									Add Value
+									<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-xl transition-opacity duration-200"></div>
+								</button>
+							</div>
+							
+							{#if previousValues.length > 0}
+								<div class="bg-gray-700 rounded-xl p-4 mb-6">
+									<h4 class="text-gray-300 font-medium mb-3">Previous Values:</h4>
+									<div class="flex flex-wrap gap-2">
+										{#each previousValues.filter(v => !ritualSession.declared_values.includes(v)) as value}
+											<button
+												on:click={() => selectPreviousValue(value)}
+												class="group relative bg-gray-600 hover:bg-gradient-to-r hover:from-indigo-600 hover:to-purple-600 text-white px-4 py-2 rounded-full text-sm transition-all duration-200 font-medium hover:shadow-lg transform hover:scale-105"
+											>
+												+ {value}
+												<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-full transition-opacity duration-200"></div>
+											</button>
+										{/each}
+									</div>
+								</div>
+							{/if}
+							
+							<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+								{#each ritualSession.declared_values as value, index}
+									<div class="bg-gray-700 rounded-xl p-4 flex items-center justify-between group hover:bg-gray-600 transition-colors">
+										<span class="text-white font-medium">✦ {value}</span>
+										<button
+											on:click={() => removeValue(index)}
+											class="text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+										>
+											✕
+										</button>
+									</div>
+								{/each}
+							</div>
+							
+							{#if ritualSession.declared_values.length === 0}
+								<p class="text-center text-gray-400 italic">Add 3-5 values that will guide your manifestation...</p>
+							{/if}
+						</div>
+
+					{:else if ritualStage === 2}
+						<!-- Stage 3: Advisor Summoning -->
+						<div class="space-y-6">
+							<div class="text-center">
+								<div class="text-5xl mb-4">🧙‍♀️</div>
+								<h3 class="text-3xl font-bold text-white mb-4">Summon Your Advisors</h3>
+								<p class="text-gray-300 text-lg">Call upon wise guides - ancestors, archetypes, or inspiring figures.</p>
+							</div>
+							
+							<div class="bg-gray-700 rounded-xl p-6 space-y-4">
+								<div class="grid md:grid-cols-3 gap-4">
+									<div>
+										<label class="block text-gray-300 mb-2">Advisor Name</label>
+										<input
+											bind:value={currentAdvisorName}
+											placeholder="e.g., Joanna Macy"
+											class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+											use:focusOnMount
+										/>
+									</div>
+									<div>
+										<label class="block text-gray-300 mb-2">Type</label>
+										<select
+											bind:value={selectedAdvisorType}
+											class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+										>
+											<option value="real">Historical/Real Person</option>
+											<option value="mythic">Mythic/Spiritual Being</option>
+											<option value="archetype">Archetypal Force</option>
+										</select>
+									</div>
+									<div>
+										<label class="block text-gray-300 mb-2">Lens/Wisdom</label>
+										<input
+											bind:value={currentAdvisorLens}
+											placeholder="e.g., deep ecology"
+											class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+											use:focusOnMount
+										/>
+									</div>
+								</div>
+								<button
+									on:click={addAdvisor}
+									disabled={!currentAdvisorName.trim() || !currentAdvisorLens.trim() || ritualSession.advisors.length >= 5}
+									class="group relative w-full bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-gray-600 disabled:to-gray-600 text-white py-4 rounded-xl transition-all duration-200 font-semibold shadow-lg hover:shadow-xl disabled:hover:shadow-lg transform hover:scale-105 disabled:hover:scale-100"
+								>
+									Summon Advisor
+									<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-xl transition-opacity duration-200"></div>
+								</button>
+							</div>
+							
+							{#if previousAdvisors.length > 0}
+								<div class="bg-gray-700 rounded-xl p-4 mb-4">
+									<h4 class="text-gray-300 font-medium mb-3">Previous Advisors:</h4>
+									<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+										{#each previousAdvisors.filter(advisor => 
+											!ritualSession.advisors.some(a => a.name === advisor.name && a.lens === advisor.lens)
+										) as advisor}
+											<button
+												on:click={() => selectPreviousAdvisor(advisor)}
+												class="group relative bg-gray-600 hover:bg-gradient-to-r hover:from-indigo-600 hover:to-purple-600 text-left p-4 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
+											>
+												<div class="font-medium text-white">+ {advisor.name}</div>
+												<div class="text-gray-300 text-sm capitalize">{advisor.type}</div>
+												<div class="text-gray-400 text-sm italic">"{advisor.lens}"</div>
+												<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-xl transition-opacity duration-200"></div>
+											</button>
+										{/each}
+									</div>
+									{#if previousAdvisors.filter(advisor => 
+										!ritualSession.advisors.some(a => a.name === advisor.name && a.lens === advisor.lens)
+									).length === 0}
+										<p class="text-gray-400 text-sm italic">All previous advisors are already selected</p>
+									{/if}
+								</div>
+							{/if}
+							
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								{#each ritualSession.advisors as advisor, index}
+									<div class="bg-gray-700 rounded-xl p-4 group hover:bg-gray-600 transition-colors">
+										<div class="flex items-start justify-between">
+											<div class="flex-1">
+												<h4 class="text-white font-bold">{advisor.name}</h4>
+												<p class="text-gray-300 text-sm capitalize">{advisor.type}</p>
+												<p class="text-gray-300 text-sm italic">"{advisor.lens}"</p>
+											</div>
+											<button
+												on:click={() => removeAdvisor(index)}
+												class="text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+											>
+												✕
+											</button>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</div>
+
+					{:else if ritualStage === 3}
+						<!-- Stage 4: Council Dialogue -->
+						<div class="space-y-6">
+							<div class="text-center">
+								<div class="text-5xl mb-4">🔍</div>
+								<h3 class="text-3xl font-bold text-white mb-4">The Council Speaks</h3>
+								<p class="text-gray-300 text-lg">Listen as your advisors respond to your wish through the lens of your values.</p>
+							</div>
+							
+							{#if ritualSession.council_dialogue.length === 0}
+								<div class="text-center">
+									<button
+										on:click={generateCouncilDialogue}
+										disabled={isGeneratingCouncil}
+										class="group relative bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white px-12 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-xl hover:shadow-2xl disabled:hover:shadow-xl transform hover:scale-105 disabled:hover:scale-100"
+									>
+										{#if isGeneratingCouncil}
+											<div class="flex items-center gap-3">
+												<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+												Summoning Council Wisdom...
+											</div>
+										{:else}
+											Convene the Council
+										{/if}
+										<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-2xl transition-opacity duration-300"></div>
+									</button>
+								</div>
+							{:else}
+								<div class="space-y-4">
+									{#each ritualSession.council_dialogue as dialogue}
+										<div class="bg-gray-700 rounded-xl p-6 border border-gray-600">
+											<h4 class="text-gray-300 font-bold mb-3 flex items-center gap-2">
+												<span class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-sm">
+													{dialogue.advisor.charAt(0)}
+												</span>
+												{dialogue.advisor}
+											</h4>
+											<p class="text-white italic leading-relaxed">"{dialogue.response}"</p>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+
+					{:else if ritualStage === 4}
+						<!-- Stage 5: Design Streams -->
+						<div class="space-y-6">
+							<div class="text-center">
+								<div class="text-5xl mb-4">🛠</div>
+								<h3 class="text-3xl font-bold text-white mb-4">Pathways Forward</h3>
+								<p class="text-gray-300 text-lg">From wisdom comes action. Choose your path of manifestation.</p>
+							</div>
+							
+							{#if ritualSession.design_streams.length === 0}
+								<div class="text-center">
+									<button
+										on:click={generateDesignStreams}
+										disabled={isGeneratingDesign}
+										class="group relative bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white px-12 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-xl hover:shadow-2xl disabled:hover:shadow-xl transform hover:scale-105 disabled:hover:scale-100"
+									>
+										{#if isGeneratingDesign}
+											<div class="flex items-center gap-3">
+												<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+												Weaving Design Streams...
+											</div>
+										{:else}
+											Generate Design Paths
+										{/if}
+										<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-2xl transition-opacity duration-300"></div>
+									</button>
+								</div>
+							{:else}
+								<div class="grid md:grid-cols-2 gap-6">
+									{#each ritualSession.design_streams as stream}
+										<div class="bg-gray-700 rounded-xl p-6 border border-gray-600 hover:bg-gray-600 transition-colors">
+											<h4 class="text-xl font-bold text-white mb-3">{stream.name}</h4>
+											<p class="text-gray-300 mb-4">{stream.description}</p>
+											
+											<div class="space-y-3">
+												<div>
+													<h5 class="text-gray-300 font-medium mb-2">Materials Needed:</h5>
+													<div class="flex flex-wrap gap-2">
+														{#each stream.materials as material}
+															<span class="bg-gray-600 text-gray-200 px-3 py-1 rounded-full text-sm">{material}</span>
+														{/each}
+													</div>
+												</div>
+												
+												<div>
+													<h5 class="text-gray-300 font-medium mb-2">Steps:</h5>
+													<ol class="space-y-1">
+														{#each stream.steps as step, index}
+															<li class="text-gray-200 text-sm flex items-start gap-2">
+																<span class="text-gray-400 font-medium">{index + 1}.</span>
+																{step}
+															</li>
+														{/each}
+													</ol>
+												</div>
+											</div>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+
+					{:else if ritualStage === 5}
+						<!-- Stage 6: Closure & Gift -->
+						<div class="space-y-6 text-center">
+							<div class="text-6xl mb-4">🎴</div>
+							<h3 class="text-3xl font-bold text-white mb-4">Your Sacred Artifact</h3>
+							<p class="text-gray-300 text-lg">The ritual is complete. Receive your gift from the council.</p>
+							
+							<div class="bg-gray-700 rounded-2xl p-8 border border-gray-600 max-w-2xl mx-auto">
+								<div class="text-4xl mb-4">{ritualSession.ritual_artifact.ascii_glyph}</div>
+								<blockquote class="text-xl text-white italic leading-relaxed mb-6">
+									"{ritualSession.ritual_artifact.text}"
+								</blockquote>
+								
+								<div class="space-y-3 text-left">
+									<h4 class="text-gray-300 font-bold text-center mb-4">Voices from the Council:</h4>
+									{#each Object.entries(ritualSession.ritual_artifact.quotes) as [advisor, quote]}
+										<div class="bg-gray-600 rounded-lg p-3">
+											<span class="text-gray-300 font-medium">{advisor}:</span>
+											<span class="text-white"> "{quote}"</span>
+										</div>
+									{/each}
+								</div>
+							</div>
+							
+							<div class="flex gap-4 justify-center">
+								<button 
+									on:click={createHolonFromRitual}
+									class="group relative bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-10 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 flex items-center gap-2"
+								>
+									📜 Receive Scroll
+									<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-2xl transition-opacity duration-300"></div>
+								</button>
+								<button 
+									on:click={closeRitual}
+									class="group relative bg-gray-600 hover:bg-gray-700 text-white px-10 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
+								>
+									Quit Ritual
+									<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-5 rounded-2xl transition-opacity duration-300"></div>
+								</button>
+							</div>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Navigation Footer -->
+				<div class="p-6 border-t border-gray-700 flex justify-between items-center">
+					<button
+						on:click={prevStage}
+						disabled={ritualStage === 0}
+						class="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 disabled:text-gray-500 text-white px-6 py-2 rounded-xl transition-colors"
+					>
+						← Previous
+					</button>
+					
+					<div class="text-gray-300">
+						Stage {ritualStage + 1} of 6
+					</div>
+					
+					<button
+						on:click={nextStage}
+						disabled={ritualStage === 5 || 
+							(ritualStage === 0 && !ritualSession.wish_statement.trim()) ||
+							(ritualStage === 1 && ritualSession.declared_values.length === 0) ||
+							(ritualStage === 2 && ritualSession.advisors.length === 0)}
+						class="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-xl transition-colors"
+					>
+						{ritualStage === 5 ? 'Complete' : 'Next →'}
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	<style>
+		.line-clamp-2 {
+			display: -webkit-box;
+			-webkit-line-clamp: 2;
+			-webkit-box-orient: vertical;
+			overflow: hidden;
 		}
 
-		try {
-			console.log("Testing HoloSphere advisor integration...");
-			
-			// Test 1: Put an advisor to HoloSphere
-			const testAdvisor = getAdvisor('omnia');
-			if (testAdvisor) {
-				await putAdvisorToHoloSphere(holosphere, holonID, testAdvisor, 'QBFRANK');
-				console.log("✅ Successfully put advisor to HoloSphere");
+		.metatron-container {
+			position: relative;
+			width: 100%;
+			height: 100%;
+		}
+
+		.metatron-circle {
+			position: absolute;
+			width: var(--diam);
+			height: var(--diam);
+			border-radius: 50%;
+			background: rgba(198, 198, 197, 0.3);
+			transition: all 0.3s ease;
+			cursor: pointer;
+			transform: translate(-50%, -50%);
+			pointer-events: auto;
+			z-index: 20;
+			border: 2px solid rgba(255, 255, 255, 0.2);
+		}
+
+		.metatron-circle:hover {
+			background: rgba(198, 198, 197, 0.5);
+			border-color: rgba(255, 255, 255, 0.4);
+			box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+		}
+
+		@keyframes pulse {
+			0% {
+				opacity: 0.8;
 			}
-
-			// Test 2: Get advisors from HoloSphere
-			const holosphereAdvisors = await getAdvisorsFromHoloSphere(holosphere, holonID);
-			console.log("✅ Retrieved advisors from HoloSphere:", holosphereAdvisors.length);
-
-			// Test 3: Get all advisors (static + HoloSphere)
-			const allAdvisors = await getAllAdvisors(holosphere, holonID);
-			console.log("✅ Retrieved all advisors:", allAdvisors.length);
-
-			console.log("🎉 All HoloSphere advisor integration tests passed!");
-		} catch (error) {
-			console.error("❌ Error testing HoloSphere advisor integration:", error);
+			50% {
+				opacity: 0.4;
+			}
+			100% {
+				opacity: 0;
+			}
 		}
-	}
+
+		.metatron-circle:hover::before {
+			content: '';
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			border-radius: 50%;
+			background: rgba(255, 255, 255, 0.3);
+			animation: pulse 1.5s ease-out infinite;
+			pointer-events: none;
+		}
+
+		.metatron-circle.editing {
+			background: rgba(59, 130, 246, 0.6);
+			border-color: rgba(59, 130, 246, 0.8);
+			box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+		}
+
+		/* Center circle */
+		.center-circle {
+			left: 50%;
+			top: 50%;
+		}
+
+		/* Inner ring circles - vertical */
+		.inner-circle.top {
+			left: 50%;
+			top: 28.6%;
+		}
+
+		.inner-circle.top-inner {
+			left: 50%;
+			top: 39.3%;
+		}
+
+		.inner-circle.bottom-inner {
+			left: 50%;
+			top: 60.7%;
+		}
+
+		.inner-circle.bottom {
+			left: 50%;
+			top: 71.4%;
+		}
+
+		/* Inner ring circles - horizontal */
+		.inner-circle.top-left {
+			left: 31.5%;
+			top: 39.3%;
+		}
+
+		.inner-circle.top-left-inner {
+			left: 40.8%;
+			top: 44.7%;
+		}
+
+		.inner-circle.top-right-inner {
+			left: 59.2%;
+			top: 44.7%;
+		}
+
+		.inner-circle.top-right {
+			left: 68.5%;
+			top: 39.3%;
+		}
+
+		.inner-circle.bottom-left {
+			left: 31.5%;
+			top: 60.7%;
+		}
+
+		.inner-circle.bottom-left-inner {
+			left: 40.8%;
+			top: 55.3%;
+		}
+
+		.inner-circle.bottom-right-inner {
+			left: 59.2%;
+			top: 55.3%;
+		}
+
+		.inner-circle.bottom-right {
+			left: 68.5%;
+			top: 60.7%;
+		}
+
+		/* Outer ring circles - vertical */
+		.outer-circle.top {
+			left: 50%;
+			top: 18.0%;
+		}
+
+		.outer-circle.top-outer {
+			left: 50%;
+			top: 7.3%;
+		}
+
+		.outer-circle.bottom {
+			left: 50%;
+			top: 82.0%;
+		}
+
+		.outer-circle.bottom-outer {
+			left: 50%;
+			top: 92.7%;
+		}
+
+		/* Outer ring circles - corners */
+		.outer-circle.top-left {
+			left: 22.3%;
+			top: 34.0%;
+		}
+
+		.outer-circle.top-left-outer {
+			left: 13.0%;
+			top: 28.6%;
+		}
+
+		.outer-circle.top-right {
+			left: 77.7%;
+			top: 34.0%;
+		}
+
+		.outer-circle.top-right-outer {
+			left: 87.0%;
+			top: 28.6%;
+		}
+
+		.outer-circle.bottom-left {
+			left: 22.3%;
+			top: 66.0%;
+		}
+
+		.outer-circle.bottom-left-outer {
+			left: 13.0%;
+			top: 71.4%;
+		}
+
+		.outer-circle.bottom-right {
+			left: 77.7%;
+			top: 66.0%;
+		}
+
+		.outer-circle.bottom-right-outer {
+			left: 87.0%;
+			top: 71.4%;
+		}
+
+		.label-text {
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			color: #ffffff;
+			font-size: clamp(0.5rem, 2vw, 0.75rem);
+			text-align: center;
+			pointer-events: none;
+			white-space: normal;
+			word-wrap: break-word;
+			max-width: 80%;
+			max-height: 80%;
+			overflow: hidden;
+			line-height: 1.2;
+		}
+	</style>
+
+	<!-- Council Chat Modal -->
+	<AIChatModal 
+		bind:isOpen={showCouncilChat}
+		title="Council Chat"
+		subtitle="Multi-member consultation in progress"
+		icon="🎭"
+		theme="indigo"
+		messages={chatMessages}
+		onClose={closeChat}
+		onSend={sendChatMessage}
+		placeholder="Ask the council for guidance..."
+		disabled={isChatResponding}
+		bind:isLoading={isChatResponding}
+	/>
+
+	<!-- Individual Advisor Chat Modal -->
+	<AIChatModal 
+		bind:isOpen={showAdvisorChat}
+		title={selectedAdvisorForChat?.name || "Advisor Chat"}
+		subtitle="One-on-one consultation"
+		icon="🧙‍♀️"
+		theme="indigo"
+		messages={chatMessages}
+		onClose={closeChat}
+		onSend={sendChatMessage}
+		placeholder="Ask your advisor for guidance..."
+		disabled={isChatResponding}
+		bind:isLoading={isChatResponding}
+	/>
 </script>
 
+<!-- Markup/template section starts here -->
 <div class="space-y-8">
 	<!-- Header Section -->
 	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-6 px-3 sm:py-8 sm:px-8 rounded-3xl shadow-2xl">
@@ -1711,18 +2097,6 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 								</div>
 								Begin Council Ritual
 								<div class="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
-							</button>
-
-							<!-- Test HoloSphere Integration Button -->
-							<button 
-								on:click={testHoloSphereAdvisorIntegration}
-								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-blue-500/50 hover:border-blue-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-blue-500/25 backdrop-blur-sm"
-							>
-								<div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-xl group-hover:bg-blue-500 transition-colors duration-300">
-									🧪
-								</div>
-								Test HoloSphere
-								<div class="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
 							</button>
 						</div>
 
@@ -1827,10 +2201,7 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 
 <!-- Member Detail Modal -->
 {#if showMemberModal && selectedMember}
-	<div 
-		class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-		on:keydown={(e) => e.key === 'Escape' && closeMemberModal()}
-	>
+	<div class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
 		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700">
 			<div class="p-6">
 				<div class="flex items-center justify-between mb-6">
@@ -1882,10 +2253,7 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 
 <!-- Circle Selection Modal -->
 {#if showCircleSelectionModal && selectedCircleForAction}
-	<div 
-		class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-		on:keydown={(e) => e.key === 'Escape' && closeCircleSelectionModal()}
-	>
+	<div class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
 		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700">
 			<div class="p-6">
 				<div class="flex items-center justify-between mb-6">
@@ -1935,675 +2303,3 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 		</div>
 	</div>
 {/if}
-
-<!-- Ritual Interface Modal -->
-{#if showRitual}
-	<div 
-		class="fixed inset-0 z-50 overflow-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-		on:keydown={(e) => e.key === 'Escape' && closeRitual()}
-	>
-		<div class="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl relative border border-gray-700">
-			<!-- Ritual Header -->
-			<div class="p-6 border-b border-gray-700">
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-4">
-						<div class="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-2xl">
-							{#if ritualStage === 0}✨{:else if ritualStage === 1}💠{:else if ritualStage === 2}🧙‍♀️{:else if ritualStage === 3}🔍{:else if ritualStage === 4}🛠{:else}🎴{/if}
-						</div>
-						<div>
-							<h2 class="text-2xl font-bold text-white">Council Ritual</h2>
-							<p class="text-gray-300">
-								{#if ritualStage === 0}Initiation - Speak Your Wish
-								{:else if ritualStage === 1}Value Naming - Sacred Words
-								{:else if ritualStage === 2}Advisor Summoning - Call Your Guides
-								{:else if ritualStage === 3}Council Dialogue - Listen to Wisdom
-								{:else if ritualStage === 4}Design Streams - Pathways Forward
-								{:else}Closure & Gift - Your Sacred Artifact
-								{/if}
-							</p>
-						</div>
-					</div>
-					<button
-						on:click={closeRitual}
-						class="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-gray-700"
-					>
-						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-						</svg>
-					</button>
-				</div>
-				<!-- Progress Bar -->
-				<div class="mt-6 w-full bg-gray-700 rounded-full h-2">
-					<div class="bg-indigo-500 h-2 rounded-full transition-all duration-500" style="width: {((ritualStage + 1) / 6) * 100}%"></div>
-				</div>
-			</div>
-
-			<!-- Ritual Content -->
-			<div class="p-8 min-h-[400px]">
-				{#if ritualStage === 0}
-					<!-- Stage 1: Initiation -->
-					<div class="text-center space-y-6">
-						<div class="text-6xl mb-4">✨</div>
-						<h3 class="text-3xl font-bold text-white mb-4">Welcome to the Circle</h3>
-						<p class="text-gray-300 text-lg max-w-2xl mx-auto leading-relaxed">
-							Enter this sacred space with intention. Here, imagination meets implementation. 
-							Your wish will be witnessed, your values honored, and your path illuminated by wise council.
-						</p>
-						<div class="mt-8 space-y-4">
-							<label class="block text-gray-300 text-lg font-medium">Speak your wish. What do you seek to bring into being?</label>
-							<textarea
-								bind:value={ritualSession.wish_statement}
-								placeholder="I wish to create..."
-								class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent min-h-[120px] resize-none"
-								use:focusOnMount
-							></textarea>
-						</div>
-					</div>
-
-				{:else if ritualStage === 1}
-					<!-- Stage 2: Value Naming -->
-					<div class="space-y-6">
-						<div class="text-center">
-							<div class="text-5xl mb-4">💠</div>
-							<h3 class="text-3xl font-bold text-white mb-4">Name Your Sacred Values</h3>
-							<p class="text-gray-300 text-lg">These are not checkboxes, but sacred words that will guide your journey.</p>
-						</div>
-						
-						<div class="flex gap-4 mb-6">
-							<input
-								bind:value={currentValue}
-								placeholder="Enter a core value..."
-								class="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-								on:keydown={(e) => e.key === 'Enter' && addValue()}
-								use:focusOnMount
-							/>
-							<button
-								on:click={addValue}
-								disabled={!currentValue.trim() || ritualSession.declared_values.length >= 5}
-								class="group relative bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-gray-600 disabled:to-gray-600 text-white px-8 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg hover:shadow-xl disabled:hover:shadow-lg transform hover:scale-105 disabled:hover:scale-100"
-							>
-								Add Value
-								<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-xl transition-opacity duration-200"></div>
-							</button>
-						</div>
-						
-						{#if previousValues.length > 0}
-							<div class="bg-gray-700 rounded-xl p-4 mb-6">
-								<h4 class="text-gray-300 font-medium mb-3">Previous Values:</h4>
-								<div class="flex flex-wrap gap-2">
-									{#each previousValues.filter(v => !ritualSession.declared_values.includes(v)) as value}
-										<button
-											on:click={() => selectPreviousValue(value)}
-											class="group relative bg-gray-600 hover:bg-gradient-to-r hover:from-indigo-600 hover:to-purple-600 text-white px-4 py-2 rounded-full text-sm transition-all duration-200 font-medium hover:shadow-lg transform hover:scale-105"
-										>
-											+ {value}
-											<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-full transition-opacity duration-200"></div>
-										</button>
-									{/each}
-								</div>
-							</div>
-						{/if}
-						
-						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-							{#each ritualSession.declared_values as value, index}
-								<div class="bg-gray-700 rounded-xl p-4 flex items-center justify-between group hover:bg-gray-600 transition-colors">
-									<span class="text-white font-medium">✦ {value}</span>
-									<button
-										on:click={() => removeValue(index)}
-										class="text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-									>
-										✕
-									</button>
-								</div>
-							{/each}
-						</div>
-						
-						{#if ritualSession.declared_values.length === 0}
-							<p class="text-center text-gray-400 italic">Add 3-5 values that will guide your manifestation...</p>
-						{/if}
-					</div>
-
-				{:else if ritualStage === 2}
-					<!-- Stage 3: Advisor Summoning -->
-					<div class="space-y-6">
-						<div class="text-center">
-							<div class="text-5xl mb-4">🧙‍♀️</div>
-							<h3 class="text-3xl font-bold text-white mb-4">Summon Your Advisors</h3>
-							<p class="text-gray-300 text-lg">Call upon wise guides - ancestors, archetypes, or inspiring figures.</p>
-						</div>
-						
-						<div class="bg-gray-700 rounded-xl p-6 space-y-4">
-							<div class="grid md:grid-cols-3 gap-4">
-								<div>
-									<label class="block text-gray-300 mb-2">Advisor Name</label>
-									<input
-										bind:value={currentAdvisorName}
-										placeholder="e.g., Joanna Macy"
-										class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-										use:focusOnMount
-									/>
-								</div>
-								<div>
-									<label class="block text-gray-300 mb-2">Type</label>
-									<select
-										bind:value={selectedAdvisorType}
-										class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-									>
-										<option value="real">Historical/Real Person</option>
-										<option value="mythic">Mythic/Spiritual Being</option>
-										<option value="archetype">Archetypal Force</option>
-									</select>
-								</div>
-								<div>
-									<label class="block text-gray-300 mb-2">Lens/Wisdom</label>
-									<input
-										bind:value={currentAdvisorLens}
-										placeholder="e.g., deep ecology"
-										class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-										use:focusOnMount
-									/>
-								</div>
-							</div>
-							<button
-								on:click={addAdvisor}
-								disabled={!currentAdvisorName.trim() || !currentAdvisorLens.trim() || ritualSession.advisors.length >= 5 || isGeneratingAdvisor}
-								class="group relative w-full bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-gray-600 disabled:to-gray-600 text-white py-4 rounded-xl transition-all duration-200 font-semibold shadow-lg hover:shadow-xl disabled:hover:shadow-lg transform hover:scale-105 disabled:hover:scale-100"
-							>
-								{#if isGeneratingAdvisor}
-									<div class="flex items-center gap-3">
-										<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-										{generationProgress}
-									</div>
-								{:else}
-									Summon Advisor
-								{/if}
-								<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-xl transition-opacity duration-200"></div>
-							</button>
-						</div>
-						
-						
-						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-							{#each ritualSession.advisors as advisor, index}
-								<div class="bg-gray-700 rounded-xl p-4 group hover:bg-gray-600 transition-colors">
-									<div class="flex items-start justify-between">
-										<div class="flex-1">
-											<h4 class="text-white font-bold">{advisor.name}</h4>
-											<p class="text-gray-300 text-sm capitalize">{advisor.type}</p>
-											<p class="text-gray-300 text-sm italic">"{advisor.lens}"</p>
-										</div>
-										<button
-											on:click={() => removeAdvisor(index)}
-											class="text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-										>
-											✕
-										</button>
-									</div>
-								</div>
-							{/each}
-						</div>
-
-						<!-- Holon Advisors Management -->
-						<div class="bg-gray-700 rounded-xl p-6">
-							<div class="mb-4">
-								<h4 class="text-gray-300 font-medium">Your Created Advisors:</h4>
-							</div>
-							{#if holonAdvisors.length > 0}
-								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-									{#each holonAdvisors as advisor}
-										<div class="bg-gray-600 rounded-xl p-4 group hover:bg-gray-500 transition-colors">
-											<div class="flex-1 mb-3">
-												<h5 class="text-white font-bold">{advisor.name}</h5>
-												<p class="text-gray-300 text-sm capitalize">{advisor.type}</p>
-												<p class="text-gray-300 text-sm italic">"{advisor.lens}"</p>
-											</div>
-											<div class="flex gap-2">
-												<button
-													on:click={() => openAdvisorChat(advisor)}
-													class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-3 rounded-lg text-sm transition-colors"
-												>
-													💬 Chat
-												</button>
-												<button
-													on:click={() => deleteHolonAdvisor(advisor.name)}
-													class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-3 rounded-lg text-sm transition-colors"
-												>
-													🗑️ Discard
-												</button>
-												<button
-													on:click={() => addAdvisorToRitual(advisor)}
-													disabled={ritualSession.advisors.length >= 5 || ritualSession.advisors.some(a => a.name === advisor.name && a.lens === advisor.lens)}
-													class="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white py-2 px-3 rounded-lg text-sm transition-colors"
-												>
-													➕ Add to Ritual
-												</button>
-											</div>
-										</div>
-									{/each}
-								</div>
-							{:else}
-								<p class="text-gray-400 text-sm italic">No advisors created yet. Use the form above to create your first advisor.</p>
-							{/if}
-						</div>
-					</div>
-
-				{:else if ritualStage === 3}
-					<!-- Stage 4: Council Dialogue -->
-					<div class="space-y-6">
-						<div class="text-center">
-							<div class="text-5xl mb-4">🔍</div>
-							<h3 class="text-3xl font-bold text-white mb-4">The Council Speaks</h3>
-							<p class="text-gray-300 text-lg">Listen as your advisors respond to your wish through the lens of your values.</p>
-						</div>
-						
-						{#if ritualSession.council_dialogue.length === 0}
-							<div class="text-center">
-								<button
-									on:click={generateCouncilDialogue}
-									disabled={isGeneratingCouncil}
-									class="group relative bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white px-12 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-xl hover:shadow-2xl disabled:hover:shadow-xl transform hover:scale-105 disabled:hover:scale-100"
-								>
-									{#if isGeneratingCouncil}
-										<div class="flex items-center gap-3">
-											<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-											Summoning Council Wisdom...
-										</div>
-									{:else}
-										Convene the Council
-									{/if}
-									<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-2xl transition-opacity duration-300"></div>
-								</button>
-							</div>
-						{:else}
-							<div class="space-y-4">
-								{#each ritualSession.council_dialogue as dialogue}
-									<div class="bg-gray-700 rounded-xl p-6 border border-gray-600">
-										<h4 class="text-gray-300 font-bold mb-3 flex items-center gap-2">
-											<span class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-sm">
-												{dialogue.advisor.charAt(0)}
-											</span>
-											{dialogue.advisor}
-										</h4>
-										<p class="text-white italic leading-relaxed">"{dialogue.response}"</p>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</div>
-
-				{:else if ritualStage === 4}
-					<!-- Stage 5: Design Streams -->
-					<div class="space-y-6">
-						<div class="text-center">
-							<div class="text-5xl mb-4">🛠</div>
-							<h3 class="text-3xl font-bold text-white mb-4">Pathways Forward</h3>
-							<p class="text-gray-300 text-lg">From wisdom comes action. Choose your path of manifestation.</p>
-						</div>
-						
-						{#if ritualSession.design_streams.length === 0}
-							<div class="text-center">
-								<button
-									on:click={generateDesignStreams}
-									disabled={isGeneratingDesign}
-									class="group relative bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white px-12 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-xl hover:shadow-2xl disabled:hover:shadow-xl transform hover:scale-105 disabled:hover:scale-100"
-								>
-									{#if isGeneratingDesign}
-										<div class="flex items-center gap-3">
-											<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-											Weaving Design Streams...
-										</div>
-									{:else}
-										Generate Design Paths
-									{/if}
-									<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-2xl transition-opacity duration-300"></div>
-								</button>
-							</div>
-						{:else}
-							<div class="grid md:grid-cols-2 gap-6">
-								{#each ritualSession.design_streams as stream}
-									<div class="bg-gray-700 rounded-xl p-6 border border-gray-600 hover:bg-gray-600 transition-colors">
-										<h4 class="text-xl font-bold text-white mb-3">{stream.name}</h4>
-										<p class="text-gray-300 mb-4">{stream.description}</p>
-										
-										<div class="space-y-3">
-											<div>
-												<h5 class="text-gray-300 font-medium mb-2">Materials Needed:</h5>
-												<div class="flex flex-wrap gap-2">
-													{#each stream.materials as material}
-														<span class="bg-gray-600 text-gray-200 px-3 py-1 rounded-full text-sm">{material}</span>
-													{/each}
-												</div>
-											</div>
-											
-											<div>
-												<h5 class="text-gray-300 font-medium mb-2">Steps:</h5>
-												<ol class="space-y-1">
-													{#each stream.steps as step, index}
-														<li class="text-gray-200 text-sm flex items-start gap-2">
-															<span class="text-gray-400 font-medium">{index + 1}.</span>
-															{step}
-														</li>
-													{/each}
-												</ol>
-											</div>
-										</div>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</div>
-
-				{:else if ritualStage === 5}
-					<!-- Stage 6: Closure & Gift -->
-					<div class="space-y-6 text-center">
-						<div class="text-6xl mb-4">🎴</div>
-						<h3 class="text-3xl font-bold text-white mb-4">Your Sacred Artifact</h3>
-						<p class="text-gray-300 text-lg">The ritual is complete. Receive your gift from the council.</p>
-						
-						<div class="bg-gray-700 rounded-2xl p-8 border border-gray-600 max-w-2xl mx-auto">
-							<div class="text-4xl mb-4">{ritualSession.ritual_artifact.ascii_glyph}</div>
-							<blockquote class="text-xl text-white italic leading-relaxed mb-6">
-								"{ritualSession.ritual_artifact.text}"
-							</blockquote>
-							
-							<div class="space-y-3 text-left">
-								<h4 class="text-gray-300 font-bold text-center mb-4">Voices from the Council:</h4>
-								{#each Object.entries(ritualSession.ritual_artifact.quotes) as [advisor, quote]}
-									<div class="bg-gray-600 rounded-lg p-3">
-										<span class="text-gray-300 font-medium">{advisor}:</span>
-										<span class="text-white"> "{quote}"</span>
-									</div>
-								{/each}
-							</div>
-						</div>
-						
-						<div class="flex gap-4 justify-center">
-							<button 
-								on:click={createHolonFromRitual}
-								class="group relative bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-10 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 flex items-center gap-2"
-							>
-								📜 Receive Scroll
-								<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-2xl transition-opacity duration-300"></div>
-							</button>
-							<button 
-								on:click={closeRitual}
-								class="group relative bg-gray-600 hover:bg-gray-700 text-white px-10 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
-							>
-								Quit Ritual
-								<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-5 rounded-2xl transition-opacity duration-300"></div>
-							</button>
-						</div>
-					</div>
-				{/if}
-			</div>
-
-			<!-- Navigation Footer -->
-			<div class="p-6 border-t border-gray-700 flex justify-between items-center">
-				<button
-					on:click={prevStage}
-					disabled={ritualStage === 0}
-					class="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 disabled:text-gray-500 text-white px-6 py-2 rounded-xl transition-colors"
-				>
-					← Previous
-				</button>
-				
-				<div class="text-gray-300">
-					Stage {ritualStage + 1} of 6
-				</div>
-				
-				<button
-					on:click={nextStage}
-					disabled={ritualStage === 5 || 
-						(ritualStage === 0 && !ritualSession.wish_statement.trim()) ||
-						(ritualStage === 1 && ritualSession.declared_values.length === 0) ||
-						(ritualStage === 2 && ritualSession.advisors.length === 0)}
-					class="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-xl transition-colors"
-				>
-					{ritualStage === 5 ? 'Complete' : 'Next →'}
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
-
-<style>
-	.line-clamp-2 {
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
-	}
-
-	.metatron-container {
-		position: relative;
-		width: 100%;
-		height: 100%;
-	}
-
-	.metatron-circle {
-		position: absolute;
-		width: var(--diam);
-		height: var(--diam);
-		border-radius: 50%;
-		background: rgba(198, 198, 197, 0.3);
-		transition: all 0.3s ease;
-		cursor: pointer;
-		transform: translate(-50%, -50%);
-		pointer-events: auto;
-		z-index: 20;
-		border: 2px solid rgba(255, 255, 255, 0.2);
-	}
-
-	.metatron-circle:hover {
-		background: rgba(198, 198, 197, 0.5);
-		border-color: rgba(255, 255, 255, 0.4);
-		box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
-	}
-
-	@keyframes pulse {
-		0% {
-			opacity: 0.8;
-		}
-		50% {
-			opacity: 0.4;
-		}
-		100% {
-			opacity: 0;
-		}
-	}
-
-	.metatron-circle:hover::before {
-		content: '';
-		position: absolute;
-		top: 0;
-		left: 0;
-		width: 100%;
-		height: 100%;
-		border-radius: 50%;
-		background: rgba(255, 255, 255, 0.3);
-		animation: pulse 1.5s ease-out infinite;
-		pointer-events: none;
-	}
-
-	.metatron-circle.editing {
-		background: rgba(59, 130, 246, 0.6);
-		border-color: rgba(59, 130, 246, 0.8);
-		box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
-	}
-
-	/* Center circle */
-	.center-circle {
-		left: 50%;
-		top: 50%;
-	}
-
-	/* Inner ring circles - vertical */
-	.inner-circle.top {
-		left: 50%;
-		top: 28.6%;
-	}
-
-	.inner-circle.top-inner {
-		left: 50%;
-		top: 39.3%;
-	}
-
-	.inner-circle.bottom-inner {
-		left: 50%;
-		top: 60.7%;
-	}
-
-	.inner-circle.bottom {
-		left: 50%;
-		top: 71.4%;
-	}
-
-	/* Inner ring circles - horizontal */
-	.inner-circle.top-left {
-		left: 31.5%;
-		top: 39.3%;
-	}
-
-	.inner-circle.top-left-inner {
-		left: 40.8%;
-		top: 44.7%;
-	}
-
-	.inner-circle.top-right-inner {
-		left: 59.2%;
-		top: 44.7%;
-	}
-
-	.inner-circle.top-right {
-		left: 68.5%;
-		top: 39.3%;
-	}
-
-	.inner-circle.bottom-left {
-		left: 31.5%;
-		top: 60.7%;
-	}
-
-	.inner-circle.bottom-left-inner {
-		left: 40.8%;
-		top: 55.3%;
-	}
-
-	.inner-circle.bottom-right-inner {
-		left: 59.2%;
-		top: 55.3%;
-	}
-
-	.inner-circle.bottom-right {
-		left: 68.5%;
-		top: 60.7%;
-	}
-
-	/* Outer ring circles - vertical */
-	.outer-circle.top {
-		left: 50%;
-		top: 18.0%;
-	}
-
-	.outer-circle.top-outer {
-		left: 50%;
-		top: 7.3%;
-	}
-
-	.outer-circle.bottom {
-		left: 50%;
-		top: 82.0%;
-	}
-
-	.outer-circle.bottom-outer {
-		left: 50%;
-		top: 92.7%;
-	}
-
-	/* Outer ring circles - corners */
-	.outer-circle.top-left {
-		left: 22.3%;
-		top: 34.0%;
-	}
-
-	.outer-circle.top-left-outer {
-		left: 13.0%;
-		top: 28.6%;
-	}
-
-	.outer-circle.top-right {
-		left: 77.7%;
-		top: 34.0%;
-	}
-
-	.outer-circle.top-right-outer {
-		left: 87.0%;
-		top: 28.6%;
-	}
-
-	.outer-circle.bottom-left {
-		left: 22.3%;
-		top: 66.0%;
-	}
-
-	.outer-circle.bottom-left-outer {
-		left: 13.0%;
-		top: 71.4%;
-	}
-
-	.outer-circle.bottom-right {
-		left: 77.7%;
-		top: 66.0%;
-	}
-
-	.outer-circle.bottom-right-outer {
-		left: 87.0%;
-		top: 71.4%;
-	}
-
-	.label-text {
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%);
-		color: #ffffff;
-		font-size: clamp(0.5rem, 2vw, 0.75rem);
-		text-align: center;
-		pointer-events: none;
-		white-space: normal;
-		word-wrap: break-word;
-		max-width: 80%;
-		max-height: 80%;
-		overflow: hidden;
-		line-height: 1.2;
-	}
-</style>
-
-<!-- Council Chat Modal -->
-<AIChatModal 
-	bind:isOpen={showCouncilChat}
-	title="Council Chat"
-	subtitle="Multi-member consultation in progress"
-	icon="🎭"
-	theme="indigo"
-	messages={councilChatMessages}
-	onClose={closeCouncilChat}
-	onSend={sendCouncilMessage}
-	placeholder="Ask the council for guidance..."
-	disabled={isCouncilResponding}
-	bind:isLoading={isCouncilResponding}
-/>
-
-<!-- Individual Advisor Chat Modal -->
-<AIChatModal 
-	bind:isOpen={showAdvisorChat}
-	title={selectedAdvisorForChat?.name || "Advisor Chat"}
-	subtitle="One-on-one consultation"
-	icon="🧙‍♀️"
-	theme="indigo"
-	messages={advisorChatMessages}
-	onClose={closeAdvisorChat}
-	onSend={sendAdvisorMessage}
-	placeholder="Ask your advisor for guidance..."
-	disabled={isAdvisorResponding}
-	bind:isLoading={isAdvisorResponding}
-/>

@@ -323,22 +323,15 @@
 			showCouncilChat = true;
 			// Initialize council chat with the welcome message
 			if (councilChatMessages.length === 0) {
-				const councilIntroMessage = {
-					role: 'assistant' as const,
+				councilChatMessages = [{
+					role: 'assistant',
 					content: `[The council chamber hums with anticipation as the Holonic Ecosystem Council assembles. Each member takes their place around the Metatron table, their presence commanding attention. The air crackles with the energy of diverse perspectives and ancient wisdom.]
 
 Welcome, seeker. The Holonic Ecosystem Council is now in session. We are twelve unique egregores, each embodying different aspects of human storytelling and philosophical tradition. We stand ready to guide you through the complexities of your journey, using Systems Thinking, Liberating Structures, and the wisdom of the Sombrero Hat metaphor.
 
 What matter brings you before the council today?`,
-					displayContent: '',
-					isTyping: true,
-					timestamp: new Date(),
-					advisor: 'Council'
-				};
-				
-				councilChatMessages = [councilIntroMessage];
-				// Apply typing effect to the introduction
-				typeMessage(councilIntroMessage, 'council');
+					timestamp: new Date()
+				}];
 			}
 			return;
 		}
@@ -596,13 +589,13 @@ What matter brings you before the council today?`,
 	}
 
 	// Open chat with advisor
-	async function openAdvisorChat(advisor: CouncilAdvisorExtended) {
+	function openAdvisorChat(advisor: CouncilAdvisorExtended) {
 		selectedAdvisorForChat = advisor;
 		showAdvisorChat = true;
 		advisorChatMessages = []; // Clear previous messages
 		
 		// Add immediate introduction
-		await addImmediateAdvisorIntroduction(advisor);
+		addImmediateAdvisorIntroduction(advisor);
 	}
 
 	// Add advisor to ritual
@@ -1092,11 +1085,6 @@ What matter brings you before the council today?`,
 			}
 		});
 
-		// Assign colors to council members if not already assigned
-		if (Object.keys(councilMemberColors).length === 0) {
-			assignCouncilMemberColors(councilMembers);
-		}
-
 		// Analyze user message to determine which characters should respond
 		const respondingMembers = analyzeUserMessage(userMessage, councilMembers);
 		
@@ -1139,7 +1127,7 @@ What matter brings you before the council today?`,
 		}
 	}
 
-	async function addImmediateAdvisorIntroduction(advisor: CouncilAdvisorExtended) {
+	function addImmediateAdvisorIntroduction(advisor: CouncilAdvisorExtended) {
 		// Generate immediate introduction based on advisor type and characteristics
 		let stageDirections = '';
 		let introduction = '';
@@ -1165,14 +1153,13 @@ What matter brings you before the council today?`,
 		const introMessage: typeof advisorChatMessages[0] = {
 			role: 'assistant' as const,
 			content: `${stageDirections} ${introduction}`,
-			displayContent: '',
-			isTyping: true,
+			displayContent: `${stageDirections} ${introduction}`,
+			isTyping: false,
 			timestamp: new Date(),
 			advisor: advisor.name
 		};
 
 		advisorChatMessages = [...advisorChatMessages, introMessage];
-		await typeMessage(introMessage, 'advisor');
 	}
 
 	async function addAdvisorIntroduction(advisor: CouncilAdvisorExtended) {
@@ -1213,7 +1200,7 @@ Keep it warm, welcoming, and in character.
 			};
 
 			advisorChatMessages = [...advisorChatMessages, introMessage];
-			await typeMessage(introMessage, 'advisor');
+			await typeMessage(introMessage);
 
 		} catch (error) {
 			console.error('Error generating advisor introduction:', error);
@@ -1228,7 +1215,7 @@ Keep it warm, welcoming, and in character.
 			};
 
 			advisorChatMessages = [...advisorChatMessages, fallbackIntro];
-			await typeMessage(fallbackIntro, 'advisor');
+			await typeMessage(fallbackIntro);
 		}
 	}
 
@@ -1268,14 +1255,6 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 
 	// Council chat state
 	let showCouncilChat = false;
-	// Color assignment for council members in current chat session
-	let councilMemberColors: Record<string, string> = {};
-	let colorIndex = 0;
-	const councilColors = [
-		'bg-purple-600', 'bg-blue-600', 'bg-green-600', 'bg-yellow-600', 
-		'bg-red-600', 'bg-indigo-600', 'bg-pink-600', 'bg-teal-600'
-	];
-
 	let councilChatMessages: Array<{
 		role: 'user' | 'assistant';
 		content: string;
@@ -1283,8 +1262,6 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 		isTyping?: boolean;
 		timestamp: Date;
 		advisor?: string;
-		speaker?: string;
-		speakerColor?: string;
 	}> = [];
 	let currentCouncilMessage = '';
 	let isCouncilResponding = false;
@@ -1327,22 +1304,6 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 		}
 	}
 
-	// Assign colors to council members for the current chat session
-	function assignCouncilMemberColors(members: CouncilAdvisorExtended[]) {
-		councilMemberColors = {};
-		colorIndex = 0;
-		
-		members.forEach(member => {
-			const cleanName = member.name.split(',')[0].trim();
-			if (!councilMemberColors[cleanName]) {
-				councilMemberColors[cleanName] = councilColors[colorIndex % councilColors.length];
-				colorIndex++;
-			}
-		});
-		
-		console.log('Assigned colors to council members:', councilMemberColors);
-	}
-
 	function closeCouncilChat() {
 		showCouncilChat = false;
 	}
@@ -1371,7 +1332,7 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 			
 			// Add immediate introduction message if this is a new chat
 			if (advisorChatMessages.length === 0) {
-				await addImmediateAdvisorIntroduction(fullAdvisor);
+				addImmediateAdvisorIntroduction(fullAdvisor);
 			}
 		}
 		
@@ -1409,7 +1370,7 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 			};
 			
 			advisorChatMessages = [...advisorChatMessages, aiMessage];
-			await typeMessage(aiMessage, 'advisor');
+			await typeAdvisorMessage(aiMessage);
 			
 		} catch (error) {
 			console.error('Error generating advisor response:', error);
@@ -1423,81 +1384,25 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 			};
 			
 			advisorChatMessages = [...advisorChatMessages, errorMessage];
-			await typeMessage(errorMessage, 'advisor');
+			await typeAdvisorMessage(errorMessage);
 		} finally {
 			isAdvisorResponding = false;
 		}
 	}
 
-	// Unified typing function that works for both council and advisor messages
-	async function typeMessage(message: any, chatType: 'council' | 'advisor', delayMs: number = 15) {
+	async function typeMessage(message: any, delayMs: number = 15) {
 		message.isTyping = true;
 		message.displayContent = '';
-		
-		// Update the appropriate message array
-		if (chatType === 'council') {
-			councilChatMessages = [...councilChatMessages];
-		} else if (chatType === 'advisor') {
-			advisorChatMessages = [...advisorChatMessages];
-		}
+		councilChatMessages = [...councilChatMessages];
 		
 		for (let i = 0; i < message.content.length; i++) {
 			message.displayContent += message.content[i];
-			
-			// Update the appropriate message array
-			if (chatType === 'council') {
-				councilChatMessages = [...councilChatMessages];
-			} else if (chatType === 'advisor') {
-				advisorChatMessages = [...advisorChatMessages];
-			}
-			
+			councilChatMessages = [...councilChatMessages];
 			await new Promise(resolve => setTimeout(resolve, delayMs));
 		}
 		
 		message.isTyping = false;
-		
-		// Final update to the appropriate message array
-		if (chatType === 'council') {
-			councilChatMessages = [...councilChatMessages];
-		} else if (chatType === 'advisor') {
-			advisorChatMessages = [...advisorChatMessages];
-		}
-	}
-
-	// Parse structured council response and create individual speaker messages
-	function parseCouncilResponse(response: string): Array<{
-		speaker: string;
-		content: string;
-		stageDirections?: string;
-	}> {
-		const speakers: Array<{speaker: string; content: string; stageDirections?: string}> = [];
-		
-		// Split by speaker pattern (e.g., "Speaker Name: content")
-		const speakerPattern = /^([^:]+):\s*(.+)$/gm;
-		let match;
-		
-		while ((match = speakerPattern.exec(response)) !== null) {
-			const speaker = match[1].trim();
-			let content = match[2].trim();
-			
-			// Extract stage directions if present
-			let stageDirections = '';
-			const stageDirectionPattern = /^\[([^\]]+)\]\s*(.+)$/;
-			const stageMatch = content.match(stageDirectionPattern);
-			
-			if (stageMatch) {
-				stageDirections = stageMatch[1];
-				content = stageMatch[2];
-			}
-			
-			speakers.push({
-				speaker,
-				content,
-				stageDirections
-			});
-		}
-		
-		return speakers;
+		councilChatMessages = [...councilChatMessages];
 	}
 
 	async function sendCouncilMessage(userMessage: string) {
@@ -1508,47 +1413,17 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 		try {
 			const councilResponse = await generateCouncilResponse(userMessage);
 			
-			// Parse the response into individual speaker messages
-			const speakers = parseCouncilResponse(councilResponse);
+			const aiMessage: typeof councilChatMessages[0] = {
+				role: 'assistant' as const,
+				content: councilResponse,
+				displayContent: '',
+				isTyping: true,
+				timestamp: new Date(),
+				advisor: 'Council'
+			};
 			
-			if (speakers.length === 0) {
-				// Fallback: treat as single council message
-				const aiMessage: typeof councilChatMessages[0] = {
-					role: 'assistant' as const,
-					content: councilResponse,
-					displayContent: '',
-					isTyping: true,
-					timestamp: new Date(),
-					advisor: 'Council'
-				};
-				
-				councilChatMessages = [...councilChatMessages, aiMessage];
-				await typeMessage(aiMessage, 'council');
-			} else {
-				// Create individual messages for each speaker
-				for (const speakerData of speakers) {
-					const speakerName = speakerData.speaker;
-					const speakerColor = councilMemberColors[speakerName] || 'bg-gray-600';
-					
-					const fullContent = speakerData.stageDirections 
-						? `[${speakerData.stageDirections}] ${speakerData.content}`
-						: speakerData.content;
-					
-					const speakerMessage: typeof councilChatMessages[0] = {
-						role: 'assistant' as const,
-						content: fullContent,
-						displayContent: '',
-						isTyping: true,
-						timestamp: new Date(),
-						advisor: 'Council',
-						speaker: speakerName,
-						speakerColor: speakerColor
-					};
-					
-					councilChatMessages = [...councilChatMessages, speakerMessage];
-					await typeMessage(speakerMessage, 'council');
-				}
-			}
+			councilChatMessages = [...councilChatMessages, aiMessage];
+			await typeCouncilMessage(aiMessage);
 			
 		} catch (error) {
 			console.error('Error generating council response:', error);
@@ -1562,7 +1437,7 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 			};
 			
 			councilChatMessages = [...councilChatMessages, errorMessage];
-			await typeMessage(errorMessage, 'council');
+			await typeCouncilMessage(errorMessage);
 		} finally {
 			isCouncilResponding = false;
 		}
@@ -1581,7 +1456,24 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 	}> = [];
 	let isAdvisorResponding = false;
 
+	async function typeCouncilMessage(message: any, delayMs: number = 15) {
+		message.isTyping = true;
+		message.displayContent = '';
+		councilChatMessages = [...councilChatMessages];
+		for (let i = 0; i < message.content.length; i++) {
+			message.displayContent += message.content[i];
+			councilChatMessages = [...councilChatMessages];
+			await new Promise(resolve => setTimeout(resolve, delayMs));
+		}
+		message.isTyping = false;
+		councilChatMessages = [...councilChatMessages];
+	}
 
+	async function typeAdvisorMessage(message: any, delayMs: number = 15) {
+		// Remove typing effect for natural conversation flow
+		message.displayContent = message.content;
+		advisorChatMessages = [...advisorChatMessages];
+	}
 
 	// Test function to verify HoloSphere advisor integration
 	async function testHoloSphereAdvisorIntegration() {
@@ -1827,10 +1719,7 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 
 <!-- Member Detail Modal -->
 {#if showMemberModal && selectedMember}
-	<div 
-		class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-		on:keydown={(e) => e.key === 'Escape' && closeMemberModal()}
-	>
+	<div class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
 		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700">
 			<div class="p-6">
 				<div class="flex items-center justify-between mb-6">
@@ -1882,10 +1771,7 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 
 <!-- Circle Selection Modal -->
 {#if showCircleSelectionModal && selectedCircleForAction}
-	<div 
-		class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
-		on:keydown={(e) => e.key === 'Escape' && closeCircleSelectionModal()}
-	>
+	<div class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
 		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700">
 			<div class="p-6">
 				<div class="flex items-center justify-between mb-6">
@@ -1938,10 +1824,7 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 
 <!-- Ritual Interface Modal -->
 {#if showRitual}
-	<div 
-		class="fixed inset-0 z-50 overflow-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-		on:keydown={(e) => e.key === 'Escape' && closeRitual()}
-	>
+	<div class="fixed inset-0 z-50 overflow-auto bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
 		<div class="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl relative border border-gray-700">
 			<!-- Ritual Header -->
 			<div class="p-6 border-b border-gray-700">
@@ -2121,6 +2004,31 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 							</button>
 						</div>
 						
+						{#if previousAdvisors.length > 0}
+							<div class="bg-gray-700 rounded-xl p-4 mb-4">
+								<h4 class="text-gray-300 font-medium mb-3">Previous Advisors:</h4>
+								<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+									{#each previousAdvisors.filter(advisor => 
+										!ritualSession.advisors.some(a => a.name === advisor.name && a.lens === advisor.lens)
+									) as advisor}
+										<button
+											on:click={() => selectPreviousAdvisor(advisor)}
+											class="group relative bg-gray-600 hover:bg-gradient-to-r hover:from-indigo-600 hover:to-purple-600 text-left p-4 rounded-xl transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
+										>
+											<div class="font-medium text-white">+ {advisor.name}</div>
+											<div class="text-gray-300 text-sm capitalize">{advisor.type}</div>
+											<div class="text-gray-400 text-sm italic">"{advisor.lens}"</div>
+											<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-xl transition-opacity duration-200"></div>
+										</button>
+									{/each}
+								</div>
+								{#if previousAdvisors.filter(advisor => 
+									!ritualSession.advisors.some(a => a.name === advisor.name && a.lens === advisor.lens)
+								).length === 0}
+									<p class="text-gray-400 text-sm italic">All previous advisors are already selected</p>
+								{/if}
+							</div>
+						{/if}
 						
 						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 							{#each ritualSession.advisors as advisor, index}
@@ -2144,8 +2052,14 @@ Respond as ${selectedAdvisorForChat.name} with stage directions and in character
 
 						<!-- Holon Advisors Management -->
 						<div class="bg-gray-700 rounded-xl p-6">
-							<div class="mb-4">
+							<div class="flex items-center justify-between mb-4">
 								<h4 class="text-gray-300 font-medium">Your Created Advisors:</h4>
+								<button
+									on:click={loadHolonAdvisors}
+									class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm transition-colors"
+								>
+									🔄 Reload
+								</button>
 							</div>
 							{#if holonAdvisors.length > 0}
 								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
