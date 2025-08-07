@@ -1147,7 +1147,7 @@
                                 >
                                     <div class="flex items-center gap-2">
                                         <img
-                                            src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
+                                            src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
                                             alt={`${participant.firstName} ${participant.lastName || ""}`}
                                             class="w-8 h-8 rounded-full"
                                         />
@@ -1277,7 +1277,7 @@
                                     type="button"
                                 >
                                     <img
-                                        src={`https://gun.holons.io/getavatar?user_id=${user.id}`}
+                                        src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
                                         alt={user.first_name}
                                         class="w-6 h-6 rounded-full"
                                     />

@@ -616,7 +616,7 @@
                                             >
                                                 <div class="relative flex-shrink-0">
                                                     <img 
-                                                        src={`https://gun.holons.io/getavatar?user_id=${user.id || userId}`}
+                                                        src={`https://telegram.holons.io/getavatar?user_id=${user.id || userId}`}
                                                         alt={`${user.first_name} ${user.last_name || ''}`}
                                                         class="w-10 h-10 rounded-full object-cover border-2 border-gray-500 aspect-square flex-shrink-0"
                                                         on:error={(e) => {

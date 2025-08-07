@@ -400,7 +400,7 @@
 													<div class="relative">
 														<img
 															class="w-6 h-6 rounded-full border-2 border-gray-300"
-															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
+															src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
 															alt={participant.username}
 														/>
 														<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
@@ -472,7 +472,7 @@
 													<div class="relative">
 														<img
 														class="w-16 h-16 rounded-full border-2 border-gray-300"
-															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
+															src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
 															alt={participant.username}
 														/>
 													<div class="absolute invisible group-hover:visible bg-gray-900 text-white text-xs rounded py-1 px-2 bottom-full mb-2 left-1/2 transform -translate-x-1/2 whitespace-nowrap z-10">
