@@ -840,7 +840,7 @@
 											{#if offer.initiator?.id}
 												<img 
 													class="w-8 h-8 rounded-full border border-gray-400 flex-shrink-0" 
-													src={`https://gun.holons.io/getavatar?user_id=${offer.initiator.id}`} 
+													src={`https://telegram.holons.io/getavatar?user_id=${offer.initiator.id}`} 
 													alt={offer.initiator.firstName || offer.initiator.username || 'User'} 
 												/>
 											{:else}
@@ -968,7 +968,7 @@
 													<div class="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 user-dropdown">
 														{#each Object.entries(userStore).filter(([userId, user]) => !offer.participants?.some(p => p.id === user.id)) as [userId, user]}
 															<button class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2" on:click|stopPropagation={() => takeOfferOrNeed(offer, user)}>
-																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://gun.holons.io/getavatar?user_id=${user.id}`} alt={user.first_name} />
+																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://telegram.holons.io/getavatar?user_id=${user.id}`} alt={user.first_name} />
 																<span>{user.first_name} {user.last_name || ''}</span>
 															</button>
 														{/each}
@@ -986,7 +986,7 @@
 															<div class="relative">
 																<img
 																	class="w-5 h-5 rounded-full border border-white shadow-sm"
-																	src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
+																	src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
 																	alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
 																/>
 															</div>
@@ -1043,7 +1043,7 @@
 											{#if need.initiator?.id}
 												<img 
 													class="w-8 h-8 rounded-full border border-gray-400 flex-shrink-0" 
-													src={`https://gun.holons.io/getavatar?user_id=${need.initiator.id}`} 
+													src={`https://telegram.holons.io/getavatar?user_id=${need.initiator.id}`} 
 													alt={need.initiator.firstName || need.initiator.username || 'User'} 
 												/>
 											{:else}
@@ -1171,7 +1171,7 @@
 													<div class="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50 user-dropdown">
 														{#each Object.entries(userStore).filter(([userId, user]) => !need.participants?.some(p => p.id === user.id)) as [userId, user]}
 															<button class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2" on:click|stopPropagation={() => takeOfferOrNeed(need, user)}>
-																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://gun.holons.io/getavatar?user_id=${user.id}`} alt={user.first_name} />
+																<img class="w-6 h-6 rounded-full border border-gray-400" src={`https://telegram.holons.io/getavatar?user_id=${user.id}`} alt={user.first_name} />
 																<span>{user.first_name} {user.last_name || ''}</span>
 															</button>
 														{/each}
@@ -1189,7 +1189,7 @@
 															<div class="relative">
 																<img
 																	class="w-5 h-5 rounded-full border border-white shadow-sm"
-																	src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
+																	src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
 																	alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
 																/>
 															</div>

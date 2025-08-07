@@ -1571,7 +1571,7 @@
 													{#if participant.id}
 														<img 
 															class="w-5 h-5 sm:w-7 sm:h-7 rounded-full border-1 sm:border-2 border-white object-cover" 
-															src={`https://gun.holons.io/getavatar?user_id=${participant.id}`} 
+															src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`} 
 															alt={participant.firstName || participant.username || 'User'} 
 															title={`${participant.firstName || participant.username} ${participant.lastName || ''}`}
 														/>

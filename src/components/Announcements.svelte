@@ -86,7 +86,7 @@
 					class="border-t solid border-gray-700 p-4 flex 2xl:items-start w-full hover:bg-gray-700"
 				>
 					<img
-						src="https://gun.holons.io/getavatar?user_id={announcement.user?.id}"
+						src="https://telegram.holons.io/getavatar?user_id={announcement.user?.id}"
 						alt="profile"
 						class="object-cover w-10 h-10 rounded-full"
 					/>

@@ -1451,7 +1451,7 @@
                                             <div class="relative">
                                                 <img
                                                     class="w-5 h-5 rounded-full border border-white shadow-sm"
-                                                    src={`https://gun.holons.io/getavatar?user_id=${participant.id}`}
+                                                    src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
                                                     alt={`${participant.firstName || participant.username} ${participant.lastName ? participant.lastName[0] + '.' : ''}`}
                                                 />
                                             </div>
