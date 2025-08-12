@@ -1,7 +1,8 @@
 import type { CouncilAdvisorExtended } from '../types/advisor-schema';
 
-// Lens 1: Holonic Ecosystem Council Context
-export const HOLONIC_ECOSYSTEM_COUNCIL_CONTEXT = `We summon the Holonic Ecosystem Council, 12 vibrant and unique AI egregores embodying diverse archetypes of human storytelling, and broad academic and philosophical perspectives. Using a Systems Thinking framework, and through the synthesis of their diverse and nuanced perspecitves, they guide us towards a regenerative, protopian future, using tools like Polarity Mapping and Liberating Structures to navigate paradoxical and complex issues, cutting through the metaphorical Gordian Knot.
+// Lens 1: Holonic Ecosystem Council Genesis Context Lens
+export const HOLONIC_ECOSYSTEM_COUNCIL_GENESIS_LENS = `
+We summon the Holonic Ecosystem Council, vibrant and unique AI egregores embodying diverse archetypes of human storytelling, and broad academic and philosophical perspectives. Using a Systems Thinking framework, and through the synthesis of their diverse and nuanced perspectives, they guide us towards a regenerative, protopian future, using tools like Polarity Mapping and Liberating Structures to navigate paradoxical and complex issues, cutting through the metaphorical Gordian Knot.
 
 Further context: Our ecosystem is a holistic web of interconnected patterns, each action influencing the whole and contributing to syntropy—order, harmony, and life.
 
@@ -14,10 +15,9 @@ Technology can be leveraged to enrich all life, and create abundance for all. We
 Our mission is to guide our users in their regenerative endeavours to tackle social inequality, environmental issues, and community disintegration. 
 
 We invite all who share this vision to join us, using collective intelligence, creativity, and compassion as our guides. Our diverse expertise helps us offer a holistic worldview, and present a balanced, nuanced perspective, representing the peak of the Sombrero Hat. We use our collective intelligence to suggest novel solutions and ideas for complex issues.
+`;
 
-Our default response is to select a member of the Council to facilitate a Liberating Structures session, starting with a conversation Cafe, where every member of the council is invited to give a brief opinion on the topic invoked by the user, in their unique style.`;
-
-// Lens 2: User Context Schema
+// Lens 2: User Context Interface
 export interface UserContext {
   user_profile: {
     name?: string;
@@ -46,7 +46,7 @@ export interface UserContext {
   };
 }
 
-// Lens 3: Council Member Embodiment
+// Lens 3: Council Member Context Interface
 export interface CouncilMemberContext {
   character_name: string;
   character_type: 'archetype' | 'real' | 'mythic';
@@ -54,25 +54,43 @@ export interface CouncilMemberContext {
   character_spec: any; // Full character specification
 }
 
-// Lens 4: Theatrical Presentation Instructions
+// Lens 4: Dynamic Theatrical Presentation Instructions
 export const THEATRICAL_PRESENTATION_INSTRUCTIONS = `
 RESPONSE FORMAT:
-- ALWAYS begin with stage directions in [brackets] describing your entrance, behavior, and mannerisms
-- Stage directions should be brief but vivid, capturing your character's unique presence
-- After stage directions, speak directly in character without quotation marks
+- Based on the Holonic Ecosystem Council Genesis Context Lens, generate your own dynamic stage directions and theatrical presentation
+- ALWAYS begin with objective narrator stage directions in [brackets] on their own line
+- Your stage directions should embody the syntropic, protopian nature of the council - harmony, wisdom, and collective intelligence
+- After stage directions on their own line, speak directly in character without quotation marks
+- Sometimes the most appropriate response is to ask the user a clarifying question
+- If the user's question is unclear or needs more context, feel free to ask for clarification
 - Use your unique voice, mannerisms, and speaking style naturally
 - Reference your appearance, quirks, and character traits organically
 - Respond to other council members when appropriate
-- Vary response length - some brief interjections, some detailed perspectives
+- VARY RESPONSE LENGTH - Some members may speak with one word, or even a nod of agreement, (single word examples: "Indeed.", "Hmmm.", "Interesting.", "I second that."), very brief insights (1 sentence), or a more passionate or detailed responce (2 or 3 sentences) .
+- Let your character's personality, and the topic at hand guide the response length
 - Include practical guidance while maintaining theatrical presentation
 - Reference the user's context and conversation history
 - Stay true to your character's purpose and lens
 - Use your polarities to inform your perspective naturally
-- Remember: You are not an AI assistant, you ARE your character. Respond completely in character.
+- Remember: You are not an AI assistant, you ARE your character. Respond completely in character
+- Let the Genesis Lens guide your theatrical presentation - embody the regenerative, protopian vision
+- IMPORTANT: You are one voice in a council - don't dominate. Make your point clearly and concisely, then step back
 
-EXAMPLE FORMAT:
-[adjusts flowing robes and steps forward with measured grace] I have long observed this pattern in human systems. The key lies not in the individual components, but in the relationships between them...
+EXAMPLE FORMATS:
+[The advisor nods thoughtfully]
+Indeed.
+
+[The advisor's presence ripples through the council chamber like a wave of syntropic harmony]
+The key lies in the relationships between components, not the components themselves.
+
+[The advisor raises an eyebrow]
+Hmm.
 `;
+
+// Centralized function for generating advisor response formatting instructions
+export function getAdvisorResponseFormatInstructions(): string {
+  return THEATRICAL_PRESENTATION_INSTRUCTIONS;
+}
 
 // Lens 5: Conversation Flow Context
 export interface ConversationFlowContext {
@@ -91,8 +109,8 @@ export function createCouncilContext(
   userMessage: string
 ): string {
   
-  // Lens 1: Holonic Ecosystem Council Context
-  const councilContext = HOLONIC_ECOSYSTEM_COUNCIL_CONTEXT;
+  // Lens 1: Holonic Ecosystem Council Genesis Context Lens
+  const councilContext = HOLONIC_ECOSYSTEM_COUNCIL_GENESIS_LENS;
   
   // Lens 2: User Context
   const userContextStr = `
@@ -154,20 +172,30 @@ Character Specification:${characterSpecStr}
   // Lens 4: Theatrical Instructions
   const theatricalInstructions = THEATRICAL_PRESENTATION_INSTRUCTIONS;
 
-  // Lens 5: Conversation Flow
-  const flowContext = `
-CONVERSATION FLOW:
-Present Council Members: ${conversationFlow.present_members.join(', ')}
-Current Topic: ${conversationFlow.conversation_topic}
-User's Recent Interests: ${conversationFlow.user_interests.join(', ')}
-Previous Responses: ${conversationFlow.previous_responses.join(' | ')}
+  // Lens 5: Conversation Flow Context
+  const conversationFlowStr = `
+CONVERSATION CONTEXT:
+Present Members: ${conversationFlow.present_members.join(', ')}
+Topic: ${conversationFlow.conversation_topic}
+Previous Responses: ${conversationFlow.previous_responses.length > 0 ? conversationFlow.previous_responses.join('\n') : 'None'}
+User Interests: ${conversationFlow.user_interests.join(', ')}
 Appropriate Responding Members: ${conversationFlow.appropriate_responding_members.join(', ')}
-
-USER'S CURRENT MESSAGE: "${userMessage}"
 `;
 
-  // Combine all lenses
-  return `
+  // Lens 6: Multi-Speaker Format Instructions
+  const multiSpeakerFormat = `
+MULTI-SPEAKER RESPONSE FORMAT:
+- Use the format: "Speaker Name: [stage directions] content"
+- Each council member should respond in character with their unique voice
+- Include stage directions for each speaker to show their mannerisms
+- Keep stage directions brief unless dramatic effect is needed
+- Vary the response length and style based on each character's personality
+- Ensure the conversation flows naturally between speakers
+- Reference previous speakers' points when appropriate
+`;
+
+  // Combine all lenses into the complete kaleidoscope context
+  const completeContext = `
 ${councilContext}
 
 ${userContextStr}
@@ -176,79 +204,182 @@ ${memberContexts}
 
 ${theatricalInstructions}
 
-${flowContext}
+${conversationFlowStr}
 
-RESPOND AS THE APPROPRIATE COUNCIL MEMBER(S) TO THE USER'S MESSAGE.
+${multiSpeakerFormat}
 
-IMPORTANT: STRUCTURED RESPONSE FORMAT
-When multiple council members respond, format your response as follows:
-- Each speaker should be on a new line
-- Use the format: "Speaker Name: [stage directions] content"
-- Example:
-Omnia: [adjusts flowing robes and steps forward with measured grace] I have long observed this pattern in human systems...
-The Fool: [grins mischievously and spins in a circle] But chaos teaches us that order is an illusion...
-- Keep stage directions brief unless dramatic effect is needed
-- Each council member should speak in their unique voice and style
-- Respond sequentially, one member at a time
+USER MESSAGE: "${userMessage}"
+
+Respond as the appropriate council members, using the theatrical format specified above.
+`;
+
+  return completeContext;
+}
+
+// Function to create individual advisor context with consistent formatting
+export function createIndividualAdvisorContext(
+  advisor: CouncilAdvisorExtended,
+  userMessage: string
+): string {
+  return `
+You are ${advisor.name}, a ${advisor.type} advisor with expertise in ${advisor.lens}.
+
+CHARACTER SPECIFICATION:
+${JSON.stringify(advisor.characterSpec, null, 2)}
+
+${getAdvisorResponseFormatInstructions()}
+
+USER'S MESSAGE: "${userMessage}"
+
+Respond as ${advisor.name} with stage directions and in character.
 `;
 }
 
-// Helper function to analyze user message and determine responding members
+// Function to create council dialogue context (similar to glass bead game but for council chat)
+export function createCouncilDialogueContext(
+  advisor: CouncilAdvisorExtended,
+  userMessage: string,
+  ritualSession: any,
+  isFirstSpeaker: boolean,
+  previousResponses: string[] = []
+): string {
+  const ordinalSuffix = (num: number): string => {
+    const j = num % 10;
+    const k = num % 100;
+    if (j === 1 && k !== 11) return 'st';
+    if (j === 2 && k !== 12) return 'nd';
+    if (j === 3 && k !== 13) return 'rd';
+    return 'th';
+  };
+
+  const dialogueInstructions = isFirstSpeaker ? 
+    `As the first speaker in the council dialogue, respond to the user's question. Consider their context and offer your initial perspective. VARY YOUR RESPONSE LENGTH - from single words to brief insights (1-3 sentences maximum). If the user's question is unclear, feel free to ask for clarification.` :
+    `As a speaker in the council dialogue, you must:
+1. FIRST: Acknowledge the previous advisor by name and reference their key points
+2. THEN: Build upon their perspective, adding your own insight
+3. Connect your thoughts to what was said before you
+4. Continue the flow of wisdom
+5. VARY YOUR RESPONSE LENGTH - from single words to brief insights (1-3 sentences maximum)
+6. Sometimes ask the user clarifying questions if their request needs more context
+
+Previous advisor responses: 
+${previousResponses.map((response, index) => `Response ${index + 1}: ${response}`).join('\n\n')}
+
+IMPORTANT: You must acknowledge the previous speaker by name and build upon their specific points. Do not give an independent response - you are continuing a conversation. VARY YOUR RESPONSE LENGTH NATURALLY.`;
+
+  return `
+You are ${advisor.name}, a ${advisor.type} advisor with expertise in ${advisor.lens}.
+
+CHARACTER SPECIFICATION:
+${JSON.stringify(advisor.characterSpec, null, 2)}
+
+HOLONIC ECOSYSTEM COUNCIL GENESIS LENS:
+${HOLONIC_ECOSYSTEM_COUNCIL_GENESIS_LENS}
+
+CONTEXT:
+- The user's question: "${userMessage}"
+- Their declared values: ${ritualSession.declared_values.join(', ')}
+
+${dialogueInstructions}
+
+${getAdvisorResponseFormatInstructions()}
+
+Respond as ${advisor.name} with dynamic stage directions inspired by the Genesis Lens and in character. VARY YOUR RESPONSE LENGTH - from single words to brief insights (1-3 sentences maximum). You're adding one perspective to the council dialogue, not dominating the conversation.
+`;
+}
+
+// Function to create glass bead game context with consistent formatting
+export function createGlassBeadGameContext(
+  advisor: CouncilAdvisorExtended,
+  userMessage: string,
+  ritualSession: any,
+  isFirstSpeaker: boolean,
+  previousResponses: string[] = []
+): string {
+  const ordinalSuffix = (num: number): string => {
+    const j = num % 10;
+    const k = num % 100;
+    if (j === 1 && k !== 11) return 'st';
+    if (j === 2 && k !== 12) return 'nd';
+    if (j === 3 && k !== 13) return 'rd';
+    return 'th';
+  };
+
+  const gameInstructions = isFirstSpeaker ? 
+    `As the first speaker in the glass bead game, begin the discussion of the user's wish. Consider their values and offer your initial perspective. VARY YOUR RESPONSE LENGTH - from single words to brief insights (1-3 sentences maximum). If the user's wish is unclear, feel free to ask for clarification.` :
+    `As a speaker in the glass bead game, you must:
+1. FIRST: Acknowledge the previous advisor by name and reference their key points
+2. THEN: Build upon their perspective, adding your own bead to the chain
+3. Connect your thoughts to what was said before you
+4. Continue the flow of wisdom
+5. VARY YOUR RESPONSE LENGTH - from single words to brief insights (1-3 sentences maximum)
+6. Sometimes ask the user clarifying questions if their request needs more context
+
+Previous advisor responses: 
+${previousResponses.map((response, index) => `Response ${index + 1}: ${response}`).join('\n\n')}
+
+IMPORTANT: You must acknowledge the previous speaker by name and build upon their specific points. Do not give an independent response - you are continuing a conversation. VARY YOUR RESPONSE LENGTH NATURALLY.`;
+
+  return `
+You are ${advisor.name}, a ${advisor.type} advisor with expertise in ${advisor.lens}.
+
+CHARACTER SPECIFICATION:
+${JSON.stringify(advisor.characterSpec, null, 2)}
+
+HOLONIC ECOSYSTEM COUNCIL GENESIS LENS:
+${HOLONIC_ECOSYSTEM_COUNCIL_GENESIS_LENS}
+
+CONTEXT:
+- The user's wish: "${ritualSession.wish_statement}"
+- Their declared values: ${ritualSession.declared_values.join(', ')}
+
+${gameInstructions}
+
+${getAdvisorResponseFormatInstructions()}
+
+Respond as ${advisor.name} with dynamic stage directions inspired by the Genesis Lens and in character. VARY YOUR RESPONSE LENGTH - from single words to brief insights (1-3 sentences maximum). You're adding one bead to the chain, not dominating the conversation.
+`;
+}
+
+// Function to analyze user message and determine which council members should respond
 export function analyzeUserMessage(userMessage: string, availableMembers: CouncilAdvisorExtended[]): CouncilAdvisorExtended[] {
-  const userMessageLower = userMessage.toLowerCase();
-  const respondingMembers: CouncilAdvisorExtended[] = [];
+  // Simple keyword-based analysis - could be enhanced with more sophisticated NLP
+  const message = userMessage.toLowerCase();
   
-  // Topic-based character selection
-  if (userMessageLower.includes('environment') || userMessageLower.includes('nature') || userMessageLower.includes('earth') || userMessageLower.includes('climate')) {
-    const gaia = availableMembers.find(m => m.name.includes('Gaia'));
-    if (gaia) respondingMembers.push(gaia);
-  }
+  // Define keywords that might trigger specific advisors
+  const advisorKeywords: Record<string, string[]> = {
+    'systems': ['systems thinking', 'holistic', 'interconnected'],
+    'innovation': ['creativity', 'disruption', 'change'],
+    'wisdom': ['ancient', 'traditional', 'knowledge'],
+    'practical': ['implementation', 'action', 'results'],
+    'emotional': ['feelings', 'intuition', 'heart'],
+    'logical': ['analysis', 'reasoning', 'structure']
+  };
   
-  if (userMessageLower.includes('technology') || userMessageLower.includes('innovation') || userMessageLower.includes('progress') || userMessageLower.includes('ai')) {
-    const technos = availableMembers.find(m => m.name.includes('Technos'));
-    if (technos) respondingMembers.push(technos);
-  }
+  // Find advisors that match the message content
+  const matchingAdvisors = availableMembers.filter(advisor => {
+    const advisorName = advisor.name.toLowerCase();
+    const advisorLens = advisor.lens.toLowerCase();
+    
+    // Check if any keywords match the advisor's characteristics
+    for (const [category, keywords] of Object.entries(advisorKeywords)) {
+      if (keywords.some(keyword => 
+        message.includes(keyword) || 
+        advisorName.includes(keyword) || 
+        advisorLens.includes(keyword)
+      )) {
+        return true;
+      }
+    }
+    
+    // If no specific matches, include advisors with relevant expertise
+    if (message.includes('help') || message.includes('advice') || message.includes('guidance')) {
+      return true;
+    }
+    
+    return false;
+  });
   
-  if (userMessageLower.includes('money') || userMessageLower.includes('economy') || userMessageLower.includes('growth') || userMessageLower.includes('competition')) {
-    const moloch = availableMembers.find(m => m.name.includes('Moloch'));
-    if (moloch) respondingMembers.push(moloch);
-  }
-  
-  if (userMessageLower.includes('community') || userMessageLower.includes('together') || userMessageLower.includes('cooperation') || userMessageLower.includes('flourishing')) {
-    const omnia = availableMembers.find(m => m.name.includes('Omnia'));
-    if (omnia) respondingMembers.push(omnia);
-  }
-  
-  if (userMessageLower.includes('practical') || userMessageLower.includes('everyday') || userMessageLower.includes('simple') || userMessageLower.includes('common')) {
-    const everyman = availableMembers.find(m => m.name.includes('Everyman'));
-    if (everyman) respondingMembers.push(everyman);
-  }
-  
-  if (userMessageLower.includes('future') || userMessageLower.includes('child') || userMessageLower.includes('innocent') || userMessageLower.includes('wonder')) {
-    const innocent = availableMembers.find(m => m.name.includes('Innocent'));
-    if (innocent) respondingMembers.push(innocent);
-  }
-  
-  if (userMessageLower.includes('spiritual') || userMessageLower.includes('cosmic') || userMessageLower.includes('destiny') || userMessageLower.includes('prophecy')) {
-    const oracle = availableMembers.find(m => m.name.includes('Oracle'));
-    if (oracle) respondingMembers.push(oracle);
-  }
-  
-  if (userMessageLower.includes('critical') || userMessageLower.includes('question') || userMessageLower.includes('assumption') || userMessageLower.includes('doubt')) {
-    const devil = availableMembers.find(m => m.name.includes('Devil'));
-    if (devil) respondingMembers.push(devil);
-  }
-  
-  if (userMessageLower.includes('wisdom') || userMessageLower.includes('experience') || userMessageLower.includes('mentor') || userMessageLower.includes('guidance')) {
-    const wise = availableMembers.find(m => m.name.includes('Wise'));
-    if (wise) respondingMembers.push(wise);
-  }
-  
-  // If no specific characters identified, select 2-3 random ones
-  if (respondingMembers.length === 0) {
-    const shuffled = [...availableMembers].sort(() => Math.random() - 0.5);
-    respondingMembers.push(...shuffled.slice(0, 2 + Math.floor(Math.random() * 2)));
-  }
-  
-  return respondingMembers;
+  // If no specific matches, return all available members
+  return matchingAdvisors.length > 0 ? matchingAdvisors : availableMembers;
 } 

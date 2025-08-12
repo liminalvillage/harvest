@@ -195,22 +195,28 @@ If it IS a real person with significant contributions, create a complete JSON sc
   "background_context": "Brief historical context and significance",
   "approach_to_advice": "How this person would approach giving advice",
   "polarities": {
-    "Individual ↔ Collective": 0.5,
-    "Rational ↔ Empirical": 0.5,
-    "Idealist ↔ Pragmatist": 0.5,
-    "Order ↔ Chaos": 0.5,
-    "Authority ↔ Autonomy": 0.5,
-    "Optimist ↔ Pessimist": 0.5,
-    "Traditionalist ↔ Innovator": 0.5,
-    "Hierarchy ↔ Egalitarian": 0.5,
-    "Competitive ↔ Cooperative": 0.5,
-    "Material ↔ Spiritual": 0.5,
-    "Nihilist ↔ Purposeful": 0.5,
-    "Certainty ↔ Doubt": 0.5
+    "Individual ↔ Collective": "Generate a score 0.0-1.0 based on whether this person focused more on individual achievement or collective/community concerns",
+    "Rational ↔ Empirical": "Generate a score 0.0-1.0 based on whether this person relied more on logical reasoning or empirical evidence/experience", 
+    "Idealist ↔ Pragmatist": "Generate a score 0.0-1.0 based on whether this person was more vision-focused or practical in their approach",
+    "Order ↔ Chaos": "Generate a score 0.0-1.0 based on whether this person preferred structured systems or embraced spontaneity",
+    "Authority ↔ Autonomy": "Generate a score 0.0-1.0 based on whether this person worked within hierarchies or sought independence",
+    "Optimist ↔ Pessimist": "Generate a score 0.0-1.0 based on whether this person had a positive or cautious outlook",
+    "Traditionalist ↔ Innovator": "Generate a score 0.0-1.0 based on whether this person preserved or changed established ways",
+    "Hierarchy ↔ Egalitarian": "Generate a score 0.0-1.0 based on whether this person preferred structured or equal relationships",
+    "Competitive ↔ Cooperative": "Generate a score 0.0-1.0 based on whether this person focused on individual achievement or collaboration",
+    "Material ↔ Spiritual": "Generate a score 0.0-1.0 based on whether this person focused on physical/material or metaphysical/spiritual aspects",
+    "Nihilist ↔ Purposeful": "Generate a score 0.0-1.0 based on whether this person saw life as meaningless or deeply meaningful",
+    "Certainty ↔ Doubt": "Generate a score 0.0-1.0 based on whether this person was confident or questioning in their approach"
   }
 }
 
 Focus on the lens/wisdom area: "${lens}". This should influence how you portray their expertise and approach.
+
+IMPORTANT: For each polarity, analyze the person's life, beliefs, and approach to determine the appropriate score. 
+- 0.0 = strongly leans toward the first term
+- 1.0 = strongly leans toward the second term  
+- 0.5 = balanced between both
+- Use decimal values like 0.3, 0.7, etc. for nuanced positioning
 
 Return ONLY valid JSON. No additional text or explanation.`;
 

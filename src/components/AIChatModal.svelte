@@ -11,6 +11,7 @@
   export let placeholder: string = 'Type your message...';
   export let disabled: boolean = false;
   export let isLoading: boolean = false;
+  export let onBack: (() => void) | undefined = undefined; // New prop for back button
   import { focusOnMount } from '../utils/focusUtils';
   import { formatMessageForDisplay, type FormattedMessage } from '../utils/messageFormatter';
 
@@ -29,7 +30,7 @@
   let currentMessage = '';
   let chatContainer: HTMLElement;
 
-  async function typeMessage(message: ChatMessage, delayMs: number = 15) {
+  async function typeMessage(message: ChatMessage, delayMs: number = 3.75) {
     message.isTyping = true;
     message.displayContent = '';
     messages = [...messages]; // Trigger reactivity
@@ -88,22 +89,22 @@
 
   const themeClasses = {
     indigo: {
-      header: 'bg-gradient-to-r from-indigo-600 to-purple-600',
-      button: 'bg-indigo-600 hover:bg-indigo-700',
-      accent: 'text-indigo-300',
-      border: 'border-indigo-500'
+      header: 'bg-gradient-to-r from-slate-700 to-slate-600',
+      button: 'bg-slate-600 hover:bg-slate-700',
+      accent: 'text-slate-300',
+      border: 'border-slate-500'
     },
     green: {
-      header: 'bg-gradient-to-r from-green-600 to-emerald-600',
-      button: 'bg-green-600 hover:bg-green-700',
-      accent: 'text-green-300',
-      border: 'border-green-500'
+      header: 'bg-gradient-to-r from-gray-700 to-gray-600',
+      button: 'bg-gray-600 hover:bg-gray-700',
+      accent: 'text-gray-300',
+      border: 'border-gray-500'
     },
     purple: {
-      header: 'bg-gradient-to-r from-purple-600 to-pink-600',
-      button: 'bg-purple-600 hover:bg-purple-700',
-      accent: 'text-purple-300',
-      border: 'border-purple-500'
+      header: 'bg-gradient-to-r from-zinc-700 to-zinc-600',
+      button: 'bg-zinc-600 hover:bg-zinc-700',
+      accent: 'text-zinc-300',
+      border: 'border-zinc-500'
     }
   };
 
@@ -111,6 +112,7 @@
 </script>
 
 {#if isOpen}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div 
     class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
     on:keydown={(e) => e.key === 'Escape' && onClose()}
@@ -119,6 +121,17 @@
       <!-- Header -->
       <div class="flex items-center justify-between p-6 border-b border-gray-700 {currentTheme.header} rounded-t-2xl">
         <div class="flex items-center gap-3">
+          {#if onBack}
+            <!-- svelte-ignore a11y_consider_explicit_label -->
+            <button
+              on:click={onBack}
+              class="text-white hover:text-white/80 transition-colors p-2 rounded-lg hover:bg-white/10 mr-2"
+            >
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+          {/if}
           <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl">
             {icon}
           </div>
@@ -127,6 +140,7 @@
             <p class="text-white/80 text-sm">{subtitle}</p>
           </div>
         </div>
+        <!-- svelte-ignore a11y_consider_explicit_label -->
         <button
           on:click={onClose}
           class="text-white hover:text-white/80 transition-colors p-2 rounded-lg hover:bg-white/10"
@@ -144,13 +158,13 @@
       >
         {#each messages as message (message.timestamp)}
           <div class="flex {message.role === 'user' ? 'justify-end' : 'justify-start'}">
-            <div class="max-w-[95%] {message.role === 'user' ? 'bg-indigo-600 text-white' : message.speakerColor || 'bg-gray-700 text-gray-100'} rounded-2xl px-4 py-3 shadow-lg">
+            <div class="max-w-[95%] {message.role === 'user' ? 'bg-slate-600 text-white' : message.speakerColor || 'bg-gray-700 text-gray-100'} rounded-2xl px-4 py-3 shadow-lg">
               {#if (message.advisor || message.speaker) && message.role === 'assistant'}
                 <div class="flex items-center gap-2 mb-2">
-                  <div class="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white">
+                  <div class="w-6 h-6 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold text-white">
                     {(message.speaker || message.advisor || '').charAt(0)}
                   </div>
-                  <span class="text-indigo-300 font-medium text-sm">{message.speaker || message.advisor}</span>
+                  <span class="text-slate-300 font-medium text-sm">{message.speaker || message.advisor}</span>
                 </div>
               {/if}
               <div class="whitespace-pre-wrap text-sm leading-relaxed">
@@ -191,7 +205,7 @@
             type="text"
             bind:value={currentMessage}
             placeholder={placeholder}
-            class="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            class="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-transparent"
             on:keydown={handleKeyPress}
             disabled={disabled || isLoading}
             use:focusOnMount

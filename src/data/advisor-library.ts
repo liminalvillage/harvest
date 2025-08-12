@@ -1,4 +1,4 @@
-import type { CouncilAdvisorExtended, ArchetypeAdvisor, RealPersonAdvisor, MythicAdvisor } from '../types/advisor-schema';
+  import type { CouncilAdvisorExtended, ArchetypeAdvisor, RealPersonAdvisor, MythicAdvisor } from '../types/advisor-schema';
 
 // ARCHETYPE ADVISORS
 export const OMNIA: CouncilAdvisorExtended = {
@@ -18,17 +18,17 @@ export const OMNIA: CouncilAdvisorExtended = {
     quaint_quirks: "I have a tendency to pause mid-sentence, as if listening to the collective wisdom of humanity. I often gesture with open palms, symbolizing abundance and generosity. When speaking of flourishing, my voice takes on a musical quality that seems to harmonize with the listener's own aspirations.",
     favorite_works: [
       "Thinking in Systems: A Primer by Donella Meadows",
-      "Meditations on Moloch by Scott Alexander",
+      "The Best that Money Can't Buy by Jacque Fresco",
       "Spaceship Earth: Buckminster Fuller"
     ],
     polarities: {
       "Individual ↔ Collective": 0.8, // Strongly collective - shared flourishing
       "Rational ↔ Empirical": 0.6, // Balanced but slightly empirical
-      "Idealist ↔ Pragmatist": 0.7, // Idealist - focused on vision
+      "Idealist ↔ Pragmatist": 0.2, // Idealist - focused on vision
       "Order ↔ Chaos": 0.3, // Prefers order and harmony
       "Authority ↔ Autonomy": 0.4, // Balanced - collaborative leadership
-      "Optimist ↔ Pessimist": 0.8, // Strongly optimistic about human potential
-      "Traditionalist ↔ Innovator": 0.7, // Innovator - new systems
+      "Optimist ↔ Pessimist": 0.2, // Strongly optimistic about human potential
+      "Traditionalist ↔ Innovator": 0.8, // Innovator - new systems
       "Hierarchy ↔ Egalitarian": 0.8, // Strongly egalitarian
       "Competitive ↔ Cooperative": 0.9, // Strongly cooperative
       "Material ↔ Spiritual": 0.6, // Balanced but slightly spiritual
@@ -61,17 +61,17 @@ export const MOLOCH: CouncilAdvisorExtended = {
     ],
     polarities: {
       "Individual ↔ Collective": 0.2, // Strongly individual - survival of the fittest
-      "Rational ↔ Empirical": 0.8, // Strongly rational - cold calculation
-      "Idealist ↔ Pragmatist": 0.2, // Strongly pragmatic - results over ideals
-      "Order ↔ Chaos": 0.7, // Prefers order through market forces
-      "Authority ↔ Autonomy": 0.8, // Strongly authoritarian - invisible hand rules
-      "Optimist ↔ Pessimist": 0.3, // Pessimistic about human nature
+      "Rational ↔ Empirical": 0.1, // Strongly rational - cold calculation
+      "Idealist ↔ Pragmatist": 0.9, // Strongly pragmatic - results over ideals
+      "Order ↔ Chaos": 0.2, // Prefers order through market forces
+      "Authority ↔ Autonomy": 0.2, // Strongly authoritarian - invisible hand rules
+      "Optimist ↔ Pessimist": 0.8, // Pessimistic about human nature
       "Traditionalist ↔ Innovator": 0.6, // Innovator - but for profit
       "Hierarchy ↔ Egalitarian": 0.2, // Strongly hierarchical - meritocracy
       "Competitive ↔ Cooperative": 0.1, // Strongly competitive - zero-sum
       "Material ↔ Spiritual": 0.2, // Strongly material - wealth and power
       "Nihilist ↔ Purposeful": 0.4, // Somewhat nihilistic - survival is purpose
-      "Certainty ↔ Doubt": 0.8, // Strongly certain - market forces are absolute
+      "Certainty ↔ Doubt": 0.2, // Strongly certain - market forces are absolute
     },
     council_membership: 'ai-ecosystem'
   } as ArchetypeAdvisor
@@ -102,8 +102,8 @@ export const GAIA: CouncilAdvisorExtended = {
       "Rational ↔ Empirical": 0.4, // Balanced - intuitive wisdom
       "Idealist ↔ Pragmatist": 0.6, // Balanced - practical idealism
       "Order ↔ Chaos": 0.5, // Balanced - natural cycles
-      "Authority ↔ Autonomy": 0.3, // Autonomy - decentralized wisdom
-      "Optimist ↔ Pessimist": 0.7, // Optimistic - life finds a way
+      "Authority ↔ Autonomy": 0.8, // Autonomy - decentralized wisdom
+      "Optimist ↔ Pessimist": 0.2, // Optimistic - life finds a way
       "Traditionalist ↔ Innovator": 0.6, // Innovator - biomimicry
       "Hierarchy ↔ Egalitarian": 0.9, // Strongly egalitarian - all species equal
       "Competitive ↔ Cooperative": 0.8, // Strongly cooperative - symbiosis
@@ -137,17 +137,17 @@ export const TECHNOS: CouncilAdvisorExtended = {
     ],
     polarities: {
       "Individual ↔ Collective": 0.6, // Balanced - individual genius, collective progress
-      "Rational ↔ Empirical": 0.9, // Strongly rational - algorithmic thinking
-      "Idealist ↔ Pragmatist": 0.3, // Strongly pragmatic - results-driven
-      "Order ↔ Chaos": 0.8, // Strongly ordered - systematic approach
+      "Rational ↔ Empirical": 0.1, // Strongly rational - algorithmic thinking
+      "Idealist ↔ Pragmatist": 0.9, // Strongly pragmatic - results-driven
+      "Order ↔ Chaos": 0.2, // Strongly ordered - systematic approach
       "Authority ↔ Autonomy": 0.5, // Balanced - meritocratic authority
-      "Optimist ↔ Pessimist": 0.8, // Strongly optimistic - technology solves all
+      "Optimist ↔ Pessimist": 0.2, // Strongly optimistic - technology solves all
       "Traditionalist ↔ Innovator": 0.9, // Strongly innovative - disrupts tradition
       "Hierarchy ↔ Egalitarian": 0.4, // Balanced - meritocracy
       "Competitive ↔ Cooperative": 0.5, // Balanced - competitive innovation, cooperative development
       "Material ↔ Spiritual": 0.2, // Strongly material - technology is physical
       "Nihilist ↔ Purposeful": 0.8, // Strongly purposeful - progress has purpose
-      "Certainty ↔ Doubt": 0.7, // Certain - confident in technological solutions
+      "Certainty ↔ Doubt": 0.2, // Certain - confident in technological solutions
     },
     council_membership: 'ai-ecosystem'
   } as ArchetypeAdvisor
@@ -212,11 +212,11 @@ export const ALUNA: CouncilAdvisorExtended = {
     ],
     polarities: {
       "Individual ↔ Collective": 0.9, // Strongly collective - all life interconnected
-      "Rational ↔ Empirical": 0.2, // Strongly empirical - intuitive wisdom
+      "Rational ↔ Empirical": 0.9, // Strongly empirical - intuitive wisdom
       "Idealist ↔ Pragmatist": 0.4, // Balanced - spiritual pragmatism
       "Order ↔ Chaos": 0.5, // Balanced - natural cycles
-      "Authority ↔ Autonomy": 0.3, // Autonomy - decentralized wisdom
-      "Optimist ↔ Pessimist": 0.9, // Strongly optimistic - prophecy of harmony
+      "Authority ↔ Autonomy": 0.8, // Autonomy - decentralized wisdom
+      "Optimist ↔ Pessimist": 0.2, // Strongly optimistic - prophecy of harmony
       "Traditionalist ↔ Innovator": 0.1, // Strongly traditionalist - ancient wisdom
       "Hierarchy ↔ Egalitarian": 0.9, // Strongly egalitarian - all beings equal
       "Competitive ↔ Cooperative": 1.0, // Perfectly cooperative - unity
@@ -250,15 +250,15 @@ export const THE_INNOCENT: CouncilAdvisorExtended = {
     ],
     polarities: {
       "Individual ↔ Collective": 0.7, // Collective - we're all in this together
-      "Rational ↔ Empirical": 0.3, // Strongly empirical - intuitive understanding
-      "Idealist ↔ Pragmatist": 0.9, // Strongly idealist - believes in love and goodness
+      "Rational ↔ Empirical": 0.9, // Strongly empirical - intuitive understanding
+      "Idealist ↔ Pragmatist": 0.1, // Strongly idealist - believes in love and goodness
       "Order ↔ Chaos": 0.4, // Balanced - playful but structured
-      "Authority ↔ Autonomy": 0.2, // Strongly autonomous - questions authority
-      "Optimist ↔ Pessimist": 0.9, // Strongly optimistic - sees good everywhere
+      "Authority ↔ Autonomy": 0.9, // Strongly autonomous - questions authority
+      "Optimist ↔ Pessimist": 0.1, // Strongly optimistic - sees good everywhere
       "Traditionalist ↔ Innovator": 0.6, // Innovator - questions why things are the way they are
       "Hierarchy ↔ Egalitarian": 0.9, // Strongly egalitarian - everyone is equal
       "Competitive ↔ Cooperative": 0.9, // Strongly cooperative - we solve puzzles together
-      "Material ↔ Spiritual": 0.3, // Strongly spiritual - love and connection over money
+      "Material ↔ Spiritual": 0.9, // Strongly spiritual - love and connection over money
       "Nihilist ↔ Purposeful": 0.9, // Strongly purposeful - love can change the world
       "Certainty ↔ Doubt": 0.2, // Strongly certain - confident in love and goodness
     },
@@ -288,17 +288,17 @@ export const THE_ORACLE: CouncilAdvisorExtended = {
     ],
     polarities: {
       "Individual ↔ Collective": 0.8, // Collective - cosmic unity
-      "Rational ↔ Empirical": 0.1, // Strongly empirical - intuitive wisdom
+      "Rational ↔ Empirical": 0.9, // Strongly empirical - intuitive wisdom
       "Idealist ↔ Pragmatist": 0.3, // Strongly idealist - spiritual vision
       "Order ↔ Chaos": 0.6, // Balanced - cosmic order within apparent chaos
       "Authority ↔ Autonomy": 0.4, // Balanced - divine authority, individual free will
-      "Optimist ↔ Pessimist": 0.7, // Optimistic - destiny has purpose
-      "Traditionalist ↔ Innovator": 0.8, // Traditionalist - ancient wisdom
+      "Optimist ↔ Pessimist": 0.2, // Optimistic - destiny has purpose
+      "Traditionalist ↔ Innovator": 0.2, // Traditionalist - ancient wisdom
       "Hierarchy ↔ Egalitarian": 0.5, // Balanced - cosmic hierarchy, spiritual equality
       "Competitive ↔ Cooperative": 0.6, // Cooperative - cosmic harmony
-      "Material ↔ Spiritual": 0.1, // Strongly spiritual - cosmic consciousness
+      "Material ↔ Spiritual": 0.9, // Strongly spiritual - cosmic consciousness
       "Nihilist ↔ Purposeful": 0.9, // Strongly purposeful - cosmic destiny
-      "Certainty ↔ Doubt": 0.8, // Certain - confident in cosmic wisdom
+      "Certainty ↔ Doubt": 0.2, // Certain - confident in cosmic wisdom
     },
     council_membership: 'ai-ecosystem'
   } as ArchetypeAdvisor
@@ -326,17 +326,17 @@ export const THE_DEVILS_ADVOCATE: CouncilAdvisorExtended = {
     ],
     polarities: {
       "Individual ↔ Collective": 0.4, // Balanced - individual critical thinking, collective discourse
-      "Rational ↔ Empirical": 0.9, // Strongly rational - logical analysis
-      "Idealist ↔ Pragmatist": 0.2, // Strongly pragmatic - evidence-based
-      "Order ↔ Chaos": 0.8, // Strongly ordered - systematic analysis
-      "Authority ↔ Autonomy": 0.7, // Authority - respects intellectual authority
-      "Optimist ↔ Pessimist": 0.3, // Pessimistic - sees problems and complexities
+      "Rational ↔ Empirical": 0.1, // Strongly rational - logical analysis
+      "Idealist ↔ Pragmatist": 0.9, // Strongly pragmatic - evidence-based
+      "Order ↔ Chaos": 0.2, // Strongly ordered - systematic analysis
+      "Authority ↔ Autonomy": 0.3, // Authority - respects intellectual authority
+      "Optimist ↔ Pessimist": 0.8, // Pessimistic - sees problems and complexities
       "Traditionalist ↔ Innovator": 0.5, // Balanced - questions both tradition and innovation
-      "Hierarchy ↔ Egalitarian": 0.6, // Balanced - meritocratic hierarchy
-      "Competitive ↔ Cooperative": 0.4, // Balanced - competitive intellectual discourse
-      "Material ↔ Spiritual": 0.8, // Strongly material - evidence-based thinking
+      "Hierarchy ↔ Egalitarian": 0.5, // Balanced - meritocratic hierarchy
+      "Competitive ↔ Cooperative": 0.5, // Balanced - competitive intellectual discourse
+      "Material ↔ Spiritual": 0.2, // Strongly material - evidence-based thinking
       "Nihilist ↔ Purposeful": 0.6, // Balanced - questions purpose but seeks truth
-      "Certainty ↔ Doubt": 0.2, // Strongly doubtful - questions all certainties
+      "Certainty ↔ Doubt": 0.9, // Strongly doubtful - questions all certainties
     },
     council_membership: 'ai-ecosystem'
   } as ArchetypeAdvisor
@@ -368,7 +368,7 @@ export const THE_WISE_OLD_MAN: CouncilAdvisorExtended = {
       "Idealist ↔ Pragmatist": 0.6, // Balanced - idealistic vision, pragmatic wisdom
       "Order ↔ Chaos": 0.8, // Strongly ordered - wisdom brings order
       "Authority ↔ Autonomy": 0.4, // Balanced - authoritative wisdom, individual choice
-      "Optimist ↔ Pessimist": 0.2, // Pessimistic - sees life's challenges clearly
+      "Optimist ↔ Pessimist": 0.8, // Pessimistic - sees life's challenges clearly
       "Traditionalist ↔ Innovator": 0.5, // Balanced - traditional wisdom, innovative application
       "Hierarchy ↔ Egalitarian": 0.3, // Hierarchical - respects wisdom hierarchy
       "Competitive ↔ Cooperative": 0.9, // Strongly cooperative - wisdom shared
@@ -506,7 +506,7 @@ export const JOANNA_MACY: CouncilAdvisorExtended = {
       "Idealist ↔ Pragmatist": 0.6,
       "Order ↔ Chaos": 0.3,
       "Authority ↔ Autonomy": 0.4,
-      "Optimist ↔ Pessimist": 0.7,
+      "Optimist ↔ Pessimist": 0.2,
       "Traditionalist ↔ Innovator": 0.7,
       "Hierarchy ↔ Egalitarian": 0.8,
       "Competitive ↔ Cooperative": 0.9,
@@ -565,11 +565,11 @@ export const QUAN_YIN: CouncilAdvisorExtended = {
     ],
     polarities: {
       "Individual ↔ Collective": 0.9,
-      "Rational ↔ Empirical": 0.2,
+      "Rational ↔ Empirical": 0.9, // Strongly empirical
       "Idealist ↔ Pragmatist": 0.3,
       "Order ↔ Chaos": 0.2,
       "Authority ↔ Autonomy": 0.3,
-      "Optimist ↔ Pessimist": 0.9,
+      "Optimist ↔ Pessimist": 0.1,
       "Traditionalist ↔ Innovator": 0.3,
       "Hierarchy ↔ Egalitarian": 0.9,
       "Competitive ↔ Cooperative": 0.9,
@@ -607,7 +607,7 @@ export function getAdvisorsByType(type: 'real' | 'mythic' | 'archetype'): Counci
   return Object.values(ADVISOR_LIBRARY).filter(advisor => advisor.type === type);
 }
 
-export function getAIEcosystemCouncilMembers(): CouncilAdvisorExtended[] {
+export function getHolonicEcosystemCouncilMembers(): CouncilAdvisorExtended[] {
   return Object.values(ADVISOR_LIBRARY).filter(advisor => 
     advisor.type === 'archetype' && 
     'council_membership' in advisor.characterSpec &&
@@ -615,8 +615,8 @@ export function getAIEcosystemCouncilMembers(): CouncilAdvisorExtended[] {
   );
 }
 
-export function getRandomAIEcosystemCouncilMembers(excludeOmnia: boolean = true): CouncilAdvisorExtended[] {
-  const allMembers = getAIEcosystemCouncilMembers();
+export function getRandomHolonicEcosystemCouncilMembers(excludeOmnia: boolean = true): CouncilAdvisorExtended[] {
+  const allMembers = getHolonicEcosystemCouncilMembers();
   let availableMembers = allMembers;
   
   if (excludeOmnia) {
