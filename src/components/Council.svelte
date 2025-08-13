@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { onMount, getContext } from "svelte";
+	import { onMount, onDestroy, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
-	import HoloSphere from "holosphere";
+	import type HoloSphere from "holosphere";
 
 	interface CouncilMember {
 		id: string;
@@ -30,6 +30,29 @@
 		}>;
 	}
 
+	// Shared constants for Metatron circle IDs (self-similar positions reused across the component)
+	const INNER_POSITIONS = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left'] as const;
+	const OUTER_POSITIONS = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'] as const;
+
+	// Minimal type guards
+	function isRecord(value: unknown): value is Record<string, unknown> {
+		return !!value && typeof value === 'object' && !Array.isArray(value);
+	}
+	function hasId(value: unknown): value is { id: string } {
+		return isRecord(value) && typeof value.id === 'string';
+	}
+	function isStringRecord(value: unknown): value is Record<string, string> {
+		return isRecord(value) && Object.values(value).every(v => typeof v === 'string');
+	}
+
+	// Shared helper: fetch with timeout
+	async function fetchWithTimeout<T>(promise: Promise<T>, timeoutMs: number = 5000): Promise<T> {
+		const timeoutPromise = new Promise<never>((_, reject) =>
+			setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+		);
+		return Promise.race([promise, timeoutPromise]) as Promise<T>;
+	}
+
 	let holosphere = getContext("holosphere") as HoloSphere;
 	let holonID: string = '';
 	let councilData: CouncilData = {
@@ -48,6 +71,10 @@
 	let showMemberModal = false;
 	let editingCircle: string | null = null;
 	let circleInputs: Record<string, string> = {};
+
+	// Track unsubscribers to clean up on destroy
+	let councilUnsubscribe: (() => void) | undefined;
+	let idStoreUnsubscribe: (() => void) | undefined;
 
 	// Ritual state management
 	let showRitual = false;
@@ -121,23 +148,21 @@
 		circles.push({ id: 'center', x: 50, y: 50 });
 
 		// Inner ring circles (2r from center) - starting from top, clockwise
-		const innerNames = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left'];
-		for (let k = 0; k < 6; k++) {
+		for (let k = 0; k < INNER_POSITIONS.length; k++) {
 			const angleRad = (Math.PI / 3) * k - Math.PI / 2; // 60° increments, starting from top (-90° to align with screen)
 			const d = 2 * rPercent;
 			const x = 50 + d * Math.cos(angleRad);
 			const y = 50 + d * Math.sin(angleRad);
-			circles.push({ id: innerNames[k], x, y });
+			circles.push({ id: INNER_POSITIONS[k], x, y });
 		}
 
 		// Outer ring circles (4r from center) - starting from top, clockwise
-		const outerNames = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
-		for (let k = 0; k < 6; k++) {
+		for (let k = 0; k < OUTER_POSITIONS.length; k++) {
 			const angleRad = (Math.PI / 3) * k - Math.PI / 2; // 60° increments, starting from top (-90° to align with screen)
 			const d = 4 * rPercent;
 			const x = 50 + d * Math.cos(angleRad);
 			const y = 50 + d * Math.sin(angleRad);
-			circles.push({ id: outerNames[k], x, y });
+			circles.push({ id: OUTER_POSITIONS[k], x, y });
 		}
 		return circles;
 	}
@@ -153,22 +178,14 @@
 		try {
 			console.log(`Fetching council data for holon: ${holonID}`);
 			
-			// Fetch with timeout
-			const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
-				const timeoutPromise = new Promise((_, reject) => 
-					setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-				);
-				return Promise.race([promise, timeoutPromise]);
-			};
-
 			// Fetch council data
-			const [membersData, proposalsData] = await Promise.all([
+			const [membersData, proposalsData]: [unknown, unknown] = await Promise.all([
 				fetchWithTimeout(holosphere.getAll(holonID, holonID), 5000),
 				fetchWithTimeout(holosphere.getAll(holonID, "council_proposals"), 5000)
 			]);
 
 			// Fetch settings separately since it might not exist
-			let settingsData = null;
+			let settingsData: unknown = null;
 			try {
 				settingsData = await fetchWithTimeout(holosphere.get(holonID, "council_settings", holonID), 5000);
 			} catch (error) {
@@ -177,14 +194,14 @@
 
 			// Process members data
 			if (Array.isArray(membersData)) {
-				membersData.forEach((member: any) => {
-					if (member && member.id) {
+				(membersData as unknown[]).forEach((member) => {
+					if (hasId(member)) {
 						councilData.members[member.id] = member as CouncilMember;
 					}
 				});
-			} else if (typeof membersData === 'object' && membersData !== null) {
-				Object.entries(membersData).forEach(([key, member]: [string, any]) => {
-					if (member && member.id) {
+			} else if (isRecord(membersData)) {
+				Object.entries(membersData).forEach(([key, member]) => {
+					if (hasId(member)) {
 						councilData.members[key] = member as CouncilMember;
 					}
 				});
@@ -192,12 +209,12 @@
 
 			// Process proposals data
 			if (Array.isArray(proposalsData)) {
-				councilData.proposals = proposalsData.filter((proposal: any) => proposal && proposal.id);
+				councilData.proposals = (proposalsData as unknown[]).filter((proposal): proposal is { id: string } => hasId(proposal)) as any;
 			}
 
 			// Process settings data
-			if (settingsData && typeof settingsData === 'object' && !Array.isArray(settingsData)) {
-				councilData.settings = { ...councilData.settings, ...settingsData };
+			if (isRecord(settingsData)) {
+				councilData.settings = { ...councilData.settings, ...(settingsData as Partial<CouncilData['settings']>) };
 			}
 
 			// Load advisor data from holosphere
@@ -206,7 +223,7 @@
 				const advisorsData = await fetchWithTimeout(holosphere.get(holonID, "council_advisors", holonID), 2000);
 				console.log('Loaded advisors data:', advisorsData);
 				
-				if (advisorsData && typeof advisorsData === 'object') {
+				if (isStringRecord(advisorsData)) {
 					circleInputs = { ...circleInputs, ...advisorsData };
 					console.log('Updated circle inputs:', circleInputs);
 				}
@@ -220,8 +237,11 @@
 
 			console.log(`Successfully fetched council data for holon ${holonID}:`, Object.keys(councilData.members).length, 'members');
 
-			// Set up subscription after successful fetch
-			await subscribeToCouncil();
+			// Re-subscribe: clean up old then subscribe anew
+			if (councilUnsubscribe) {
+				try { councilUnsubscribe(); } catch {}
+			}
+			councilUnsubscribe = await subscribeToCouncil();
 
 		} catch (error: any) {
 			console.error('Error fetching council data:', error);
@@ -244,9 +264,9 @@
 		
 		try {
 			// Subscribe to members updates
-			const membersUnsub = await holosphere.subscribe(holonID, "council_members", (newMember: any, key?: string) => {
-				if (newMember && key) {
-					councilData.members = { ...councilData.members, [key]: newMember };
+			const membersUnsub = await holosphere.subscribe(holonID, "council_members", (newMember: unknown, key?: string) => {
+				if (key && isRecord(newMember)) {
+					councilData.members = { ...councilData.members, [key]: newMember as CouncilMember };
 				} else if (key) {
 					const { [key]: _, ...rest } = councilData.members;
 					councilData.members = rest;
@@ -254,13 +274,13 @@
 			});
 
 			// Subscribe to proposals updates
-			const proposalsUnsub = await holosphere.subscribe(holonID, "council_proposals", (newProposal: any, key?: string) => {
-				if (newProposal && key) {
+			const proposalsUnsub = await holosphere.subscribe(holonID, "council_proposals", (newProposal: unknown, key?: string) => {
+				if (key && isRecord(newProposal)) {
 					const existingIndex = councilData.proposals.findIndex(p => p.id === key);
 					if (existingIndex >= 0) {
-						councilData.proposals[existingIndex] = newProposal;
+						councilData.proposals[existingIndex] = newProposal as any;
 					} else {
-						councilData.proposals = [...councilData.proposals, newProposal];
+						councilData.proposals = [...councilData.proposals, newProposal as any];
 					}
 				} else if (key) {
 					councilData.proposals = councilData.proposals.filter(p => p.id !== key);
@@ -268,15 +288,15 @@
 			});
 
 			// Subscribe to settings updates
-			const settingsUnsub = await holosphere.subscribe(holonID, "council_settings", (newSettings: any) => {
-				if (newSettings && typeof newSettings === 'object' && !Array.isArray(newSettings)) {
-					councilData.settings = { ...councilData.settings, ...newSettings };
+			const settingsUnsub = await holosphere.subscribe(holonID, "council_settings", (newSettings: unknown) => {
+				if (isRecord(newSettings)) {
+					councilData.settings = { ...councilData.settings, ...(newSettings as Partial<CouncilData['settings']>) };
 				}
 			});
 
 			// Subscribe to advisors updates
-			const advisorsUnsub = await holosphere.subscribe(holonID, "council_advisors", (newAdvisorsData: any) => {
-				if (newAdvisorsData && typeof newAdvisorsData === 'object') {
+			const advisorsUnsub = await holosphere.subscribe(holonID, "council_advisors", (newAdvisorsData: unknown) => {
+				if (isStringRecord(newAdvisorsData)) {
 					circleInputs = { ...circleInputs, ...newAdvisorsData };
 					console.log('Real-time advisors update:', newAdvisorsData);
 				}
@@ -294,11 +314,6 @@
 		}
 	}
 
-	// Select member for modal
-	function selectMember(member: CouncilMember) {
-		selectedMember = member;
-		showMemberModal = true;
-	}
 
 	// Close member modal
 	function closeMemberModal() {
@@ -313,11 +328,6 @@
 		if (!circleInputs[circleId]) {
 			circleInputs[circleId] = '';
 		}
-	}
-
-	// Handle circle input change
-	function handleCircleInputChange(circleId: string, value: string) {
-		circleInputs[circleId] = value;
 	}
 
 	// Utility function to create a simple hash of a string
@@ -432,18 +442,16 @@
 		newInputs['center'] = ritualSession.wish_statement.substring(0, 20) + '...';
 		
 		// Inner ring: Values
-		const innerPositions = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left'];
 		ritualSession.declared_values.forEach((value, index) => {
-			if (index < innerPositions.length) {
-				newInputs[innerPositions[index]] = value;
+			if (index < INNER_POSITIONS.length) {
+				newInputs[INNER_POSITIONS[index]] = value;
 			}
 		});
 		
 		// Outer ring: Advisors
-		const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
 		ritualSession.advisors.forEach((advisor, index) => {
-			if (index < outerPositions.length) {
-				newInputs[outerPositions[index]] = advisor.name;
+			if (index < OUTER_POSITIONS.length) {
+				newInputs[OUTER_POSITIONS[index]] = advisor.name;
 			}
 		});
 		
@@ -465,7 +473,7 @@
 			ritualSession.council_dialogue = ritualSession.advisors.map(advisor => {
 				return {
 					advisor: advisor.name,
-					response: generateAdvisorResponse(advisor, ritualSession.wish_statement, ritualSession.declared_values)
+					response: generateAdvisorResponse({ type: advisor.type }, ritualSession.wish_statement, ritualSession.declared_values)
 				};
 			});
 			
@@ -477,12 +485,12 @@
 		}
 	}
 
-	function generateAdvisorResponse(advisor: any, wish: string, values: string[]): string {
+	function generateAdvisorResponse(advisor: { type: 'real' | 'mythic' | 'archetype' }, wish: string, values: string[]): string {
 		// Placeholder for AI-generated responses
 		const responses = {
 			'real': [
 				`To truly manifest "${wish}", we must first ground ourselves in ${values[0]}. Begin with what serves the collective, not the individual.`,
-				`The path to "${wish}" requires patience and ${values[1]}. Listen deeply before you build.`,
+				`The path to "${wish}" requires patience and ${values[1] || 'patience'}. Listen deeply before you build.`,
 				`Your wish speaks to a deeper need. Let ${values[0]} and ${values[2] || 'wisdom'} guide your first steps.`
 			],
 			'mythic': [
@@ -573,14 +581,6 @@
 	async function loadHistoryData() {
 		if (!holosphere || !holonID) return;
 		
-		// Fetch with timeout function
-		const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
-			const timeoutPromise = new Promise((_, reject) => 
-				setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-			);
-			return Promise.race([promise, timeoutPromise]);
-		};
-		
 		try {
 			// Load previous values
 			const valuesData = await fetchWithTimeout(holosphere.get(holonID, "ritual_previous_values", holonID), 2000);
@@ -595,7 +595,7 @@
 			// Load previous advisors
 			const advisorsData = await fetchWithTimeout(holosphere.get(holonID, "ritual_previous_advisors", holonID), 2000);
 			if (advisorsData && Array.isArray(advisorsData)) {
-				previousAdvisors = advisorsData;
+				previousAdvisors = advisorsData as any;
 			}
 		} catch (error) {
 			console.log('No previous advisors found');
@@ -680,17 +680,10 @@
 	async function loadPreviousRituals() {
 		if (!holosphere || !holonID) return;
 		
-		const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
-			const timeoutPromise = new Promise((_, reject) => 
-				setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-			);
-			return Promise.race([promise, timeoutPromise]);
-		};
-		
 		try {
 			const ritualsData = await fetchWithTimeout(holosphere.get(holonID, "previous_rituals", holonID), 2000);
 			if (ritualsData && Array.isArray(ritualsData)) {
-				previousRituals = ritualsData;
+				previousRituals = ritualsData as any;
 			}
 		} catch (error) {
 			console.log('No previous rituals found');
@@ -709,18 +702,7 @@
 	}
 
 	// Get active members count
-	$: totalMembers = Object.keys(councilData.members).length;
 	$: activeMembers = Object.values(councilData.members).filter(member => member.status === 'active').length;
-
-	// Get status color
-	function getStatusColor(status: string): string {
-		switch (status) {
-			case 'active': return '#10b981';
-			case 'inactive': return '#ef4444';
-			case 'pending': return '#f59e0b';
-			default: return '#6b7280';
-		}
-	}
 
 	// Initialize on mount
 	onMount(() => {
@@ -744,7 +726,7 @@
 			connectionReady = true;
 			
 			// Set up subscription to ID store with debouncing
-			let updateTimeout: NodeJS.Timeout;
+			let updateTimeout: ReturnType<typeof setTimeout> | undefined;
 			const idSubscription = ID.subscribe((value) => {
 				if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
 					// Clear any pending update
@@ -770,11 +752,13 @@
 			};
 		};
 		
-		checkConnection();
+		checkConnection().then((cleanup) => {
+			if (cleanup) idStoreUnsubscribe = cleanup;
+		});
 	});
 
 	// Watch for page ID changes with debouncing
-	let pageUpdateTimeout: NodeJS.Timeout;
+	let pageUpdateTimeout: ReturnType<typeof setTimeout> | undefined;
 	$: {
 		const newId = $page.params.id;
 		if (newId && newId !== holonID && connectionReady) {
@@ -796,6 +780,12 @@
 		}
 	}
 
+	// Clean up subscriptions on destroy
+	onDestroy(() => {
+		try { if (councilUnsubscribe) councilUnsubscribe(); } catch {}
+		try { if (idStoreUnsubscribe) idStoreUnsubscribe(); } catch {}
+	});
+
 	// Select previous value
 	function selectPreviousValue(value: string) {
 		if (!ritualSession.declared_values.includes(value) && ritualSession.declared_values.length < 5) {
@@ -804,7 +794,7 @@
 	}
 
 	// Select previous advisor
-	function selectPreviousAdvisor(advisor: any) {
+	function selectPreviousAdvisor(advisor: { name: string; type: 'real' | 'mythic' | 'archetype'; lens: string; }) {
 		if (ritualSession.advisors.length < 5) {
 			const advisorExists = ritualSession.advisors.some(a => 
 				a.name === advisor.name && a.lens === advisor.lens
@@ -926,28 +916,28 @@
 												<label class="block text-gray-300 text-sm font-medium mb-2">
 													Enter advisor name:
 												</label>
-												<input
-													type="text"
-													bind:value={circleInputs[editingCircle]}
-													placeholder="Enter advisor name..."
-													class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-													on:keydown={(e) => {
-														if (e.key === 'Enter') {
-															saveCircleInput(editingCircle);
-														} else if (e.key === 'Escape') {
-															cancelCircleInput();
-														}
-													}}
-												/>
-											</div>
+																					<input
+										type="text"
+										bind:value={circleInputs[editingCircle!]}
+										placeholder="Enter advisor name..."
+										class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+										on:keydown={(e) => {
+											if (e.key === 'Enter') {
+												saveCircleInput(editingCircle!);
+											} else if (e.key === 'Escape') {
+												cancelCircleInput();
+											}
+										}}
+									/>
+</div>
 											
 											<div class="flex gap-3">
-												<button
-													on:click={() => saveCircleInput(editingCircle)}
-													class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-xl transition-colors"
-												>
-													Save
-												</button>
+																					<button
+										on:click={() => saveCircleInput(editingCircle!)}
+										class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-xl transition-colors"
+									>
+										Save
+									</button>
 												<button
 													on:click={cancelCircleInput}
 													class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-xl transition-colors"
