@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, getContext } from "svelte";
+	import { onMount, onDestroy, getContext } from "svelte";
 	import { ID } from "../dashboard/store";
 	import { page } from "$app/stores";
 	import HoloSphere from "holosphere";
@@ -30,6 +30,18 @@
 		}>;
 	}
 
+	// Shared constants for Metatron circle IDs (self-similar positions reused across the component)
+	const INNER_POSITIONS = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left'] as const;
+	const OUTER_POSITIONS = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'] as const;
+
+	// Shared helper: fetch with timeout
+	async function fetchWithTimeout<T>(promise: Promise<T>, timeoutMs: number = 5000): Promise<T> {
+		const timeoutPromise = new Promise<never>((_, reject) =>
+			setTimeout(() => reject(new Error('Timeout')), timeoutMs)
+		);
+		return Promise.race([promise, timeoutPromise]) as Promise<T>;
+	}
+
 	let holosphere = getContext("holosphere") as HoloSphere;
 	let holonID: string = '';
 	let councilData: CouncilData = {
@@ -48,6 +60,10 @@
 	let showMemberModal = false;
 	let editingCircle: string | null = null;
 	let circleInputs: Record<string, string> = {};
+
+	// Track unsubscribers to clean up on destroy
+	let councilUnsubscribe: (() => void) | undefined;
+	let idStoreUnsubscribe: (() => void) | undefined;
 
 	// Ritual state management
 	let showRitual = false;
@@ -121,23 +137,21 @@
 		circles.push({ id: 'center', x: 50, y: 50 });
 
 		// Inner ring circles (2r from center) - starting from top, clockwise
-		const innerNames = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left'];
-		for (let k = 0; k < 6; k++) {
+		for (let k = 0; k < INNER_POSITIONS.length; k++) {
 			const angleRad = (Math.PI / 3) * k - Math.PI / 2; // 60° increments, starting from top (-90° to align with screen)
 			const d = 2 * rPercent;
 			const x = 50 + d * Math.cos(angleRad);
 			const y = 50 + d * Math.sin(angleRad);
-			circles.push({ id: innerNames[k], x, y });
+			circles.push({ id: INNER_POSITIONS[k], x, y });
 		}
 
 		// Outer ring circles (4r from center) - starting from top, clockwise
-		const outerNames = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
-		for (let k = 0; k < 6; k++) {
+		for (let k = 0; k < OUTER_POSITIONS.length; k++) {
 			const angleRad = (Math.PI / 3) * k - Math.PI / 2; // 60° increments, starting from top (-90° to align with screen)
 			const d = 4 * rPercent;
 			const x = 50 + d * Math.cos(angleRad);
 			const y = 50 + d * Math.sin(angleRad);
-			circles.push({ id: outerNames[k], x, y });
+			circles.push({ id: OUTER_POSITIONS[k], x, y });
 		}
 		return circles;
 	}
@@ -153,14 +167,6 @@
 		try {
 			console.log(`Fetching council data for holon: ${holonID}`);
 			
-			// Fetch with timeout
-			const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
-				const timeoutPromise = new Promise((_, reject) => 
-					setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-				);
-				return Promise.race([promise, timeoutPromise]);
-			};
-
 			// Fetch council data
 			const [membersData, proposalsData] = await Promise.all([
 				fetchWithTimeout(holosphere.getAll(holonID, holonID), 5000),
@@ -220,8 +226,11 @@
 
 			console.log(`Successfully fetched council data for holon ${holonID}:`, Object.keys(councilData.members).length, 'members');
 
-			// Set up subscription after successful fetch
-			await subscribeToCouncil();
+			// Re-subscribe: clean up old then subscribe anew
+			if (councilUnsubscribe) {
+				try { councilUnsubscribe(); } catch {}
+			}
+			councilUnsubscribe = await subscribeToCouncil();
 
 		} catch (error: any) {
 			console.error('Error fetching council data:', error);
@@ -313,11 +322,6 @@
 		if (!circleInputs[circleId]) {
 			circleInputs[circleId] = '';
 		}
-	}
-
-	// Handle circle input change
-	function handleCircleInputChange(circleId: string, value: string) {
-		circleInputs[circleId] = value;
 	}
 
 	// Utility function to create a simple hash of a string
@@ -432,18 +436,16 @@
 		newInputs['center'] = ritualSession.wish_statement.substring(0, 20) + '...';
 		
 		// Inner ring: Values
-		const innerPositions = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left'];
 		ritualSession.declared_values.forEach((value, index) => {
-			if (index < innerPositions.length) {
-				newInputs[innerPositions[index]] = value;
+			if (index < INNER_POSITIONS.length) {
+				newInputs[INNER_POSITIONS[index]] = value;
 			}
 		});
 		
 		// Outer ring: Advisors
-		const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
 		ritualSession.advisors.forEach((advisor, index) => {
-			if (index < outerPositions.length) {
-				newInputs[outerPositions[index]] = advisor.name;
+			if (index < OUTER_POSITIONS.length) {
+				newInputs[OUTER_POSITIONS[index]] = advisor.name;
 			}
 		});
 		
@@ -573,14 +575,6 @@
 	async function loadHistoryData() {
 		if (!holosphere || !holonID) return;
 		
-		// Fetch with timeout function
-		const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
-			const timeoutPromise = new Promise((_, reject) => 
-				setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-			);
-			return Promise.race([promise, timeoutPromise]);
-		};
-		
 		try {
 			// Load previous values
 			const valuesData = await fetchWithTimeout(holosphere.get(holonID, "ritual_previous_values", holonID), 2000);
@@ -680,13 +674,6 @@
 	async function loadPreviousRituals() {
 		if (!holosphere || !holonID) return;
 		
-		const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
-			const timeoutPromise = new Promise((_, reject) => 
-				setTimeout(() => reject(new Error('Timeout')), timeoutMs)
-			);
-			return Promise.race([promise, timeoutPromise]);
-		};
-		
 		try {
 			const ritualsData = await fetchWithTimeout(holosphere.get(holonID, "previous_rituals", holonID), 2000);
 			if (ritualsData && Array.isArray(ritualsData)) {
@@ -744,7 +731,7 @@
 			connectionReady = true;
 			
 			// Set up subscription to ID store with debouncing
-			let updateTimeout: NodeJS.Timeout;
+			let updateTimeout: ReturnType<typeof setTimeout> | undefined;
 			const idSubscription = ID.subscribe((value) => {
 				if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
 					// Clear any pending update
@@ -770,11 +757,13 @@
 			};
 		};
 		
-		checkConnection();
+		checkConnection().then((cleanup) => {
+			if (cleanup) idStoreUnsubscribe = cleanup;
+		});
 	});
 
 	// Watch for page ID changes with debouncing
-	let pageUpdateTimeout: NodeJS.Timeout;
+	let pageUpdateTimeout: ReturnType<typeof setTimeout> | undefined;
 	$: {
 		const newId = $page.params.id;
 		if (newId && newId !== holonID && connectionReady) {
@@ -795,6 +784,12 @@
 			}
 		}
 	}
+
+	// Clean up subscriptions on destroy
+	onDestroy(() => {
+		try { if (councilUnsubscribe) councilUnsubscribe(); } catch {}
+		try { if (idStoreUnsubscribe) idStoreUnsubscribe(); } catch {}
+	});
 
 	// Select previous value
 	function selectPreviousValue(value: string) {
