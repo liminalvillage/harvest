@@ -21,11 +21,11 @@
 	// Check if we have a valid holon selected
 	$: hasValidHolon = holonId && holonId !== 'undefined' && holonId !== 'null' && holonId.trim() !== '';
 	
-	// Filter data to only show navigation items when a holon is selected
-	// But always show primary pages (standalone routes)
+    // Filter data to only show navigation items when a holon is selected
+    // But always show primary pages (standalone routes)
 	$: filteredData = data.filter(item => {
-		// Always show standalone routes (primary pages)
-		if (item.link === '/') {
+        // Always show standalone routes (primary pages)
+        if (item.link === '/' || item.link === '/sdgs') {
 			return true;
 		}
 		// Only show other items when a holon is selected
@@ -33,9 +33,9 @@
 	});
 	
 	// Reactive active states for each item
-	$: activeStates = filteredData.map(item => {
-		// Handle standalone routes (primary pages) vs holon-specific routes
-		const isStandaloneRoute = item.link === '/';
+    $: activeStates = filteredData.map(item => {
+        // Handle standalone routes (primary pages) vs holon-specific routes
+        const isStandaloneRoute = item.link === '/' || item.link === '/sdgs';
 		const itemPath = isStandaloneRoute ? item.link : '/' + holonId + item.link;
 		let isActive = false;
 		
@@ -48,7 +48,7 @@
 			isActive = true;
 		}
 		// Handle nested routes (e.g., /dashboard/ should match /dashboard)
-		else if (!isStandaloneRoute && currentPath.startsWith(itemPath + '/')) {
+        else if (!isStandaloneRoute && currentPath.startsWith(itemPath + '/')) {
 			isActive = true;
 		}
 		// Handle exact path matches for holon-specific routes
@@ -67,7 +67,7 @@
 <ul class="md:pl-3 overflow-hidden">
 	<li>
 		{#each activeStates as item (item.title)}
-			<a class={style.link} href={item.isStandaloneRoute ? item.link : '/'+$page.params.id+item.link}>
+            <a class={style.link} href={item.isStandaloneRoute ? item.link : '/'+$page.params.id+item.link}>
 				<div class={`${style.iconContainer} ${item.isActive ? style.active : style.inactive}`}>
 					<div class={style.icon}>
 						<svelte:component this={item.icon} />
