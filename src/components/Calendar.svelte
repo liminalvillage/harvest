@@ -1,9 +1,10 @@
 <script lang="ts">
-    import { createEventDispatcher,getContext, onMount } from 'svelte';
+    import { createEventDispatcher,getContext, onMount, onDestroy } from 'svelte';
     import HoloSphere from 'holosphere';
     import { ID } from "../dashboard/store";
     import Timeline from './Timeline.svelte';
     import { formatDate } from "../utils/date";
+    import * as d3 from "d3";
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -25,8 +26,8 @@
     let tempTime: string;
     let tempEndTime: string;
     
-    // View options: 'month', 'week', 'day'
-    let viewMode: 'grid' | 'list' | 'canvas' | 'month' | 'week' | 'day' = 'week';
+    // View options: 'month', 'week', 'day', 'orbits'
+    let viewMode: 'grid' | 'list' | 'canvas' | 'month' | 'week' | 'day' | 'orbits' = 'week';
     
     // Get calendar data for current month
     $: monthData = getMonthData(currentDate);
@@ -37,7 +38,71 @@
     // Add these before the calendar state variables
     let users: Record<string, User> = {};
     let profiles: Record<string, Profile> = {};
-    let unsubscribe: (() => void) | null = null;
+    let unsubscribe: (() => void) | undefined;
+
+    // Orbital visualization variables
+    interface RecurringTask {
+        id: string;
+        title: string;
+        description?: string;
+        frequency: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+        lastOccurrence: Date;
+        nextOccurrence: Date;
+        orbitPeriod: number; // in days
+        orbitRadius: number; // calculated from frequency
+        status: 'active' | 'paused' | 'completed';
+        category?: string;
+        participants: Array<{ 
+            id: string; 
+            username: string;
+            firstName?: string;
+            lastName?: string;
+        }>;
+        appreciation: string[];
+        created?: string;
+        recurringTaskID?: string; // ID reference to the recurring task
+    }
+
+    interface OrbitStore {
+        [key: string]: RecurringTask;
+    }
+
+    // D3 visualization variables
+    let svg: d3.Selection<SVGSVGElement, unknown, null, undefined>;
+    let container: HTMLDivElement;
+    let width = 800; // Default width, will be updated when container is available
+    let height = 600; // Default height, will be updated when container is available
+    let centerX = width / 2;
+    let centerY = height / 2;
+
+    // Orbital state
+    let orbitStore: OrbitStore = {};
+    let selectedOrbitTask: RecurringTask | null = null;
+    let showOrbitTaskDetails = false;
+    let showEditModal = false;
+    let editingTask: RecurringTask | null = null;
+    let questsUnsubscribe: (() => void) | undefined;
+
+    // Form data for editing orbital tasks
+    let editForm = {
+        title: '',
+        description: '',
+        category: '',
+        frequency: 'weekly' as 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom',
+        startDate: '',
+        startTime: ''
+    };
+
+    // Mystical indigo color scheme for task categories
+    const categoryColors = {
+        'work': '#6366F1',      // Indigo
+        'personal': '#8B5CF6',  // Violet
+        'health': '#A855F7',    // Purple
+        'learning': '#7C3AED',  // Indigo
+        'finance': '#5B21B6',   // Deep Indigo
+        'social': '#4F46E5',    // Indigo
+        'default': '#6366F1'    // Default Indigo
+    };
 
     // Watch for month changes to update data
     $: {
@@ -76,6 +141,26 @@
     onMount(() => {
         loadProfiles();
         loadTasks();
+        
+        // Add resize listener for orbital view
+        window.addEventListener('resize', handleResize);
+        
+        return () => {
+            clearInterval(currentTimeInterval);
+        };
+    });
+
+    onDestroy(() => {
+        // Remove resize listener
+        window.removeEventListener('resize', handleResize);
+        
+        // Clean up HoloSphere subscriptions
+        if (questsUnsubscribe) {
+            questsUnsubscribe();
+        }
+        if (unsubscribe && typeof unsubscribe === 'function') {
+            unsubscribe();
+        }
     });
 
     // Function to reload data when view changes
@@ -96,14 +181,31 @@
             case 'day':
                 navigateDay(direction);
                 break;
+            case 'orbits':
+                // For orbits view, navigate by days to allow fine-grained control
+                navigateDay(direction);
+                break;
         }
-        reloadData();
+        
+        // Reload data for all views
+        if (viewMode === 'orbits') {
+            // For orbits, just update the visualization since data is already loaded
+            if (svg) {
+                updateVisualization();
+            }
+        } else {
+            reloadData();
+        }
     }
 
     // Update view mode changes to trigger data reload
-    function handleViewModeChange(mode: 'month' | 'week' | 'day') {
+    function handleViewModeChange(mode: 'month' | 'week' | 'day' | 'orbits') {
         viewMode = mode;
-        reloadData();
+        if (mode === 'orbits') {
+            loadOrbitData();
+        } else {
+            reloadData();
+        }
     }
 
     // Load profiles
@@ -471,6 +573,623 @@
             isVisible: now.getHours() >= 6 && now.getHours() < 24
         };
     }
+
+    // ORBITAL VISUALIZATION FUNCTIONS
+    
+    // Reactive statement to reinitialize visualization when switching to orbits view
+    $: if (viewMode === 'orbits' && container) {
+        setTimeout(() => {
+            // Ensure container is visible before initializing
+            const containerRect = container.getBoundingClientRect();
+            if (containerRect.width > 0 && containerRect.height > 0) {
+                // Update dimensions before initializing
+                width = containerRect.width;
+                height = containerRect.height;
+                centerX = width / 2;
+                centerY = height / 2;
+                initializeVisualization();
+            } else {
+                // If container not ready, try again after a short delay
+                setTimeout(() => {
+                    const rect = container.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        width = rect.width;
+                        height = rect.height;
+                        centerX = width / 2;
+                        centerY = height / 2;
+                        initializeVisualization();
+                    }
+                }, 200);
+            }
+        }, 100); // Small delay to ensure DOM is ready
+    }
+    
+    // Reactive statement to update visualization when store changes
+    $: if (svg && Object.keys(orbitStore).length > 0) {
+        updateVisualization();
+    }
+    
+    // Reactive statement to update orbital visualization when currentDate changes
+    $: if (viewMode === 'orbits' && svg && currentDate) {
+        updateVisualization();
+    }
+
+    // Load orbital data
+    async function loadOrbitData() {
+        if (!holosphere || !$ID) {
+            console.log('Holosphere or ID not available');
+            return;
+        }
+        
+        console.log('Loading orbital data...');
+        
+        try {
+            // Get all quests from the current holon
+            const quests = await holosphere.getAll($ID, "quests");
+            console.log('Found quests:', quests?.length || 0);
+            
+            if (!quests || quests.length === 0) {
+                console.log('No quests found, trying fallback approach...');
+                await loadFallbackRecurringTasks();
+                return;
+            }
+            
+            // Find quests that have a recurringTaskID field or are recurring
+            const recurringQuests = quests.filter((quest: any) => {
+                const hasRecurringID = quest.recurringTaskID || quest.recurring_task_id || quest.recurringTaskId;
+                const isRecurring = quest.status === 'recurring' || quest.type === 'recurring' || quest.status === 'repeating';
+                return hasRecurringID || isRecurring;
+            });
+            
+            console.log('Found recurring quests:', recurringQuests.length);
+            
+            const convertedTasks: OrbitStore = {};
+            
+            for (const quest of recurringQuests) {
+                const recurringTaskID = quest.recurringTaskID || quest.recurring_task_id || quest.recurringTaskId;
+                
+                if (recurringTaskID) {
+                    try {
+                        // Try to get the recurring task from the global recurring table
+                        const recurringTask = await holosphere.getGlobal("recurring", recurringTaskID);
+                        
+                        if (recurringTask) {
+                            const convertedTask = convertRecurringTaskToOrbitFormat(recurringTask, quest);
+                            if (convertedTask) {
+                                convertedTasks[quest.id] = convertedTask;
+                            }
+                        } else {
+                            const fallbackTask = createFallbackRecurringTask(quest);
+                            if (fallbackTask) {
+                                convertedTasks[quest.id] = fallbackTask;
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`Error looking up recurring task ${recurringTaskID}:`, error);
+                        const fallbackTask = createFallbackRecurringTask(quest);
+                        if (fallbackTask) {
+                            convertedTasks[quest.id] = fallbackTask;
+                        }
+                    }
+                } else {
+                    // Create fallback for recurring tasks without specific ID
+                    const fallbackTask = createFallbackRecurringTask(quest);
+                    if (fallbackTask) {
+                        convertedTasks[quest.id] = fallbackTask;
+                    }
+                }
+            }
+            
+            // Update the store
+            orbitStore = { ...orbitStore, ...convertedTasks };
+            console.log('Loaded orbital tasks:', Object.keys(convertedTasks).length);
+            
+            // Force visualization update
+            if (svg) {
+                updateVisualization();
+            }
+            
+        } catch (error) {
+            console.error('Error loading orbital data:', error);
+            await loadFallbackRecurringTasks();
+        }
+    }
+
+    // Fallback approach: load recurring tasks from other sources
+    async function loadFallbackRecurringTasks() {
+        try {
+            console.log('Attempting fallback recurring task loading...');
+            
+            if (!$ID) return;
+            const allQuests = await holosphere.getAll($ID, "quests");
+            if (allQuests && allQuests.length > 0) {
+                const recurringQuests = allQuests.filter((quest: any) => 
+                    quest.status === 'recurring' || 
+                    quest.type === 'recurring' || 
+                    quest.status === 'repeating'
+                );
+                
+                console.log('Found recurring quests by status/type:', recurringQuests.length);
+                
+                const convertedTasks: OrbitStore = {};
+                recurringQuests.forEach((quest: any) => {
+                    const fallbackTask = createFallbackRecurringTask(quest);
+                    if (fallbackTask) {
+                        convertedTasks[quest.id] = fallbackTask;
+                    }
+                });
+                
+                // Update the store
+                orbitStore = { ...orbitStore, ...convertedTasks };
+                console.log('Fallback loaded tasks:', Object.keys(convertedTasks).length);
+                
+                // Force visualization update
+                if (svg) {
+                    updateVisualization();
+                }
+            }
+        } catch (error) {
+            console.error('Error in fallback loading:', error);
+        }
+    }
+
+    // Create a fallback recurring task from quest data
+    function createFallbackRecurringTask(quest: any): RecurringTask | null {
+        try {
+            const frequency = determineFrequencyFromQuest(quest);
+            if (!frequency) return null;
+            
+            const now = new Date();
+            const lastOccurrence = quest.when || quest.created || now;
+            const nextOccurrence = calculateNextOccurrence(lastOccurrence, frequency);
+            const orbitPeriod = getOrbitPeriod(frequency);
+            const orbitRadius = getOrbitRadius(frequency);
+            
+            return {
+                id: quest.id,
+                title: quest.title || 'Untitled Task',
+                description: quest.description || '',
+                frequency,
+                lastOccurrence: new Date(lastOccurrence),
+                nextOccurrence,
+                orbitPeriod,
+                orbitRadius,
+                status: 'active',
+                category: quest.category || 'work',
+                participants: quest.participants || [],
+                appreciation: quest.appreciation || [],
+                created: quest.created || quest.when,
+                recurringTaskID: quest.recurringTaskID || quest.recurring_task_id || quest.recurringTaskId
+            };
+        } catch (error) {
+            console.error('Error creating fallback recurring task:', error);
+            return null;
+        }
+    }
+
+    // Determine frequency from quest data
+    function determineFrequencyFromQuest(quest: any): 'daily' | 'weekly' | 'monthly' | 'yearly' | null {
+        if (quest.status === 'recurring' || quest.type === 'recurring') {
+            return 'weekly';
+        }
+        
+        const recurringKeywords = ['daily', 'weekly', 'monthly', 'yearly', 'every', 'recurring', 'repeat'];
+        const text = `${quest.title} ${quest.description || ''}`.toLowerCase();
+        
+        if (text.includes('daily') || text.includes('every day')) return 'daily';
+        if (text.includes('weekly') || text.includes('every week')) return 'weekly';
+        if (text.includes('monthly') || text.includes('every month')) return 'monthly';
+        if (text.includes('yearly') || text.includes('every year') || text.includes('annual')) return 'yearly';
+        
+        if (quest.recurringTaskID || quest.recurring_task_id || quest.recurringTaskId) {
+            return 'weekly';
+        }
+        
+        return null;
+    }
+
+    // Convert recurring task from Scheduler format to Orbits format
+    function convertRecurringTaskToOrbitFormat(schedulerTask: any, originalQuest: any): RecurringTask | null {
+        try {
+            const frequency = schedulerTask.frequency?.toLowerCase();
+            if (!frequency) {
+                return createFallbackRecurringTask(originalQuest);
+            }
+            
+            let mappedFrequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+            switch (frequency) {
+                case 'daily':
+                    mappedFrequency = 'daily';
+                    break;
+                case 'weekly':
+                    mappedFrequency = 'weekly';
+                    break;
+                case 'monthly':
+                case 'quarterly':
+                    mappedFrequency = 'monthly';
+                    break;
+                case 'yearly':
+                    mappedFrequency = 'yearly';
+                    break;
+                default:
+                    return createFallbackRecurringTask(originalQuest);
+            }
+            
+            const now = new Date();
+            const lastOccurrence = schedulerTask.when || schedulerTask.createdAt || originalQuest.when || now;
+            const nextOccurrence = calculateNextOccurrence(lastOccurrence, mappedFrequency);
+            const orbitPeriod = getOrbitPeriod(mappedFrequency);
+            const orbitRadius = getOrbitRadius(mappedFrequency);
+            
+            return {
+                id: originalQuest.id,
+                title: originalQuest.title || (Array.isArray(schedulerTask.title) ? schedulerTask.title.join(' ') : schedulerTask.title),
+                description: originalQuest.description || schedulerTask.description || '',
+                frequency: mappedFrequency,
+                lastOccurrence: new Date(lastOccurrence),
+                nextOccurrence,
+                orbitPeriod,
+                orbitRadius,
+                status: 'active',
+                category: originalQuest.category || 'work',
+                participants: originalQuest.participants || (schedulerTask.initiator ? [schedulerTask.initiator] : []),
+                appreciation: originalQuest.appreciation || [],
+                created: schedulerTask.createdAt || originalQuest.created || originalQuest.when,
+                recurringTaskID: originalQuest.recurringTaskID || originalQuest.recurring_task_id || originalQuest.recurringTaskId
+            };
+        } catch (error) {
+            console.error('Error converting recurring task:', error);
+            return createFallbackRecurringTask(originalQuest);
+        }
+    }
+
+    // Calculate orbital position based on time and period
+    function calculateOrbitalPosition(task: RecurringTask, time: Date): { x: number; y: number; angle: number; progress: number } {
+        // Calculate the actual next occurrence (same logic as calculateTimeToOccurrence)
+        let nextOccurrence = new Date(task.nextOccurrence);
+        
+        // If the scheduled time has passed, calculate the next occurrence
+        while (nextOccurrence.getTime() <= time.getTime()) {
+            switch (task.frequency) {
+                case 'daily':
+                    nextOccurrence.setDate(nextOccurrence.getDate() + 1);
+                    break;
+                case 'weekly':
+                    nextOccurrence.setDate(nextOccurrence.getDate() + 7);
+                    break;
+                case 'monthly':
+                    nextOccurrence.setMonth(nextOccurrence.getMonth() + 1);
+                    break;
+                case 'yearly':
+                    nextOccurrence.setFullYear(nextOccurrence.getFullYear() + 1);
+                    break;
+            }
+        }
+        
+        const timeToNext = Math.max(0, nextOccurrence.getTime() - time.getTime());
+        const periodMs = task.orbitPeriod * 24 * 60 * 60 * 1000;
+        
+        // Calculate progress through the current cycle
+        // When timeToNext = periodMs (full cycle remaining), progress = 0 (at start/12 o'clock)
+        // When timeToNext = 0 (no time remaining), progress = 1 (full circle completed)
+        const progress = Math.max(0, Math.min(1, (periodMs - timeToNext) / periodMs));
+        const angle = progress * 2 * Math.PI;
+        
+        // Adjust angle so 0 is at the top (12 o'clock) instead of right side (3 o'clock)
+        const adjustedAngle = angle - Math.PI / 2;
+        
+        const x = centerX + task.orbitRadius * Math.cos(adjustedAngle);
+        const y = centerY + task.orbitRadius * Math.sin(adjustedAngle);
+        
+        return { x, y, angle: adjustedAngle, progress };
+    }
+
+    // Calculate time to occurrence (next time the task should happen)
+    function calculateTimeToOccurrence(task: RecurringTask, time: Date): number {
+        let nextOccurrence = new Date(task.nextOccurrence);
+        
+        // If the scheduled time has passed, calculate the next occurrence
+        while (nextOccurrence.getTime() <= time.getTime()) {
+            switch (task.frequency) {
+                case 'daily':
+                    nextOccurrence.setDate(nextOccurrence.getDate() + 1);
+                    break;
+                case 'weekly':
+                    nextOccurrence.setDate(nextOccurrence.getDate() + 7);
+                    break;
+                case 'monthly':
+                    nextOccurrence.setMonth(nextOccurrence.getMonth() + 1);
+                    break;
+                case 'yearly':
+                    nextOccurrence.setFullYear(nextOccurrence.getFullYear() + 1);
+                    break;
+            }
+        }
+        
+        const timeDiff = nextOccurrence.getTime() - time.getTime();
+        return Math.max(0, timeDiff);
+    }
+
+    // Format time duration
+    function formatDuration(ms: number): string {
+        const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+        const hours = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+        const minutes = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
+        
+        if (days > 0) return `${days}d ${hours}h`;
+        if (hours > 0) return `${hours}h ${minutes}m`;
+        return `${minutes}m`;
+    }
+    
+    // Get orbit period in days based on frequency
+    function getOrbitPeriod(frequency: string): number {
+        switch (frequency) {
+            case 'daily': return 1;
+            case 'weekly': return 7;
+            case 'monthly': return 30;
+            case 'yearly': return 365;
+            default: return 7;
+        }
+    }
+    
+    // Get orbit radius based on frequency (closer = faster)
+    function getOrbitRadius(frequency: string): number {
+        switch (frequency) {
+            case 'daily': return 80;
+            case 'weekly': return 120;
+            case 'monthly': return 180;
+            case 'yearly': return 250;
+            default: return 120;
+        }
+    }
+    
+    // Calculate next occurrence based on frequency
+    function calculateNextOccurrence(lastOccurrence: Date, frequency: string): Date {
+        const now = new Date();
+        const last = new Date(lastOccurrence);
+        let next = new Date(last);
+        
+        // Add one period from the last occurrence
+        switch (frequency) {
+            case 'daily':
+                next.setDate(next.getDate() + 1);
+                break;
+            case 'weekly':
+                next.setDate(next.getDate() + 7);
+                break;
+            case 'monthly':
+                next.setMonth(next.getMonth() + 1);
+                break;
+            case 'yearly':
+                next.setFullYear(next.getFullYear() + 1);
+                break;
+        }
+        
+        // If next occurrence is in the past, keep adding periods until it's in the future
+        while (next <= now) {
+            switch (frequency) {
+                case 'daily':
+                    next.setDate(next.getDate() + 1);
+                    break;
+                case 'weekly':
+                    next.setDate(next.getDate() + 7);
+                    break;
+                case 'monthly':
+                    next.setMonth(next.getMonth() + 1);
+                    break;
+                case 'yearly':
+                    next.setFullYear(next.getFullYear() + 1);
+                    break;
+            }
+        }
+        
+        return next;
+    }
+
+    // Handle window resize to make visualization responsive
+    function handleResize() {
+        if (container) {
+            const containerRect = container.getBoundingClientRect();
+            width = containerRect.width || 800;
+            height = containerRect.height || 600;
+            centerX = width / 2;
+            centerY = height / 2;
+            
+            if (svg) {
+                initializeVisualization();
+            }
+        }
+    }
+
+    // Initialize D3 visualization
+    function initializeVisualization() {
+        if (!container) return;
+        
+        // Get actual container dimensions instead of window dimensions
+        const containerRect = container.getBoundingClientRect();
+        width = containerRect.width || 800; // fallback width
+        height = containerRect.height || 600; // fallback height
+        centerX = width / 2;
+        centerY = height / 2;
+
+        // Clear existing SVG
+        d3.select(container).selectAll('*').remove();
+
+        // Create SVG
+        svg = d3.select(container)
+            .append('svg')
+            .attr('width', width)
+            .attr('height', height)
+            .attr('viewBox', `0 0 ${width} ${height}`)
+            .style('background', 'radial-gradient(circle at center, #1e1b4b 0%, #0f0f23 50%, #000000 100%)'); // Mystical indigo gradient
+
+        // Add orbital rings
+        const uniqueRadii = [...new Set(Object.values(orbitStore).map(task => task.orbitRadius))].sort((a, b) => a - b);
+        
+        uniqueRadii.forEach(radius => {
+            svg.append('circle')
+                .attr('cx', centerX)
+                .attr('cy', centerY)
+                .attr('r', radius)
+                .attr('fill', 'none')
+                .attr('stroke', '#6366F1')
+                .attr('stroke-width', 1.5)
+                .attr('stroke-dasharray', '5,5')
+                .attr('opacity', 0.4)
+                .style('filter', 'drop-shadow(0 0 8px rgba(99, 102, 241, 0.3))');
+        });
+
+        // Add mystical center point
+        svg.append('circle')
+            .attr('cx', centerX)
+            .attr('cy', centerY)
+            .attr('r', 6)
+            .attr('fill', '#6366F1')
+            .attr('stroke', '#8B5CF6')
+            .attr('stroke-width', 3)
+            .style('filter', 'drop-shadow(0 0 12px rgba(99, 102, 241, 0.8))');
+
+        // Add mystical "NOW" indicator line (from center to edge of visualization)
+        const edgeY = Math.min(50, centerY - 50); // Go to edge or at least 50px from center
+        svg.append('line')
+            .attr('x1', centerX)
+            .attr('y1', centerY)
+            .attr('x2', centerX)
+            .attr('y2', edgeY)
+            .attr('stroke', '#8B5CF6') // Mystical violet
+            .attr('stroke-width', 2.5)
+            .attr('stroke-dasharray', '5,5')
+            .style('filter', 'drop-shadow(0 0 6px rgba(139, 92, 246, 0.5))');
+
+        // Add mystical "NOW" label at the end of the line
+        svg.append('text')
+            .attr('x', centerX)
+            .attr('y', edgeY - 10)
+            .attr('fill', '#A855F7')
+            .attr('font-size', '12px')
+            .attr('font-weight', '600')
+            .attr('text-anchor', 'middle')
+            .style('filter', 'drop-shadow(0 0 4px rgba(168, 85, 247, 0.6))')
+            .text('NOW');
+
+
+
+        updateVisualization();
+    }
+
+    // Update visualization with current task positions
+    function updateVisualization() {
+        if (!svg) return;
+
+        // Remove existing planets
+        svg.selectAll('.planet').remove();
+        svg.selectAll('.orbit-trail').remove();
+
+        // Use the selected calendar date for orbital calculations
+        const visualizationTime = new Date(currentDate);
+        // If we're looking at today, use current time for more accurate positioning
+        if (currentDate.toDateString() === new Date().toDateString()) {
+            visualizationTime.setHours(new Date().getHours());
+            visualizationTime.setMinutes(new Date().getMinutes());
+            visualizationTime.setSeconds(new Date().getSeconds());
+        }
+
+        // Add planets for each task
+        Object.values(orbitStore).forEach(task => {
+            const position = calculateOrbitalPosition(task, visualizationTime);
+            const timeToOccurrence = calculateTimeToOccurrence(task, visualizationTime);
+            const categoryColor = categoryColors[task.category as keyof typeof categoryColors] || categoryColors.default;
+            
+            // Debug: Log unusual timer values (can be removed in production)
+            if (timeToOccurrence < 60000) { // Less than 1 minute
+                console.log(`Timer near zero for ${task.title}: ${Math.round(timeToOccurrence / 1000)}s remaining`);
+            }
+            
+            // Add mystical orbit trail
+            svg.append('circle')
+                .attr('cx', centerX)
+                .attr('cy', centerY)
+                .attr('r', task.orbitRadius)
+                .attr('fill', 'none')
+                .attr('stroke', categoryColor)
+                .attr('stroke-width', 2.5)
+                .attr('opacity', 0.15)
+                .attr('stroke-dasharray', '8,8')
+                .classed('orbit-trail', true)
+                .style('filter', 'drop-shadow(0 0 4px rgba(99, 102, 241, 0.2))');
+
+            // Add planet
+            const planetGroup = svg.append('g')
+                .classed('planet', true)
+                .attr('transform', `translate(${position.x}, ${position.y})`);
+
+            // Mystical planet body
+            planetGroup.append('circle')
+                .attr('r', 12)
+                .attr('fill', categoryColor)
+                .attr('stroke', '#E0E7FF')
+                .attr('stroke-width', 2)
+                .attr('filter', 'drop-shadow(0 0 8px rgba(99, 102, 241, 0.6))');
+
+            // Enhanced mystical glow effect
+            planetGroup.append('circle')
+                .attr('r', 20)
+                .attr('fill', 'none')
+                .attr('stroke', categoryColor)
+                .attr('stroke-width', 1.5)
+                .attr('opacity', 0.4)
+                .style('filter', 'blur(2px)');
+
+            // Task title
+            planetGroup.append('text')
+                .attr('x', 0)
+                .attr('y', -20)
+                .attr('fill', '#ffffff')
+                .attr('font-size', '10px')
+                .attr('text-anchor', 'middle')
+                .attr('font-weight', '600')
+                .text(task.title.length > 12 ? task.title.substring(0, 12) + '...' : task.title);
+
+            // Time to occurrence indicator
+            const timeText = formatDuration(timeToOccurrence);
+            const timeColor = timeToOccurrence < 60000 ? '#ef4444' : '#94a3b8'; // Red when < 1 minute, gray otherwise
+            
+            planetGroup.append('text')
+                .attr('x', 0)
+                .attr('y', 30)
+                .attr('fill', timeColor)
+                .attr('font-size', '8px')
+                .attr('text-anchor', 'middle')
+                .attr('font-weight', timeToOccurrence < 60000 ? 'bold' : 'normal')
+                .text(timeText);
+
+            // Progress indicator
+            const progressAngle = position.progress * 360;
+            planetGroup.append('circle')
+                .attr('r', 8)
+                .attr('fill', 'none')
+                .attr('stroke', '#ffffff')
+                .attr('stroke-width', 1.5)
+                .attr('stroke-dasharray', `${progressAngle / 360 * 50.24}, 50.24`)
+                .attr('transform', 'rotate(90)'); // Start at 12 o'clock (top)
+
+            // Add click event
+            planetGroup.style('cursor', 'pointer')
+                .on('click', () => selectOrbitTask(task));
+        });
+    }
+
+    // Select an orbital task for detailed view
+    function selectOrbitTask(task: RecurringTask) {
+        selectedOrbitTask = task;
+        showOrbitTaskDetails = true;
+    }
+
+    // Close orbital task details
+    function closeOrbitTaskDetails() {
+        showOrbitTaskDetails = false;
+        selectedOrbitTask = null;
+    }
 </script>
 
 <Timeline 
@@ -530,6 +1249,12 @@
                 on:click={() => handleViewModeChange('month')}
             >
                 Month
+            </button>
+            <button 
+                class="px-4 py-2 rounded-lg {viewMode === 'orbits' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors"
+                on:click={() => handleViewModeChange('orbits')}
+            >
+                Orbits
             </button>
         </div>
     </div>
@@ -789,8 +1514,104 @@
                 {/if}
             </div>
         </div>
+    {:else if viewMode === 'orbits'}
+        <!-- Orbital Visualization View -->
+        <div class="flex flex-col items-center space-y-6">
+
+
+
+
+            <!-- D3 Visualization Container -->
+            <div 
+                class="w-full max-w-7xl bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-2xl mx-auto"
+                style="min-height: calc(100vh - 400px); height: 600px;"
+                bind:this={container}
+            ></div>
+
+            <!-- Dynamic Legend based on actual task categories -->
+            {#if Object.keys(orbitStore).length > 0}
+                {@const categories = [...new Set(Object.values(orbitStore).map(task => task.category).filter(Boolean))]}
+                {#if categories.length > 0}
+                    <div class="w-full max-w-4xl">
+                        <div class="flex flex-wrap justify-center gap-6 p-4 bg-gradient-to-r from-indigo-900/80 to-purple-900/80 rounded-lg border border-indigo-500/30 backdrop-blur-sm">
+                            {#each categories as category}
+                                {#if category}
+                                    <div class="flex items-center gap-2 text-sm text-white">
+                                        <div class="w-4 h-4 rounded-full" style="background-color: {categoryColors[category] || categoryColors.default};"></div>
+                                        <span class="capitalize">{category}</span>
+                                    </div>
+                                {/if}
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
+            {/if}
+        </div>
     {/if}
 </div>
+
+<!-- Orbital Task Details Modal -->
+{#if showOrbitTaskDetails && selectedOrbitTask}
+    <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50" style="backdrop-filter: blur(4px);">
+        <div class="bg-gray-800 rounded-xl border border-gray-700 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center p-6 border-b border-gray-700">
+                <h2 class="text-2xl font-bold text-white">{selectedOrbitTask.title}</h2>
+                <button 
+                    class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
+                    on:click={closeOrbitTaskDetails}
+                    aria-label="Close modal"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="p-6">
+                <div class="space-y-4">
+                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
+                        <span class="text-white font-medium min-w-[140px]">Description:</span>
+                        <span class="text-white text-right flex-1">{selectedOrbitTask.description || 'No description provided'}</span>
+                    </div>
+                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
+                        <span class="text-white font-medium min-w-[140px]">Category:</span>
+                        <span class="text-white text-right flex-1 flex items-center justify-end gap-2">
+                            <div class="w-3 h-3 rounded-full" style="background-color: {categoryColors[selectedOrbitTask.category as keyof typeof categoryColors] || categoryColors.default};"></div>
+                            {selectedOrbitTask.category || 'Uncategorized'}
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
+                        <span class="text-white font-medium min-w-[140px]">Frequency:</span>
+                        <span class="text-white text-right flex-1 capitalize">{selectedOrbitTask.frequency}</span>
+                    </div>
+                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
+                        <span class="text-white font-medium min-w-[140px]">Orbit Period:</span>
+                        <span class="text-white text-right flex-1">{selectedOrbitTask.orbitPeriod} days</span>
+                    </div>
+                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
+                        <span class="text-white font-medium min-w-[140px]">Last Occurrence:</span>
+                        <span class="text-white text-right flex-1">{selectedOrbitTask.lastOccurrence.toLocaleDateString()}</span>
+                    </div>
+                    <div class="flex justify-between items-start py-3 border-b border-gray-700">
+                        <span class="text-white font-medium min-w-[140px]">Next Occurrence:</span>
+                        <span class="text-white text-right flex-1">{selectedOrbitTask.nextOccurrence.toLocaleDateString()}</span>
+                    </div>
+                    <div class="flex justify-between items-start py-3">
+                        <span class="text-white font-medium min-w-[140px]">Time to Occurrence:</span>
+                        <span class="text-blue-400 font-semibold text-right flex-1">
+                            {formatDuration(calculateTimeToOccurrence(selectedOrbitTask, currentDate.toDateString() === new Date().toDateString() ? new Date() : currentDate))}
+                            {#if currentDate.toDateString() !== new Date().toDateString()}
+                                <span class="text-xs text-white/60 block mt-1">
+                                    (from selected date)
+                                </span>
+                            {/if}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{/if}
 
 {#if showModal}
     <dialog 
