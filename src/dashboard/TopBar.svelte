@@ -22,6 +22,30 @@
 
 	export let toggleMyHolons: () => void;
 
+	// Add a function to refresh visited holon names
+	async function refreshVisitedHolonNames() {
+		if (browser && $walletAddress) {
+			try {
+				// Dispatch a custom event to trigger refresh in MyHolons component
+				const refreshEvent = new CustomEvent('refreshVisitedHolonNames', {
+					detail: { walletAddress: $walletAddress }
+				});
+				window.dispatchEvent(refreshEvent);
+				console.log('Dispatched refresh event for visited holon names');
+			} catch (err) {
+				console.error('Error dispatching refresh event:', err);
+			}
+		}
+	}
+
+	// Enhanced toggle function that refreshes names
+	function handleToggleMyHolons() {
+		// First refresh the visited holon names
+		refreshVisitedHolonNames();
+		// Then call the original toggle function
+		toggleMyHolons();
+	}
+
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let currentHolonName: string | undefined;
@@ -303,7 +327,7 @@
     <!-- Dashboard-style bar - full width -->
     {#if !isPrimaryPage}
         <button 
-            on:click={toggleMyHolons} 
+            on:click={handleToggleMyHolons} 
             class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 px-4 sm:px-6 py-2 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-[1.01] relative overflow-hidden flex-1"
             title="Open My Holons"
         >
@@ -333,7 +357,7 @@
     {:else}
         <!-- Root page - centered logo -->
         <div class="flex-1 flex items-center justify-center">
-            <button on:click={toggleMyHolons} class="p-2 rounded-full hover:ring-4 hover:ring-blue-400 ring-offset-2 transition-all cursor-pointer animate-pulse hover:animate-none" title="Open My Holons">
+            <button on:click={handleToggleMyHolons} class="p-2 rounded-full hover:ring-4 hover:ring-blue-400 ring-offset-2 transition-all cursor-pointer animate-pulse hover:animate-none" title="Open My Holons">
                 <div class="w-20 h-20">
                     <MyHolonsIcon />
                 </div>

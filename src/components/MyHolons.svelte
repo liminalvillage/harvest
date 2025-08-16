@@ -4,9 +4,10 @@
     import { flip } from "svelte/animate";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
+    import { browser } from "$app/environment";
     import HoloSphere from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
-    import { fetchHolonName } from "../utils/holonNames";
+    import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
     import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
     import { 
         savePersonalHolons, 
@@ -81,6 +82,47 @@
     let showSplashScreen = false;
     let showHolonIdInfo = false;
 
+    // Add a function to refresh visited holon names that can be called externally
+    async function refreshVisitedHolonNames() {
+        if (!holosphere || !connectionReady) return;
+        
+        try {
+            // Load fresh visited holons from localStorage
+            const freshVisitedHolons = loadVisitedHolons($walletAddress);
+            visitedHolons = freshVisitedHolons;
+            
+            // Update the names (cache clearing is handled in updateVisitedHolonDetails)
+            await updateVisitedHolonDetails();
+            
+            console.log('Refreshed visited holon names:', visitedHolons);
+        } catch (err) {
+            console.error('Error refreshing visited holon names:', err);
+        }
+    }
+
+    // Add a function to refresh personal holon names
+    async function refreshPersonalHolonNames() {
+        if (!holosphere || !connectionReady) return;
+        
+        try {
+            // Re-fetch names for all personal holons (cache clearing is handled in updateNamesSync)
+            await updateHolonDetails();
+            
+            console.log('Refreshed personal holon names:', myHolons);
+        } catch (err) {
+            console.error('Error refreshing personal holon names:', err);
+        }
+    }
+
+    // Expose the refresh functions through custom events
+    function handleRefreshVisitedRequest() {
+        refreshVisitedHolonNames();
+    }
+
+    function handleRefreshPersonalRequest() {
+        refreshPersonalHolonNames();
+    }
+
     // Filtered holons
     $: filteredHolons = myHolons.filter(holon => 
         holon.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -120,45 +162,48 @@
     let idStoreUnsubscribe: (() => void) | undefined;
 
     onMount(async () => {
-        // Wait for holosphere to be ready with timeout
-        const checkConnection = async () => {
-            if (!holosphere) {
-                setTimeout(checkConnection, 100);
-                return;
+        try {
+            // Check if holosphere is available and wait for it to be ready
+            if (holosphere) {
+                // Wait a bit for holosphere to initialize
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                connectionReady = true;
+                console.log('Holosphere connection ready');
+            } else {
+                throw new Error('Holosphere not available');
             }
-            
-            await new Promise(resolve => setTimeout(resolve, 200));
-            connectionReady = true;
-            
-            // Subscribe to ID store
-            idStoreUnsubscribe = ID.subscribe(async (newId) => {
-                // Update current holon ID even if it's undefined/null
-                if (newId !== currentHolonId) {
-                    currentHolonId = newId || '';
-                    await loadData();
-                }
-            });
-
-            // Load initial data with timeout
-            try {
-                const loadPromise = loadData();
-                const loadTimeout = new Promise((_, reject) => {
-                    setTimeout(() => reject(new Error('Initial load timeout')), 20000);
-                });
-                await Promise.race([loadPromise, loadTimeout]);
-            } catch (err) {
-                console.error('Initial load failed:', err);
-                error = 'Failed to load initial data. Please retry.';
-                isLoading = false;
-            }
-        };
+        } catch (err) {
+            console.error('Failed to establish holosphere connection:', err);
+            error = 'Failed to connect to holosphere. Please check your connection and try again.';
+            return;
+        }
         
-        checkConnection();
+        // Subscribe to ID store changes
+        idStoreUnsubscribe = ID.subscribe((id) => {
+            if (id && id !== 'undefined' && id !== 'null' && id.trim() !== '') {
+                currentHolonId = id;
+            }
+        });
+        
+        // Load data after connection is ready
+        await loadData();
+        
+        // Add event listeners for refresh requests from TopBar
+        if (browser) {
+            window.addEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
+            window.addEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
+        }
     });
 
     onDestroy(() => {
         if (idStoreUnsubscribe) {
             idStoreUnsubscribe();
+        }
+        
+        // Remove event listeners
+        if (browser) {
+            window.removeEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
+            window.removeEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
         }
     });
 
@@ -270,91 +315,75 @@
     }
 
     async function updateHolonDetails() {
-        // Create a backup before updating
-        const backup = [...myHolons];
+        // First, update names synchronously using the same pattern as stats
+        await updateNamesSync();
         
-        try {
-            // First, update names quickly without stats
-            const nameUpdates = await Promise.allSettled(
-                myHolons.map(async (holon) => {
-                    try {
-                        const name = await fetchHolonName(holosphere, holon.id);
-                        return {
-                            ...holon,
-                            name
-                        };
-                    } catch (err) {
-                        console.warn(`Failed to update name for holon ${holon.id}:`, err);
-                        return holon; // Return original holon if name update fails
-                    }
-                })
-            );
-            
-            // Process name updates
-            const holonsWithNames = nameUpdates
-                .map((result, index) => {
-                    if (result.status === 'fulfilled') {
-                        return result.value;
-                    } else {
-                        console.warn(`Name update failed for holon ${myHolons[index].id}:`, result.reason);
-                        return myHolons[index]; // Keep original holon
-                    }
-                })
-                .filter(Boolean);
-            
-            if (holonsWithNames.length > 0) {
-                myHolons = holonsWithNames;
-                // Don't save here - we'll save at the end of the entire process
+        // Then update stats asynchronously without blocking
+        updateStatsAsync();
+    }
+
+    async function updateNamesSync() {
+        // Update names synchronously in the same pattern as stats
+        const namePromises = myHolons.map(async (holon) => {
+            try {
+                // Clear cache for this specific holon to ensure fresh data
+                clearHolonNameCache(holon.id);
+                
+                const name = await fetchHolonName(holosphere, holon.id);
+                
+                // Update the specific holon with new name (same pattern as stats)
+                const updatedHolon = { ...holon, name };
+                const index = myHolons.findIndex(h => h.id === holon.id);
+                if (index !== -1) {
+                    myHolons[index] = updatedHolon;
+                }
+                
+                console.log(`Updated name for holon ${holon.id}: ${name}`);
+            } catch (err) {
+                console.warn(`Failed to update name for holon ${holon.id}:`, err);
             }
-            
-            // Now update stats asynchronously without blocking
-            updateStatsAsync();
-            
-        } catch (err) {
-            console.error('Error updating holon details, restoring backup:', err);
-            myHolons = backup;
-            // Don't save here - we'll save at the end of the entire process
-        }
+        });
+        
+        // Await all name updates to complete before continuing
+        await Promise.allSettled(namePromises);
+        console.log('All name updates completed');
+        
+        // Trigger reactivity
+        myHolons = [...myHolons];
     }
 
     async function updateVisitedHolonDetails() {
         if (!visitedHolons || visitedHolons.length === 0) return;
 
-        const backup = [...visitedHolons];
-
-        try {
-            const nameUpdates = await Promise.allSettled(
-                visitedHolons.map(async (holon) => {
-                    try {
-                        const name = await fetchHolonName(holosphere, holon.id);
-                        return { ...holon, name: name || holon.name };
-                    } catch (err) {
-                        console.warn(`Failed to update name for visited holon ${holon.id}:`, err);
-                        return holon;
-                    }
-                })
-            );
-
-            const updatedHolons = nameUpdates.map((result, index) => {
-                if (result.status === 'fulfilled') {
-                    return result.value;
-                } else {
-                    console.warn(`Name update for visited holon ${backup[index].id} failed:`, result.reason);
-                    return backup[index]; // Keep original holon from backup
+        // Update visited holon names using the same pattern as personal holons
+        const namePromises = visitedHolons.map(async (holon) => {
+            try {
+                // Clear cache for this specific holon to ensure fresh data
+                clearHolonNameCache(holon.id);
+                
+                const name = await fetchHolonName(holosphere, holon.id);
+                
+                // Update the specific holon with new name (same pattern as stats)
+                const updatedHolon = { ...holon, name };
+                const index = visitedHolons.findIndex(h => h.id === holon.id);
+                if (index !== -1) {
+                    visitedHolons[index] = updatedHolon;
                 }
-            });
-
-            visitedHolons = updatedHolons;
-            
-            if ($walletAddress) {
-                saveVisitedHolons($walletAddress, visitedHolons);
+                
+                console.log(`Updated name for visited holon ${holon.id}: ${name}`);
+            } catch (err) {
+                console.warn(`Failed to update name for visited holon ${holon.id}:`, err);
             }
-        } catch (err) {
-            console.error('Error updating visited holon details, restoring from backup:', err);
-            visitedHolons = backup;
-            if ($walletAddress) {
-                saveVisitedHolons($walletAddress, visitedHolons);
-            }
+        });
+        
+        // Await all name updates to complete before continuing
+        await Promise.allSettled(namePromises);
+        console.log('All visited holon name updates completed');
+        
+        // Trigger reactivity and save
+        visitedHolons = [...visitedHolons];
+        if ($walletAddress) {
+            saveVisitedHolons($walletAddress, visitedHolons);
         }
     }
 
