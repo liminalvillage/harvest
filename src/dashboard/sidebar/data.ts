@@ -12,10 +12,12 @@ import DashboardIcon from './icons/DashboardIcon.svelte';
 import ShoppingIcon from './icons/ShoppingIcon.svelte';
 import ChecklistIcon from './icons/ChecklistIcon.svelte';
 import ExpensesIcon from './icons/ExpensesIcon.svelte';
-
 import FederationIcon from './icons/FederationIcon.svelte';
 import ProposalsIcon from './icons/ProposalsIcon.svelte';
 import MyHolonsIcon from './icons/MyHolonsIcon.svelte';
+// Reuse Tags icon for SDGs in absence of a dedicated icon
+import SDGsIcon from './icons/TagsIcon.svelte';
+import OrbitsIcon from './icons/OrbitsIcon.svelte';
 
 export const data = [
 	{
@@ -27,6 +29,11 @@ export const data = [
 		title: 'Tasks',
 		icon: ArchivesIcon,
 		link: '/tasks'
+	},
+	{
+		title: 'Orbits',
+		icon: OrbitsIcon,
+		link: '/orbits'
 	},
 	{
 		title: 'Schedule',
@@ -53,6 +60,11 @@ export const data = [
 		icon: TagsIcon,
 		link: '/tags'
 	},
+    {
+        title: 'SDGs',
+        icon: SDGsIcon,
+        link: '/sdgs'
+    },
 	{
 		title: 'Proposals',
 		icon: ProposalsIcon,
