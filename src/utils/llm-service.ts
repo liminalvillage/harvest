@@ -176,7 +176,7 @@ class LLMService {
 
 IMPORTANT: First, verify if the name represents a real person (living or deceased) who has made significant contributions to their field. This includes:
 - Historical figures from any era
-- Contemporary figures who have passed away (even recently)
+- Contemporary figures who are still alive
 
 If the name is ambiguous or fictional, return only: {"valid": false}
 
@@ -188,7 +188,7 @@ If it IS a real person with significant contributions, create a complete JSON sc
   "historical_period": "e.g., Ancient Greece, 19th Century America, 20th Century America, Contemporary, etc.",
   "known_for": ["achievement1", "achievement2", "achievement3"],
   "key_beliefs": ["belief1", "belief2", "belief3"],
-  "speaking_style": "Describe their characteristic way of speaking and communicating",
+  "speaking_style": "Describe their characteristic way of speaking and communicating, and provide an example of their speech, characterising their idiosyncratic tone.",
   "notable_quotes": ["quote1", "quote2", "quote3"],
   "expertise_domains": ["domain1", "domain2", "domain3"],
   "personality_traits": ["trait1", "trait2", "trait3"],

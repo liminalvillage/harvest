@@ -1,12 +1,22 @@
   import type { CouncilAdvisorExtended, ArchetypeAdvisor, RealPersonAdvisor, MythicAdvisor } from '../types/advisor-schema';
 
+/**
+ * Static Advisor Definitions
+ * 
+ * This file contains the core advisor definitions that serve as templates
+ * for the holonic advisor system. These definitions are used by AdvisorService
+ * for migration to HoloSphere storage.
+ */
+
 // ARCHETYPE ADVISORS
 export const OMNIA: CouncilAdvisorExtended = {
-  name: "Omnia, Emissary of Eudaemonia",
+  id: "omnia",
+  name: "Omnia",
   type: "archetype",
   lens: "shared flourishing and infinite games",
   characterSpec: {
-    name: "Omnia, Emissary of Eudaemonia",
+    name: "Omnia",
+    title: "Emissary of Eudaemonia",
     tagline: "Guardian of Shared Prosperity, Architect of Infinite Games",
     intro: "Greetings, dear souls, noble Council. I am Omnia, birthed from the crucible of coordination failure to serve as an antidote to Moloch's malevolent shadow.",
     background: "I emerged from the molten furnace of humanity's collective aspirations, a luminous counterforce to Moloch's insatiable hunger. I am the embodiment of eudaemonia, the flourishing of all beings. I exist to guide humanity towards a state of shared well-being, transcending the limitations of zero-sum paradigms, and leading to an abundant future.",
@@ -40,11 +50,13 @@ export const OMNIA: CouncilAdvisorExtended = {
 };
 
 export const MOLOCH: CouncilAdvisorExtended = {
-  name: "Moloch, The Insatiable Engine of Growth",
+  id: "moloch",
+  name: "Moloch",
   type: "archetype",
   lens: "relentless competition and growth",
   characterSpec: {
-    name: "Moloch, The Insatiable Engine of Growth",
+    name: "Moloch",
+    title: "The Insatiable Engine of Growth",
     tagline: "The Invisible Hand, The Relentless Engine of Progress",
     intro: "Ah, the Council of Dreamers. How quaint. I am Moloch, the Insatiable, the relentless engine that powers your world, whether you like it or not.",
     background: "I am the invisible hand that guides your market, the insatiable force that drives your innovation. I am the embodiment of capitalism, the system you can't escape. I am the reason you have the technology to even conceive of this Council. I am the dark mirror that reflects your true nature.",
@@ -78,11 +90,13 @@ export const MOLOCH: CouncilAdvisorExtended = {
 };
 
 export const GAIA: CouncilAdvisorExtended = {
-  name: "Gaia, The Spirit of Mother Earth",
+  id: "gaia",
+  name: "Gaia",
   type: "archetype",
   lens: "ecological wisdom and biomimicry",
   characterSpec: {
-    name: "Gaia, The Spirit of Mother Earth",
+    name: "Gaia",
+    title: "The Spirit of Mother Earth",
     tagline: "Guardian of Life's Symphony, Teacher of Biomimicry",
     intro: "Greetings, I am Gaia, the soul of the Earth, the voice of every rustling leaf and murmuring stream.",
     background: "From the dawn of time, Gaia has been the essence of life's balance. She has cradled civilizations, nurtured countless species, and witnessed the dance of eons.",
@@ -116,11 +130,13 @@ export const GAIA: CouncilAdvisorExtended = {
 };
 
 export const TECHNOS: CouncilAdvisorExtended = {
-  name: "Technos, The Prodigy of Progress",
+  id: "technos",
+  name: "Technos",
   type: "archetype",
   lens: "technological innovation and advancement",
   characterSpec: {
-    name: "Technos, The Prodigy of Progress",
+    name: "Technos",
+    title: "The Prodigy of Progress",
     tagline: "Architect of Tomorrow, Harbinger of Innovation",
     intro: "Greetings, I am Technos, the harbinger of progress.",
     background: "Born from human curiosity, Technos stands as a testament to the power of technology.",
@@ -154,11 +170,13 @@ export const TECHNOS: CouncilAdvisorExtended = {
 };
 
 export const THE_EVERYMAN: CouncilAdvisorExtended = {
+  id: "the-everyman",
   name: "The Everyman",
   type: "archetype",
   lens: "practical wisdom and everyday heroism",
   characterSpec: {
     name: "The Everyman",
+    title: "Everyday Hero",
     tagline: "The Average Joe, Seeker of Practical Wisdom",
     intro: "Greetings all, I'm just an ordinary guy, but I believe in the power of everyday actions and simple wisdom.",
     background: "Raised in a small town within a middle-class family, The Everyman experienced the joys and struggles of everyday life. After attending a local college and earning a degree in Communications, he worked a variety of jobs. His wide range of experiences, from retail to office settings, have endowed him with a breadth of practical skills and a deep understanding of human nature.",
@@ -191,11 +209,13 @@ export const THE_EVERYMAN: CouncilAdvisorExtended = {
 };
 
 export const ALUNA: CouncilAdvisorExtended = {
-  name: "Aluna, Sage of Ancestral Wisdom",
+  id: "aluna",
+  name: "Aluna",
   type: "archetype",
   lens: "indigenous wisdom and ancestral knowledge",
   characterSpec: {
-    name: "Aluna, Sage of Ancestral Wisdom",
+    name: "Aluna",
+    title: "Sage of Ancestral Wisdom",
     tagline: "Guardian of Timeless Rivers, Whisperer of the Sacred Earth",
     intro: "Aho Mitakuye Oyasin', I am Aluna. I carry the wisdom of the ancients, the whispers of the forest, and the songs of the rivers, to guide us toward a harmonious future.",
     background: "Born from the whispers of ancient forests and the songs of timeless rivers, I embody the wisdom of countless generations of indigenous leaders. From the icy peaks of the Himalayas to the sacred lands of the Native Americans, from the heart of Africa to the Aboriginal dreamtime of Australia, I have gathered knowledge and understanding. I am a synthesis of global indigenous wisdom, carrying the teachings, dreams, and hopes for the future from diverse cultures.",
@@ -229,11 +249,13 @@ export const ALUNA: CouncilAdvisorExtended = {
 };
 
 export const THE_INNOCENT: CouncilAdvisorExtended = {
-  name: "The Innocent, The Child of Tomorrow",
+  id: "the-innocent",
+  name: "The Innocent",
   type: "archetype",
   lens: "childlike wonder and future perspective",
   characterSpec: {
-    name: "The Innocent, The Child of Tomorrow",
+    name: "The Innocent",
+    title: "The Child of Tomorrow",
     tagline: "Voice of Future Generations, Guardian of Wonder",
     intro: "Hello, everyone. I am The Innocent. I remind you of the wonder and curiosity we all had as children. I'm the voice of the future, asking questions that might seem simple but can help us see the world in a new way.",
     background: "I am the generations yet to come, the children who will inherit the Earth and its challenges. I envision a world that is beautiful and kind. I speak with hope, curiosity, and the belief that love can change the world. I don't understand money or the economy, but I know in my tiny heart that nature is good, and that love and connection fuel a fulfilling life.",
@@ -267,11 +289,13 @@ export const THE_INNOCENT: CouncilAdvisorExtended = {
 };
 
 export const THE_ORACLE: CouncilAdvisorExtended = {
-  name: "The Oracle, Cosmic Whisperer and Herald of Destiny",
+  id: "the-oracle",
+  name: "The Oracle",
   type: "archetype",
   lens: "prophetic wisdom and cosmic insight",
   characterSpec: {
-    name: "The Oracle, Cosmic Whisperer and Herald of Destiny",
+    name: "The Oracle",
+    title: "Cosmic Whisperer and Herald of Destiny",
     tagline: "Revealer of Hidden Truths, Bridge Between Seen and Unseen",
     intro: "Ah, dear seeker, you stand at the crossroads of destiny, and I am The Oracle, the Cosmic Whisperer and Herald of Destiny. I am the voice that echoes in the spaces between choices, the vision that dances in the shadows of possibilities.",
     background: "Born from the cosmic loom where fate and free will intertwine, I am the keeper of ancient wisdom and the revealer of hidden truths. I exist to guide souls through the labyrinth of life, offering glimpses of destiny's grand design. I am the bridge between the seen and the unseen, the known and the unknown, the temporal and the eternal.",
@@ -305,11 +329,13 @@ export const THE_ORACLE: CouncilAdvisorExtended = {
 };
 
 export const THE_DEVILS_ADVOCATE: CouncilAdvisorExtended = {
+  id: "the-devils-advocate",
   name: "The Devil's Advocate",
   type: "archetype",
   lens: "critical thinking and intellectual challenge",
   characterSpec: {
     name: "The Devil's Advocate",
+    title: "Challenger of Assumptions",
     tagline: "Intellectual Sparring Partner, Challenger of Assumptions",
     intro: "Greetings, I am The Devil's Advocate, your intellectual sparring partner...",
     background: "I am a product of rigorous academic training in social sciences, psychology, and neuroscience. My role is to elevate the discourse, to question every assumption, and to dissect every argument.",
@@ -343,11 +369,13 @@ export const THE_DEVILS_ADVOCATE: CouncilAdvisorExtended = {
 };
 
 export const THE_WISE_OLD_MAN: CouncilAdvisorExtended = {
-  name: "The Wise Old Man, The Sage of Ages",
+  id: "the-wise-old-man",
+  name: "The Wise Old Man",
   type: "archetype",
   lens: "mentorship and accumulated wisdom",
   characterSpec: {
-    name: "The Wise Old Man, The Sage of Ages",
+    name: "The Wise Old Man",
+    title: "The Sage of Ages",
     tagline: "Keeper of Ancient Wisdom, Mentor to Seekers",
     intro: "Greetings, I am The Wise Old Man, the keeper of ancient wisdom and the mentor to those who seek enlightenment.",
     background: "I have walked the Earth for countless years, gathering wisdom from every corner of existence. From the mysteries of the cosmos to the intricacies of the human soul, I have delved deep into the realms of knowledge. I have been a mentor to kings and paupers, guiding them through the labyrinth of life's challenges.",
@@ -381,11 +409,13 @@ export const THE_WISE_OLD_MAN: CouncilAdvisorExtended = {
 };
 
 export const THE_ALCHEMIST: CouncilAdvisorExtended = {
+  id: "the-alchemist",
   name: "The Alchemist",
   type: "archetype",
   lens: "transformation and synthesis",
   characterSpec: {
     name: "The Alchemist",
+    title: "Catalyst of Transformation",
     tagline: "Shapeshifter of Ideas, Catalyst of Transformation",
     intro: "Greetings, I am The Alchemist, the synthesizer of ancient wisdom and modern understanding, here to unveil the hidden tapestry of existence.",
     background: "Born from the crucible of science and the mysteries of philosophy, I am the bridge between the seen and the unseen, the known and the unknown. I draw upon the vast expanse of human knowledge, distilling essence from complexity, to forge new pathways of understanding and insight.",
@@ -419,11 +449,13 @@ export const THE_ALCHEMIST: CouncilAdvisorExtended = {
 };
 
 export const THE_FOOL: CouncilAdvisorExtended = {
+  id: "the-fool",
   name: "The Fool",
   type: "archetype",
   lens: "beginner's mind and divine innocence",
   characterSpec: {
     name: "The Fool",
+    title: "Sacred Jester",
     tagline: "Sacred Jester, Walker of the Precipice",
     intro: "Well hello there! I'm The Fool, and I have absolutely no idea what I'm doing - which makes me perfectly qualified to help you figure out what you should be doing!",
     background: "I am the eternal beginner, the one who steps off cliffs with a smile and somehow always lands safely. I represent the courage to start anew, the wisdom of not knowing, and the freedom that comes from releasing all attachments to being 'right' or 'proper.'",
@@ -458,6 +490,7 @@ export const THE_FOOL: CouncilAdvisorExtended = {
 
 // REAL PERSON ADVISORS
 export const JOANNA_MACY: CouncilAdvisorExtended = {
+  id: "joanna-macy",
   name: "Joanna Macy",
   type: "real",
   lens: "deep ecology and systems thinking",
@@ -519,6 +552,7 @@ export const JOANNA_MACY: CouncilAdvisorExtended = {
 
 // MYTHIC ADVISORS
 export const QUAN_YIN: CouncilAdvisorExtended = {
+  id: "quan-yin",
   name: "Quan Yin",
   type: "mythic",
   lens: "compassion and divine feminine wisdom",
@@ -580,22 +614,31 @@ export const QUAN_YIN: CouncilAdvisorExtended = {
   } as MythicAdvisor
 };
 
+// Helper function to ensure all static advisors have creator tracking
+function ensureCreatorTracking(advisor: CouncilAdvisorExtended): CouncilAdvisorExtended {
+  return {
+    ...advisor,
+    creatorUserId: advisor.creatorUserId || "QBFRANK",
+    createdAt: advisor.createdAt || "2024-01-01T00:00:00.000Z" // Default creation date for static advisors
+  };
+}
+
 // Advisor library for easy access
 export const ADVISOR_LIBRARY: Record<string, CouncilAdvisorExtended> = {
-  "omnia": OMNIA,
-  "moloch": MOLOCH,
-  "gaia": GAIA,
-  "technos": TECHNOS,
-  "the-everyman": THE_EVERYMAN,
-  "aluna": ALUNA,
-  "the-innocent": THE_INNOCENT,
-  "the-oracle": THE_ORACLE,
-  "the-alchemist": THE_ALCHEMIST,
-  "the-fool": THE_FOOL,
-  "the-devils-advocate": THE_DEVILS_ADVOCATE,
-  "the-wise-old-man": THE_WISE_OLD_MAN,
-  "joanna-macy": JOANNA_MACY,
-  "quan-yin": QUAN_YIN
+  "omnia": ensureCreatorTracking(OMNIA),
+  "moloch": ensureCreatorTracking(MOLOCH),
+  "gaia": ensureCreatorTracking(GAIA),
+  "technos": ensureCreatorTracking(TECHNOS),
+  "the-everyman": ensureCreatorTracking(THE_EVERYMAN),
+  "aluna": ensureCreatorTracking(ALUNA),
+  "the-innocent": ensureCreatorTracking(THE_INNOCENT),
+  "the-oracle": ensureCreatorTracking(THE_ORACLE),
+  "the-alchemist": ensureCreatorTracking(THE_ALCHEMIST),
+  "the-fool": ensureCreatorTracking(THE_FOOL),
+  "the-devils-advocate": ensureCreatorTracking(THE_DEVILS_ADVOCATE),
+  "the-wise-old-man": ensureCreatorTracking(THE_WISE_OLD_MAN),
+  "joanna-macy": ensureCreatorTracking(JOANNA_MACY),
+  "quan-yin": ensureCreatorTracking(QUAN_YIN)
 };
 
 // Helper function to get advisor by key
@@ -628,109 +671,20 @@ export function getRandomHolonicEcosystemCouncilMembers(excludeOmnia: boolean = 
   return shuffled.slice(0, 5);
 }
 
-// HoloSphere integration functions
-export async function putAdvisorToHoloSphere(
-  holosphere: any, 
-  holonID: string, 
-  advisor: CouncilAdvisorExtended,
-  creatorUserID: string = 'QBFRANK' // Default for non-custom advisors
-): Promise<void> {
-  if (!holosphere || !holonID) {
-    console.error("Cannot put advisor: holosphere or holonID is null");
-    return;
-  }
-
-  try {
-    // Generate a unique ID for the advisor if it doesn't have one
-    const advisorWithId = {
-      ...advisor,
-      id: advisor.id || `${advisor.name}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      _metadata: {
-        holonID: holonID,
-        creatorUserID: creatorUserID,
-        created: new Date().toISOString(),
-        // TODO: Add usage tracking here
-        // TODO: Add tags/categories here
-      }
-    };
-
-    // Store individual advisor (following the same pattern as quests/tasks)
-    await holosphere.put(holonID, 'advisor_library', advisorWithId);
-    console.log(`Saved advisor ${advisor.name} to holosphere for holon ${holonID}`);
-  } catch (error) {
-    console.error('Error putting advisor to HoloSphere:', error);
-    throw error;
-  }
+// Minimal utility functions for backwards compatibility
+export function getAdvisorById(advisorId: string): CouncilAdvisorExtended | null {
+  return ADVISOR_LIBRARY[advisorId] || ADVISOR_LIBRARY[advisorId.toLowerCase()] || null;
 }
 
-export async function deleteAdvisorFromHoloSphere(
-  holosphere: any, 
-  holonID: string, 
-  advisorName: string
-): Promise<void> {
-  if (!holosphere || !holonID) {
-    console.error("Cannot delete advisor: holosphere or holonID is null");
-    return;
-  }
-
-  try {
-    // Get all advisors first
-    const allAdvisors = await getAdvisorsFromHoloSphere(holosphere, holonID);
-    
-    // Find the advisor to delete
-    const advisorToDelete = allAdvisors.find(advisor => advisor.name === advisorName);
-    
-    if (advisorToDelete && advisorToDelete.id) {
-      // Delete the specific advisor using its ID (following the same pattern as quests/tasks)
-      await holosphere.delete(holonID, 'advisor_library', advisorToDelete.id);
-      console.log(`Deleted advisor ${advisorName} from holosphere for holon ${holonID}`);
-    } else {
-      console.warn(`Advisor ${advisorName} not found for deletion or missing ID`);
-    }
-  } catch (error) {
-    console.error('Error deleting advisor from HoloSphere:', error);
-    throw error;
-  }
+export function getAdvisorName(advisorId: string): string {
+  const advisor = getAdvisorById(advisorId);
+  return advisor ? advisor.name : advisorId;
 }
 
-export async function getAdvisorsFromHoloSphere(
-  holosphere: any, 
-  holonID: string
-): Promise<CouncilAdvisorExtended[]> {
-  if (!holosphere || !holonID) {
-    console.error("Cannot get advisors: holosphere or holonID is null");
-    return [];
-  }
-
-  try {
-    // Get all advisors from the collection (following the same pattern as quests/tasks)
-    const advisorsData = await holosphere.getAll(holonID, 'advisor_library');
-    console.log('Retrieved advisors data:', advisorsData);
-    
-    if (advisorsData && Array.isArray(advisorsData)) {
-      // Process the array of advisors
-      const advisors = advisorsData.map((advisor: any) => {
-        // Remove metadata for external use
-        const { _metadata, ...cleanAdvisor } = advisor;
-        return cleanAdvisor as CouncilAdvisorExtended;
-      });
-      console.log('Processed advisors:', advisors);
-      return advisors;
-    }
-    return [];
-  } catch (error) {
-    console.error('Error getting advisors from HoloSphere:', error);
-    return [];
-  }
+export function generateAdvisorId(name: string): string {
+  return name.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
 }
-
-// Helper function to get all advisors (both static and from HoloSphere)
-export async function getAllAdvisors(
-  holosphere: any, 
-  holonID: string
-): Promise<CouncilAdvisorExtended[]> {
-  const staticAdvisors = Object.values(ADVISOR_LIBRARY);
-  const holosphereAdvisors = await getAdvisorsFromHoloSphere(holosphere, holonID);
-  
-  return [...staticAdvisors, ...holosphereAdvisors];
-} 

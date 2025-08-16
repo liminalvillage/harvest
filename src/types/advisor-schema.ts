@@ -4,6 +4,7 @@ export interface PolarityScore {
 
 export interface ArchetypeAdvisor {
   name: string;
+  title?: string;
   tagline: string;
   intro: string;
   background: string;
@@ -25,6 +26,10 @@ export interface CouncilAdvisorExtended {
   type: 'real' | 'mythic' | 'archetype';
   lens: string;
   avatar_url?: string;
+  
+  // Creator tracking
+  creatorUserId?: string; // ID of the user who created this advisor
+  createdAt?: string; // ISO timestamp when created
   
   // Extended character specification
   characterSpec: ArchetypeAdvisor | RealPersonAdvisor | MythicAdvisor;

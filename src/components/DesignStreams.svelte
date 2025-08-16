@@ -24,6 +24,7 @@
 	export let advisors: CouncilAdvisorExtended[] = [];
 	export let ritualSession: Props['ritualSession'] = undefined;
 	export let onClose: (() => void) | undefined = undefined;
+	export let sessionManager: any = null; // Session manager from parent
 
 	const dispatch = createEventDispatcher();
 
@@ -57,6 +58,27 @@
     let holosphere = (typeof window !== 'undefined' ? (getContext && getContext('holosphere')) : null) as HoloSphere | null;
     let holonID: string | null = null;
     $: holonID = $ID;
+
+	// Ensure a session is started when the Design Streams modal mounts
+	onMount(() => {
+		try {
+			if (sessionManager) {
+				if (!sessionManager.hasActiveSession || !sessionManager.getCurrentSession || !sessionManager.startSession) {
+					console.warn('sessionManager provided, but missing API');
+					return;
+				}
+				const current = sessionManager.getCurrentSession();
+				if (!current) {
+					const s = sessionManager.startSession();
+					console.log('🚀 Started Design Streams session:', s.id);
+				} else {
+					console.log('🔁 Resumed Design Streams session:', current.id);
+				}
+			}
+		} catch (e) {
+			console.warn('Unable to start/resume Design Streams session:', e);
+		}
+	});
 
     // Save/export state
     let isSavingQuests = false;
@@ -148,7 +170,7 @@
 			vision: questTree.vision
 		});
         // Persist draft locally so user doesn't lose work if not generated to holosphere
-        saveQuestTreeDraftToLocal();
+        // saveQuestTreeDraftToLocal(); // Commented out for testing HoloSphere save
 	}
 
 	// Elemental configurations
@@ -254,6 +276,10 @@
 			type: 'declared_values',
 			value: cleanValues
 		});
+		// Persist values to holosphere so inner metatron can mirror after refresh
+		if (holosphere && holonID) {
+			try { holosphere.put(holonID, 'council_values', { values: cleanValues }); } catch {}
+		}
 		editingValues = false;
 	}
 
@@ -359,12 +385,26 @@
 	}
 
 	function addTimelineMappingMessage(speaker: 'user' | 'advisor' | 'system', content: string, nodeId?: string) {
-		timelineMappingMessages = [...timelineMappingMessages, {
+		const message = {
 			speaker,
 			content,
 			timestamp: new Date().toISOString(),
 			nodeId
-		}];
+		};
+		
+		timelineMappingMessages = [...timelineMappingMessages, message];
+		
+		// Track chat interactions in session (exclude system messages)
+		if (sessionManager && speaker !== 'system') {
+			sessionManager.trackInteraction('chat', { 
+				message: {
+					role: speaker === 'user' ? 'user' : 'assistant',
+					content,
+					timestamp: new Date(),
+					advisor: speaker === 'advisor' ? 'Backcasting Facilitator' : undefined
+				}
+			});
+		}
 	}
 
 	async function startSeedQuestGeneration() {
@@ -404,6 +444,15 @@
 			
 			// Force Svelte to detect the change by reassigning the quest tree
 			questTree = { ...questTree };
+			
+			// Track quest generation in session
+			if (sessionManager) {
+				sessionManager.trackInteraction('quest_generation', { 
+					questTree: questTree,
+					type: 'seed_quests',
+					advisor: headAdvisorName 
+				});
+			}
 			
 			addTimelineMappingMessage('advisor', raw);
 			addTimelineMappingMessage('system', `✅ **Seed Quests Created**\n\n${seedQuests.map((q, i) => `${i + 1}. ${q.title}`).join('\n')}\n\nReady to expand into child quests. Click on any seed quest to break it down further.`);
@@ -465,6 +514,16 @@
 			
 			// Force Svelte to detect the change by reassigning the quest tree
 			questTree = { ...questTree };
+			
+			// Track quest expansion in session
+			if (sessionManager) {
+				sessionManager.trackInteraction('quest_generation', { 
+					questTree: questTree,
+					type: 'child_quests',
+					parentNodeId: nodeId,
+					advisor: headAdvisorName 
+				});
+			}
 			
 			addTimelineMappingMessage('advisor', raw, nodeId);
 			addTimelineMappingMessage('system', `✅ **Child Quests Created for "${node.title}"**\n\n${childQuests.map((q, i) => `${i + 1}. ${q.title}`).join('\n')}\n\nContinue expanding or review the quest tree.`);
@@ -543,6 +602,24 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 		} catch (error) {
 			console.error('Error processing user message:', error);
 			addTimelineMappingMessage('system', `❌ Error processing your message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+		}
+	}
+
+	// Complete the Design Streams session
+	function completeSession() {
+		if (sessionManager) {
+			dispatch('sessionComplete');
+			console.log('🏁 Design Streams session completed');
+			
+			// Add completion message to chat
+			addTimelineMappingMessage('system', '✅ **Session Completed**\n\nYour Design Streams session has been saved to Previous Rituals. You can return to this quest tree anytime by opening the saved ritual.');
+			
+			// Close after a short delay to let user read the message
+			setTimeout(() => {
+				if (onClose) {
+					onClose();
+				}
+			}, 2000);
 		}
 	}
 </script>
@@ -1227,6 +1304,15 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 								title="Delete current quest tree and start fresh"
 							>
 								🗑️ Delete & Start New
+							</button>
+							
+							<!-- Complete Session Button -->
+							<button
+								on:click={completeSession}
+								class="w-full bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-sm font-medium transition-colors border border-green-500 shadow-sm"
+								title="Complete this Design Streams session and save to Previous Rituals"
+							>
+								✅ Complete Session
 							</button>
 						</div>
 					{/if}

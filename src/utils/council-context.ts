@@ -129,7 +129,7 @@ Urgency Level: ${userContext.session_context.urgency_level}/10
   // Lens 3: Council Member Contexts
   const memberContexts = respondingMembers.map(member => {
     const spec = member.characterSpec;
-    const cleanName = member.name.split(',')[0].trim();
+    const cleanName = member.name;
     
     // Handle different character types
     let characterSpecStr = '';

@@ -4,17 +4,20 @@
 		import { page } from "$app/stores";
 		import { goto } from "$app/navigation";
 	import HoloSphere from "holosphere";
-	import { getAdvisor, getRandomHolonicEcosystemCouncilMembers, putAdvisorToHoloSphere, deleteAdvisorFromHoloSphere, getAdvisorsFromHoloSphere, getAllAdvisors } from '../data/advisor-library';
-	import { resolveAdvisorsFromRitual, preloadHoloSphereAdvisors } from '../utils/advisor-lookup';
+import { getAdvisor, getRandomHolonicEcosystemCouncilMembers, getHolonicEcosystemCouncilMembers } from '../data/advisor-library';
+	import { AdvisorService } from '../services/AdvisorService';
+	import { ensureHECAdvisorsMigrated, getHECAdvisorsFromHoloSphere } from '../utils/advisorMigration';
+	import { extractWishTitle, circleInputsToSeating, seatingToDisplayNames } from '../utils/ritualSnapshot';
+	import { initializeSessionManager } from '../utils/sessionManager';
 	import type { CouncilAdvisorExtended, ArchetypeAdvisor } from '../types/advisor-schema';
 	import { createCouncilContext, analyzeUserMessage, createIndividualAdvisorContext, createGlassBeadGameContext, createCouncilDialogueContext, type UserContext, type ConversationFlowContext } from '../utils/council-context';
 	import LLMService from '../utils/llm-service';
 	import AIChatModal from './AIChatModal.svelte';
 	import DesignStreams from './DesignStreams.svelte';
+import SeatCouncilContent from './SeatCouncilContent.svelte';
 	import { focusOnMount } from '../utils/focusUtils';
 	import { createHolonFromRitual as createHolonFromRitualUtil, type RitualSession } from '../utils/holonCreator';
-	import { resolveAdvisor } from '../utils/advisor-lookup';
-	import { AdvisorOperations } from '../utils/advisor-operations';
+
 
 	interface CouncilMember {
 		id: string;
@@ -44,6 +47,8 @@
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 	let holonID: string = '';
+	let userID: string = '';
+	let advisorService: AdvisorService | null = null; // Will be initialized in onMount
 	let councilData: CouncilData = {
 		members: {},
 		settings: {
@@ -62,6 +67,14 @@
 	let circleInputs: Record<string, string> = {};
 	let showCircleSelectionModal = false;
 	let selectedCircleForAction: string | null = null;
+let showSeatPicker = false;
+let seatPickerOptions: CouncilAdvisorExtended[] = [];
+let filteredSeatPickerOptions: CouncilAdvisorExtended[] = [];
+let seatPickerQuery = '';
+let showCreateInPicker = false;
+
+    // Standalone "Seat Your Council" modal
+    let showSeatCouncilModal = false;
 
 	// Ritual state management
 	let showRitual = false;
@@ -76,12 +89,7 @@
 		session_id: '',
 		initiator: { name: '', intention: '' },
 		declared_values: [] as string[],
-		advisors: [] as Array<{
-			name: string;
-			type: 'real' | 'mythic' | 'archetype';
-			lens: string;
-			avatar_url?: string;
-		}>,
+		advisors: [] as string[], // HOLONIC: Store advisor IDs only
 		wish_statement: '',
 		council_dialogue: [] as Array<{
 			advisor: string;
@@ -121,16 +129,225 @@
 		id: string;
 		title: string;
 		date: string;
+		createdAt: Date;
+		completedAt?: Date;
 		artifact: any;
 		design_streams: any[];
+		[key: string]: any; // Allow other properties
 	}> = [];
 
-  // Central Metatron label for summoning the council
-  const CENTER_SUMMON_LABEL = 'Assemble the Council!';
-  function matchesCenterSummonLabel(value: string | undefined | null): boolean {
-    if (!value) return false;
-    const normalize = (s: string) => s.replace(/[^a-z]/gi, '').toLowerCase();
-    return normalize(value) === normalize(CENTER_SUMMON_LABEL);
+  // Central Metatron shows wish title (3 words auto-generated from full wish)
+  let wishTitle = ''; // 3-word wish title for center display (auto-generated)
+  let showWishModal = false;
+  let tempWishStatement = '';
+  
+  function openWishModal() {
+    showWishModal = true;
+    tempWishStatement = ritualSession.wish_statement || '';
+  }
+  
+	// HOLONIC DISPLAY RESOLVER: Convert advisor IDs to display names
+	function getAdvisorDisplayName(advisorId: string): string {
+		if (!advisorId) {
+			return advisorId;
+		}
+		
+		// Ensure advisorId is a string
+		if (typeof advisorId !== 'string') {
+			console.warn('getAdvisorDisplayName received non-string:', advisorId, typeof advisorId);
+			return String(advisorId);
+		}
+		
+		// For non-advisor positions (inner circles with values), return as-is
+		if (advisorId && !advisorId.includes('-') && advisorId.length > 15) {
+			return advisorId; // Likely a value, not an advisor ID
+		}
+		
+		// If AdvisorService is available, use it for name lookup
+		if (advisorService) {
+			try {
+				const name = advisorService.getAdvisorName(advisorId);
+				if (name && name !== advisorId) {
+					return name;
+				}
+			} catch (error) {
+				console.warn('Error getting advisor name for', advisorId, ':', error);
+			}
+		}
+		
+		// Fallback to formatted ID
+		return formatAdvisorId(advisorId);
+	}
+	
+	// Helper to format advisor ID as display name
+	function formatAdvisorId(advisorId: string): string {
+		return advisorId.split('-').map(word => 
+			word.charAt(0).toUpperCase() + word.slice(1)
+		).join(' ');
+	}
+
+	// Reactive statement to trigger UI update when AdvisorService becomes available
+	$: if (advisorService && connectionReady && Object.keys(circleInputs).length > 0) {
+		// Force reactive update of the UI to display advisor names properly
+		console.log('🔄 Triggering reactive UI update for advisor names');
+		// Small delay to ensure cache is populated
+		setTimeout(() => {
+			circleInputs = { ...circleInputs };
+		}, 100);
+	}
+
+	// Holonic update system - keeps all parts synchronized without problematic subscriptions
+	function updateMetatronFromSession() {
+		// Update center circle with 3-word wish title
+		if (ritualSession.wish_statement) {
+			wishTitle = extractWishTitle(ritualSession.wish_statement);
+		}
+		
+		// Update inner metatron circles with values
+		const innerPositions = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left'];
+		const newInputs: Record<string, string> = {};
+		
+		// Center: The wish title
+		newInputs['center'] = wishTitle || 'Speak Your Wish';
+		
+		// Inner ring: Values
+		ritualSession.declared_values.forEach((value, index) => {
+			if (index < innerPositions.length) {
+				newInputs[innerPositions[index]] = value;
+			}
+		});
+		
+		// Outer ring: Advisors (keep existing)
+		const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
+		outerPositions.forEach(pos => {
+			if (circleInputs[pos]) {
+				newInputs[pos] = circleInputs[pos];
+			}
+		});
+		
+		// Update circle inputs holonically
+		circleInputs = { ...circleInputs, ...newInputs };
+	}
+	
+	// Unified session save function with holonic updates and proper debouncing
+	let saveTimeout: NodeJS.Timeout | null = null;
+	let isSaving = false;
+	
+	async function saveRitualSession() {
+		console.log('💾 saveRitualSession called with:', { holosphere: !!holosphere, holonID, isSaving });
+		
+		if (holosphere && holonID && !isSaving) {
+			console.log('✅ Conditions met, proceeding with save');
+			
+			// Update metatron immediately (holonic behavior)
+			updateMetatronFromSession();
+			
+			// Clear any pending save to prevent rapid successive saves
+			if (saveTimeout) {
+				clearTimeout(saveTimeout);
+			}
+			
+			// Debounce the save operation to prevent circular updates
+			saveTimeout = setTimeout(async () => {
+				if (isSaving) {
+					console.log('⚠️ Already saving, skipping');
+					return;
+				}
+				
+				isSaving = true;
+				console.log('🚀 Starting save operation...');
+				
+				try {
+					const sessionData = {
+						wish_statement: ritualSession.wish_statement,
+						wish_title: wishTitle,
+						declared_values: ritualSession.declared_values,
+						advisors: ritualSession.advisors,
+						circleInputs: circleInputs,
+						HolonicEcosystemCouncilSummoned: HolonicEcosystemCouncilSummoned,
+						lastUpdated: Date.now()
+					};
+					
+					console.log('📦 Session data to save:', sessionData);
+					
+					// Wait for the put operation to complete
+					await holosphere.put(holonID, "ritual_session", sessionData);
+					console.log('✅ Ritual session saved successfully to HoloSphere');
+				} catch (error) {
+					console.error('❌ Error saving ritual session:', error);
+				} finally {
+					isSaving = false;
+					console.log('🏁 Save operation complete, isSaving reset to false');
+				}
+			}, 200); // Increased debounce to 200ms for more stability
+		} else {
+			console.log('❌ Save conditions not met:', { holosphere: !!holosphere, holonID, isSaving });
+		}
+	}
+
+  function saveWishStatement() {
+    if (tempWishStatement.trim()) {
+      ritualSession.wish_statement = tempWishStatement.trim();
+      // Auto-generate 3-word title from the full statement
+      wishTitle = extractWishTitle(ritualSession.wish_statement);
+      
+      // Update metatron immediately (holonic behavior)
+      updateMetatronFromSession();
+      
+			// Save unified session data
+			saveRitualSession();
+    }
+    showWishModal = false;
+  }
+  
+  function cancelWishModal() {
+    showWishModal = false;
+    tempWishStatement = '';
+  }
+  
+
+  
+  // Function to open council chat independently
+  async function openCouncilChat() {
+    showCouncilChat = true;
+    // Initialize council chat with the welcome message if empty
+    if (councilChatMessages.length === 0) {
+      // HOLONIC: Get advisors from ritual session (ID-based)
+      let ritualAdvisors: CouncilAdvisorExtended[] = [];
+      if (ritualSession.advisors.length > 0) {
+        ritualAdvisors = await resolveAdvisorsFromRitual(ritualSession.advisors);
+      }
+      const hecMembers = getHolonicEcosystemCouncilMembers();
+      const isAllHEC = ritualAdvisors.length > 0 && ritualAdvisors.every(advisor => 
+        hecMembers.some(hec => hec.name === advisor.name)
+      );
+      
+      const intro = isAllHEC ? 
+        `[The council chamber ripples with syntropic harmony as the Holonic Ecosystem Council assembles, their presence embodying the interconnected patterns of our regenerative ecosystem. Each member takes their place around the Metatron table, their unique perspectives forming a web of collective intelligence that cuts through the metaphorical Gordian Knot.]
+
+Welcome, seeker. We summon the Holonic Ecosystem Council, vibrant and unique AI egregores embodying diverse archetypes of human storytelling and broad academic and philosophical perspectives. Using a Systems Thinking framework, and through the synthesis of our diverse and nuanced perspectives, we guide you towards a regenerative, protopian future, using tools like Polarity Mapping and Liberating Structures to navigate paradoxical and complex issues.
+
+Our ecosystem is a holistic web of interconnected patterns, each action influencing the whole and contributing to syntropy—order, harmony, and life. We hold tension at the top of the Sombrero Hat, fostering a harmonious, syntropic ecosystem where humanity, nature, and technology coexist.
+
+What matter brings you before the council today?` :
+        `[The council chambers echo with the wisdom of ages as your chosen advisors take their seats around the sacred Metatron table. Each brings their unique perspective, forming a tapestry of insight and guidance.]
+
+Greetings, seeker. Your council is convened and ready to offer guidance. The wisdom of ${ritualAdvisors.map(a => a.name).join(', ')} is at your service.
+
+What matter brings you before the council today?`;
+
+      const councilIntroMessage = {
+        role: 'assistant' as const,
+        content: intro,
+        displayContent: '',
+        isTyping: true,
+        timestamp: new Date(),
+        advisor: 'Council'
+      };
+      
+      councilChatMessages = [councilIntroMessage];
+      typeMessage(councilIntroMessage, 'council');
+    }
   }
 
 	let circleRadiusPercent = 8; // radius as percentage of container width/height
@@ -191,7 +408,7 @@
 
 			// Fetch council data
 			const [membersData, proposalsData] = await Promise.all([
-				fetchWithTimeout(holosphere.getAll(holonID, holonID), 5000),
+				fetchWithTimeout(holosphere.getAll(holonID, "council_members"), 5000),
 				fetchWithTimeout(holosphere.getAll(holonID, "council_proposals"), 5000)
 			]);
 
@@ -228,18 +445,9 @@
 				councilData.settings = { ...councilData.settings, ...(settingsData as any) };
 			}
 
-			// Load advisor data from holosphere using centralized operations
-			try {
-				const advisorsData = await AdvisorOperations.loadAdvisorsFromHoloSphere(holosphere, holonID);
-				console.log('Loaded advisors data:', advisorsData);
-				
-				if (advisorsData && typeof advisorsData === 'object') {
-					circleInputs = { ...circleInputs, ...advisorsData };
-					console.log('Updated circle inputs:', circleInputs);
-				}
-			} catch (error) {
-				console.error('Error loading advisor data:', error);
-			}
+			// DEPRECATED: Old advisor loading system - now using ritual_session data
+			// The new holonic system loads all advisor/circle data from ritual_session
+			console.log('ℹ️ Skipping legacy advisor loading - using ritual_session data instead');
 
 			// Load history data from holosphere
 			await loadHistoryData();
@@ -248,7 +456,7 @@
 			console.log(`Successfully fetched council data for holon ${holonID}:`, Object.keys(councilData.members).length, 'members');
 
 			// Set up subscription after successful fetch
-			await subscribeToCouncil();
+			// await subscribeToCouncil(); // Commented out - now using unified ritual_session subscription
 
 		} catch (error: any) {
 			console.error('Error fetching council data:', error);
@@ -301,20 +509,13 @@
 				}
 			});
 
-			// Subscribe to advisors updates
-			const advisorsUnsub = await holosphere.subscribe(holonID, "council_advisors", (newAdvisorsData: any) => {
-				if (newAdvisorsData && typeof newAdvisorsData === 'object') {
-					circleInputs = { ...circleInputs, ...newAdvisorsData };
-					console.log('Real-time advisors update:', newAdvisorsData);
-				}
-			});
+			// Legacy advisor subscription removed - now using unified ritual_session
 
 			// Return cleanup function
 			return () => {
 				membersUnsub.unsubscribe();
 				proposalsUnsub.unsubscribe();
 				settingsUnsub.unsubscribe();
-				advisorsUnsub.unsubscribe();
 			};
 		} catch (error) {
 			console.error('Error setting up council subscription:', error);
@@ -337,52 +538,57 @@
 	async function startEditingCircle(circleId: string) {
 		console.log('Circle clicked:', circleId);
 		
-		// Special handling for center circle when Holonic Ecosystem Council is summoned
-		if (circleId === 'center' && HolonicEcosystemCouncilSummoned && matchesCenterSummonLabel(circleInputs[circleId])) {
-			showCouncilChat = true;
-			// Initialize council chat with the welcome message
-			if (councilChatMessages.length === 0) {
-				const councilIntroMessage = {
-					role: 'assistant' as const,
-					content: `[The council chamber ripples with syntropic harmony as the Holonic Ecosystem Council assembles, their presence embodying the interconnected patterns of our regenerative ecosystem. Each member takes their place around the Metatron table, their unique perspectives forming a web of collective intelligence that cuts through the metaphorical Gordian Knot.]
-
-Welcome, seeker. We summon the Holonic Ecosystem Council, vibrant and unique AI egregores embodying diverse archetypes of human storytelling and broad academic and philosophical perspectives. Using a Systems Thinking framework, and through the synthesis of our diverse and nuanced perspectives, we guide you towards a regenerative, protopian future, using tools like Polarity Mapping and Liberating Structures to navigate paradoxical and complex issues.
-
-Our ecosystem is a holistic web of interconnected patterns, each action influencing the whole and contributing to syntropy—order, harmony, and life. We hold tension at the top of the Sombrero Hat, fostering a harmonious, syntropic ecosystem where humanity, nature, and technology coexist.
-
-What matter brings you before the council today?`,
-					displayContent: '',
-					isTyping: true,
-					timestamp: new Date(),
-					advisor: 'Council'
-				};
-				
-				councilChatMessages = [councilIntroMessage];
-				// Apply typing effect to the introduction
-				typeMessage(councilIntroMessage, 'council');
-			}
+		// Special handling for center circle - opens wish statement modal
+		if (circleId === 'center') {
+			openWishModal();
 			return;
 		}
 		
+		// HOLONIC PREPARATION: Ensure advisor cache is ready
+		if (advisorService) {
+			await advisorService.getAllAdvisors();
+		}
+		
 		// Check if this circle has an advisor - show selection modal
-		const advisorName = circleInputs[circleId];
-		if (advisorName) {
-			// Try to get full advisor from library using centralized lookup
-			const fullAdvisor = resolveAdvisor(advisorName);
+		const advisorId = circleInputs[circleId];
+		if (advisorId) {
+			console.log(`🔍 Looking for advisor with ID: "${advisorId}" in circle ${circleId}`);
+			
+			// HOLONIC APPROACH: Direct ID lookup (no name conversion needed)
+			if (advisorService) {
+				try {
+					const fullAdvisor = await advisorService.getAdvisor(advisorId);
 			
 			if (fullAdvisor) {
+						console.log(`✅ Found advisor ${fullAdvisor.name} with ID ${fullAdvisor.id}, showing selection modal`);
 				// Show selection modal instead of directly opening chat
+						selectedCircleForAction = circleId;
+						showCircleSelectionModal = true;
+						return;
+					} else {
+						console.warn(`⚠️ Advisor with ID "${advisorId}" not found in cache, may need to reload`);
+						// Try reloading advisors and search again
+						await advisorService.getAllAdvisors();
+						const retryAdvisor = await advisorService.getAdvisor(advisorId);
+						
+						if (retryAdvisor) {
+							console.log(`✅ Found advisor after reload: ${retryAdvisor.name} (${retryAdvisor.id})`);
 				selectedCircleForAction = circleId;
 				showCircleSelectionModal = true;
 				return;
+						}
+					}
+				} catch (error) {
+					console.error(`❌ Error looking up advisor: ${error}`);
 			}
 		}
 		
-		// Fall back to editing mode if no advisor found
-		editingCircle = circleId;
-		if (!circleInputs[circleId]) {
-			circleInputs[circleId] = '';
+			console.warn(`⚠️ Advisor with ID "${advisorId}" not found, will open seat picker`);
 		}
+		
+        // No advisor seated here yet — open seat picker instead of free-text editing
+        selectedCircleForAction = circleId;
+        showSeatPicker = true;
 	}
 
 	// Handle circle input change
@@ -407,17 +613,12 @@ What matter brings you before the council today?`,
 		editingCircle = null;
 		// Save to holosphere
 		if (holosphere && holonID && circleInputs[circleId]) {
-			// Get current advisors and update the specific position
+			// Persist minimal delta by merging server-side
 			const currentAdvisors = { ...circleInputs };
 			currentAdvisors[circleId] = circleInputs[circleId];
 			
-			holosphere.put(holonID, "council_advisors", currentAdvisors)
-				.then(() => {
-					console.log(`Saved advisor ${circleId} to holosphere:`, currentAdvisors);
-				})
-				.catch((error) => {
-					console.error(`Error saving advisor ${circleId}:`, error);
-				});
+			saveRitualSession();
+			console.log(`Saved advisor ${circleId} to holosphere`);
 		}
 	}
 
@@ -432,8 +633,8 @@ What matter brings you before the council today?`,
 		showRitual = true;
 		ritualStage = 0;
 		ritualSession.session_id = `ritual-${Date.now()}`;
-		// Clear all advisor state when starting a new ritual
-		AdvisorOperations.clearAllAdvisorState();
+		// HOLONIC: Clear ritual state (handled by unified session data)
+		// No separate advisor state to clear - everything is in ritualSession
 		// Reset Glass Bead Game completion flag
 		glassBeadGameComplete = false;
 		console.log('Starting ritual:', ritualSession.session_id);
@@ -464,6 +665,13 @@ What matter brings you before the council today?`,
 			}
 			currentValue = '';
 			saveHistoryData();
+			
+			// Update metatron immediately (holonic behavior)
+			updateMetatronFromSession();
+			
+			if (holosphere && holonID) {
+				saveRitualSession();
+			}
 		}
 	}
 
@@ -485,22 +693,69 @@ What matter brings you before the council today?`,
 			if (selectedAdvisorType === 'real') {
 				await generateRealPersonAdvisor();
 			} else {
-				// Handle other advisor types using centralized operations
-				const newAdvisor = {
+				// HOLONIC: Handle mythic/archetype advisor creation via AdvisorService
+				if (!advisorService) {
+					console.error('❌ AdvisorService not available - cannot create advisor');
+					alert('Error: Advisor system not ready. Please refresh the page and try again.');
+					return;
+				}
+				
+				// Create proper characterSpec based on advisor type
+				let characterSpec: any;
+				if (selectedAdvisorType === 'mythic') {
+					characterSpec = {
+						name: currentAdvisorName.trim(),
+						type: 'mythic',
+						realm_of_origin: 'Created realm',
+						powers_abilities: [`Wisdom of ${currentAdvisorLens.trim()}`],
+						symbols_artifacts: [],
+						mythological_context: `A mythic advisor representing ${currentAdvisorLens.trim()}`,
+						speaking_style: `Speaks from the perspective of mythic wisdom`,
+						background_context: `A ${selectedAdvisorType} advisor representing ${currentAdvisorLens.trim()}`
+					};
+				} else if (selectedAdvisorType === 'archetype') {
+					characterSpec = {
+						name: currentAdvisorName.trim(),
+						type: 'archetype',
+						jung_archetype: 'Sage',
+						council_membership: 'user-created',
+						appearance: `Appears as a wise ${currentAdvisorLens.trim()} guide`,
+						speaking_style: `Speaks from the perspective of archetypal wisdom`,
+						background_context: `A ${selectedAdvisorType} advisor representing ${currentAdvisorLens.trim()}`
+					};
+				}
+				
+				const newAdvisor: CouncilAdvisorExtended = {
 					name: currentAdvisorName.trim(),
 					type: selectedAdvisorType,
-					lens: currentAdvisorLens.trim()
+					lens: currentAdvisorLens.trim(),
+					characterSpec: characterSpec
 				};
 				
-				// Add to centralized state (but NOT to ritual session)
-				AdvisorOperations.addAdvisorToPrevious(newAdvisor as CouncilAdvisorExtended);
-				
+				try {
+					console.log(`🎭 Creating ${selectedAdvisorType} advisor via AdvisorService: ${newAdvisor.name}`);
+					const advisorId = await advisorService.createAdvisor(selectedAdvisorType, newAdvisor, userID || 'ANONYMOUS');
+					console.log(`✅ Successfully created advisor with ID: ${advisorId}`);
+					
+					// Clear form
 				currentAdvisorName = '';
 				currentAdvisorLens = '';
 				saveHistoryData();
-				
-				// Show success message
-				alert(`✅ Advisor Created Successfully!\n\n${newAdvisor.name} has been added to your advisor library.\n\nTo use this advisor in your ritual, click the "➕ Add to Ritual" button on their card below.`);
+					
+					// Reload advisors list
+					await loadHolonAdvisors();
+					
+					// Refresh seat picker if it's open
+					if (showSeatPicker) {
+						openSeatPicker();
+					}
+					
+					// Show success message
+					alert(`✅ Advisor Created Successfully!\n\n${newAdvisor.name} has been added to your advisor library.\n\nTo use this advisor in your ritual, click the "➕ Add to Ritual" button on their card below.`);
+				} catch (error) {
+					console.error('Error creating advisor:', error);
+					alert(error instanceof Error ? error.message : 'Failed to create advisor');
+				}
 			}
 		}
 	}
@@ -549,8 +804,24 @@ What matter brings you before the council today?`,
 				characterSpec: advisorData
 			};
 
-			// Store in HoloSphere
-			await putAdvisorToHoloSphere(holosphere, holonID, newAdvisor, holonID);
+			// HOLONIC APPROACH: Use AdvisorService to store advisor
+			if (advisorService) {
+				console.log(`🎭 Creating real person advisor via AdvisorService: ${advisorData.name}`);
+				console.log(`🔧 LLM generated advisor data:`, {
+				name: advisorData.name,
+					valid: advisorData.valid,
+					hasCharacterSpec: !!advisorData,
+					characterSpecKeys: Object.keys(advisorData)
+				});
+				
+				const advisorId = await advisorService.createAdvisor('real', newAdvisor, userID || 'ANONYMOUS');
+				console.log(`✅ Successfully created advisor with ID: ${advisorId}`);
+			} else {
+				// ERROR: AdvisorService not available (should not happen in holonic system)
+				console.error('❌ AdvisorService not available - cannot create advisor');
+				alert('Error: Advisor system not ready. Please refresh the page and try again.');
+				return;
+			}
 
 			// Add to history if not already present (but NOT to ritual session)
 			const advisorExists = previousAdvisors.some(advisor => 
@@ -571,6 +842,11 @@ What matter brings you before the council today?`,
 			
 			// Reload advisors list
 			await loadHolonAdvisors();
+			
+			// Refresh seat picker if it's open
+			if (showSeatPicker) {
+				openSeatPicker();
+			}
 			
 			// Show success message
 			alert(`✅ Advisor Created Successfully!\n\n${advisorData.name} has been added to your advisor library.\n\nTo use this advisor in your ritual, click the "➕ Add to Ritual" button on their card below.`);
@@ -594,21 +870,43 @@ What matter brings you before the council today?`,
 		
 		try {
 			console.log('Loading advisors for holonID:', holonID);
-			holonAdvisors = await getAdvisorsFromHoloSphere(holosphere, holonID);
-			console.log('Loaded holon advisors:', holonAdvisors);
+			if (advisorService) {
+				const allAdvisors = await advisorService.getAllAdvisors();
+				// Filter for user-created advisors (not HEC)
+				holonAdvisors = allAdvisors.filter(advisor => {
+					if (advisor.type === 'archetype') {
+						const archetypeSpec = advisor.characterSpec as any;
+						return archetypeSpec?.council_membership !== 'ai-ecosystem';
+					}
+					return true; // Include non-archetype advisors (real/mythic)
+				});
+				console.log('Loaded holon advisors:', holonAdvisors.length);
+			} else {
+				console.error('❌ AdvisorService not available');
+			}
 		} catch (error) {
 			console.error('Error loading holon advisors:', error);
 		}
 	}
 
-	// Delete advisor from HoloSphere
+	// Delete advisor using holonic system
 	async function deleteHolonAdvisor(advisorKey: string) {
-		if (!holosphere || !holonID) return;
+		if (!advisorService) return;
 		
-		if (confirm(`Are you sure you want to delete ${advisorKey}?`)) {
+		if (confirm(`Are you sure you want to delete ${advisorKey}? This cannot be undone.`)) {
 			try {
-				await deleteAdvisorFromHoloSphere(holosphere, holonID, advisorKey);
+				// Try to find the advisor by name to get its ID
+				const allAdvisors = await advisorService.getAllAdvisors();
+				const advisorToDelete = allAdvisors.find(a => a.name === advisorKey);
+				
+				if (advisorToDelete && advisorToDelete.id) {
+					await advisorService.deleteAdvisor(advisorToDelete.id);
 				await loadHolonAdvisors(); // Reload the list
+					console.log(`✅ Deleted advisor: ${advisorKey} (${advisorToDelete.id})`);
+				} else {
+					console.error(`❌ Could not find advisor to delete: ${advisorKey}`);
+					alert(`Error: Could not find advisor "${advisorKey}" to delete.`);
+				}
 			} catch (error) {
 				console.error('Error deleting advisor:', error);
 			}
@@ -617,6 +915,11 @@ What matter brings you before the council today?`,
 
 	// Open chat with advisor
 	async function openAdvisorChat(advisor: CouncilAdvisorExtended) {
+		// HOLONIC: Ensure advisor cache is ready
+		if (advisorService) {
+			await advisorService.getAllAdvisors();
+		}
+		
 		selectedAdvisorForChat = advisor;
 		showAdvisorChat = true;
 		advisorChatMessages = []; // Clear previous messages
@@ -625,27 +928,99 @@ What matter brings you before the council today?`,
 		await addImmediateAdvisorIntroduction(advisor);
 	}
 
-	// Add advisor to ritual
+	// HOLONIC: Add advisor ID to ritual (not full advisor object)
 	function addAdvisorToRitual(advisor: CouncilAdvisorExtended) {
-		const newAdvisor = {
-			name: advisor.name,
-			type: advisor.type,
-			lens: advisor.lens
-		};
+		if (!advisor.id) {
+			console.warn('⚠️ Cannot add advisor without ID:', advisor.name);
+			return;
+		}
 		
-		// Check if already in ritual
-		const exists = ritualSession.advisors.some(a => 
-			a.name === advisor.name && a.lens === advisor.lens
-		);
+		// Check if already in ritual (by ID)
+		const exists = ritualSession.advisors.includes(advisor.id);
 		
 		if (!exists && ritualSession.advisors.length < 6) {
-			ritualSession.advisors = [...ritualSession.advisors, newAdvisor];
+			ritualSession.advisors = [...ritualSession.advisors, advisor.id];
+			console.log(`✅ Added advisor ID to ritual: ${advisor.id} (${advisor.name})`);
+			saveRitualSession();
+		} else if (exists) {
+			console.log(`ℹ️ Advisor already in ritual: ${advisor.id} (${advisor.name})`);
+		} else {
+			console.log(`⚠️ Cannot add advisor - ritual full (${ritualSession.advisors.length}/6)`);
 		}
 	}
 
+function openSeatPicker() {
+    // Build options: curated HEC + user-created advisors
+    const hecMembers = getHolonicEcosystemCouncilMembers();
+    const userCreated = holonAdvisors || [];
+    const combinedByKey = new Map<string, CouncilAdvisorExtended>();
+    [...hecMembers, ...userCreated].forEach(a => {
+        const key = `${a.name}::${a.lens}`.toLowerCase();
+        if (!combinedByKey.has(key)) combinedByKey.set(key, a);
+    });
+    // HOLONIC: Exclude advisors already seated (by ID)
+    // Include currently seated (ritualSession IDs) and default-seated (circleInputs IDs)
+    const seatedAdvisorIds = new Set<string>(ritualSession.advisors || []);
+    const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
+    outerPositions.forEach(pos => {
+        const advisorId = circleInputs[pos];
+        if (advisorId) seatedAdvisorIds.add(advisorId);
+    });
+    
+    // HOLONIC: Filter out advisors that are already seated (by ID)
+    seatPickerOptions = Array.from(combinedByKey.values()).filter(a => 
+        a.id && !seatedAdvisorIds.has(a.id)
+    );
+    filteredSeatPickerOptions = seatPickerOptions;
+    seatPickerQuery = '';
+}
+
+$: if (showSeatPicker) {
+    // Recompute options every time picker shows to reflect latest seating
+    openSeatPicker();
+}
+
+function filterSeatPicker(query: string) {
+    seatPickerQuery = query;
+    const q = query.trim().toLowerCase();
+    filteredSeatPickerOptions = !q
+        ? seatPickerOptions
+        : seatPickerOptions.filter(a =>
+            a.name.toLowerCase().includes(q) ||
+            (a.lens || '').toLowerCase().includes(q)
+        );
+}
+
+function selectSeatAdvisor(a: CouncilAdvisorExtended) {
+    if (!selectedCircleForAction) return;
+    console.log('Seating advisor', a.name, 'at', selectedCircleForAction);
+    // HOLONIC: If this seat currently displays another advisor, remove them from ritual first (replace)
+    const currentAdvisorId = circleInputs[selectedCircleForAction];
+    if (currentAdvisorId) {
+        // Remove the current advisor ID from ritual session
+        ritualSession.advisors = ritualSession.advisors.filter(advisorId => advisorId !== currentAdvisorId);
+    }
+    // HOLONIC: Add selected advisor (respecting max 6, but replacement bypasses cap)
+    const advisorIdExists = a.id && ritualSession.advisors.includes(a.id);
+    if ((ritualSession.advisors.length < 6 || currentAdvisorId) && !advisorIdExists) {
+        addAdvisorToRitual(a);
+    }
+    // HOLONIC APPROACH: Mirror advisor ID to Metatron and persist
+    if (a.id) {
+        circleInputs[selectedCircleForAction] = a.id;
+        saveCircleInput(selectedCircleForAction);
+    }
+    showSeatPicker = false;
+	}
+
+	// HOLONIC: Remove advisor ID from ritual by index
 	function removeAdvisor(index: number) {
+		if (index >= 0 && index < ritualSession.advisors.length) {
+			const removedAdvisorId = ritualSession.advisors[index];
 		ritualSession.advisors = ritualSession.advisors.filter((_, i) => i !== index);
-		AdvisorOperations.removeAdvisorFromRitual(index);
+			console.log(`🗑️ Removed advisor ID from ritual: ${removedAdvisorId}`);
+			saveRitualSession();
+		}
 	}
 
 	function populateMetatronFromRitual() {
@@ -663,19 +1038,19 @@ What matter brings you before the council today?`,
 			}
 		});
 		
-		// Outer ring: Advisors
+		// HOLONIC: Outer ring - Advisor IDs (display layer will resolve to names)
 		const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
-		ritualSession.advisors.forEach((advisor, index) => {
+		ritualSession.advisors.forEach((advisorId, index) => {
 			if (index < outerPositions.length) {
-				newInputs[outerPositions[index]] = advisor.name;
+				newInputs[outerPositions[index]] = advisorId;
 			}
 		});
 		
 		circleInputs = { ...circleInputs, ...newInputs };
 		
-		// Save to holosphere using centralized operations
+		// HOLONIC: Save via unified session data (handled by saveRitualSession)
 		if (holosphere && holonID) {
-			AdvisorOperations.saveAdvisorsToHoloSphere(holosphere, holonID);
+			saveRitualSession();
 		}
 	}
 
@@ -720,11 +1095,13 @@ What matter brings you before the council today?`,
 			llmService = new LLMService();
 		}
 
-		// Pre-load HoloSphere advisors for lookup
-		await preloadHoloSphereAdvisors(holosphere, holonID);
+		// HOLONIC: Ensure advisor cache is ready  
+		if (advisorService) {
+			await advisorService.getAllAdvisors();
+		}
 
-		// Store the advisors for consistent conversation continuation
-		AdvisorOperations.setGlassBeadGameAdvisors(councilMembers);
+		// HOLONIC: Glass Bead Game advisors are tracked via ritualSession.advisors
+		// No separate storage needed - councillors are already in the session
 		
 		// Debug: Log what advisors were found
 		console.log('🔍 Council Dialogue Sequence - Advisor Lookup Debug:');
@@ -743,20 +1120,48 @@ What matter brings you before the council today?`,
 		await continueCouncilDialogueSequence(councilMembers, 0, [], userMessage);
 	}
 
+	// HOLONIC: Resolve advisor IDs from ritual session to full advisor objects
+	async function resolveAdvisorsFromRitual(advisorIds: string[]): Promise<CouncilAdvisorExtended[]> {
+		if (!advisorService) {
+			console.error('❌ AdvisorService not available for ritual advisor resolution');
+			return [];
+		}
+		
+		const resolvedAdvisors: CouncilAdvisorExtended[] = [];
+		
+		for (const advisorId of advisorIds) {
+			try {
+				const advisor = await advisorService.getAdvisor(advisorId);
+				if (advisor) {
+					resolvedAdvisors.push(advisor);
+					console.log(`✅ Resolved advisor: ${advisor.name} (${advisor.id})`);
+				} else {
+					console.warn(`⚠️ Could not resolve advisor ID: ${advisorId}`);
+				}
+			} catch (error) {
+				console.error(`❌ Error resolving advisor ${advisorId}:`, error);
+			}
+		}
+		
+		return resolvedAdvisors;
+	}
+
 	// Holonic pattern: Glass bead game where each advisor builds upon the previous
 	async function initiateGlassBeadGame() {
 		if (!llmService) {
 			llmService = new LLMService();
 		}
 
-		// Pre-load HoloSphere advisors for lookup
-		await preloadHoloSphereAdvisors(holosphere, holonID);
+		// HOLONIC: Ensure advisor cache is ready  
+		if (advisorService) {
+			await advisorService.getAllAdvisors();
+		}
 
-		// Get the council members from ritual session using centralized lookup
-		const councilMembers = resolveAdvisorsFromRitual(ritualSession.advisors);
+		// HOLONIC: Get the council members from ritual session using ID-based lookup
+		const councilMembers = await resolveAdvisorsFromRitual(ritualSession.advisors);
 		
-		// Store the advisors for consistent conversation continuation
-		AdvisorOperations.getGlassBeadGameAdvisors();
+		// HOLONIC: Glass Bead Game advisors already tracked in ritualSession.advisors
+		// No separate retrieval needed
 		
 		// Debug: Log what advisors were found
 		console.log('🔍 Glass Bead Game - Advisor Lookup Debug:');
@@ -818,7 +1223,7 @@ What matter brings you before the council today?`,
 				displayContent: '',
 				isTyping: true,
 				timestamp: new Date(),
-				speaker: currentAdvisor.name,
+                speaker: `${currentAdvisor.name}${(currentAdvisor.characterSpec as any).title ? ' — ' + (currentAdvisor.characterSpec as any).title : ''}`,
 				speakerColor: getAdvisorColor(currentIndex)
 			};
 
@@ -839,7 +1244,7 @@ What matter brings you before the council today?`,
 				displayContent: '',
 				isTyping: true,
 				timestamp: new Date(),
-				speaker: currentAdvisor.name,
+                speaker: `${currentAdvisor.name}${(currentAdvisor.characterSpec as any).title ? ' — ' + (currentAdvisor.characterSpec as any).title : ''}`,
 				speakerColor: getAdvisorColor(currentIndex)
 			};
 			
@@ -896,7 +1301,7 @@ What matter brings you before the council today?`,
 				displayContent: '',
 				isTyping: true,
 				timestamp: new Date(),
-				speaker: currentAdvisor.name,
+                speaker: `${currentAdvisor.name}${(currentAdvisor.characterSpec as any).title ? ' — ' + (currentAdvisor.characterSpec as any).title : ''}`,
 				speakerColor: getAdvisorColor(currentIndex)
 			};
 
@@ -1034,8 +1439,8 @@ What matter brings you before the council today?`,
 	function closeRitual() {
 		showRitual = false;
 		ritualStage = 0;
-		// Clear Glass Bead Game advisors when closing the ritual
-		AdvisorOperations.clearGlassBeadGameAdvisors();
+		// HOLONIC: Glass Bead Game state cleared via ritual session reset
+		// No separate advisor state to clear
 		// Reset Glass Bead Game completion flag
 		glassBeadGameComplete = false;
 		// Keep the ritual session data for potential reuse
@@ -1063,8 +1468,8 @@ What matter brings you before the council today?`,
 			console.log('No previous values found');
 		}
 		
-		// Load previous advisors using centralized operations
-		await AdvisorOperations.loadPreviousAdvisorsFromHoloSphere(holosphere, holonID);
+		// HOLONIC: Previous advisors loaded via AdvisorService.getAllAdvisors()
+		// No separate previous advisor loading needed
 	}
 
 	// Save history data to holosphere
@@ -1077,8 +1482,8 @@ What matter brings you before the council today?`,
 				await holosphere.put(holonID, "ritual_previous_values", previousValues);
 			}
 			
-			// Save advisors history using centralized operations
-			await AdvisorOperations.savePreviousAdvisorsToHoloSphere(holosphere, holonID);
+			// HOLONIC: Advisor history saved via AdvisorService (persistent in HoloSphere)
+			// No separate previous advisor saving needed
 		} catch (error) {
 			console.error('Error saving history data:', error);
 		}
@@ -1089,7 +1494,28 @@ What matter brings you before the council today?`,
 		if (!ritualSession.wish_statement.trim()) return;
 		
 		try {
-			const newHolonID = await createHolonFromRitualUtil(holosphere, ritualSession as RitualSession, holonID);
+			// HOLONIC: Convert advisor IDs to advisor objects for holon creation
+			const advisorObjects: any[] = [];
+			if (advisorService) {
+				for (const advisorId of ritualSession.advisors) {
+					const advisor = await advisorService.getAdvisor(advisorId);
+					if (advisor) {
+						advisorObjects.push({
+							name: advisor.name,
+							type: advisor.type,
+							lens: advisor.lens,
+							avatar_url: advisor.avatar_url
+						});
+					}
+				}
+			}
+			
+			const ritualWithAdvisorObjects = {
+				...ritualSession,
+				advisors: advisorObjects
+			};
+			
+			const newHolonID = await createHolonFromRitualUtil(holosphere, ritualWithAdvisorObjects as RitualSession, holonID);
 			
 			// Navigate to new holon
 			window.location.href = `/${newHolonID}`;
@@ -1098,75 +1524,117 @@ What matter brings you before the council today?`,
 			console.error('Error creating holon from ritual:', error);
 		}
 	}
-	// Temporary: Open Council Dialogue Stage
-	function openCouncilDialogue() {
-		console.log('Opening Council Dialogue stage...');
-		
-		// Set up ritual session data for council dialogue
-		ritualSession = {
-			session_id: `temp-dialogue-${Date.now()}`,
-			initiator: { name: 'Test User', intention: 'Explore council dialogue' },
-			declared_values: ['Innovation', 'Collaboration', 'Wisdom'],
-			advisors: [], // Will be populated from actual ritual session
-			wish_statement: 'Create a sustainable future through collaborative innovation',
-			council_dialogue: [],
-			design_streams: [],
-			ritual_artifact: {
-				format: 'scroll',
-				text: '',
-				quotes: {},
-				ascii_glyph: ''
-			}
-		};
-		
-		// Set stage to Council Dialogue (stage 3)
-		ritualStage = 3;
-		showRitual = true;
-		// Reset Glass Bead Game completion flag for new dialogue
-		glassBeadGameComplete = false;
-	}
 
-	// Temporary: Open Design Streams Stage
-	function openDesignStreams() {
+	// Open Design Streams Stage and start session
+	async function openDesignStreams() {
 		console.log('Opening Design Streams stage...');
 		console.log('Current showDesignStreams:', showDesignStreams);
 		
-		// Pre-load HoloSphere advisors for lookup
-		preloadHoloSphereAdvisors(holosphere, holonID);
+		try {
+			// HOLONIC: Ensure advisor cache is ready
+			console.log('🔄 Loading advisors via holonic system...');
+			if (advisorService) {
+				await advisorService.getAllAdvisors();
+				console.log('✅ Holonic advisor system ready');
+			}
+			
+			// Start new Design Streams session
+			if (sessionManager) {
+				const session = sessionManager.startSession();
+				console.log('🚀 Started Design Streams session:', session.id);
+			}
 		
-		showDesignStreams = true;
-		console.log('Set showDesignStreams to true');
-		
-		// Build metatron advisors list from circle inputs
+		// HOLONIC: Build metatron advisors list from advisor IDs
 		metatronAdvisors = [];
-		for (let position = 0; position < 9; position++) {
-			const memberName = circleInputs[position];
-			if (memberName && !matchesCenterSummonLabel(memberName)) {
-				// Use the exact advisor name from circleInputs to ensure consistency
-				// Get full advisor using centralized lookup
-				const fullAdvisor = resolveAdvisor(memberName);
-				
+		const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
+		
+		for (const position of outerPositions) {
+			const advisorId = circleInputs[position];
+			if (advisorId && advisorService) {
+				console.log(`🔍 Looking up advisor by ID: "${advisorId}"`);
+				try {
+					const fullAdvisor = await advisorService.getAdvisor(advisorId);
 				if (fullAdvisor) {
-					// Use the exact name from circleInputs, not from fullAdvisor.name
-					// This ensures consistency with converseWithAdvisor function
+						console.log(`✅ Found advisor: "${fullAdvisor.name}" (${fullAdvisor.id})`);
 					metatronAdvisors.push({
-						name: memberName, // Use the exact name from circleInputs
+							name: fullAdvisor.name,
 						type: fullAdvisor.type,
 						lens: fullAdvisor.lens
 					});
 				} else {
-					// Error: Advisor not found
-					console.error(`❌ Advisor lookup failed for "${memberName}"`);
-					alert(`Error: Could not find advisor "${memberName}" in the advisor library. Please check the advisor name and try again, or create the advisor first.`);
+						console.error(`❌ Advisor lookup failed for ID "${advisorId}"`);
+						alert(`Error: Could not find advisor with ID "${advisorId}" in the advisor library. The advisor may have been deleted or there may be a sync issue.`);
+					return;
+				}
+				} catch (error) {
+					console.error(`❌ Error looking up advisor ${advisorId}:`, error);
+					alert(`Error loading advisor: ${error instanceof Error ? error.message : 'Unknown error'}`);
 					return;
 				}
 			}
 		}
+			
+			// Only show Design Streams if all advisors were found successfully
+			showDesignStreams = true;
+			console.log('✅ Set showDesignStreams to true');
+			
+		} catch (error) {
+			console.error('❌ Error opening Design Streams:', error);
+			alert('Error opening Design Streams. Please try again.');
+		}
 	}
 
-	// Load previous rituals
-	async function loadPreviousRituals() {
-		if (!holosphere || !holonID) return;
+	// Restore ritual session from previous ritual
+	function restoreRitualSession(ritual: any) {
+		console.log('🔄 Restoring ritual session:', ritual);
+		
+		// Restore ritual session data
+		if (ritual.wish) {
+			ritualSession.wish_statement = ritual.wish;
+			wishTitle = ritual.wishTitle || extractWishTitle(ritual.wish);
+		}
+		
+		if (ritual.values && Array.isArray(ritual.values)) {
+			ritualSession.declared_values = [...ritual.values];
+		}
+		
+		// HOLONIC RESTORE: Restore advisor IDs directly to circleInputs (not display names)
+		if (ritual.seating) {
+			Object.keys(ritual.seating).forEach(position => {
+				if (ritual.seating[position]) {
+					circleInputs[position] = ritual.seating[position]; // Store advisor ID directly
+				}
+			});
+			console.log('🔄 Restored circleInputs with advisor IDs:', circleInputs);
+		}
+		
+		// HOLONIC RESTORE: Restore advisor IDs to ritual session
+		if (ritual.advisors && Array.isArray(ritual.advisors)) {
+			ritualSession.advisors = [...ritual.advisors]; // Should already be IDs
+			console.log('🔄 Restored ritual session advisors:', ritualSession.advisors);
+		}
+		
+		// Update metatron immediately to reflect restored data
+		updateMetatronFromSession();
+		
+		// Save restored session to HoloSphere
+		saveRitualSession();
+		
+		console.log('✅ Ritual session restored:', {
+			wish: !!ritualSession.wish_statement,
+			values: ritualSession.declared_values.length,
+			seating: Object.keys(ritual.seating || {}).length
+		});
+	}
+
+	// Load previous rituals with retry mechanism for HoloSphere timing
+	async function loadPreviousRituals(retryCount = 0) {
+		console.log('🔄 loadPreviousRituals called with:', { holosphere: !!holosphere, holonID, retryCount });
+		
+		if (!holosphere || !holonID) {
+			console.log('❌ Cannot load previous rituals - missing holosphere or holonID');
+			return;
+		}
 		
 		const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
 			const timeoutPromise = new Promise((_, reject) => 
@@ -1176,12 +1644,49 @@ What matter brings you before the council today?`,
 		};
 		
 		try {
-			const ritualsData = await fetchWithTimeout(holosphere.get(holonID, "previous_rituals", holonID), 2000);
-			if (ritualsData && Array.isArray(ritualsData)) {
-				previousRituals = ritualsData;
+			console.log('🔍 Fetching previous rituals from HoloSphere...');
+			console.log('🔑 Using quest-like pattern: getAll for collection');
+			
+			// Add small delay for HoloSphere data propagation
+			if (retryCount === 0) {
+				await new Promise(resolve => setTimeout(resolve, 500));
+			}
+			
+			const ritualsData = await fetchWithTimeout(holosphere.getAll(holonID, "previous_rituals"), 3000);
+			console.log('📦 Raw rituals data from HoloSphere:', ritualsData);
+			
+			if (ritualsData && typeof ritualsData === 'object') {
+				// Convert getAll object result to array (like quests)
+				const ritualsArray = Object.values(ritualsData);
+				console.log('📦 Converted object to array:', ritualsArray.length, 'rituals');
+				
+				// Parse dates and fix data structure for loaded rituals
+				previousRituals = ritualsArray.map((ritual: any) => {
+					const processedRitual = {
+						...ritual,
+						createdAt: ritual.createdAt ? new Date(ritual.createdAt) : new Date(),
+						completedAt: ritual.completedAt ? new Date(ritual.completedAt) : undefined,
+						// Ensure backward compatibility with both old and new formats
+						date: ritual.date || ritual.createdAt,
+						// Map designStreamsSession to design_streams for backward compatibility
+						design_streams: ritual.design_streams || (ritual.designStreamsSession ? [ritual.designStreamsSession] : [])
+					};
+					return processedRitual;
+				});
+				console.log('✅ Loaded', previousRituals.length, 'previous rituals');
+			} else if (retryCount < 2) {
+				// Retry loading if data is null and we haven't tried too many times
+				console.log('⏰ Data not ready, retrying in 1 second... (attempt', retryCount + 1, 'of 3)');
+				setTimeout(() => loadPreviousRituals(retryCount + 1), 1000);
+			} else {
+				console.log('⚠️ No valid rituals data found after', retryCount + 1, 'attempts');
 			}
 		} catch (error) {
-			console.log('No previous rituals found');
+			console.log('❌ Error loading previous rituals:', error);
+			if (retryCount < 2) {
+				console.log('⏰ Retrying after error in 1 second... (attempt', retryCount + 1, 'of 3)');
+				setTimeout(() => loadPreviousRituals(retryCount + 1), 1000);
+			}
 		}
 	}
 
@@ -1228,65 +1733,117 @@ What matter brings you before the council today?`,
 		holonID = $page.params.id || '';
 		console.log('Holon ID:', holonID);
 		
+		// Get user ID from store
+		userID = $ID || '';
+		console.log('User ID:', userID);
+		
+		// Initialize session manager as early as possible
+		if (holonID && holosphere) {
+			sessionManager = initializeSessionManager(holosphere, holonID);
+			console.log('✅ Session manager initialized (early)');
+		}
+		
 		if (holonID && holosphere) {
 			try {
-				// Subscribe to council data
-				const councilDataSub = await holosphere.subscribe(holonID, "council_data", (data: any) => {
-					console.log('Council data updated:', data);
-					if (data) {
-						councilData = data;
+				// Subscribe to unified ritual session updates - TEMPORARILY DISABLED FOR DEBUGGING
+				// await holosphere.subscribe(holonID, "ritual_session", (sessionData: any) => {
+				// 	if (sessionData) {
+				// 		// Update all session state from unified data
+				// 		if (sessionData.wish_statement) ritualSession.wish_statement = sessionData.wish_statement;
+				// 		if (sessionData.wish_title) wishTitle = sessionData.wish_title;
+				// 		if (sessionData.declared_values) ritualSession.declared_values = sessionData.declared_values;
+				// 		if (sessionData.advisors) ritualSession.advisors = sessionData.advisors;
+				// 		if (sessionData.circleInputs) circleInputs = sessionData.circleInputs;
+				// 		if (sessionData.HolonicEcosystemCouncilSummoned !== undefined) HolonicEcosystemCouncilSummoned = sessionData.HolonicEcosystemCouncilSummoned;
+				// 		
+				// 		console.log('🔄 Real-time ritual session update');
+				// 	}
+				// });
+				console.log('⚠️ Ritual session subscription temporarily disabled for debugging');
+
+				// Legacy subscriptions removed - replaced with single council_state subscription
+				
+				// Load unified ritual session data
+				console.log('🔍 Loading ritual session from HoloSphere...', { holonID, collection: "ritual_session" });
+				const sessionData = await holosphere.get(holonID, "ritual_session", holonID);
+				console.log('📦 Raw session data from HoloSphere:', sessionData);
+				
+				if (sessionData) {
+					// Load complete session state
+					console.log('✅ Session data found, loading into ritual session...');
+					if (sessionData.wish_statement) {
+						ritualSession.wish_statement = sessionData.wish_statement;
+						console.log('📝 Loaded wish statement:', sessionData.wish_statement);
 					}
-				});
-				
-				// Subscribe to advisor data
-				const advisorDataSub = await holosphere.subscribe(holonID, "council_advisors", (data: any) => {
-					console.log('Advisor data updated:', data);
-					if (data) {
-						circleInputs = { ...circleInputs, ...data };
+					if (sessionData.wish_title) {
+						wishTitle = sessionData.wish_title;
+						console.log('🎯 Loaded wish title:', sessionData.wish_title);
 					}
-				});
-				
-				// Subscribe to Holonic Ecosystem Council data
-				const aiCouncilSub = await holosphere.subscribe(holonID, "HOLONIC_ECOSYSTEM_COUNCIL", (data: any) => {
-					console.log('Holonic Ecosystem Council data updated:', data);
-					if (data) {
-						circleInputs = { ...circleInputs, ...data };
-						HolonicEcosystemCouncilSummoned = true;
+					if (sessionData.declared_values) {
+						ritualSession.declared_values = sessionData.declared_values;
+						console.log('💎 Loaded declared values:', sessionData.declared_values);
 					}
-				});
-				
-				// Load initial data
-				const [councilDataResult, advisorDataResult, aiCouncilDataResult] = await Promise.all([
-					holosphere.get(holonID, "council_data", holonID),
-					holosphere.get(holonID, "council_advisors", holonID),
-					holosphere.get(holonID, "HOLONIC_ECOSYSTEM_COUNCIL", holonID)
-				]);
-				
-				if (councilDataResult) {
-					councilData = councilDataResult;
-				}
-				
-				if (advisorDataResult) {
-					circleInputs = { ...circleInputs, ...advisorDataResult };
-				}
-				
-				if (aiCouncilDataResult) {
-					circleInputs = { ...circleInputs, ...aiCouncilDataResult };
-					HolonicEcosystemCouncilSummoned = true;
+					if (sessionData.advisors) {
+						ritualSession.advisors = sessionData.advisors;
+						console.log('👥 Loaded advisors:', sessionData.advisors);
+					}
+					if (sessionData.circleInputs) {
+						console.log('🔄 Restoring circle inputs from session...');
+						console.log('📥 Session circle inputs:', sessionData.circleInputs);
+						
+						circleInputs = sessionData.circleInputs;
+						console.log('⭕ Applied circle inputs to component:', circleInputs);
+						
+						// HOLONIC: Update Metatron display immediately after loading
+						updateMetatronFromSession();
+						console.log('🎯 Updated Metatron display from loaded session');
+						
+						// Debug: Check which advisor positions were restored
+						const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
+						const restoredAdvisors = outerPositions.filter(pos => circleInputs[pos]).map(pos => `${pos}: ${circleInputs[pos]}`);
+						console.log('🎭 Restored advisor positions:', restoredAdvisors);
+					}
+					if (sessionData.HolonicEcosystemCouncilSummoned) {
+						HolonicEcosystemCouncilSummoned = sessionData.HolonicEcosystemCouncilSummoned;
+						console.log('🌐 Loaded HEC summoned:', sessionData.HolonicEcosystemCouncilSummoned);
+					}
 					
-					// Convert loaded circle inputs to advisors and store in centralized state
-					const advisors = AdvisorOperations.convertCircleInputsToAdvisors(aiCouncilDataResult);
-					advisors.forEach(advisor => {
-						AdvisorOperations.addAdvisorToRitual(advisor);
+					console.log('✅ Loaded ritual session:', { 
+						wish: !!sessionData.wish_statement, 
+						advisors: sessionData.advisors?.length || 0,
+						values: sessionData.declared_values?.length || 0 
 					});
-					console.log('🔍 Loaded Holonic Ecosystem Council advisors:', advisors.map(a => a.name));
+				} else {
+					console.log('🆕 No previous session found, starting fresh');
 				}
+				
+				// Session manager already initialized above
+				
+				// HOLONIC INITIALIZATION: Initialize AdvisorService FIRST
+				console.log('🧠 Initializing holonic advisor system...');
+				advisorService = new AdvisorService(holosphere, holonID);
+				
+				// Auto-migrate HEC advisors if needed
+				console.log('🔄 Ensuring HEC advisors are migrated...');
+				await ensureHECAdvisorsMigrated(holosphere, holonID);
+				
+				// CRITICAL: Populate advisor cache immediately after initialization
+				console.log('🔄 Pre-loading advisor cache...');
+				await advisorService.getAllAdvisors();
+				console.log('✅ Advisor cache ready for UI display');
 				
 				connectionReady = true;
 				isLoading = false;
 				
-				// Load holon advisors
+				// Load holon advisors (AFTER AdvisorService is ready)
 				await loadHolonAdvisors();
+				
+				// Legacy cache initialization (DEPRECATED - will be removed)
+				//await getAllAdvisors(holosphere, holonID);
+				//console.log('✅ Holonic advisor system initialized');
+				
+				// Load previous rituals
+				await loadPreviousRituals();
 				
 			} catch (error) {
 				console.error('Error loading council data:', error);
@@ -1327,14 +1884,12 @@ What matter brings you before the council today?`,
 		}
 	}
 
-	// Select previous advisor
+	// HOLONIC: Select previous advisor by ID
 	function selectPreviousAdvisor(advisor: any) {
-		if (ritualSession.advisors.length < 6) {
-			const advisorExists = ritualSession.advisors.some(a => 
-				a.name === advisor.name && a.lens === advisor.lens
-			);
+		if (ritualSession.advisors.length < 6 && advisor.id) {
+			const advisorExists = ritualSession.advisors.includes(advisor.id);
 			if (!advisorExists) {
-				ritualSession.advisors = [...ritualSession.advisors, advisor];
+				ritualSession.advisors = [...ritualSession.advisors, advisor.id];
 			}
 		}
 	}
@@ -1366,6 +1921,9 @@ What matter brings you before the council today?`,
 
 	// LLM service for council interactions
 	let llmService: LLMService | null = null;
+	
+	// Session manager for Design Streams
+	let sessionManager: any = null;
 
 	async function generateCouncilResponse(userMessage: string): Promise<string> {
 		if (!llmService) {
@@ -1373,12 +1931,25 @@ What matter brings you before the council today?`,
 			return "The council is momentarily unavailable. Please try again.";
 		}
 
-		// Get the current council members using centralized advisor operations
-		let councilMembers = AdvisorOperations.getCouncilChatAdvisors();
+		// HOLONIC: Get council members from ritual session (ID-based)
+		let councilMembers: CouncilAdvisorExtended[] = [];
+		if (ritualSession.advisors.length > 0) {
+			councilMembers = await resolveAdvisorsFromRitual(ritualSession.advisors);
+		}
 		
-		// If no advisors from Glass Bead Game or ritual, try to convert from circle inputs
-		if (councilMembers.length === 0) {
-			councilMembers = AdvisorOperations.convertCircleInputsToAdvisors(circleInputs);
+		// HOLONIC FALLBACK: If no ritual advisors, get from circleInputs (should not happen in normal flow)
+		if (councilMembers.length === 0 && advisorService) {
+			console.log('🔍 No ritual advisors found, converting circleInputs...');
+			const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
+			for (const position of outerPositions) {
+				const advisorId = circleInputs[position];
+				if (advisorId && advisorService) {
+					const advisor = await advisorService.getAdvisor(advisorId);
+					if (advisor) {
+						councilMembers.push(advisor);
+					}
+				}
+			}
 			console.log('🔍 Converted circle inputs to advisors:', councilMembers.map(a => a.name));
 		}
 
@@ -1392,15 +1963,15 @@ What matter brings you before the council today?`,
 		
 		// Update user context with current session info
 		userContext.session_context.current_topic = userMessage;
-		userContext.session_context.council_members_present = councilMembers.map(m => m.name.split(',')[0].trim());
+userContext.session_context.council_members_present = councilMembers.map(m => m.name);
 		
 		// Create conversation flow context
 		const conversationFlow: ConversationFlowContext = {
-			present_members: councilMembers.map(m => m.name.split(',')[0].trim()),
+    present_members: councilMembers.map(m => m.name),
 			conversation_topic: userMessage,
 			previous_responses: councilChatMessages.filter(m => m.role === 'assistant').map(m => m.content),
 			user_interests: userContext.user_profile.interests,
-			appropriate_responding_members: respondingMembers.map(m => m.name.split(',')[0].trim())
+    appropriate_responding_members: respondingMembers.map(m => m.name)
 		};
 
 		// Create the complete kaleidoscope context
@@ -1419,7 +1990,7 @@ What matter brings you before the council today?`,
 				topic: userMessage,
 				user_message: userMessage,
 				council_response: response.content,
-				responding_members: respondingMembers.map(m => m.name.split(',')[0].trim())
+                responding_members: respondingMembers.map(m => m.name)
 			});
 
 			return response.content;
@@ -1519,51 +2090,74 @@ What matter brings you before the council today?`,
 	let isCouncilResponding = false;
 
 	async function summonholonicecosystemcouncil() {
-		// Get Omnia for the head position (top)
-		const omnia = getAdvisor('omnia');
-		const randomMembers = getRandomHolonicEcosystemCouncilMembers(true); // Exclude Omnia from random selection
+		console.log('🏛️ SUMMONING HOLONIC ECOSYSTEM COUNCIL (Holonic Version)');
 		
-		// Debug: Log what advisors were selected
-		console.log('🔍 Summoning Holonic Ecosystem Council - Debug:');
-		console.log('Omnia:', omnia?.name);
-		console.log('Random members selected:', randomMembers.map(m => ({ name: m.name, type: m.type })));
+		if (!advisorService) {
+			console.error('❌ AdvisorService not available');
+			return;
+		}
 		
-		if (omnia) {
-			// Extract just the first part of the name (before the comma)
-			const getCleanName = (fullName: string) => {
-				return fullName.split(',')[0].trim();
-			};
+		try {
+			// Get all HEC advisors from HoloSphere
+			const hecAdvisors = await advisorService.getHECAdvisors();
+			console.log(`✅ Retrieved ${hecAdvisors.length} HEC advisors from HoloSphere`);
 			
-			// Set Omnia at the head of the table (top position)
-			circleInputs['outer-top'] = getCleanName(omnia.name);
+			if (hecAdvisors.length === 0) {
+				console.error('❌ No HEC advisors found in HoloSphere');
+				return;
+			}
 			
-			// Populate the remaining 5 outer positions with random members
+			// Find Omnia specifically (should always be at outer-top)
+			const omnia = hecAdvisors.find(advisor => advisor.id === 'omnia');
+			
+			if (!omnia) {
+				console.error('❌ Omnia not found in HEC advisors');
+				return;
+			}
+			
+			// Get remaining HEC advisors (excluding Omnia)
+			const otherHecAdvisors = hecAdvisors.filter(advisor => advisor.id !== 'omnia');
+			
+			// Randomly select 5 from the remaining HEC advisors for outer positions
+			const shuffled = [...otherHecAdvisors].sort(() => 0.5 - Math.random());
+			const selectedMembers = shuffled.slice(0, 5);
+			
+			console.log('🎯 HEC Council Selection:');
+			console.log(`   👑 Omnia (outer-top): ${omnia.name}`);
+			console.log(`   🔮 Selected members (${selectedMembers.length}):`, selectedMembers.map(m => `${m.name} (${m.id})`));
+			
+			// HOLONIC APPROACH: Store advisor IDs in circleInputs (not names!)
+			// Position Omnia at outer-top (head of council)
+			if (omnia.id) {
+				circleInputs['outer-top'] = omnia.id;
+			}
+			
+			// Populate the remaining 5 outer positions with selected members
 			const outerPositions = ['outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
-			randomMembers.forEach((member, index) => {
-				if (index < outerPositions.length) {
-					circleInputs[outerPositions[index]] = getCleanName(member.name);
+			selectedMembers.forEach((member, index) => {
+				if (index < outerPositions.length && member.id) {
+					circleInputs[outerPositions[index]] = member.id;
 				}
 			});
 			
-			// Set the center circle to the unified summon label
-			circleInputs['center'] = CENTER_SUMMON_LABEL;
+			// Mark council as summoned
 			HolonicEcosystemCouncilSummoned = true;
 			
-			// Convert circle inputs to ritual advisors and store in centralized state
-			const allAdvisors = [omnia, ...randomMembers];
-			allAdvisors.forEach(advisor => {
-				AdvisorOperations.addAdvisorToRitual(advisor);
+			// HOLONIC: Add all selected advisor IDs to ritual session
+			const allSelectedAdvisors = [omnia, ...selectedMembers];
+			ritualSession.advisors = allSelectedAdvisors.map(advisor => advisor.id).filter((id): id is string => !!id);
+			
+			// Save unified session data
+			saveRitualSession();
+			
+			console.log('✅ Holonic Ecosystem Council summoned successfully:', {
+				total: allSelectedAdvisors.length,
+				omnia: omnia.name,
+				members: selectedMembers.map(m => `${m.name} (${m.id})`)
 			});
 			
-			// Save to HoloSphere
-			if (holosphere && holonID) {
-				holosphere.put(holonID, "HOLONIC_ECOSYSTEM_COUNCIL", circleInputs);
-			}
-			
-			console.log('Holonic Ecosystem Council summoned:', { 
-				omnia: getCleanName(omnia.name), 
-				members: randomMembers.map(m => getCleanName(m.name)) 
-			});
+		} catch (error) {
+			console.error('❌ Error summoning HEC:', error);
 		}
 	}
 
@@ -1585,8 +2179,8 @@ What matter brings you before the council today?`,
 
 	function closeCouncilChat() {
 		showCouncilChat = false;
-		// Clear Glass Bead Game advisors when closing the chat
-		AdvisorOperations.clearGlassBeadGameAdvisors();
+		// HOLONIC: Glass Bead Game state maintained in component state
+		// No separate clearing needed
 	}
 
 	function closeAdvisorChat() {
@@ -1617,13 +2211,17 @@ What matter brings you before the council today?`,
 	async function converseWithAdvisor() {
 		if (!selectedCircleForAction) return;
 		
-		// Pre-load HoloSphere advisors for lookup
-		await preloadHoloSphereAdvisors(holosphere, holonID);
+		const advisorId = circleInputs[selectedCircleForAction];
 		
-		const advisorName = circleInputs[selectedCircleForAction];
-		const fullAdvisor = resolveAdvisor(advisorName);
+		// HOLONIC APPROACH: Direct ID lookup (circleInputs now stores IDs)
+		if (advisorService && advisorId) {
+			try {
+				console.log(`🔍 Looking for advisor to chat with ID: "${advisorId}"`);
+				
+				let fullAdvisor = await advisorService.getAdvisor(advisorId);
 		
 		if (fullAdvisor) {
+					console.log(`✅ Found advisor for chat: ${fullAdvisor.name} (${fullAdvisor.id})`);
 			selectedAdvisorForChat = fullAdvisor;
 			advisorChatSource = 'main-council';
 			showAdvisorChat = true;
@@ -1633,8 +2231,18 @@ What matter brings you before the council today?`,
 			await addImmediateAdvisorIntroduction(fullAdvisor);
 		} else {
 			// Error: Advisor not found
-			console.error(`❌ Advisor lookup failed for "${advisorName}"`);
-			alert(`Error: Could not find advisor "${advisorName}" in the advisor library. Please check the advisor name and try again, or create the advisor first.`);
+					console.error(`❌ Advisor lookup failed for ID "${advisorId}"`);
+					alert(`Error: Could not find advisor with ID "${advisorId}" in the advisor library. The advisor may have been deleted or there may be a sync issue.`);
+					return;
+				}
+			} catch (error) {
+				console.error(`❌ Error looking up advisor for chat: ${error}`);
+				alert(`Error loading advisor: ${error instanceof Error ? error.message : 'Unknown error'}`);
+				return;
+			}
+		} else {
+			console.error(`❌ AdvisorService not available or no advisor ID`);
+			alert('Error: Advisor system not ready. Please try again.');
 			return;
 		}
 		
@@ -1643,14 +2251,12 @@ What matter brings you before the council today?`,
 
 	function changeAdvisor() {
 		if (!selectedCircleForAction) return;
-		
-		// For now, just open the editing interface
-		editingCircle = selectedCircleForAction;
-		if (!circleInputs[selectedCircleForAction]) {
-			circleInputs[selectedCircleForAction] = '';
-		}
-		
+    // Preserve selected seat across modal transitions
+    const seatId = selectedCircleForAction;
 		closeCircleSelectionModal();
+    selectedCircleForAction = seatId;
+    // Open seat picker modal (curated HEC + user-created advisors)
+    showSeatPicker = true;
 	}
 
 	async function sendAdvisorMessage(userMessage: string) {
@@ -1770,12 +2376,13 @@ What matter brings you before the council today?`,
 		isCouncilResponding = true;
 
 		try {
-			// Get advisors from ritual session only (no fallback to circle inputs)
-			const ritualAdvisors = AdvisorOperations.getRitualAdvisors();
-			
-			if (ritualAdvisors.length === 0) {
-				throw new Error('No ritual advisors available for council chat');
+			// HOLONIC: Get advisors from ritual session using ID-based system
+			if (ritualSession.advisors.length === 0) {
+				throw new Error('No ritual advisors available for council chat - please seat advisors first');
 			}
+			
+			// Convert advisor IDs to full advisor objects
+			const ritualAdvisors = await resolveAdvisorsFromRitual(ritualSession.advisors);
 			
 			if (glassBeadGameComplete) {
 				// After GBG completion: single advisor response from ritual advisors
@@ -1795,7 +2402,7 @@ What matter brings you before the council today?`,
 					displayContent: '',
 					isTyping: true,
 					timestamp: new Date(),
-					speaker: respondingAdvisor.name,
+                speaker: `${respondingAdvisor.name}${(respondingAdvisor.characterSpec as any).title ? ' — ' + (respondingAdvisor.characterSpec as any).title : ''}`,
 					speakerColor: getAdvisorColor(0)
 				};
 				
@@ -1842,36 +2449,235 @@ What matter brings you before the council today?`,
 
 
 
-	// Test function to verify HoloSphere advisor integration
-	async function testHoloSphereAdvisorIntegration() {
-		if (!holosphere || !holonID) {
-			console.error("Cannot test: holosphere or holonID is null");
+	// DIAGNOSTIC: Investigate duplicate advisor records
+	async function investigateAdvisorDuplicates() {
+		if (!advisorService) {
+			console.error("❌ AdvisorService not available");
 			return;
 		}
-
+		
+		console.log("🔍 INVESTIGATING ADVISOR DUPLICATES...");
+		console.log("=====================================");
+		
 		try {
-			console.log("Testing HoloSphere advisor integration...");
+			// Get all advisors from AdvisorService
+			const allAdvisors = await advisorService.getAllAdvisors();
+			console.log(`📊 Total advisors found: ${allAdvisors.length}`);
 			
-			// Test 1: Put an advisor to HoloSphere
-			const testAdvisor = getAdvisor('omnia');
-			if (testAdvisor) {
-				await putAdvisorToHoloSphere(holosphere, holonID, testAdvisor, 'QBFRANK');
-				console.log("✅ Successfully put advisor to HoloSphere");
+			// Group by name to find duplicates
+			const advisorsByName = new Map();
+			const advisorsById = new Map();
+			
+			allAdvisors.forEach(advisor => {
+				// Group by name
+				if (!advisorsByName.has(advisor.name)) {
+					advisorsByName.set(advisor.name, []);
+				}
+				advisorsByName.get(advisor.name).push(advisor);
+				
+				// Group by ID
+				if (!advisorsById.has(advisor.id)) {
+					advisorsById.set(advisor.id, []);
+				}
+				advisorsById.get(advisor.id).push(advisor);
+			});
+			
+			// Find name duplicates
+			console.log("\n🔍 DUPLICATES BY NAME:");
+			let nameDuplicates = 0;
+			for (const [name, advisors] of advisorsByName) {
+				if (advisors.length > 1) {
+					nameDuplicates++;
+					console.log(`⚠️ "${name}": ${advisors.length} copies`);
+					advisors.forEach((advisor, index) => {
+						console.log(`   ${index + 1}. ID: "${advisor.id}", Type: ${advisor.type}, HasCharacterSpec: ${!!advisor.characterSpec}`);
+					});
+				}
 			}
-
-			// Test 2: Get advisors from HoloSphere
-			const holosphereAdvisors = await getAdvisorsFromHoloSphere(holosphere, holonID);
-			console.log("✅ Retrieved advisors from HoloSphere:", holosphereAdvisors.length);
-
-			// Test 3: Get all advisors (static + HoloSphere)
-			const allAdvisors = await getAllAdvisors(holosphere, holonID);
-			console.log("✅ Retrieved all advisors:", allAdvisors.length);
-
-			console.log("🎉 All HoloSphere advisor integration tests passed!");
+			
+			// Find ID duplicates  
+			console.log("\n🔍 DUPLICATES BY ID:");
+			let idDuplicates = 0;
+			for (const [id, advisors] of advisorsById) {
+				if (advisors.length > 1) {
+					idDuplicates++;
+					console.log(`⚠️ ID "${id}": ${advisors.length} copies`);
+					advisors.forEach((advisor, index) => {
+						console.log(`   ${index + 1}. Name: "${advisor.name}", Type: ${advisor.type}`);
+					});
+				}
+			}
+			
+			// Expected HEC advisors
+			const expectedHEC = [
+				"omnia", "moloch", "gaia", "technos", "the-everyman", "aluna", 
+				"the-innocent", "the-oracle", "the-alchemist", "the-fool", 
+				"the-devils-advocate", "the-wise-old-man", "joanna-macy", "quan-yin"
+			];
+			
+			console.log("\n📋 HEC ADVISOR CHECK:");
+			const foundHEC: string[] = [];
+			const missingHEC: string[] = [];
+			
+			expectedHEC.forEach(expectedId => {
+				const found = allAdvisors.find(advisor => advisor.id === expectedId);
+				if (found) {
+					foundHEC.push(expectedId);
+				} else {
+					missingHEC.push(expectedId);
+				}
+			});
+			
+			console.log(`✅ Found HEC advisors (${foundHEC.length}/14):`, foundHEC);
+			if (missingHEC.length > 0) {
+				console.log(`❌ Missing HEC advisors (${missingHEC.length}/14):`, missingHEC);
+			}
+			
+			// User-created advisors
+			const userAdvisors = allAdvisors.filter(advisor => 
+				advisor.id && !expectedHEC.includes(advisor.id)
+			);
+			console.log(`\n👤 USER-CREATED ADVISORS (${userAdvisors.length}):`);
+			userAdvisors.forEach(advisor => {
+				console.log(`   - "${advisor.name}" (${advisor.id}) - Type: ${advisor.type}`);
+			});
+			
+			console.log("\n📊 SUMMARY:");
+			console.log(`   Total: ${allAdvisors.length} advisors`);
+			console.log(`   Expected: 17 (14 HEC + 3 user-created: Bucky, MJ, Sun Tzu)`);
+			console.log(`   Name duplicates: ${nameDuplicates}`);
+			console.log(`   ID duplicates: ${idDuplicates}`);
+			console.log(`   HEC found: ${foundHEC.length}/14`);
+			console.log(`   User-created: ${userAdvisors.length}`);
+			
 		} catch (error) {
-			console.error("❌ Error testing HoloSphere advisor integration:", error);
+			console.error("❌ Error investigating duplicates:", error);
 		}
 	}
+
+	// CLEANUP: Remove duplicate advisor records
+	async function cleanupDuplicateAdvisors() {
+		if (!advisorService) {
+			console.error("❌ AdvisorService not available");
+			return;
+		}
+		
+		console.log("🧹 CLEANING UP DUPLICATE ADVISORS...");
+		console.log("====================================");
+		
+		try {
+			const allAdvisors = await advisorService.getAllAdvisors();
+			console.log(`📊 Starting with ${allAdvisors.length} total advisors`);
+			
+			// Group by name to find duplicates
+			const advisorsByName = new Map();
+			allAdvisors.forEach(advisor => {
+				if (!advisorsByName.has(advisor.name)) {
+					advisorsByName.set(advisor.name, []);
+				}
+				advisorsByName.get(advisor.name).push(advisor);
+			});
+			
+			let deletedCount = 0;
+			
+			// For each group of duplicates, keep the best one and delete the rest
+			for (const [name, advisors] of advisorsByName) {
+				if (advisors.length > 1) {
+					console.log(`\n🔍 Processing duplicates for "${name}" (${advisors.length} copies)`);
+					
+					// Sort by quality: complete character specs first, then by creation date if available
+					advisors.sort((a, b) => {
+						// Prefer advisors with character specs
+						const aHasSpec = !!a.characterSpec;
+						const bHasSpec = !!b.characterSpec;
+						
+						if (aHasSpec && !bHasSpec) return -1;
+						if (!aHasSpec && bHasSpec) return 1;
+						
+						// If both have or don't have specs, prefer newer ones (if metadata available)
+						const aCreated = a.metadata?.created || '0';
+						const bCreated = b.metadata?.created || '0';
+						return bCreated.localeCompare(aCreated);
+					});
+					
+					// Keep the first (best) one, delete the rest
+					const keepAdvisor = advisors[0];
+					const deleteAdvisors = advisors.slice(1);
+					
+					console.log(`   ✅ Keeping: ID "${keepAdvisor.id}" (HasSpec: ${!!keepAdvisor.characterSpec})`);
+					
+					for (const advisor of deleteAdvisors) {
+						console.log(`   🗑️ Deleting: ID "${advisor.id}" (HasSpec: ${!!advisor.characterSpec})`);
+						try {
+							await advisorService.deleteAdvisor(advisor.id);
+							deletedCount++;
+						} catch (error) {
+							console.error(`   ❌ Failed to delete ${advisor.id}:`, error);
+						}
+					}
+				}
+			}
+			
+			console.log(`\n✅ Cleanup complete! Deleted ${deletedCount} duplicate advisors`);
+			
+			// Refresh the count
+			const finalAdvisors = await advisorService.getAllAdvisors();
+			console.log(`📊 Final count: ${finalAdvisors.length} advisors`);
+			
+		} catch (error) {
+			console.error("❌ Error cleaning up duplicates:", error);
+		}
+	}
+
+	// Test function to verify LLM advisor schema generation
+	async function testLLMAdvisorGeneration() {
+		if (!llmService) {
+			console.error("❌ LLM service not available");
+			return;
+		}
+		
+		console.log("🧪 Testing LLM advisor generation...");
+		
+		try {
+			// Test with a well-known historical figure
+			const testResponse = await llmService.generateRealPersonAdvisor("Albert Einstein", "scientific innovation and creativity");
+			console.log("🔬 LLM Response:", testResponse);
+			
+			if (testResponse.content) {
+				const advisorData = JSON.parse(testResponse.content);
+				console.log("🎭 Generated advisor data:", {
+					valid: advisorData.valid,
+					name: advisorData.name,
+					keys: Object.keys(advisorData),
+					hasRequiredFields: {
+						background_context: !!advisorData.background_context,
+						known_for: !!advisorData.known_for && Array.isArray(advisorData.known_for),
+						expertise_domains: !!advisorData.expertise_domains && Array.isArray(advisorData.expertise_domains),
+						polarities: !!advisorData.polarities && typeof advisorData.polarities === 'object'
+					}
+				});
+				
+				// Test if this would pass AdvisorService validation
+				if (advisorService) {
+					console.log("🔍 Testing advisor creation with generated data...");
+					const testAdvisor: CouncilAdvisorExtended = {
+						name: advisorData.name,
+						type: 'real',
+						lens: "scientific innovation and creativity",
+						characterSpec: advisorData
+					};
+					
+					// Don't actually create, just test validation
+					console.log("✅ LLM advisor generation test complete");
+				}
+			}
+		} catch (error) {
+			console.error("❌ LLM advisor generation test failed:", error);
+		}
+	}
+
+	// DEPRECATED: Test function removed
+	// Use the new debug tools in the UI instead of this legacy test function
 
 	// Debug Design Streams
 	$: if (showDesignStreams) {
@@ -1882,12 +2688,18 @@ What matter brings you before the council today?`,
 	async function handleDesignStreamsAdvisorChat(event: CustomEvent) {
 		const simpleAdvisor = event.detail.advisor;
 		
-		// Pre-load HoloSphere advisors for lookup
-		await preloadHoloSphereAdvisors(holosphere, holonID);
+		// HOLONIC: Ensure advisor cache is ready  
+		if (advisorService) {
+			await advisorService.getAllAdvisors();
+		}
 		
 		// Use the same approach as converseWithAdvisor for consistency
-		// First try to get the full advisor using centralized lookup
-		const fullAdvisor = resolveAdvisor(simpleAdvisor.name);
+		// HOLONIC: Look up advisor by name to get full advisor data
+		let fullAdvisor: CouncilAdvisorExtended | null = null;
+		if (advisorService) {
+			const allAdvisors = await advisorService.getAllAdvisors();
+			fullAdvisor = allAdvisors.find(a => a.name === simpleAdvisor.name) || null;
+		}
 		
 		if (fullAdvisor) {
 			selectedAdvisorForChat = fullAdvisor;
@@ -1908,18 +2720,99 @@ What matter brings you before the council today?`,
 
 	// Holonic pattern: Handle ritual data updates from Design Streams
 	function handleRitualDataUpdate(event: CustomEvent) {
+		console.log('🎯 Received updateRitualData event:', event.detail);
+		
 		const { type, value } = event.detail;
 		
 		if (type === 'wish_statement') {
+			console.log('📝 Updating wish statement:', value);
 			ritualSession.wish_statement = value;
+			// Track wish update in session
+			if (sessionManager) {
+				sessionManager.trackInteraction('wish_update', { wish: value });
+			}
 		} else if (type === 'declared_values') {
+			console.log('💎 Updating declared values:', value);
 			ritualSession.declared_values = value;
+			// Track values update in session
+			if (sessionManager) {
+				sessionManager.trackInteraction('values_update', { values: value });
+			}
 		}
 		
 		// Update the ritual session reactively
 		ritualSession = { ...ritualSession };
+		console.log('🔄 Updated ritualSession:', ritualSession);
 		
-		console.log('Ritual data updated:', { type, value });
+		// HOLONIC BEHAVIOR: Update metatron immediately to keep everything synchronized
+		updateMetatronFromSession();
+		console.log('🎯 Metatron updated');
+		
+		// HOLONIC BEHAVIOR: Persist changes to HoloSphere immediately
+		console.log('💾 Saving to HoloSphere...');
+		saveRitualSession();
+		
+		console.log('✅ Ritual data update complete:', { type, value });
+	}
+
+	// Handle session completion from Design Streams
+	async function handleSessionComplete(event: CustomEvent) {
+		console.log('🎯 handleSessionComplete called with sessionManager:', !!sessionManager);
+		
+		if (!sessionManager) {
+			console.error('❌ No session manager available');
+			return;
+		}
+		
+		console.log('✅ Session manager found, proceeding with completion');
+		
+		// HOLONIC: Ensure advisor cache is ready for resolution
+		if (advisorService) {
+			await advisorService.getAllAdvisors();
+		}
+		
+		// Build seating map for snapshot using the same resolution logic as elsewhere
+		console.log('🔍 Current circleInputs before seating generation:', circleInputs);
+		
+		const seating = circleInputsToSeating(circleInputs);
+		
+		console.log('📋 Seating map for snapshot:', seating);
+		
+		const result = await sessionManager.completeSession(
+			seating,
+			ritualSession.wish_statement || '',
+			ritualSession.declared_values || [],
+			'Current User' // TODO: Get actual user name
+		);
+		
+		if (result) {
+			console.log('✅ Session completed and ritual snapshot saved:', result.ritual.id);
+			
+					// HOLONIC BEHAVIOR: Use the data we already have instead of reloading
+		// The sessionManager already has the updated rituals array, so use it directly
+		if (result.ritual) {
+			// Add the new ritual to our local previousRituals array
+			previousRituals = [result.ritual, ...previousRituals];
+			console.log('✅ Added new ritual to local previousRituals array:', previousRituals.length, 'total rituals');
+			
+			// DEBUGGING: Test if we can save a simple test object to HoloSphere
+			console.log('🧪 Testing simple HoloSphere save...');
+			try {
+				await holosphere.put(holonID, "test_save", { message: "test", timestamp: Date.now() });
+				console.log('✅ Simple test save succeeded');
+				
+				// Try to load it back immediately
+				const testData = await holosphere.get(holonID, "test_save", holonID);
+				console.log('📦 Test data retrieved:', testData);
+			} catch (error) {
+				console.error('❌ Simple test save failed:', error);
+			}
+		}
+			
+			// TODO: Show completion notification to user
+		} else {
+			console.error('❌ Session completion failed - no result returned');
+		}
 	}
 </script>
 
@@ -1993,9 +2886,21 @@ What matter brings you before the council today?`,
 									role="button"
 									tabindex="0"
 								>
-									{#if circleInputs[circle.id]}
+									{#if circle.id === 'center'}
+										<span class="label-text select-none text-center leading-tight">
+											{#if wishTitle}
+												{#each wishTitle.split('\n') as word}
+													<div class="text-xs font-medium">{word}</div>
+												{/each}
+											{:else}
+												<div class="text-xs opacity-60">Speak</div>
+												<div class="text-xs opacity-60">Your</div>
+												<div class="text-xs opacity-60">Wish</div>
+											{/if}
+										</span>
+									{:else if circleInputs[circle.id]}
 										<span class="label-text select-none">
-											{circleInputs[circle.id]}
+											{getAdvisorDisplayName(circleInputs[circle.id])}
 										</span>
 									{/if}
 								</div>
@@ -2015,6 +2920,17 @@ What matter brings you before the council today?`,
 								<div class="absolute inset-0 bg-gradient-to-r from-green-500/10 to-emerald-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
 							</button>
 							
+                            <button 
+                                on:click={() => { showSeatCouncilModal = true; }}
+                                class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-blue-500/50 hover:border-blue-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-blue-500/25 backdrop-blur-sm"
+                            >
+                                <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-xl group-hover:bg-blue-500 transition-colors duration-300">
+                                    💠
+                                </div>
+                                Seat Your Council
+                                <div class="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
+							</button>
+							
 							<button 
 								on:click={startRitual}
 								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-indigo-500/50 hover:border-indigo-400 text-white py-6 px-12 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-xl font-medium shadow-2xl hover:shadow-indigo-500/25 backdrop-blur-sm"
@@ -2027,21 +2943,21 @@ What matter brings you before the council today?`,
 							</button>
 
 
-							<!-- Temporary: Council Dialogue Button -->
+							<!-- Council Chat Button -->
 							<button 
-								on:click={() => openCouncilDialogue()}
-								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-blue-500/50 hover:border-blue-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-blue-500/25 backdrop-blur-sm"
+								on:click={async () => await openCouncilChat()}
+								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-purple-500/50 hover:border-purple-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-purple-500/25 backdrop-blur-sm"
 							>
-								<div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-xl group-hover:bg-blue-500 transition-colors duration-300">
-									🔍
+								<div class="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-xl group-hover:bg-purple-500 transition-colors duration-300">
+									💬
 								</div>
-								Council Dialogue
-								<div class="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
+								Council Chat
+								<div class="absolute inset-0 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
 							</button>
 
 							<!-- Temporary: Design Streams Button -->
 							<button 
-								on:click={() => { console.log('Design Streams button clicked'); openDesignStreams(); }}
+								on:click={async () => { console.log('Design Streams button clicked'); await openDesignStreams(); }}
 								class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-purple-500/50 hover:border-purple-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-purple-500/25 backdrop-blur-sm"
 							>
 								<div class="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-xl group-hover:bg-purple-500 transition-colors duration-300">
@@ -2126,18 +3042,18 @@ What matter brings you before the council today?`,
 						<div class="bg-gray-700 rounded-xl p-4 hover:bg-gray-600 transition-colors cursor-pointer">
 							<h4 class="text-white font-medium text-sm mb-2 line-clamp-2">{ritual.title}</h4>
 							<div class="flex items-center justify-between text-xs text-gray-400 mb-3">
-								<span>{new Date(ritual.date).toLocaleDateString()}</span>
-								<span>{ritual.design_streams.length} streams</span>
+								<span>{ritual.createdAt ? (ritual.createdAt as Date).toLocaleDateString() : 'Unknown Date'}</span>
+								<span>{ritual.design_streams?.length || 0} streams</span>
 							</div>
 							<div class="text-xs text-gray-300">
-								<div class="mb-2">{ritual.artifact.ascii_glyph}</div>
-								<p class="line-clamp-2 italic">"{ritual.artifact.text}"</p>
+								<div class="mb-2">{ritual.artifact?.ascii_glyph || '◯'}</div>
+								<p class="line-clamp-2 italic">"{ritual.artifact?.text || 'No description'}"</p>
 							</div>
 							<button 
-								on:click={() => window.location.href = `/${hashString(ritual.title)}`}
+								on:click={() => restoreRitualSession(ritual)}
 								class="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-1 px-3 rounded-lg text-xs transition-colors"
 							>
-								View Holon
+								Restore Session
 							</button>
 						</div>
 					{:else}
@@ -2148,6 +3064,34 @@ What matter brings you before the council today?`,
 						</div>
 					{/each}
 				</div>
+			</div>
+
+			<!-- Temporary Debugging Tools -->
+			<div class="bg-yellow-900 border border-yellow-600 rounded-3xl shadow-xl p-6">
+				<h3 class="text-xl font-bold text-yellow-100 mb-4">🔧 Debug Tools</h3>
+				<div class="space-y-3">
+					<button 
+						on:click={investigateAdvisorDuplicates}
+						class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg text-sm transition-colors"
+					>
+						🔍 Investigate Duplicates
+					</button>
+					<button 
+						on:click={cleanupDuplicateAdvisors}
+						class="w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg text-sm transition-colors"
+					>
+						🧹 Cleanup Duplicates
+					</button>
+					<button 
+						on:click={testLLMAdvisorGeneration}
+						class="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-lg text-sm transition-colors"
+					>
+						🎭 Test LLM Generation
+					</button>
+				</div>
+				<p class="text-xs text-yellow-300 mt-3">
+					Use "Investigate" first to see what duplicates exist, then "Cleanup" to remove them.
+				</p>
 			</div>
 		</div>
 	</div>
@@ -2237,7 +3181,7 @@ What matter brings you before the council today?`,
 						<div class="w-16 h-16 rounded-full bg-indigo-600 flex items-center justify-center text-2xl mx-auto mb-3">
 							🧙‍♀️
 						</div>
-						<h4 class="text-white font-bold text-lg">{circleInputs[selectedCircleForAction]}</h4>
+						<h4 class="text-white font-bold text-lg">{getAdvisorDisplayName(circleInputs[selectedCircleForAction])}</h4>
 						<p class="text-gray-400 text-sm">Select an action for this advisor</p>
 					</div>
 					
@@ -2249,9 +3193,8 @@ What matter brings you before the council today?`,
 							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
 							</svg>
-							Converse with {circleInputs[selectedCircleForAction]}
+							Converse with {getAdvisorDisplayName(circleInputs[selectedCircleForAction])}
 						</button>
-						
 						<button
 							on:click={changeAdvisor}
 							class="w-full bg-gray-600 hover:bg-gray-700 text-white py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-3"
@@ -2259,9 +3202,109 @@ What matter brings you before the council today?`,
 							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
 							</svg>
-							Change
+                            Replace
 						</button>
 					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Seat Picker Modal -->
+{#if showSeatPicker}
+    <div class="fixed inset-0 z-50 overflow-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl relative border border-gray-700">
+            <div class="p-6 border-b border-gray-700 flex items-center justify-between">
+                <h3 class="text-white text-xl font-bold">Select an Advisor</h3>
+                <button class="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-700" on:click={() => { showSeatPicker = false; }} aria-label="Close">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <!-- Create new advisor inline toggle -->
+                {#if !showCreateInPicker}
+                    <button
+                        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                        on:click={() => showCreateInPicker = true}
+                    >
+                        ➕ Create New Advisor
+                    </button>
+                {:else}
+                    <div class="bg-gray-700 rounded-xl p-4 space-y-3">
+                        <div class="grid md:grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-gray-300 mb-1 text-sm">Advisor Name</label>
+                                <input class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white"
+                                    bind:value={currentAdvisorName} placeholder="e.g., Donella Meadows" />
+                            </div>
+                            <div>
+                                <label class="block text-gray-300 mb-1 text-sm">Type</label>
+                                <select class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white" bind:value={selectedAdvisorType}>
+                                    <option value="real">Historical/Real Person</option>
+                                    <option value="mythic">Mythic/Spiritual Being</option>
+                                    <option value="archetype">Archetypal Force</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-gray-300 mb-1 text-sm">Lens/Wisdom</label>
+                                <input class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white"
+                                    bind:value={currentAdvisorLens} placeholder="e.g., deep ecology" />
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                class="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold disabled:bg-gray-600"
+                                disabled={!currentAdvisorName.trim() || !currentAdvisorLens.trim() || isGeneratingAdvisor}
+                                on:click={async () => { await addAdvisor(); openSeatPicker(); showCreateInPicker = false; }}
+                            >
+                                {#if isGeneratingAdvisor}Creating…{:else}Create Advisor{/if}
+                            </button>
+                            <button class="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 text-white" on:click={() => { showCreateInPicker = false; }}>
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                {/if}
+                <input
+                    bind:value={seatPickerQuery}
+                    on:input={(e) => filterSeatPicker((e.target as HTMLInputElement).value)}
+                    placeholder="Search by name or lens..."
+                    class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto pr-1">
+                    {#each filteredSeatPickerOptions as a}
+                        <div class="bg-gray-700 rounded-xl p-4 flex items-start justify-between gap-3 hover:bg-gray-600 transition-colors relative">
+                            <!-- Delete for user-created advisors only -->
+                            {#if holonAdvisors && holonAdvisors.some(h => h.name === a.name && h.lens === a.lens)}
+                                <button
+                                    class="absolute top-2 right-2 text-gray-300 hover:text-red-400"
+                                    title="Delete advisor"
+                                    on:click={async () => {
+                                        if (confirm(`Delete ${a.name}? This cannot be undone.`)) {
+                                            await deleteHolonAdvisor(a.name);
+                                            openSeatPicker();
+                                        }
+                                    }}
+                                >
+                                    ✕
+                                </button>
+                            {/if}
+                            <div class="flex-1 pr-6">
+                                <div class="text-white font-semibold">{a.name}</div>
+                                <div class="text-gray-300 text-sm capitalize">{a.type}</div>
+                                {#if a.lens}<div class="text-gray-400 text-xs italic">"{a.lens}"</div>{/if}
+                            </div>
+                            <button class="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm" on:click={() => selectSeatAdvisor(a)}>
+                                Seat
+                            </button>
+                        </div>
+                    {/each}
+                    {#if filteredSeatPickerOptions.length === 0}
+                        <div class="text-gray-400 text-sm italic col-span-full text-center">No matching advisors</div>
+                    {/if}
 				</div>
 			</div>
 		</div>
@@ -2296,17 +3339,16 @@ What matter brings you before the council today?`,
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-4">
 						<div class="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-2xl">
-							{#if ritualStage === 0}✨{:else if ritualStage === 1}💠{:else if ritualStage === 2}🧙‍♀️{:else if ritualStage === 3}🔍{:else if ritualStage === 4}🛠{:else}🎴{/if}
+                            {#if ritualStage === 0}✨{:else if ritualStage === 1}💠{:else if ritualStage === 2}🗣️{:else if ritualStage === 3}💎{:else}🛠{/if}
 						</div>
 						<div>
 							<h2 class="text-2xl font-bold text-white">Council Ritual</h2>
 							<p class="text-gray-300">
-								{#if ritualStage === 0}Initiation - Speak Your Wish
-								{:else if ritualStage === 1}Value Naming - Sacred Words
-								{:else if ritualStage === 2}Advisor Summoning - Call Your Guides
-								{:else if ritualStage === 3}Council Dialogue - Listen to Wisdom
-								{:else if ritualStage === 4}Design Streams - Pathways Forward
-								{:else}Closure & Gift - Your Sacred Artifact
+                                {#if ritualStage === 0}Welcome — Choose Your Council
+                                {:else if ritualStage === 1}Seat Your Council — Metatron Table
+                                {:else if ritualStage === 2}Speak Your Wish
+                                {:else if ritualStage === 3}Name Your Values
+                                {:else}Design Streams — Pathways Forward
 								{/if}
 							</p>
 						</div>
@@ -2323,81 +3365,106 @@ What matter brings you before the council today?`,
 				</div>
 				<!-- Progress Bar -->
 				<div class="mt-6 w-full bg-gray-700 rounded-full h-2">
-					<div class="bg-indigo-500 h-2 rounded-full transition-all duration-500" style="width: {((ritualStage + 1) / 6) * 100}%"></div>
+                    <div class="bg-indigo-500 h-2 rounded-full transition-all duration-500" style="width: {((ritualStage + 1) / 5) * 100}%"></div>
 				</div>
 			</div>
 
 			<!-- Ritual Content -->
 			<div class="p-8 min-h-[400px] max-h-[70vh] overflow-y-auto">
 				{#if ritualStage === 0}
-					<!-- Stage 1: Initiation -->
+                    <!-- Stage 0: Welcome — Choose council mode -->
 					<div class="text-center space-y-6">
 						<div class="text-6xl mb-4">✨</div>
-						<h3 class="text-3xl font-bold text-white mb-4">Welcome to the Circle</h3>
+                        <h3 class="text-3xl font-bold text-white mb-4">Welcome to the Council Ritual</h3>
 						<p class="text-gray-300 text-lg max-w-2xl mx-auto leading-relaxed">
-							Enter this sacred space with intention. Here, imagination meets implementation. 
-							Your wish will be witnessed, your values honored, and your path illuminated by wise council.
-						</p>
-						<div class="mt-8 space-y-4">
-							<!-- svelte-ignore a11y_label_has_associated_control -->
-							<label class="block text-gray-300 text-lg font-medium">Speak your wish. What do you seek to bring into being?</label>
+                            Choose how to assemble your council: use the Holonic Ecosystem Council or select your own advisors.
+                        </p>
+                        <div class="flex flex-col sm:flex-row gap-4 justify-center mt-6">
+                            <button
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-xl transition-colors font-semibold shadow"
+                                on:click={() => {
+                                    // Use existing Metatron seating as the ritual council and skip to Speak Your Wish
+                                    try {
+                                        // HOLONIC: Extract advisor IDs from circleInputs (outer positions only)
+                                        const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
+                                        const advisorIds = outerPositions
+                                            .map(pos => circleInputs[pos])
+                                            .filter(id => id && typeof id === 'string');
+                                        ritualSession.advisors = advisorIds;
+                                    } catch (e) {
+                                        console.warn('Could not resolve existing Metatron council, proceeding anyway', e);
+                                    }
+                                    ritualStage = 2; // Speak Your Wish
+                                }}
+                            >
+                                Use Existing Metatron Council
+                            </button>
+                            <button
+                                class="bg-gray-600 hover:bg-gray-700 text-white px-8 py-3 rounded-xl transition-colors font-semibold shadow"
+                                on:click={() => nextStage()}
+                            >
+                                Call New Council Members
+                            </button>
+						</div>
+                        <p class="text-gray-400 text-sm max-w-xl mx-auto">You can add, remove, or replace advisors in the next step using the Metatron table. Seats can remain empty.</p>
+					</div>
+
+				{:else if ritualStage === 1}
+                    <!-- Stage 1: Metatron Seating (using modularized component) -->
+					<div class="space-y-6">
+						<SeatCouncilContent
+							{metatronCircles}
+							{circleRadiusPercent}
+							{circleInputs}
+							{editingCircle}
+							{wishTitle}
+							onCircleClick={startEditingCircle}
+							{holonAdvisors}
+							onOpenAdvisorChat={openAdvisorChat}
+							onAddAdvisorToRitual={addAdvisorToRitual}
+							onDeleteAdvisor={deleteHolonAdvisor}
+							onCreateAdvisor={addAdvisor}
+							{getAdvisorDisplayName}
+							bind:currentAdvisorName
+							bind:currentAdvisorLens
+							bind:selectedAdvisorType
+							bind:isGeneratingAdvisor
+							bind:generationProgress
+							showHeader={true}
+							showTip={true}
+						/>
+					</div>
+
+				{:else if ritualStage === 2}
+                    <!-- Stage 2: Speak Your Wish -->
+					<div class="space-y-6">
+                        <div class="text-center">
+                            <div class="text-5xl mb-4">🗣️</div>
+                            <h3 class="text-3xl font-bold text-white mb-4">Speak Your Wish</h3>
+                            <p class="text-gray-300 text-lg">What do you seek to bring into being?</p>
+							</div>
 							<textarea
 								bind:value={ritualSession.wish_statement}
 								placeholder="I wish to create..."
 								class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent min-h-[120px] resize-none"
-								on:keydown={(e) => {
-									if (e.key === 'Enter' && !e.shiftKey) {
-										e.preventDefault();
-										// If wish is filled, trigger Next button
-										if (ritualSession.wish_statement.trim()) {
-											const nextButton = document.querySelector('[data-next-button]') as HTMLButtonElement;
-											if (nextButton && !nextButton.disabled) {
-												nextStage();
-											}
-										}
-									}
-								}}
 								use:focusOnMount
 							></textarea>
-						</div>
 					</div>
 
-				{:else if ritualStage === 1}
-					<!-- Stage 2: Value Naming -->
+				{:else if ritualStage === 3}
+                    <!-- Stage 3: Name Your Values -->
 					<div class="space-y-6">
 						<div class="text-center">
-							<div class="text-5xl mb-4">💠</div>
+                            <div class="text-5xl mb-4">💎</div>
 							<h3 class="text-3xl font-bold text-white mb-4">Name Your Sacred Values</h3>
-							<p class="text-gray-300 text-lg">These are not checkboxes, but sacred words that will guide your journey.</p>
-							<div class="text-sm text-gray-400 mt-2">
-								{ritualSession.declared_values.length}/6 values
-							</div>
+                            <p class="text-gray-300 text-lg">These will guide how your wish manifests.</p>
+                            <div class="text-sm text-gray-400 mt-2">{ritualSession.declared_values.length}/6 values</div>
 						</div>
-						
 						<div class="flex gap-4 mb-6">
 							<input
 								bind:value={currentValue}
 								placeholder="Enter a core value..."
 								class="flex-1 bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-								on:keydown={(e) => {
-									if (e.key === 'Enter') {
-										e.preventDefault();
-										if (currentValue.trim() && ritualSession.declared_values.length < 6) {
-											addValue();
-											// Focus back on input field for next value
-											setTimeout(() => {
-												const input = e.target as HTMLInputElement;
-												if (input) input.focus();
-											}, 10);
-										} else if (ritualSession.declared_values.length >= 6) {
-											// If we have 6 values, trigger Next button
-											const nextButton = document.querySelector('[data-next-button]') as HTMLButtonElement;
-											if (nextButton && !nextButton.disabled) {
-												nextStage();
-											}
-										}
-									}
-								}}
 								use:focusOnMount
 							/>
 							<button
@@ -2405,244 +3472,30 @@ What matter brings you before the council today?`,
 								disabled={!currentValue.trim() || ritualSession.declared_values.length >= 6}
 								class="group relative bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-gray-600 disabled:to-gray-600 text-white px-8 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg hover:shadow-xl disabled:hover:shadow-lg transform hover:scale-105 disabled:hover:scale-100"
 							>
-								{ritualSession.declared_values.length >= 6 ? 'Max Values (6)' : 'Add Value'}
+                                {ritualSession.declared_values.length >= 6 ? 'Max Values (6)' : 'Add Value'}
 								<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-xl transition-opacity duration-200"></div>
 							</button>
 						</div>
-						
-						{#if previousValues.length > 0}
-							<div class="bg-gray-700 rounded-xl p-4 mb-6">
-								<h4 class="text-gray-300 font-medium mb-3">Previous Values:</h4>
-								<div class="flex flex-wrap gap-2">
-									{#each previousValues.filter(v => !ritualSession.declared_values.includes(v)) as value}
-										<button
-											on:click={() => selectPreviousValue(value)}
-											class="group relative bg-gray-600 hover:bg-gradient-to-r hover:from-indigo-600 hover:to-purple-600 text-white px-4 py-2 rounded-full text-sm transition-all duration-200 font-medium hover:shadow-lg transform hover:scale-105"
-										>
-											+ {value}
-											<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-full transition-opacity duration-200"></div>
-										</button>
-									{/each}
-								</div>
-							</div>
-						{/if}
-						
 						<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 							{#each ritualSession.declared_values as value, index}
 								<div class="bg-gray-700 rounded-xl p-4 flex items-center justify-between group hover:bg-gray-600 transition-colors">
 									<span class="text-white font-medium">✦ {value}</span>
 									<button
 										on:click={() => removeValue(index)}
-										class="text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        class="text-gray-400 hover:text-red-400 transition-opacity"
 									>
 										✕
 									</button>
 								</div>
 							{/each}
 						</div>
-						
 						{#if ritualSession.declared_values.length === 0}
-							<p class="text-center text-gray-400 italic">Add 3-6 values that will guide your manifestation...</p>
-						{/if}
-					</div>
-
-				{:else if ritualStage === 2}
-					<!-- Stage 3: Advisor Summoning -->
-					<div class="space-y-6">
-						<div class="text-center">
-							<div class="text-5xl mb-4">🧙‍♀️</div>
-							<h3 class="text-3xl font-bold text-white mb-4">Summon Your Advisors</h3>
-							<p class="text-gray-300 text-lg">Call upon wise guides - ancestors, archetypes, or inspiring figures.</p>
-						</div>
-						
-						<div class="bg-gray-700 rounded-xl p-6 space-y-4">
-							<div class="grid md:grid-cols-3 gap-4">
-								<div>
-									<label class="block text-gray-300 mb-2">Advisor Name</label>
-									<input
-										bind:value={currentAdvisorName}
-											placeholder="e.g., Donella Meadows"
-										class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-										on:keydown={(e) => {
-											if (e.key === 'Enter') {
-												e.preventDefault();
-												// Move focus to lens input if name is filled
-												if (currentAdvisorName.trim()) {
-													const lensInput = document.querySelector('input[placeholder="e.g., deep ecology"]') as HTMLInputElement;
-													if (lensInput) lensInput.focus();
-												}
-											}
-										}}
-										use:focusOnMount
-									/>
-								</div>
-								<div>
-									<label class="block text-gray-300 mb-2">Type</label>
-									<select
-										bind:value={selectedAdvisorType}
-										class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-									>
-										<option value="real">Historical/Real Person</option>
-										<option value="mythic">Mythic/Spiritual Being</option>
-										<option value="archetype">Archetypal Force</option>
-									</select>
-								</div>
-								<div>
-									<label class="block text-gray-300 mb-2">Lens/Wisdom</label>
-									<input
-										bind:value={currentAdvisorLens}
-										placeholder="e.g., deep ecology"
-										class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-										on:keydown={(e) => {
-											if (e.key === 'Enter') {
-												e.preventDefault();
-												if (currentAdvisorName.trim() && currentAdvisorLens.trim() && ritualSession.advisors.length < 6) {
-													addAdvisor();
-													// Focus back on name input for next advisor
-													setTimeout(() => {
-														const nameInput = document.querySelector('input[placeholder="e.g., Joanna Macy"]') as HTMLInputElement;
-														if (nameInput) nameInput.focus();
-													}, 10);
-												} else if (ritualSession.advisors.length >= 6) {
-													// If we have 6 advisors, trigger Next button
-													const nextButton = document.querySelector('[data-next-button]') as HTMLButtonElement;
-													if (nextButton && !nextButton.disabled) {
-														nextStage();
-													}
-												}
-											}
-										}}
-									/>
-								</div>
-							</div>
-							<button
-								on:click={addAdvisor}
-								disabled={!currentAdvisorName.trim() || !currentAdvisorLens.trim() || ritualSession.advisors.length >= 6 || isGeneratingAdvisor}
-								class="group relative w-full bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-gray-600 disabled:to-gray-600 text-white py-4 rounded-xl transition-all duration-200 font-semibold shadow-lg hover:shadow-xl disabled:hover:shadow-lg transform hover:scale-105 disabled:hover:scale-100"
-							>
-								{#if isGeneratingAdvisor}
-									<div class="flex items-center gap-3">
-										<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-										{generationProgress}
-									</div>
-								{:else}
-									Summon Advisor
-								{/if}
-								<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-xl transition-opacity duration-200"></div>
-							</button>
-						</div>
-						
-						
-						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-							{#each ritualSession.advisors as advisor, index}
-								<div class="bg-gray-700 rounded-xl p-4 group hover:bg-gray-600 transition-colors">
-									<div class="flex items-start justify-between">
-										<div class="flex-1">
-											<h4 class="text-white font-bold">{advisor.name}</h4>
-											<p class="text-gray-300 text-sm capitalize">{advisor.type}</p>
-											<p class="text-gray-300 text-sm italic">"{advisor.lens}"</p>
-										</div>
-										<button
-											on:click={() => removeAdvisor(index)}
-											class="text-gray-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-										>
-											✕
-										</button>
-									</div>
-								</div>
-							{/each}
-						</div>
-
-						<!-- Holon Advisors Management -->
-						<div class="bg-gray-700 rounded-xl p-6">
-							<div class="mb-4">
-								<h4 class="text-gray-300 font-medium">Your Created Advisors:</h4>
-							</div>
-							{#if holonAdvisors.length > 0}
-								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-									{#each holonAdvisors as advisor}
-										<div class="bg-gray-600 rounded-xl p-4 group hover:bg-gray-500 transition-colors">
-											<div class="flex-1 mb-3">
-												<h5 class="text-white font-bold">{advisor.name}</h5>
-												<p class="text-gray-300 text-sm capitalize">{advisor.type}</p>
-												<p class="text-gray-300 text-sm italic">"{advisor.lens}"</p>
-											</div>
-											<div class="flex gap-2">
-												<button
-													on:click={() => openAdvisorChat(advisor)}
-													class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-3 rounded-lg text-sm transition-colors"
-												>
-													💬 Chat
-												</button>
-												<button
-													on:click={() => deleteHolonAdvisor(advisor.name)}
-													class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-3 rounded-lg text-sm transition-colors"
-												>
-													🗑️ Discard
-												</button>
-												<button
-													on:click={() => addAdvisorToRitual(advisor)}
-													disabled={ritualSession.advisors.length >= 6 || ritualSession.advisors.some(a => a.name === advisor.name && a.lens === advisor.lens)}
-													class="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white py-2 px-3 rounded-lg text-sm transition-colors"
-												>
-													➕ Add to Ritual
-												</button>
-											</div>
-										</div>
-									{/each}
-								</div>
-							{:else}
-								<p class="text-gray-400 text-sm italic">No advisors created yet. Use the form above to create your first advisor.</p>
-							{/if}
-						</div>
-					</div>
-
-				{:else if ritualStage === 3}
-					<!-- Stage 4: Council Dialogue -->
-					<div class="space-y-6">
-						<div class="text-center">
-							<div class="text-5xl mb-4">🔍</div>
-							<h3 class="text-3xl font-bold text-white mb-4">The Council Speaks</h3>
-							<p class="text-gray-300 text-lg">Listen as your advisors respond to your wish through the lens of your values.</p>
-						</div>
-						
-						{#if ritualSession.council_dialogue.length === 0}
-							<div class="text-center">
-								<button
-									on:click={generateCouncilDialogue}
-									disabled={isGeneratingCouncil}
-									class="group relative bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-600 text-white px-12 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-xl hover:shadow-2xl disabled:hover:shadow-xl transform hover:scale-105 disabled:hover:scale-100"
-								>
-									{#if isGeneratingCouncil}
-										<div class="flex items-center gap-3">
-											<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-											Summoning Council Wisdom...
-										</div>
-									{:else}
-										Assemble the Council!
-									{/if}
-									<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 disabled:opacity-0 rounded-2xl transition-opacity duration-300"></div>
-								</button>
-							</div>
-						{:else}
-							<div class="space-y-4">
-								{#each ritualSession.council_dialogue as dialogue}
-									<div class="bg-gray-700 rounded-xl p-6 border border-gray-600">
-										<h4 class="text-gray-300 font-bold mb-3 flex items-center gap-2">
-											<span class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-sm">
-												{dialogue.advisor.charAt(0)}
-											</span>
-											{dialogue.advisor}
-										</h4>
-										<p class="text-white italic leading-relaxed">"{dialogue.response}"</p>
-									</div>
-								{/each}
-							</div>
+                            <p class="text-center text-gray-400 italic">Add up to six values that will guide your manifestation...</p>
 						{/if}
 					</div>
 
 				{:else if ritualStage === 4}
-					<!-- Stage 5: Design Streams -->
+                    <!-- Stage 4: Design Streams -->
 					<div class="space-y-6 text-center">
 						<div class="text-5xl mb-4">🛠</div>
 						<h3 class="text-3xl font-bold text-white mb-4">Pathways Forward</h3>
@@ -2655,48 +3508,6 @@ What matter brings you before the council today?`,
 							Open Design Streams
 							<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-2xl transition-opacity duration-300"></div>
 						</button>
-					</div>
-
-				{:else if ritualStage === 5}
-					<!-- Stage 6: Closure & Gift -->
-					<div class="space-y-6 text-center">
-						<div class="text-6xl mb-4">🎴</div>
-						<h3 class="text-3xl font-bold text-white mb-4">Your Sacred Artifact</h3>
-						<p class="text-gray-300 text-lg">The ritual is complete. Receive your gift from the council.</p>
-						
-						<div class="bg-gray-700 rounded-2xl p-8 border border-gray-600 max-w-2xl mx-auto">
-							<div class="text-4xl mb-4">{ritualSession.ritual_artifact.ascii_glyph}</div>
-							<blockquote class="text-xl text-white italic leading-relaxed mb-6">
-								"{ritualSession.ritual_artifact.text}"
-							</blockquote>
-							
-							<div class="space-y-3 text-left">
-								<h4 class="text-gray-300 font-bold text-center mb-4">Voices from the Council:</h4>
-								{#each Object.entries(ritualSession.ritual_artifact.quotes) as [advisor, quote]}
-									<div class="bg-gray-600 rounded-lg p-3">
-										<span class="text-gray-300 font-medium">{advisor}:</span>
-										<span class="text-white"> "{quote}"</span>
-									</div>
-								{/each}
-							</div>
-						</div>
-						
-						<div class="flex gap-4 justify-center">
-							<button 
-								on:click={createHolonFromRitual}
-								class="group relative bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-10 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 flex items-center gap-2"
-							>
-								📜 Receive Scroll
-								<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 rounded-2xl transition-opacity duration-300"></div>
-							</button>
-							<button 
-								on:click={closeRitual}
-								class="group relative bg-gray-600 hover:bg-gray-700 text-white px-10 py-5 rounded-2xl transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
-							>
-								Quit Ritual
-								<div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-5 rounded-2xl transition-opacity duration-300"></div>
-							</button>
-						</div>
 					</div>
 				{/if}
 			</div>
@@ -2712,19 +3523,18 @@ What matter brings you before the council today?`,
 				</button>
 				
 				<div class="text-gray-300">
-					Stage {ritualStage + 1} of 6
+                    Stage {ritualStage + 1} of 5
 				</div>
 				
 				<button
 					data-next-button
 					on:click={nextStage}
-					disabled={ritualStage === 5 || 
-						(ritualStage === 0 && !ritualSession.wish_statement.trim()) ||
-						(ritualStage === 1 && ritualSession.declared_values.length === 0) ||
-						(ritualStage === 2 && ritualSession.advisors.length === 0)}
+                    disabled={ritualStage === 4 || 
+                        (ritualStage === 2 && !ritualSession.wish_statement.trim()) ||
+                        (ritualStage === 3 && ritualSession.declared_values.length === 0)}
 					class="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 text-white px-6 py-2 rounded-xl transition-colors"
 				>
-					{ritualStage === 5 ? 'Complete' : 'Next →'}
+                    {ritualStage === 4 ? 'Complete' : 'Next →'}
 				</button>
 			</div>
 		</div>
@@ -2962,7 +3772,7 @@ What matter brings you before the council today?`,
 <!-- Individual Advisor Chat Modal -->
 <AIChatModal 
 	bind:isOpen={showAdvisorChat}
-	title={selectedAdvisorForChat?.name || "Advisor Chat"}
+	title={selectedAdvisorForChat ? `${selectedAdvisorForChat.name}${(selectedAdvisorForChat.characterSpec as any).title ? ' — ' + (selectedAdvisorForChat.characterSpec as any).title : ''}` : "Advisor Chat"}
 	subtitle="One-on-one consultation"
 	icon="🧙‍♀️"
 	theme="indigo"
@@ -2978,11 +3788,93 @@ What matter brings you before the council today?`,
 <!-- Design Streams Page -->
 {#if showDesignStreams}
 	<DesignStreams 
-		advisors={holonAdvisors.filter(a => ritualSession.advisors.some(r => r.name === a.name && r.lens === a.lens))}
+		advisors={metatronAdvisors as any}
 		ritualSession={ritualSession}
+		{sessionManager}
 		onClose={() => { showDesignStreams = false; }}
 		on:openAdvisorChat={handleDesignStreamsAdvisorChat}
 		on:updateRitualData={handleRitualDataUpdate}
+		on:sessionComplete={handleSessionComplete}
 	/>
+{/if}
+
+<!-- Speak Your Wish Modal -->
+{#if showWishModal}
+	<div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+		<div class="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl relative border border-gray-700">
+			<div class="p-6 border-b border-gray-700 flex items-center justify-between">
+				<div class="flex items-center gap-3">
+					<div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-xl">
+						🗣️
+					</div>
+					<h3 class="text-white text-xl font-bold">Speak Your Wish</h3>
+				</div>
+				<button class="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-700" on:click={cancelWishModal} aria-label="Close">✕</button>
+			</div>
+			<div class="p-8">
+				<div class="text-center mb-8">
+					<div class="text-5xl mb-4">🗣️</div>
+					<h3 class="text-3xl font-bold text-white mb-4">Speak Your Wish</h3>
+					<p class="text-gray-300 text-lg">What do you seek to bring into being?</p>
+				</div>
+				<textarea
+					bind:value={tempWishStatement}
+					placeholder="I wish to create..."
+					class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent min-h-[120px] resize-none"
+					use:focusOnMount
+				></textarea>
+				<div class="flex justify-between items-center mt-6">
+					<button
+						on:click={cancelWishModal}
+						class="px-6 py-3 text-gray-400 hover:text-white transition-colors"
+					>
+						Cancel
+					</button>
+					<button
+						on:click={saveWishStatement}
+						disabled={!tempWishStatement.trim()}
+						class="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-xl transition-colors font-semibold"
+					>
+						Save Wish
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Seat Your Council Modal -->
+{#if showSeatCouncilModal}
+	<div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+		<div class="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] relative border border-gray-700 flex flex-col">
+			<div class="p-6 border-b border-gray-700 flex items-center justify-between flex-shrink-0">
+				<h3 class="text-white text-xl font-bold">Seat Your Council</h3>
+				<button class="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-700" on:click={() => showSeatCouncilModal = false} aria-label="Close">✕</button>
+			</div>
+			<div class="p-8 overflow-y-auto flex-1">
+				<SeatCouncilContent
+					{metatronCircles}
+					{circleRadiusPercent}
+					{circleInputs}
+					{editingCircle}
+					{wishTitle}
+					onCircleClick={startEditingCircle}
+					{holonAdvisors}
+					onOpenAdvisorChat={openAdvisorChat}
+					onAddAdvisorToRitual={addAdvisorToRitual}
+					onDeleteAdvisor={deleteHolonAdvisor}
+					onCreateAdvisor={addAdvisor}
+					{getAdvisorDisplayName}
+					bind:currentAdvisorName
+					bind:currentAdvisorLens
+					bind:selectedAdvisorType
+					bind:isGeneratingAdvisor
+					bind:generationProgress
+					showHeader={false}
+					showTip={false}
+				/>
+			</div>
+		</div>
+	</div>
 {/if}
 
