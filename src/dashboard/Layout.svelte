@@ -13,6 +13,7 @@
 	import Sidebar from './sidebar/Sidebar.svelte';
 	import MyHolons from '../components/MyHolons.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
+	import ClockOverlay from '../components/ClockOverlay.svelte';
 
 	const style = {
 		container: `bg-gray-900 h-screen overflow-hidden relative`,
@@ -25,6 +26,7 @@
 	let lastMouseMove = Date.now();
 	let currentRouteIndex = 0;
 	let showMyHolons = false;
+	let showClockOverlay = false;
 
 	// Check if we're on the root route
 	$: isRootRoute = $page.url.pathname === '/';
@@ -42,8 +44,21 @@
 		lastMouseMove = Date.now();
 	}
 
+	// Handle global keyboard shortcuts
+	function handleGlobalKeydown(event: KeyboardEvent) {
+		// Toggle clock overlay with Ctrl+Shift+C or Cmd+Shift+C
+		if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'C') {
+			event.preventDefault();
+			toggleClockOverlay();
+		}
+	}
+
 	function toggleMyHolons() {
 		showMyHolons = !showMyHolons;
+	}
+
+	function toggleClockOverlay() {
+		showClockOverlay = !showClockOverlay;
 	}
 
 	// Set up auto-switching if in browser
@@ -77,6 +92,8 @@
 
 </script>
 
+<svelte:window on:keydown={handleGlobalKeydown} />
+
 {#if isRootRoute}
 	<!-- Root route layout: Clean MyHolons view -->
 	<div class={style.rootContainer}>
@@ -100,7 +117,7 @@
 			<Overlay />
 			<Sidebar mobileOrientation="start" />
 			<div class={style.mainContainer}>
-				<TopBar {toggleMyHolons} />
+				<TopBar {toggleMyHolons} {toggleClockOverlay} />
 				<main class={style.main}>
 					<RouteTransition pathname={$page.url.pathname}>
 						<slot />
@@ -123,5 +140,8 @@
 				</div>
 			</div>
 		{/if}
+
+		<!-- Clock Overlay -->
+		<ClockOverlay bind:isVisible={showClockOverlay} />
 	</div>
 {/if}
