@@ -935,6 +935,15 @@
                         on:drop={(e) => handleDrop(e, index)}
                         on:dragend={handleDragEnd}
                         on:click={() => navigateToHolon(holon.id)}
+                        on:keydown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                navigateToHolon(holon.id);
+                            }
+                        }}
+                        role="button"
+                        tabindex="0"
+                        aria-label="Navigate to {holon.name} holon"
                         animate:flip={{ duration: 200 }}
                         in:scale={{ duration: 200 }}
                     >
@@ -980,6 +989,7 @@
                                     class:text-yellow-400={holon.isPinned}
                                     class:text-gray-400={!holon.isPinned}
                                     title={holon.isPinned ? 'Unpin' : 'Pin'}
+                                    aria-label={holon.isPinned ? 'Unpin holon' : 'Pin holon'}
                                 >
                                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                         <path d="M3 3v14l3-3h11V3H3z" />
@@ -990,6 +1000,7 @@
                                         on:click|stopPropagation={() => removeHolon(holon.id)}
                                         class="p-1 hover:bg-red-700 rounded transition-colors text-red-400"
                                         title="Remove"
+                                        aria-label="Remove holon"
                                     >
                                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                             <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
@@ -1044,6 +1055,15 @@
                         <div
                             class="h-full"
                             on:click={() => navigateToHolon(holon.id)}
+                            on:keydown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    navigateToHolon(holon.id);
+                                }
+                            }}
+                            role="button"
+                            tabindex="0"
+                            aria-label="Navigate to {holon.name} holon"
                             animate:flip={{ duration: 200 }}
                             in:scale={{ duration: 200 }}
                         >
@@ -1075,6 +1095,7 @@
                                         on:click|stopPropagation={() => addToPersonalHolons(holon)}
                                         class="p-1 hover:bg-green-700 rounded transition-colors text-green-400"
                                         title="Add to personal holons"
+                                        aria-label="Add {holon.name} to personal holons"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -1084,6 +1105,7 @@
                                         on:click|stopPropagation={() => removeVisitedHolon(holon.id)}
                                         class="p-1 hover:bg-red-700 rounded transition-colors text-red-400"
                                         title="Remove from visited list"
+                                        aria-label="Remove {holon.name} from visited list"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -1134,9 +1156,23 @@
             success = '';
             showHolonIdInfo = false;
         }}
+        on:keydown={(e) => {
+            if (e.key === 'Escape') {
+                showAddDialog = false; 
+                newHolonId = ''; 
+                newHolonName = ''; 
+                error = ''; 
+                success = '';
+                showHolonIdInfo = false;
+            }
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dialog-title"
+        tabindex="-1"
     >
         <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4" transition:scale>
-            <h3 class="text-xl font-bold text-white mb-4">Add New Holon</h3>
+            <h3 id="dialog-title" class="text-xl font-bold text-white mb-4">Add New Holon</h3>
             
             <!-- Error/Success Messages -->
             {#if error}
@@ -1154,11 +1190,12 @@
             <div class="space-y-4">
                 <div>
                     <div class="flex items-center gap-2 mb-2">
-                        <label class="block text-sm font-medium text-gray-300">Holon ID *</label>
+                        <label for="holon-id-input" class="block text-sm font-medium text-gray-300">Holon ID *</label>
                         <button
                             type="button"
                             class="text-gray-400 hover:text-white transition-colors p-1 rounded-full hover:bg-gray-700"
                             title="How to get your Holon ID"
+                            aria-label="Show help for getting Holon ID"
                             on:click={() => showHolonIdInfo = !showHolonIdInfo}
                         >
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1184,6 +1221,7 @@
                     
                     <div class="flex gap-2">
                         <input
+                            id="holon-id-input"
                             type="text"
                             bind:value={newHolonId}
                             placeholder="Enter holon ID"
@@ -1193,7 +1231,6 @@
                                 }
                             }}
                             class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                            autofocus
                         />
                         <button
                             type="button"
@@ -1219,8 +1256,9 @@
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Display Name (optional)</label>
+                    <label for="holon-name-input" class="block text-sm font-medium text-gray-300 mb-2">Display Name (optional)</label>
                     <input
+                        id="holon-name-input"
                         type="text"
                         bind:value={newHolonName}
                         placeholder="Custom name for display"

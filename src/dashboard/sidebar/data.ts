@@ -31,11 +31,6 @@ export const data = [
 		link: '/tasks'
 	},
 	{
-		title: 'Orbits',
-		icon: OrbitsIcon,
-		link: '/orbits'
-	},
-	{
 		title: 'Schedule',
 		icon: CreditsIcon,
 		link: '/calendar'
