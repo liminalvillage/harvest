@@ -235,11 +235,15 @@
             
             // Update holon names FIRST and immediately
             loadingMessage = 'Updating holon names...';
-            await updateHolonNames(myHolons, false);
-            await updateHolonNames(visitedHolons, true);
+            const updatePromise = updateHolonDetails();
+            const updateVisitedPromise = updateVisitedHolonDetails();
+            const updateTimeout = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Update details timeout')), 10000);
+            });
+            await Promise.race([Promise.all([updatePromise, updateVisitedPromise]), updateTimeout]);
             
-            // Update stats in background (non-blocking)
-            updateHolonStatsAsync(myHolons, false);
+            // Note: Removed the duplicate call to addVisitedHolonToSeparateList here
+            // as it's already handled by TopBar component
             
             // Save once at the end of all loading and updates
             savePersonalHolonsToStorage();
@@ -384,8 +388,8 @@
     }
 
     async function updateStatsAsync() {
-        // Update stats in the background without blocking the UI
-        const statsPromises = holons.map(async (holon) => {
+        // Update stats in the background without blocking the UI for personal holons
+        const statsPromises = myHolons.map(async (holon) => {
             try {
                 const [users, tasks, offers] = await Promise.allSettled([
                     holosphere?.getAll(holon.id, "users").catch(() => ({})),
@@ -402,46 +406,23 @@
                 
                 // Update the specific holon with new stats
                 const updatedHolon = { ...holon, stats };
-                if (isVisited) {
-                    const index = visitedHolons.findIndex(h => h.id === holon.id);
-                    if (index !== -1) {
-                        visitedHolons[index] = updatedHolon as VisitedHolon;
-                    }
-                } else {
-                    const index = myHolons.findIndex(h => h.id === holon.id);
-                    if (index !== -1) {
-                        myHolons[index] = updatedHolon as MyHolon;
-                    }
+                const index = myHolons.findIndex(h => h.id === holon.id);
+                if (index !== -1) {
+                    myHolons[index] = updatedHolon as MyHolon;
                 }
             } catch (err) {
-                console.warn(`Failed to update stats for ${isVisited ? 'visited ' : ''}holon ${holon.id}:`, err);
+                console.warn(`Failed to update stats for holon ${holon.id}:`, err);
             }
         });
         
         // Don't await this - let it run in the background
         Promise.allSettled(statsPromises).then(() => {
             // Save after stats are updated
-            if (isVisited) {
-                if ($walletAddress) {
-                    saveVisitedHolons($walletAddress, visitedHolons);
-                }
-                visitedStatsUpdateInProgress = false;
-            } else {
-                savePersonalHolonsToStorage();
-                statsUpdateInProgress = false;
-            }
+            savePersonalHolonsToStorage();
         }).catch(err => {
-            console.error(`Some ${isVisited ? 'visited ' : ''}stats updates failed:`, err);
+            console.error(`Some stats updates failed:`, err);
             // Save even if some stats failed
-            if (isVisited) {
-                if ($walletAddress) {
-                    saveVisitedHolons($walletAddress, visitedHolons);
-                }
-                visitedStatsUpdateInProgress = false;
-            } else {
-                savePersonalHolonsToStorage();
-                statsUpdateInProgress = false;
-            }
+            savePersonalHolonsToStorage();
         });
     }
 
