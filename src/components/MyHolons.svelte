@@ -4,9 +4,10 @@
     import { flip } from "svelte/animate";
     import { page } from "$app/stores";
     import { goto } from "$app/navigation";
+    import { browser } from "$app/environment";
     import HoloSphere from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
-    import { fetchHolonName } from "../utils/holonNames";
+    import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
     import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
     import { 
         savePersonalHolons, 
@@ -87,6 +88,47 @@
     let showSplashScreen = false;
     let showHolonIdInfo = false;
 
+    // Add a function to refresh visited holon names that can be called externally
+    async function refreshVisitedHolonNames() {
+        if (!holosphere || !connectionReady) return;
+        
+        try {
+            // Load fresh visited holons from localStorage
+            const freshVisitedHolons = loadVisitedHolons($walletAddress);
+            visitedHolons = freshVisitedHolons;
+            
+            // Update the names (cache clearing is handled in updateVisitedHolonDetails)
+            await updateVisitedHolonDetails();
+            
+            console.log('Refreshed visited holon names:', visitedHolons);
+        } catch (err) {
+            console.error('Error refreshing visited holon names:', err);
+        }
+    }
+
+    // Add a function to refresh personal holon names
+    async function refreshPersonalHolonNames() {
+        if (!holosphere || !connectionReady) return;
+        
+        try {
+            // Re-fetch names for all personal holons (cache clearing is handled in updateNamesSync)
+            await updateHolonDetails();
+            
+            console.log('Refreshed personal holon names:', myHolons);
+        } catch (err) {
+            console.error('Error refreshing personal holon names:', err);
+        }
+    }
+
+    // Expose the refresh functions through custom events
+    function handleRefreshVisitedRequest() {
+        refreshVisitedHolonNames();
+    }
+
+    function handleRefreshPersonalRequest() {
+        refreshPersonalHolonNames();
+    }
+
     // Filtered holons
     $: filteredHolons = myHolons.filter(holon => 
         holon.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -121,56 +163,48 @@
     let updateTimeout: NodeJS.Timeout | null = null;
 
     onMount(async () => {
-        // Wait for holosphere to be ready with timeout
-        const checkConnection = async () => {
-            if (!holosphere) {
-                setTimeout(checkConnection, 100);
-                return;
+        try {
+            // Check if holosphere is available and wait for it to be ready
+            if (holosphere) {
+                // Wait a bit for holosphere to initialize
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                connectionReady = true;
+                console.log('Holosphere connection ready');
+            } else {
+                throw new Error('Holosphere not available');
             }
-            
-            await new Promise(resolve => setTimeout(resolve, 200));
-            connectionReady = true;
-            
-            // Subscribe to ID store with debouncing
-            idStoreUnsubscribe = ID.subscribe(async (newId) => {
-                // Debounce rapid ID changes
-                if (updateTimeout) {
-                    clearTimeout(updateTimeout);
-                }
-                
-                updateTimeout = setTimeout(async () => {
-                    // Only update if ID actually changed
-                    if (newId !== lastProcessedId) {
-                        lastProcessedId = newId || '';
-                        currentHolonId = newId || '';
-                        await loadData();
-                    }
-                }, 300); // 300ms debounce
-            });
-
-            // Load initial data with timeout
-            try {
-                const loadPromise = loadData();
-                const loadTimeout = new Promise((_, reject) => {
-                    setTimeout(() => reject(new Error('Initial load timeout')), 20000);
-                });
-                await Promise.race([loadPromise, loadTimeout]);
-            } catch (err) {
-                console.error('Initial load failed:', err);
-                error = 'Failed to load initial data. Please retry.';
-                isLoading = false;
-            }
-        };
+        } catch (err) {
+            console.error('Failed to establish holosphere connection:', err);
+            error = 'Failed to connect to holosphere. Please check your connection and try again.';
+            return;
+        }
         
-        checkConnection();
+        // Subscribe to ID store changes
+        idStoreUnsubscribe = ID.subscribe((id) => {
+            if (id && id !== 'undefined' && id !== 'null' && id.trim() !== '') {
+                currentHolonId = id;
+            }
+        });
+        
+        // Load data after connection is ready
+        await loadData();
+        
+        // Add event listeners for refresh requests from TopBar
+        if (browser) {
+            window.addEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
+            window.addEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
+        }
     });
 
     onDestroy(() => {
         if (idStoreUnsubscribe) {
             idStoreUnsubscribe();
         }
-        if (updateTimeout) {
-            clearTimeout(updateTimeout);
+        
+        // Remove event listeners
+        if (browser) {
+            window.removeEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
+            window.removeEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
         }
     });
 
@@ -276,82 +310,80 @@
         }
     }
 
-    async function updateHolonNames(holons: MyHolon[] | VisitedHolon[], isVisited = false) {
-        if (!holons || holons.length === 0) return;
+    async function updateHolonDetails() {
+        // First, update names synchronously using the same pattern as stats
+        await updateNamesSync();
         
-        // Create a backup before updating
-        const backup = [...holons];
+        // Then update stats asynchronously without blocking
+        updateStatsAsync();
+    }
+
+    async function updateNamesSync() {
+        // Update names synchronously in the same pattern as stats
+        const namePromises = myHolons.map(async (holon) => {
+            try {
+                // Clear cache for this specific holon to ensure fresh data
+                clearHolonNameCache(holon.id);
+                
+                const name = await fetchHolonName(holosphere, holon.id);
+                
+                // Update the specific holon with new name (same pattern as stats)
+                const updatedHolon = { ...holon, name };
+                const index = myHolons.findIndex(h => h.id === holon.id);
+                if (index !== -1) {
+                    myHolons[index] = updatedHolon;
+                }
+                
+                console.log(`Updated name for holon ${holon.id}: ${name}`);
+            } catch (err) {
+                console.warn(`Failed to update name for holon ${holon.id}:`, err);
+            }
+        });
         
-        try {
-            // Update names quickly and immediately
-            const nameUpdates = await Promise.allSettled(
-                holons.map(async (holon) => {
-                    try {
-                        const name = await fetchHolonName(holosphere, holon.id);
-                        return {
-                            ...holon,
-                            name
-                        };
-                    } catch (err) {
-                        console.warn(`Failed to update name for ${isVisited ? 'visited ' : ''}holon ${holon.id}:`, err);
-                        return holon; // Return original holon if name update fails
-                    }
-                })
-            );
-            
-            // Process name updates
-            const holonsWithNames = nameUpdates
-                .map((result, index) => {
-                    if (result.status === 'fulfilled') {
-                        return result.value;
-                    } else {
-                        console.warn(`Name update failed for ${isVisited ? 'visited ' : ''}holon ${backup[index].id}:`, result.reason);
-                        return backup[index]; // Keep original holon
-                    }
-                })
-                .filter(Boolean);
-            
-            if (holonsWithNames.length > 0) {
-                if (isVisited) {
-                    visitedHolons = holonsWithNames as VisitedHolon[];
-                    if ($walletAddress) {
-                        saveVisitedHolons($walletAddress, visitedHolons);
-                    }
-                } else {
-                    myHolons = holonsWithNames as MyHolon[];
+        // Await all name updates to complete before continuing
+        await Promise.allSettled(namePromises);
+        console.log('All name updates completed');
+        
+        // Trigger reactivity
+        myHolons = [...myHolons];
+    }
+
+    async function updateVisitedHolonDetails() {
+        if (!visitedHolons || visitedHolons.length === 0) return;
+
+        // Update visited holon names using the same pattern as personal holons
+        const namePromises = visitedHolons.map(async (holon) => {
+            try {
+                // Clear cache for this specific holon to ensure fresh data
+                clearHolonNameCache(holon.id);
+                
+                const name = await fetchHolonName(holosphere, holon.id);
+                
+                // Update the specific holon with new name (same pattern as stats)
+                const updatedHolon = { ...holon, name };
+                const index = visitedHolons.findIndex(h => h.id === holon.id);
+                if (index !== -1) {
+                    visitedHolons[index] = updatedHolon;
                 }
+                
+                console.log(`Updated name for visited holon ${holon.id}: ${name}`);
+            } catch (err) {
+                console.warn(`Failed to update name for visited holon ${holon.id}:`, err);
             }
-            
-            // Update stats in background
-            updateHolonStatsAsync(holonsWithNames, isVisited);
-            
-        } catch (err) {
-            console.error(`Error updating ${isVisited ? 'visited ' : ''}holon names, restoring backup:`, err);
-            if (isVisited) {
-                visitedHolons = backup as VisitedHolon[];
-                if ($walletAddress) {
-                    saveVisitedHolons($walletAddress, visitedHolons);
-                }
-            } else {
-                myHolons = backup as MyHolon[];
-            }
+        });
+        
+        // Await all name updates to complete before continuing
+        await Promise.allSettled(namePromises);
+        console.log('All visited holon name updates completed');
+        
+        // Trigger reactivity and save
+        visitedHolons = [...visitedHolons];
+        if ($walletAddress) {
+            saveVisitedHolons($walletAddress, visitedHolons);
         }
     }
 
-    // Track if stats updates are in progress to prevent multiple simultaneous updates
-    let statsUpdateInProgress = false;
-    let visitedStatsUpdateInProgress = false;
-
-    async function updateHolonStatsAsync(holons: MyHolon[] | VisitedHolon[], isVisited = false) {
-        // Prevent multiple simultaneous stats updates
-        if (isVisited) {
-            if (visitedStatsUpdateInProgress) return;
-            visitedStatsUpdateInProgress = true;
-        } else {
-            if (statsUpdateInProgress) return;
-            statsUpdateInProgress = true;
-        }
-
+    async function updateStatsAsync() {
         // Update stats in the background without blocking the UI
         const statsPromises = holons.map(async (holon) => {
             try {
@@ -903,6 +935,15 @@
                         on:drop={(e) => handleDrop(e, index)}
                         on:dragend={handleDragEnd}
                         on:click={() => navigateToHolon(holon.id)}
+                        on:keydown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                navigateToHolon(holon.id);
+                            }
+                        }}
+                        role="button"
+                        tabindex="0"
+                        aria-label="Navigate to {holon.name} holon"
                         animate:flip={{ duration: 200 }}
                         in:scale={{ duration: 200 }}
                     >
@@ -948,6 +989,7 @@
                                     class:text-yellow-400={holon.isPinned}
                                     class:text-gray-400={!holon.isPinned}
                                     title={holon.isPinned ? 'Unpin' : 'Pin'}
+                                    aria-label={holon.isPinned ? 'Unpin holon' : 'Pin holon'}
                                 >
                                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                         <path d="M3 3v14l3-3h11V3H3z" />
@@ -958,6 +1000,7 @@
                                         on:click|stopPropagation={() => removeHolon(holon.id)}
                                         class="p-1 hover:bg-red-700 rounded transition-colors text-red-400"
                                         title="Remove"
+                                        aria-label="Remove holon"
                                     >
                                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                             <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
@@ -1012,6 +1055,15 @@
                         <div
                             class="h-full"
                             on:click={() => navigateToHolon(holon.id)}
+                            on:keydown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    navigateToHolon(holon.id);
+                                }
+                            }}
+                            role="button"
+                            tabindex="0"
+                            aria-label="Navigate to {holon.name} holon"
                             animate:flip={{ duration: 200 }}
                             in:scale={{ duration: 200 }}
                         >
@@ -1050,6 +1102,7 @@
                                         on:click|stopPropagation={() => addToPersonalHolons(holon)}
                                         class="p-1 hover:bg-green-700 rounded transition-colors text-green-400"
                                         title="Add to personal holons"
+                                        aria-label="Add {holon.name} to personal holons"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -1059,6 +1112,7 @@
                                         on:click|stopPropagation={() => removeHolon(holon.id, true)}
                                         class="p-1 hover:bg-red-700 rounded transition-colors text-red-400"
                                         title="Remove from visited list"
+                                        aria-label="Remove {holon.name} from visited list"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -1109,9 +1163,23 @@
             success = '';
             showHolonIdInfo = false;
         }}
+        on:keydown={(e) => {
+            if (e.key === 'Escape') {
+                showAddDialog = false; 
+                newHolonId = ''; 
+                newHolonName = ''; 
+                error = ''; 
+                success = '';
+                showHolonIdInfo = false;
+            }
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dialog-title"
+        tabindex="-1"
     >
         <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4" transition:scale>
-            <h3 class="text-xl font-bold text-white mb-4">Add New Holon</h3>
+            <h3 id="dialog-title" class="text-xl font-bold text-white mb-4">Add New Holon</h3>
             
             <!-- Error/Success Messages -->
             {#if error}
@@ -1129,11 +1197,12 @@
             <div class="space-y-4">
                 <div>
                     <div class="flex items-center gap-2 mb-2">
-                        <label class="block text-sm font-medium text-gray-300">Holon ID *</label>
+                        <label for="holon-id-input" class="block text-sm font-medium text-gray-300">Holon ID *</label>
                         <button
                             type="button"
                             class="text-gray-400 hover:text-white transition-colors p-1 rounded-full hover:bg-gray-700"
                             title="How to get your Holon ID"
+                            aria-label="Show help for getting Holon ID"
                             on:click={() => showHolonIdInfo = !showHolonIdInfo}
                         >
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1159,6 +1228,7 @@
                     
                     <div class="flex gap-2">
                         <input
+                            id="holon-id-input"
                             type="text"
                             bind:value={newHolonId}
                             placeholder="Enter holon ID"
@@ -1168,7 +1238,6 @@
                                 }
                             }}
                             class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                            autofocus
                         />
                         <button
                             type="button"
@@ -1194,8 +1263,9 @@
                 </div>
                 
                 <div>
-                    <label class="block text-sm font-medium text-gray-300 mb-2">Display Name (optional)</label>
+                    <label for="holon-name-input" class="block text-sm font-medium text-gray-300 mb-2">Display Name (optional)</label>
                     <input
+                        id="holon-name-input"
                         type="text"
                         bind:value={newHolonName}
                         placeholder="Custom name for display"
