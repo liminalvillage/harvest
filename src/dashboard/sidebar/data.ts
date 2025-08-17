@@ -55,11 +55,6 @@ export const data = [
 		icon: TagsIcon,
 		link: '/tags'
 	},
-    {
-        title: 'SDGs',
-        icon: SDGsIcon,
-        link: '/sdgs'
-    },
 	{
 		title: 'Proposals',
 		icon: ProposalsIcon,

@@ -21,6 +21,7 @@
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
 
 	export let toggleMyHolons: () => void;
+	export let toggleClockOverlay: () => void;
 
 	// Add a function to refresh visited holon names
 	async function refreshVisitedHolonNames() {
@@ -365,8 +366,23 @@
         </div>
     {/if}
 
-    <!-- Right side: Wallet (outside bar) -->
-    <div class="z-10 ml-auto">
+    <!-- Right side controls -->
+    <div class="z-10 ml-auto flex items-center gap-3">
+        <!-- Clock Overlay Button (only on dashboard pages) -->
+        {#if !isPrimaryPage}
+            <button 
+                on:click={toggleClockOverlay}
+                class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
+                title="Show System Overview (Ctrl+Shift+C)"
+                aria-label="Show System Overview"
+            >
+                <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </button>
+        {/if}
+
+        <!-- Wallet -->
         {#if $walletAddress}
             <div class="wallet-info">
                 <span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
