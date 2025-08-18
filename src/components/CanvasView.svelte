@@ -22,6 +22,10 @@
     let startPan = { x: 0, y: 0 };
     let isPanning = false;
     let draggedCardVisuals: { key: string; x: number; y: number } | null = null;
+    let dragStartPosition = { x: 0, y: 0 };
+    let isMovingDrawing = false;
+    let selectedDrawingIndex: number | null = null;
+    let lastMovePoint = { x: 0, y: 0 };
 
 
 
@@ -942,13 +946,13 @@
         console.log('Canvas mounted, viewContainer:', viewContainer, 'canvas:', canvas);
 
         const handleGlobalMouseMove = (e: MouseEvent) => {
-            if (isDragging || isPanning || isDrawing) {
+            if (isDragging || isPanning || isDrawing || isMovingDrawing) {
                 handleMouseMove(e);
             }
         };
         
         const handleGlobalMouseUp = (e: MouseEvent) => {
-            if (isDragging || isPanning || isDrawing) {
+            if (isDragging || isPanning || isDrawing || isMovingDrawing) {
                 handleMouseUp(e);
             }
         };
@@ -1078,9 +1082,6 @@
     }
 
     // -------- Move drawings logic --------
-    let isMovingDrawing = false;
-    let selectedDrawingIndex: number | null = null;
-    let lastMovePoint = { x: 0, y: 0 };
     let isMobile = false;
 
     function hitTestDrawing(point: {x:number;y:number}): number | null {
@@ -1136,13 +1137,13 @@
     on:mousemove={(e) => {
         if (isDragging || isPanning) {
             e.preventDefault();
-            handleGlobalMouseMove(e);
+            handleMouseMove(e);
         }
     }}
     on:mouseup={(e) => {
         if (isDragging || isPanning || draggedCard) {
             e.preventDefault();
-            handleGlobalMouseUp(e);
+            handleMouseUp(e);
         }
     }}
     on:touchstart|preventDefault={handleTouchStart}

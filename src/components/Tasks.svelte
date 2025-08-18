@@ -13,6 +13,7 @@
 	import Fireworks from "./Fireworks.svelte";
 	import Confetti from "./Confetti.svelte";
 	import { getHologramSourceName } from "../utils/holonNames";
+	import { taskSortStore, updateTaskSort, sortTasks, type SortCriteria } from "../dashboard/taskSortStore";
 
 	interface Quest {
 		id: string;
@@ -98,11 +99,12 @@
 	let showFireworks = false;
 	let showConfetti = false;
 
-	// Sort state variables
-	type SortCriteria = 'created' | 'orderIndex' | 'positionX' | 'positionY';
-	let sortCriteria: SortCriteria = 'created';
-	let sortDirection: 'asc' | 'desc' = 'desc'; // Newest first
+	// Sort state variables - now using shared store
 	let sortButtonIconRotation = 0; // No rotation for calendar icon
+	
+	// Subscribe to the shared sort state
+	$: sortCriteria = $taskSortStore.criteria;
+	$: sortDirection = $taskSortStore.direction;
 
 	// SVG Paths for sort icons
 	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"; // Calendar icon
@@ -209,50 +211,8 @@
 
 		// Only sort when not in canvas view, as canvas uses absolute positioning
 		if (viewMode !== 'canvas') {
-			// Sort by orderIndex, undefined/null values go to the end
-			currentFilteredQuests.sort(([keyA, a], [keyB, b]) => {
-				let valA: number, valB: number;
-
-				switch (sortCriteria) {
-					case 'created':
-						valA = a.created ? new Date(a.created).getTime() : 0;
-						valB = b.created ? new Date(b.created).getTime() : 0;
-						break;
-					case 'positionX':
-						valA = a.position?.x ?? Infinity;
-						valB = b.position?.x ?? Infinity;
-						break;
-					case 'positionY':
-						valA = a.position?.y ?? Infinity;
-						valB = b.position?.y ?? Infinity;
-						break;
-					case 'orderIndex':
-					default:
-						valA = a.orderIndex ?? Infinity;
-						valB = b.orderIndex ?? Infinity;
-						// If orderIndex is the same, sort by key (ID) as a stable secondary sort.
-						// This is always ascending for orderIndex mode.
-						if (valA === valB) {
-							return keyA.localeCompare(keyB);
-						}
-						// For orderIndex, primary sort is always ascending, handled by the main return
-						break;
-				}
-
-				// General comparison for asc/desc.
-				// For orderIndex, sortDirection will always be 'asc' due to handleSortButtonClick logic.
-				if (sortDirection === 'asc') {
-					if (valA === Infinity && valB === Infinity) return 0;
-					if (valA === Infinity) return 1;
-					if (valB === Infinity) return -1;
-					return valA - valB;
-				} else { // sortDirection === 'desc'
-					if (valA === Infinity && valB === Infinity) return 0;
-					if (valA === Infinity) return 1; 
-					if (valB === Infinity) return -1;
-					return valB - valA;
-				}
-			});
+			// Use the shared sorting logic
+			currentFilteredQuests = sortTasks(currentFilteredQuests, $taskSortStore);
 		}
 		filteredQuests = currentFilteredQuests;
 
@@ -277,42 +237,52 @@
 		// filteredQuests = sortedQuests; // Now filteredQuests is directly assigned above
 	}
 
-	// Placeholder function for the sort button
+	// Updated sort button handler to use shared store
 	function handleSortButtonClick() {
+		let newCriteria: SortCriteria;
+		let newDirection: 'asc' | 'desc';
+		
 		if (sortCriteria === 'created' && sortDirection === 'desc') {
-			sortDirection = 'asc';
+			newCriteria = 'created';
+			newDirection = 'asc';
 			currentIconPath = calendarIconPath;
 			sortButtonIconRotation = 180; // Calendar icon rotated for oldest first
 		} else if (sortCriteria === 'created' && sortDirection === 'asc') {
-			sortCriteria = 'orderIndex';
-			sortDirection = 'asc';
+			newCriteria = 'orderIndex';
+			newDirection = 'asc';
 			currentIconPath = orderIndexIconPath;
 			sortButtonIconRotation = 0; // No rotation for burger icon
 		} else if (sortCriteria === 'orderIndex') {
-			sortCriteria = 'positionX';
-			sortDirection = 'asc';
+			newCriteria = 'positionX';
+			newDirection = 'asc';
 			currentIconPath = directionalSortIconPath;
 			sortButtonIconRotation = 270; // Arrow left for X asc
 		} else if (sortCriteria === 'positionX' && sortDirection === 'asc') {
-			sortDirection = 'desc';
+			newCriteria = 'positionX';
+			newDirection = 'desc';
 			currentIconPath = directionalSortIconPath;
 			sortButtonIconRotation = 90; // Arrow right for X desc
 		} else if (sortCriteria === 'positionX' && sortDirection === 'desc') {
-			sortCriteria = 'positionY';
-			sortDirection = 'asc';
+			newCriteria = 'positionY';
+			newDirection = 'asc';
 			currentIconPath = directionalSortIconPath;
 			sortButtonIconRotation = 0; // Arrow down for Y asc
 		} else if (sortCriteria === 'positionY' && sortDirection === 'asc') {
-			sortDirection = 'desc';
+			newCriteria = 'positionY';
+			newDirection = 'desc';
 			currentIconPath = directionalSortIconPath;
 			sortButtonIconRotation = 180; // Arrow up for Y desc
 		} else { // Was positionY, desc, reset to created
-			sortCriteria = 'created';
-			sortDirection = 'desc'; // Newest first
+			newCriteria = 'created';
+			newDirection = 'desc'; // Newest first
 			currentIconPath = calendarIconPath;
 			sortButtonIconRotation = 0; // Calendar icon for newest first
 		}
-		console.log(`Sorting by: ${sortCriteria}` + (sortCriteria !== 'orderIndex' ? `, Direction: ${sortDirection}` : ' (Ascending)') + `, Icon: ${sortButtonIconRotation}°`);
+		
+		// Update the shared store
+		updateTaskSort(newCriteria, newDirection);
+		
+		console.log(`Sorting by: ${newCriteria}` + (newCriteria !== 'orderIndex' ? `, Direction: ${newDirection}` : ' (Ascending)') + `, Icon: ${sortButtonIconRotation}°`);
 	}
 
 	// Fix handleTaskClick type
