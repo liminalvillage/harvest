@@ -13,7 +13,7 @@
 	import Fireworks from "./Fireworks.svelte";
 	import Confetti from "./Confetti.svelte";
 	import { getHologramSourceName } from "../utils/holonNames";
-	import { taskSortStore, updateTaskSort, sortTasks, type SortCriteria } from "../dashboard/taskSortStore";
+	import { taskSortStore, updateTaskSort, sortTasks, type SortCriteria } from "../dashboard/store";
 
 	interface Quest {
 		id: string;

@@ -3,8 +3,9 @@
     import { fade, slide } from "svelte/transition";
     import { ID } from "../dashboard/store";
     import HoloSphere from "holosphere";
-    import { fetchHolonName } from "../utils/holonNames";
-    import { taskSortStore, sortTasks, type TaskSortState } from "../dashboard/taskSortStore";
+    import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
+
+    import { taskSortStore, sortTasks, type TaskSortState } from "../dashboard/store";
 
     // Props
     export let isVisible = false;
@@ -20,6 +21,7 @@
     // Current time state
     let currentTime = new Date();
     let timeInterval: ReturnType<typeof setInterval>;
+    let weatherRefreshInterval: ReturnType<typeof setInterval>;
     
     // Weather state
     let weatherData: {
@@ -27,26 +29,14 @@
         weatherCode: number;
         windSpeed: number;
         unit: string;
+        city: string;
+        country: string;
+        lastUpdated: Date;
     } | null = null;
     let isLoadingWeather = false;
     
     // Holon data state
     $: holonID = $ID;
-    let holonName = "Loading...";
-    let holonStats = {
-        totalTasks: 0,
-        completedTasks: 0,
-        activeTasks: 0,
-        totalRoles: 0,
-        roles: [] as Array<{
-            title: string;
-            participants: Array<{
-                id: string;
-                username: string;
-            }>;
-        }>
-    };
-    let isLoadingStats = true;
     
     // Events and tasks data
     let todaysEvents: Array<{
@@ -54,6 +44,8 @@
         title: string;
         time: string;
         description?: string;
+        type: string;
+        priority?: string;
     }> = [];
     let topTasks: Array<{
         id: string;
@@ -106,6 +98,59 @@
         });
     }
 
+    // Get city name from coordinates using reverse geocoding
+    async function getCityFromCoords(latitude: number, longitude: number): Promise<{city: string, country: string}> {
+        try {
+            // Use BigDataCloud reverse geocoding API (free, no API key required)
+            const response = await fetch(
+                `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+            );
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                // Clean up country name
+                let country = data.countryName || 'Unknown Country';
+                if (country.includes('(the)')) {
+                    country = country.replace(' (the)', '');
+                }
+                
+                return {
+                    city: data.city || data.locality || data.principalSubdivision || 'Unknown City',
+                    country: country
+                };
+            }
+        } catch (error) {
+            // Silent fail, try fallback
+        }
+        
+        // Fallback using OpenStreetMap Nominatim
+        try {
+            const response = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`
+            );
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                if (data.address) {
+                    return {
+                        city: data.address.city || data.address.town || data.address.village || data.display_name?.split(',')[0] || 'Unknown City',
+                        country: data.address.country || 'Unknown Country'
+                    };
+                }
+            }
+        } catch (error) {
+            // Silent fail
+        }
+        
+        // Final fallback
+        return {
+            city: 'Unknown City',
+            country: 'Unknown Country'
+        };
+    }
+
     // Fetch weather data
     async function fetchWeather() {
         isLoadingWeather = true;
@@ -118,37 +163,51 @@
                     
                     try {
                         // Using Open-Meteo API (free, no API key required)
-                        const response = await fetch(
-                            `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code,wind_speed_10m&timezone=auto`
-                        );
+                        const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code,wind_speed_10m&timezone=auto`;
+                        
+                        const response = await fetch(url);
                         
                         if (response.ok) {
                             const data = await response.json();
-                            weatherData = {
-                                temperature: Math.round(data.current.temperature_2m),
-                                weatherCode: data.current.weather_code,
-                                windSpeed: Math.round(data.current.wind_speed_10m),
-                                unit: data.current_units.temperature_2m
-                            };
+                            
+                            if (data.current) {
+                                // Get city name from coordinates
+                                const location = await getCityFromCoords(latitude, longitude);
+                                
+                                weatherData = {
+                                    temperature: Math.round(data.current.temperature_2m),
+                                    weatherCode: data.current.weather_code,
+                                    windSpeed: Math.round(data.current.wind_speed_10m),
+                                    unit: data.current_units?.temperature_2m || '°C',
+                                    city: location.city,
+                                    country: location.country,
+                                    lastUpdated: new Date()
+                                };
+                            }
                         }
                     } catch (error) {
-                        console.error("Failed to fetch weather:", error);
+                        // Silent fail - no weather display if location fails
                     } finally {
                         isLoadingWeather = false;
                     }
                 }, (error) => {
-                    console.warn("Geolocation denied:", error);
+                    // No fallback - just don't show weather if location is denied
                     isLoadingWeather = false;
+                }, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 300000 // 5 minutes
                 });
             } else {
-                console.warn("Geolocation not supported");
+                // No geolocation support - don't show weather
                 isLoadingWeather = false;
             }
         } catch (error) {
-            console.error("Weather fetch error:", error);
             isLoadingWeather = false;
         }
     }
+
+
 
     // Get weather icon based on weather code
     function getWeatherIcon(code: number) {
@@ -163,16 +222,17 @@
         return "🌤️"; // Default
     }
 
-    // Load today's events
+    // Load today's events and scheduled tasks
     async function loadTodaysEvents() {
         if (!holosphere || !holonID) return;
         
         isLoadingEvents = true;
         try {
-            const eventsData = await holosphere.getAll(holonID, "calendar");
             const today = new Date();
             const todayStr = today.toISOString().split('T')[0];
             
+            // Load calendar events
+            const eventsData = await holosphere.getAll(holonID, "calendar");
             let events: any[] = [];
             if (Array.isArray(eventsData)) {
                 events = eventsData;
@@ -180,26 +240,79 @@
                 events = Object.values(eventsData);
             }
             
-            // Filter for today's events and sort by time
+            // Load scheduled tasks (use same logic as Calendar: tasks with `when`)
+            const tasksData = await holosphere.getAll(holonID, "quests");
+            let taskEntries: [string, any][] = [];
+            if (Array.isArray(tasksData)) {
+                taskEntries = tasksData.map((task: any, index: number) => [task?.id || index.toString(), task]);
+            } else if (tasksData && typeof tasksData === 'object') {
+                taskEntries = Object.entries(tasksData);
+            }
+            
+            // Filter for today's events (upcoming only)
+            const nowMs = Date.now();
             const todayEvents = events.filter((event: any) => {
                 if (!event.date && !event.startDate) return false;
                 const eventDate = new Date(event.date || event.startDate);
-                return eventDate.toISOString().split('T')[0] === todayStr;
-            }).sort((a: any, b: any) => {
-                const timeA = new Date(a.date || a.startDate).getTime();
-                const timeB = new Date(b.date || b.startDate).getTime();
-                return timeA - timeB;
-            }).slice(0, 3);
-            
-            todaysEvents = todayEvents.map((event: any) => ({
+                return eventDate.toISOString().split('T')[0] === todayStr && eventDate.getTime() >= nowMs;
+            }).map((event: any) => ({
                 id: event.id || Math.random().toString(),
                 title: event.title || event.name || 'Untitled Event',
-                time: new Date(event.date || event.startDate).toLocaleTimeString('en-US', {
+                time: new Date(event.date || event.startDate).getTime(),
+                displayTime: new Date(event.date || event.startDate).toLocaleTimeString('en-US', {
                     hour: 'numeric',
                     minute: '2-digit',
                     hour12: true
                 }),
-                description: event.description || event.details
+                description: event.description || event.details,
+                type: 'event',
+                priority: undefined
+            }));
+            
+            // Filter for today's scheduled tasks using `when` (upcoming only)
+            const todayScheduledTasks = taskEntries.filter(([_, task]: [string, any]) => {
+                if (!task?.when) return false;
+                const whenDate = new Date(task.when);
+                return whenDate.toISOString().split('T')[0] === todayStr && whenDate.getTime() >= nowMs;
+            }).map(([key, task]: [string, any]) => {
+                const whenDate = new Date(task.when);
+                return {
+                    id: key || task.id || Math.random().toString(),
+                    title: task.title || task.name || 'Untitled Task',
+                    time: whenDate.getTime(),
+                    displayTime: whenDate.toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                    }),
+                    description: task.description || task.details,
+                    type: 'task',
+                    priority: task.priority
+                };
+            });
+            
+            // Debug logging
+            console.log('ClockOverlay Debug:', {
+                todayStr,
+                eventsCount: events.length,
+                tasksCount: taskEntries.length,
+                todayEventsCount: todayEvents.length,
+                todayScheduledTasksCount: todayScheduledTasks.length,
+                sampleTask: taskEntries[0]?.[1],
+                sampleEvent: events[0]
+            });
+            
+            // Combine and sort all items chronologically
+            const allItems = [...todayEvents, ...todayScheduledTasks].sort((a, b) => a.time - b.time);
+            
+            // Take only the top 3 items after sorting
+            todaysEvents = allItems.slice(0, 3).map(item => ({
+                id: item.id,
+                title: item.title,
+                time: item.displayTime,
+                description: item.description,
+                type: item.type,
+                priority: item.priority
             }));
             
         } catch (error) {
@@ -255,47 +368,7 @@
         }
     }
 
-    // Load holon statistics (simplified for dashboard)
-    async function loadHolonStats() {
-        if (!holosphere || !holonID) {
-            console.warn("Dashboard: holosphere or holonID not available");
-            return;
-        }
 
-        isLoadingStats = true;
-        
-        try {
-            // Fetch holon name
-            holonName = await fetchHolonName(holosphere, holonID);
-            
-            // Fetch tasks (simplified)
-            const tasksData = await holosphere.getAll(holonID, "quests");
-            let totalTasks = 0;
-            let completedTasks = 0;
-            
-            if (Array.isArray(tasksData)) {
-                totalTasks = tasksData.length;
-                completedTasks = tasksData.filter(task => task.status === 'completed').length;
-            } else if (tasksData && typeof tasksData === 'object') {
-                const taskEntries = Object.values(tasksData);
-                totalTasks = taskEntries.length;
-                completedTasks = taskEntries.filter((task: any) => task.status === 'completed').length;
-            }
-
-            holonStats = {
-                totalTasks,
-                completedTasks,
-                activeTasks: totalTasks - completedTasks,
-                totalRoles: 0,
-                roles: []
-            };
-
-        } catch (error) {
-            console.error("Dashboard: Error loading holon stats:", error);
-        } finally {
-            isLoadingStats = false;
-        }
-    }
 
         // Inactivity detection functions
     function resetInactivityTimer() {
@@ -320,7 +393,6 @@
 
     // Watch for holon ID changes
     $: if (holonID && isVisible) {
-        loadHolonStats();
         loadTodaysEvents();
         loadTopTasks();
     }
@@ -336,14 +408,20 @@
             currentTime = new Date();
         }, 1000);
 
+        // Always fetch weather on component mount (regardless of visibility)
+        fetchWeather();
+
+        // Set up periodic weather refresh (every 15 minutes)
+        weatherRefreshInterval = setInterval(() => {
+            fetchWeather();
+        }, 15 * 60 * 1000); // 15 minutes
+
         // Load initial data if visible
         if (isVisible) {
             if (holonID) {
-            loadHolonStats();
                 loadTodaysEvents();
                 loadTopTasks();
             }
-            fetchWeather();
         }
 
         // Set up inactivity detection
@@ -366,6 +444,9 @@
         if (timeInterval) {
             clearInterval(timeInterval);
         }
+        if (weatherRefreshInterval) {
+            clearInterval(weatherRefreshInterval);
+        }
         if (inactivityTimer) {
             clearTimeout(inactivityTimer);
         }
@@ -385,9 +466,7 @@
         resetInactivityTimer();
     }
 
-    // Calculate completion percentage
-    $: completionPercentage = holonStats.totalTasks > 0 ? 
-        Math.round((holonStats.completedTasks / holonStats.totalTasks) * 100) : 0;
+
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -407,7 +486,7 @@
             class="w-full max-w-6xl h-full max-h-[95vh] bg-black/30 backdrop-blur-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
             transition:slide={{ duration: 400, axis: 'y' }}
         >
-            <!-- Close Button -->
+                        <!-- Close Button -->
                 <button 
                 class="absolute top-6 right-6 z-10 text-white/60 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
                     on:click={() => isVisible = false}
@@ -418,9 +497,11 @@
                     </svg>
                 </button>
                 
+
+                
             <!-- Main Dashboard Content -->
             <div class="h-full p-8 flex flex-col">
-                <!-- Top Section: Date and Weather -->
+                <!-- Top Section: Date, Holons Logo, and Weather -->
                 <div class="flex justify-between items-start mb-8">
                     <!-- Date Section -->
                     <div class="text-left">
@@ -429,36 +510,50 @@
                         </div>
                         <div class="text-2xl text-white/80 font-light">
                             {formatDateShort(currentTime)}
-            </div>
+                        </div>
                     </div>
 
-                    <!-- Weather Section -->
-                    <div class="text-right">
-                        {#if isLoadingWeather}
-                            <div class="flex items-center justify-end">
-                                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white/50 mr-3"></div>
-                                <span class="text-white/60">Loading weather...</span>
-                            </div>
-                        {:else if weatherData}
-                            <div class="flex items-center justify-end space-x-4">
-                                <div class="text-right">
-                                    <div class="text-4xl font-light text-white">
-                                        {weatherData.temperature}°{weatherData.unit === '°C' ? 'C' : 'F'}
-                                    </div>
-                                    <div class="text-white/60">
-                                        Wind: {weatherData.windSpeed} km/h
-                                    </div>
-                                </div>
-                                <div class="text-6xl">
-                                    {getWeatherIcon(weatherData.weatherCode)}
-                                </div>
-                            </div>
-                        {:else}
-                            <div class="text-white/60">
-                                Weather unavailable
-                            </div>
-                        {/if}
+                    <!-- Holons Logo (same as TopBar) -->
+                    <div class="flex items-center justify-center">
+                        <div class="w-16 h-16 sm:w-20 sm:h-20">
+                            <MyHolonsIcon />
+                        </div>
                     </div>
+
+                    <!-- Weather Section (only show if loading or data available) -->
+                    {#if isLoadingWeather || weatherData}
+                        <div class="text-right">
+                            {#if isLoadingWeather}
+                                <div class="flex items-center justify-end">
+                                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white/50 mr-3"></div>
+                                    <span class="text-white/60">Loading weather...</span>
+                                </div>
+                            {:else if weatherData}
+                                <div class="flex items-center justify-end space-x-4">
+                                    <div class="text-right">
+                                        <div class="text-sm text-white/60 mb-1">
+                                            {weatherData.city}, {weatherData.country}
+                                        </div>
+                                        <div class="text-4xl font-light text-white">
+                                            {weatherData.temperature}°{weatherData.unit === '°C' ? 'C' : 'F'}
+                                        </div>
+                                        <div class="text-white/60">
+                                            Wind: {weatherData.windSpeed} km/h
+                                        </div>
+                                        <div class="text-xs text-white/40 mt-1">
+                                            Updated: {weatherData.lastUpdated.toLocaleTimeString('en-US', { 
+                                                hour: 'numeric', 
+                                                minute: '2-digit' 
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div class="text-6xl">
+                                        {getWeatherIcon(weatherData.weatherCode)}
+                                    </div>
+                                </div>
+                            {/if}
+                    </div>
+                    {/if}
                 </div>
 
                 <!-- Center Section: Prominent Digital Clock -->
@@ -473,34 +568,58 @@
                         </div>
                     </div>
 
-                    <!-- Events and Tasks Grid -->
+                    <!-- Events, Scheduled Tasks, and Active Tasks Grid -->
                     <div class="w-full max-w-5xl grid md:grid-cols-2 gap-8">
-                        <!-- Today's Events -->
+                        <!-- Today's Earliest 3 Scheduled Items -->
                         <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
                                 <h3 class="text-xl font-semibold text-white mb-4 flex items-center">
                                 <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                     </svg>
-                                Today's Events
+                                Today's Next 3
                                 </h3>
                                 
                             {#if isLoadingEvents}
                                 <div class="flex items-center py-4">
                                     <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white/50 mr-3"></div>
-                                    <span class="text-white/60 text-sm">Loading events...</span>
+                                    <span class="text-white/60 text-sm">Loading next items...</span>
                                     </div>
                             {:else if todaysEvents.length > 0}
                                 <div class="space-y-3">
                                     {#each todaysEvents as event}
                                         <div class="bg-white/5 rounded-lg p-3 border border-white/10">
                                             <div class="flex justify-between items-start mb-1">
-                                                <h4 class="font-medium text-white text-sm truncate flex-1 pr-2">
-                                                    {event.title}
-                                                </h4>
-                                                <span class="text-xs text-indigo-300 font-mono whitespace-nowrap">
-                                                    {event.time}
-                                                </span>
-                                    </div>
+                                                <div class="flex items-center flex-1 pr-2">
+                                                    <!-- Event/Task type icon -->
+                                                    {#if event.type === 'task'}
+                                                        <svg class="w-4 h-4 mr-2 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                                        </svg>
+                                                    {:else}
+                                                        <svg class="w-4 h-4 mr-2 text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                        </svg>
+                                                    {/if}
+                                                    <h4 class="font-medium text-white text-sm truncate">
+                                                        {event.title}
+                                                    </h4>
+                                                </div>
+                                                <div class="flex items-center space-x-2">
+                                                    <!-- Priority badge for tasks -->
+                                                    {#if event.type === 'task' && event.priority}
+                                                        <span class="text-xs px-2 py-1 rounded-full {
+                                                            event.priority.toLowerCase() === 'high' ? 'bg-red-500/20 text-red-300' :
+                                                            event.priority.toLowerCase() === 'medium' ? 'bg-amber-500/20 text-amber-300' :
+                                                            'bg-indigo-500/20 text-indigo-300'
+                                                        }">
+                                                            {event.priority}
+                                                        </span>
+                                                    {/if}
+                                                    <span class="text-xs text-indigo-300 font-mono whitespace-nowrap">
+                                                        {event.time}
+                                                    </span>
+                                                </div>
+                                            </div>
                                             {#if event.description}
                                                 <p class="text-xs text-white/60 truncate">
                                                     {event.description}
@@ -514,7 +633,7 @@
                                     <svg class="w-12 h-12 text-white/30 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                     </svg>
-                                    <p class="text-white/50 text-sm">No events today</p>
+                                    <p class="text-white/50 text-sm">No scheduled items with start times today</p>
                                 </div>
                             {/if}
                             </div>
@@ -571,30 +690,7 @@
                     </div>
                 </div>
                                     
-                <!-- Bottom Section: Holon Info (simplified) -->
-                {#if holonName !== "Loading..." && !isLoadingStats}
-                    <div class="mt-8 flex justify-center">
-                        <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-                            <div class="text-center">
-                                <div class="text-white/80 text-lg mb-2">
-                                    {holonName}
-                                    </div>
-                                {#if holonStats.totalTasks > 0}
-                                    <div class="flex items-center justify-center space-x-6 text-sm">
-                                        <div class="flex items-center space-x-2">
-                                            <div class="w-3 h-3 bg-green-400 rounded-full"></div>
-                                            <span class="text-white/60">{holonStats.completedTasks} completed</span>
-                                        </div>
-                                        <div class="flex items-center space-x-2">
-                                            <div class="w-3 h-3 bg-yellow-400 rounded-full"></div>
-                                            <span class="text-white/60">{holonStats.activeTasks} active</span>
-                                        </div>
-                                    </div>
-                                    {/if}
-                                </div>
-                            </div>
-                        </div>
-                    {/if}
+                
 
                 <!-- Bottom Right: ESC hint -->
                 <div class="absolute bottom-6 right-6">
