@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { CouncilAdvisorExtended } from '../types/advisor-schema';
+  import AdvisorList from './council/AdvisorList.svelte';
+  import { getYourCreatedAdvisorsOptions } from '../utils/advisor-filters';
 
   // Geometry and state passed from parent (Council.svelte)
   export let metatronCircles: Array<{ id: string; x: number; y: number }> = [];
@@ -36,7 +38,7 @@
     <h3 class="text-3xl font-bold text-white mb-2">Seat Your Council</h3>
     <p class="text-gray-300 text-lg">Add, replace, or remove advisors. Seats can be left empty.</p>
     {#if showTip}
-      <p class="text-gray-400 text-sm mt-2">Tip: You can also do this anytime from the main page using the "Seat Your Council" button.</p>
+      <p class="text-gray-400 text-sm mt-2">Tip: You can seat, replace, or remove advisors anytime by clicking on any circle in the Metatron table.</p>
     {/if}
   </div>
 {/if}
@@ -102,48 +104,17 @@
 </div>
 
 <!-- Your created advisors with Add to Ritual -->
-<div class="bg-gray-700 rounded-xl p-6 mt-8">
-  <div class="mb-4">
-    <h4 class="text-gray-300 font-medium">Your Created Advisors:</h4>
-  </div>
-  {#if holonAdvisors.length > 0}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {#each holonAdvisors as advisor}
-        <div class="bg-gray-600 rounded-xl p-4 group hover:bg-gray-500 transition-colors relative">
-          <!-- Delete (X) -->
-          <button
-            class="absolute top-2 right-2 text-gray-300 hover:text-red-400"
-            title="Delete advisor"
-            on:click={() => { if (confirm(`Delete ${advisor.name}? This cannot be undone.`)) { onDeleteAdvisor && onDeleteAdvisor(advisor.name); } }}
-          >
-            ✕
-          </button>
-          <div class="flex-1 mb-3 pr-6">
-            <h5 class="text-white font-bold">{advisor.name}</h5>
-            <p class="text-gray-300 text-sm capitalize">{advisor.type}</p>
-            <p class="text-gray-300 text-sm italic">"{advisor.lens}"</p>
-          </div>
-          <div class="flex gap-2">
-            <button
-              on:click={() => onOpenAdvisorChat && onOpenAdvisorChat(advisor)}
-              class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-3 rounded-lg text-sm transition-colors"
-            >
-              💬 Chat
-            </button>
-            <button
-              on:click={() => onAddAdvisorToRitual && onAddAdvisorToRitual(advisor)}
-              class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-3 rounded-lg text-sm transition-colors"
-            >
-              ➕ Add to Ritual
-            </button>
-          </div>
-        </div>
-      {/each}
-    </div>
-  {:else}
-    <p class="text-gray-400 text-sm italic">No advisors created yet.</p>
-  {/if}
-</div>
+<AdvisorList
+  advisors={holonAdvisors}
+  context="ritual_modal"
+  title="Your Created Advisors:"
+  emptyMessage="No advisors created yet."
+  availableActions={['chat', 'delete', 'add_to_ritual']}
+  columns="grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+  on:chat={(event) => onOpenAdvisorChat && onOpenAdvisorChat(event.detail.advisor)}
+  on:delete={(event) => onDeleteAdvisor && onDeleteAdvisor(event.detail.advisor.name)}
+  on:addToRitual={(event) => onAddAdvisorToRitual && onAddAdvisorToRitual(event.detail.advisor)}
+/>
 
 <!-- Create new advisor (optional) -->
 <div class="bg-gray-700 rounded-xl p-6 space-y-4 mt-6">

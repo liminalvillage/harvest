@@ -229,6 +229,8 @@ ${JSON.stringify(advisor.characterSpec, null, 2)}
 
 ${getAdvisorResponseFormatInstructions()}
 
+NATURAL SPEECH VARIATION: Use any discourse markers sparingly and rotate among options. Avoid formulaic repetition - let authentic speech patterns emerge naturally.
+
 USER'S MESSAGE: "${userMessage}"
 
 Respond as ${advisor.name} with stage directions and in character.
@@ -284,6 +286,8 @@ ${dialogueInstructions}
 
 ${getAdvisorResponseFormatInstructions()}
 
+NATURAL SPEECH VARIATION: Use any discourse markers sparingly and rotate among options. Avoid formulaic repetition of signature phrases - vary your openings naturally.
+
 Respond as ${advisor.name} with dynamic stage directions inspired by the Genesis Lens and in character. VARY YOUR RESPONSE LENGTH - from single words to brief insights (1-3 sentences maximum). You're adding one perspective to the council dialogue, not dominating the conversation.
 `;
 }
@@ -336,6 +340,8 @@ CONTEXT:
 ${gameInstructions}
 
 ${getAdvisorResponseFormatInstructions()}
+
+NATURAL SPEECH VARIATION: Use any discourse markers sparingly and rotate among options. Avoid formulaic repetition of signature phrases - vary your openings naturally.
 
 Respond as ${advisor.name} with dynamic stage directions inspired by the Genesis Lens and in character. VARY YOUR RESPONSE LENGTH - from single words to brief insights (1-3 sentences maximum). You're adding one bead to the chain, not dominating the conversation.
 `;

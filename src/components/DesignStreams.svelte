@@ -39,7 +39,7 @@
 	// Backcast from the Future state
 	let showTimelineMapping = false;
 	let questTree: QuestTree | null = null;
-	let currentGenerations = 3; // Default to 3,3,3 structure
+	let currentGenerations = 6; // Default to 6 generation structure
 	let branchingFactor = 3;
 	let isGeneratingQuests = false;
 	let currentNodeId: string | null = null;
@@ -114,6 +114,11 @@
             if (!raw) return false;
             const parsed = JSON.parse(raw);
             if (parsed && parsed.nodes) {
+                // Upgrade old quest trees to use 6 generations if they have less
+                if (!parsed.maxGenerations || parsed.maxGenerations < 6) {
+                    console.log('🔄 Upgrading quest tree maxGenerations from', parsed.maxGenerations, 'to 6');
+                    parsed.maxGenerations = 6;
+                }
                 questTree = parsed;
                 return true;
             }
@@ -305,8 +310,8 @@
 		showTimelineMapping = true;
 		showBackcastModal = false; // Close the backcast modal
 		
-        // Ensure 3 generations as default
-		currentGenerations = 3;
+        // Ensure 6 generations as default
+		currentGenerations = 6;
 		// Clear any previous user chat input
 		userChatInput = '';
 		
@@ -330,6 +335,9 @@
         const restored = loadQuestTreeDraftFromLocal();
         if (restored) {
             addTimelineMappingMessage('system', '🗂️ Restored your previous quest tree draft from this device.');
+            if (questTree && questTree.maxGenerations === 6) {
+                addTimelineMappingMessage('system', '🔄 Quest tree has been upgraded to support 6 generations! You can now expand quests beyond generation 3.');
+            }
             return;
         }
 
@@ -361,6 +369,8 @@
 		
 		questTree = createQuestTreeFromRitual(fullRitualSession, headAdvisorName, config);
 		
+		// Debug: Quest tree created with 6 generations
+		
 		addTimelineMappingMessage('system', buildActivationMessage({
 			wish: ritualSession.wish_statement,
 			values: ritualSession.declared_values || [],
@@ -378,8 +388,8 @@
 		questTree = null;
 		currentNodeId = null;
 		timelineMappingMessages = [];
-		// Reset to 3 generations as default
-		currentGenerations = 3;
+		// Reset to 6 generations as default
+		currentGenerations = 6;
 		// Clear user chat input
 		userChatInput = '';
 	}
@@ -466,29 +476,41 @@
 	}
 
 	async function expandQuest(nodeId: string) {
-		if (!questTree || !llmService || isGeneratingQuests) return;
+		if (!questTree || !llmService || isGeneratingQuests) {
+			return;
+		}
 		
 		const node = questTree.nodes[nodeId];
 		if (!node) return;
 
 		// Check if we've reached max generations
+		console.log('🐛 Expansion check:', { 
+			nodeGeneration: node.generation, 
+			maxGenerations: questTree.maxGenerations, 
+			currentGenerations: currentGenerations,
+			canExpand: node.generation < questTree.maxGenerations 
+		});
+		
 		if (node.generation >= questTree.maxGenerations) {
-			addTimelineMappingMessage('system', `🏁 Maximum generation depth (${questTree.maxGenerations}) reached for this quest.`);
+			addTimelineMappingMessage('system', `🏁 Maximum generation depth (${questTree.maxGenerations}) reached for this quest. Current: Gen ${node.generation}`);
 			return;
 		}
 
 		// Check if already has children
+		console.log('🐛 Checking children:', { nodeId, childIds: node.childIds, hasChildren: node.childIds.length > 0 });
 		if (node.childIds.length > 0) {
 			addTimelineMappingMessage('system', `📋 Quest "${node.title}" already has child quests. View them below.`);
 			return;
 		}
 
+		console.log('🐛 Starting expansion process for node:', nodeId);
 		currentNodeId = nodeId;
 		isGeneratingQuests = true;
 		
 		addTimelineMappingMessage('system', `🔍 **Expanding Quest: "${node.title}"**\n\nGenerating ${branchingFactor} child quests...`);
 
 		try {
+			console.log('🐛 Inside try block, getting advisor...');
 			// Get the facilitating advisor from the quest tree
 			const headAdvisorName = questTree.headAdvisor;
 			
@@ -501,19 +523,39 @@
 				addTimelineMappingMessage('system', `⚠️ Note: Using ${fallbackAdvisor.name} as facilitator (${headAdvisorName} not found in current council).`);
 			}
 
-			// Use holonic backcasting orchestrator
-			const { raw, childQuests } = await expandQuestNode(llmService, questTree, nodeId, advisors);
+			console.log('🔮 About to call holonic expandQuestNode...', { nodeId, questTreeMaxGen: questTree.maxGenerations });
+			
+			// Use holonic backcasting orchestrator - NO FALLBACKS, surface errors clearly
+			let expandResult;
+			try {
+				expandResult = await expandQuestNode(llmService, questTree, nodeId, advisors);
+				console.log('🔮 Holonic expandQuestNode succeeded:', { raw: expandResult.raw.length, childQuestsCount: expandResult.childQuests.length });
+			} catch (error) {
+				// Surface holonic errors clearly in UI
+				console.error('🚨 HOLONIC EXPANSION FAILED:', error);
+				
+				addTimelineMappingMessage('system', `🚨 HOLONIC LLM FAILURE: ${error instanceof Error ? error.message : 'Unknown error'}`);
+				addTimelineMappingMessage('system', `🔧 Check console for detailed troubleshooting information.`);
+				
+				// Re-throw to stop execution - no masking during development
+				throw error;
+			}
+			
+			const { raw, childQuests } = expandResult;
 			
 			// Debug: Log the quest tree state after creating child quests
-			console.log('Quest tree after creating child quests:', {
-				questTree,
+			console.log('🐛 Quest tree state after creating child quests:', {
 				parentNodeId: nodeId,
-				childQuests,
-				totalNodes: Object.keys(questTree.nodes).length
+				childQuestsCreated: childQuests.length,
+				totalNodes: Object.keys(questTree.nodes).length,
+				parentNode: questTree.nodes[nodeId],
+				parentChildIds: questTree.nodes[nodeId]?.childIds
 			});
 			
+			console.log('🐛 Before forcing Svelte reactivity...');
 			// Force Svelte to detect the change by reassigning the quest tree
 			questTree = { ...questTree };
+			console.log('🐛 After forcing Svelte reactivity, questTree updated');
 			
 			// Track quest expansion in session
 			if (sessionManager) {
@@ -529,17 +571,19 @@
 			addTimelineMappingMessage('system', `✅ **Child Quests Created for "${node.title}"**\n\n${childQuests.map((q, i) => `${i + 1}. ${q.title}`).join('\n')}\n\nContinue expanding or review the quest tree.`);
 
 		} catch (error) {
-			console.error('Error expanding quest:', error);
+			console.error('🐛 Error expanding quest:', error);
+			console.error('🐛 Error stack:', error instanceof Error ? error.stack : 'No stack');
 			addTimelineMappingMessage('system', `❌ Error expanding quest: ${error instanceof Error ? error.message : 'Unknown error'}`);
 		} finally {
+			console.log('🐛 Expansion finally block executed');
 			isGeneratingQuests = false;
 			currentNodeId = null;
 		}
 	}
 
 	function toggleGenerations() {
-		// Toggle between 3 and 7 generations
-		currentGenerations = currentGenerations === 3 ? 7 : 3;
+		// Toggle between 6 and 7 generations
+		currentGenerations = currentGenerations === 6 ? 7 : 6;
 		
 		if (questTree) {
 			questTree.maxGenerations = currentGenerations;
@@ -621,6 +665,37 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 				}
 			}, 2000);
 		}
+	}
+
+	// Helper function to get styling for quest nodes based on generation
+	function getQuestNodeStyling(generation, hasChildren) {
+		const baseClasses = "w-full rounded text-xs text-left border transition-colors";
+		
+		switch(generation) {
+			case 1: return `${baseClasses} mb-3 bg-gray-700 hover:bg-gray-600 text-white p-3 ${hasChildren ? 'border-green-500' : 'border-gray-600'}`;
+			case 2: return `${baseClasses} mb-2 bg-gray-600 hover:bg-gray-500 text-white p-3 ${hasChildren ? 'border-green-500' : 'border-gray-500'}`;
+			case 3: return `${baseClasses} mb-2 bg-gray-500 hover:bg-gray-400 text-white p-2 border-gray-400`;
+			case 4: return `${baseClasses} mb-2 bg-gray-400 hover:bg-gray-300 text-white p-2 border-gray-300`;
+			case 5: return `${baseClasses} mb-2 bg-gray-300 hover:bg-gray-200 text-gray-800 p-2 border-gray-200`;
+			case 6: return `${baseClasses} mb-2 bg-gray-200 hover:bg-gray-100 text-gray-800 p-2 border-gray-100`;
+			default: return `${baseClasses} mb-2 bg-gray-500 hover:bg-gray-400 text-white p-2 border-gray-400`;
+		}
+	}
+
+	// Helper function to recursively collect all descendant nodes in display order
+	function getAllDescendantNodes(nodeId, questTree, depth = 0) {
+		const node = questTree.nodes[nodeId];
+		if (!node) return [];
+		
+		const result = [{ node, nodeId, depth }];
+		
+		if (node.childIds && node.childIds.length > 0) {
+			for (const childId of node.childIds) {
+				result.push(...getAllDescendantNodes(childId, questTree, depth + 1));
+			}
+		}
+		
+		return result;
 	}
 </script>
 
@@ -1071,7 +1146,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 						on:click={toggleGenerations}
 						class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-sm transition-colors"
 					>
-						Toggle {currentGenerations === 3 ? '7' : '3'} Gen
+						Toggle {currentGenerations === 6 ? '7' : '6'} Gen
 					</button>
 					-->
 					<!-- svelte-ignore a11y_consider_explicit_label -->
@@ -1182,61 +1257,72 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 								</div>
 							{/if}
 
-							<!-- Generation 1 (Seed Quests) -->
+							<!-- Fully Recursive Quest Tree Rendering -->
 							{#if questTree.rootNodeIds && questTree.rootNodeIds.length > 0}
 								<div class="mb-4">
-									<div class="text-gray-400 text-xs mb-2">Generation 1 - Seed Quests ({questTree.rootNodeIds.length})</div>
-									{#each questTree.rootNodeIds as nodeId}
-										{@const node = questTree.nodes[nodeId]}
-										{#if node}
-											<button
-												on:click={() => expandQuest(nodeId)}
-												class="w-full mb-2 bg-gray-700 hover:bg-gray-600 text-white p-2 rounded text-xs text-left border {node.childIds && node.childIds.length > 0 ? 'border-green-500' : 'border-gray-600'} transition-colors"
-											>
-												<div class="font-semibold">{node.title}</div>
-												<div class="text-gray-400 text-xs">
-													{node.childIds && node.childIds.length > 0 ? `${node.childIds.length} child quests` : 'Click to expand'}
-												</div>
-											</button>
-											
-											<!-- Generation 2+ (Child Quests) -->
-											{#if node.childIds && node.childIds.length > 0}
-												<div class="ml-4 mb-2 space-y-1">
-													{#each node.childIds as childId}
-														{@const childNode = questTree.nodes[childId]}
-														{#if childNode}
-															<button
-																on:click={() => expandQuest(childId)}
-																class="w-full bg-gray-600 hover:bg-gray-500 text-white p-2 rounded text-xs text-left border {childNode.childIds && childNode.childIds.length > 0 ? 'border-green-500' : 'border-gray-500'} transition-colors"
-															>
-																<div class="font-semibold">{childNode.title}</div>
-																<div class="text-gray-400 text-xs">
-																	Gen {childNode.generation} | {childNode.childIds && childNode.childIds.length > 0 ? `${childNode.childIds.length} children` : 'Click to expand'}
-																</div>
-															</button>
-															
-															<!-- Generation 3+ (Recursive) -->
-															{#if childNode.childIds && childNode.childIds.length > 0}
-																<div class="ml-4 space-y-1">
-																	{#each childNode.childIds as grandchildId}
-																		{@const grandchildNode = questTree.nodes[grandchildId]}
-																		{#if grandchildNode}
-																			<button
-																				on:click={() => expandQuest(grandchildId)}
-																				class="w-full bg-gray-500 hover:bg-gray-400 text-white p-1 rounded text-xs text-left border border-gray-400 transition-colors"
-																			>
-																				<div class="font-semibold">{grandchildNode.title}</div>
-																				<div class="text-gray-300 text-xs">Gen {grandchildNode.generation}</div>
-																			</button>
-																		{/if}
-																	{/each}
+									<div class="text-gray-400 text-xs mb-2">Quest Tree - All Generations (Max: {questTree.maxGenerations})</div>
+									{#each questTree.rootNodeIds as rootNodeId}
+										{@const allNodes = getAllDescendantNodes(rootNodeId, questTree)}
+										{#each allNodes as {node, nodeId, depth}}
+											<div class="quest-node" style="margin-left: {depth * 16}px;">
+												<button
+													on:click={() => expandQuest(nodeId)}
+													class={getQuestNodeStyling(node.generation, node.childIds?.length > 0)}
+												>
+													<div class="font-semibold">{node.title}</div>
+													
+													<!-- Rich Holonic Metadata Display -->
+													{#if node.description}
+														<div class="text-gray-300 text-xs mt-1 italic">
+															{node.description}
+														</div>
+													{/if}
+													
+													<div class="text-gray-400 text-xs mt-1">
+														Gen {node.generation} | 
+														{node.childIds && node.childIds.length > 0 ? `${node.childIds.length} children` : 'Click to expand'}
+														{#if node.estimatedDuration}
+															| ⏱️ {node.estimatedDuration}
+														{/if}
+													</div>
+
+													<!-- Holonic Quest Details -->
+													{#if node.generation > 1}
+														<div class="mt-2 space-y-1 text-xs">
+															{#if node.skillsRequired && node.skillsRequired.length > 0}
+																<div class="text-blue-300">
+																	<span class="font-medium">Skills:</span> {node.skillsRequired.join(', ')}
 																</div>
 															{/if}
-														{/if}
-													{/each}
-												</div>
-											{/if}
-										{/if}
+															
+															{#if node.resourcesRequired && node.resourcesRequired.length > 0}
+																<div class="text-green-300">
+																	<span class="font-medium">Resources:</span> {node.resourcesRequired.join(', ')}
+																</div>
+															{/if}
+															
+															{#if node.actions && node.actions.length > 0}
+																<div class="text-yellow-300">
+																	<span class="font-medium">Actions:</span> {node.actions.slice(0, 2).join(', ')}{node.actions.length > 2 ? '...' : ''}
+																</div>
+															{/if}
+															
+															{#if node.futureState}
+																<div class="text-purple-300">
+																	<span class="font-medium">Success:</span> {node.futureState.length > 60 ? node.futureState.substring(0, 60) + '...' : node.futureState}
+																</div>
+															{/if}
+															
+															{#if node.impactCategory}
+																<div class="text-orange-300">
+																	<span class="font-medium">Impact:</span> {node.impactCategory}
+																</div>
+															{/if}
+														</div>
+													{/if}
+												</button>
+											</div>
+										{/each}
 									{/each}
 								</div>
 							{:else if isGeneratingQuests}

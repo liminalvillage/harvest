@@ -90,6 +90,18 @@ export interface Quest {
     generation?: number;
     parentNodeId?: string | null;
     initiatedBy?: 'council' | 'user';
+    holonicData?: {
+      skillsRequired?: string[];
+      resourcesRequired?: string[];
+      impactCategory?: string;
+      estimatedDuration?: string;
+      assumptions?: string[];
+      questions?: string[];
+      actions?: string[];
+      successMetrics?: string[];
+      futureState?: string;
+      facilitatingAdvisor?: string;
+    };
   };
 }
 
@@ -191,14 +203,61 @@ export function createTasksFromQuestTree(
       }
     }
 
+    // Build rich description from holonic metadata
+    let richDescription = node.description || `(Generation ${node.generation})`;
+    
+    // Append holonic metadata that doesn't map directly to Quest.js schema
+    const metadataSections: string[] = [];
+    
+    if (node.estimatedDuration) {
+      metadataSections.push(`⏱️ Duration: ${node.estimatedDuration}`);
+    }
+    
+    if (node.skillsRequired && node.skillsRequired.length > 0) {
+      metadataSections.push(`🔧 Skills: ${node.skillsRequired.join(', ')}`);
+    }
+    
+    if (node.resourcesRequired && node.resourcesRequired.length > 0) {
+      metadataSections.push(`📦 Resources: ${node.resourcesRequired.join(', ')}`);
+    }
+    
+    if (node.actions && node.actions.length > 0) {
+      metadataSections.push(`⚡ Actions: ${node.actions.join(' • ')}`);
+    }
+    
+    if (node.futureState) {
+      metadataSections.push(`🎯 Success: ${node.futureState}`);
+    }
+    
+    if (node.assumptions && node.assumptions.length > 0) {
+      metadataSections.push(`💭 Assumptions: ${node.assumptions.join(' • ')}`);
+    }
+    
+    if (node.questions && node.questions.length > 0) {
+      metadataSections.push(`❓ Questions: ${node.questions.join(' • ')}`);
+    }
+    
+    if (node.successMetrics && node.successMetrics.length > 0) {
+      metadataSections.push(`📊 Metrics: ${node.successMetrics.join(' • ')}`);
+    }
+    
+    if (node.impactCategory) {
+      metadataSections.push(`🌱 Impact: ${node.impactCategory}`);
+    }
+    
+    // Combine description with metadata
+    if (metadataSections.length > 0) {
+      richDescription += '\n\n' + metadataSections.join('\n\n');
+    }
+
     const task: Quest = {
       id: taskId,
       title: node.title,
-      description: `(Generation ${node.generation})`,
+      description: richDescription,
       status: 'pending',
       type: 'task',
       category: DEFAULT_TASK_CATEGORY,
-      participants: [],
+      participants: node.participants || [],
       appreciation: [],
       created: new Date().toISOString(),
       orderIndex: node.generation * 100 + (node.generationIndex ?? 0),
@@ -212,7 +271,20 @@ export function createTasksFromQuestTree(
         questTreeId: questTree.id,
         generation: node.generation,
         parentNodeId: node.parentId,
-        initiatedBy: 'council'
+        initiatedBy: 'council',
+        // Store holonic metadata for future reference
+        holonicData: {
+          skillsRequired: node.skillsRequired,
+          resourcesRequired: node.resourcesRequired,
+          impactCategory: node.impactCategory,
+          estimatedDuration: node.estimatedDuration,
+          assumptions: node.assumptions,
+          questions: node.questions,
+          actions: node.actions,
+          successMetrics: node.successMetrics,
+          futureState: node.futureState,
+          facilitatingAdvisor: node.facilitatingAdvisor
+        }
       }
     };
 

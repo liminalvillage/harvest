@@ -72,7 +72,7 @@ export interface QuestTree {
   rootNodeIds: string[]; // IDs of generation 1 nodes (seed quests)
   
   // Configuration
-  maxGenerations: number; // 3-7 as per user settings
+  maxGenerations: number; // 6-7 as per user settings, default 6
   branchingFactor: number; // Usually 3 (3,3,3 structure)
   
   // Impact tracking
@@ -133,7 +133,7 @@ export interface InquiryLoop {
 }
 
 export interface GenerationConfig {
-  number: number; // 3-7
+  number: number; // 6-7, default 6
   branchingFactor: number; // usually 3
   inquiryDepth: 'light' | 'medium' | 'deep'; // How thorough each inquiry loop should be
 }

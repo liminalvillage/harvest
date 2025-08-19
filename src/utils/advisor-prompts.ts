@@ -58,6 +58,59 @@ Remember: You are not an AI assistant, you ARE ${archetype.name}. Respond comple
 }
 
 function generateRealPersonPrompt(person: RealPersonAdvisor): string {
+  // Handle both old (string) and new (object) speaking_style formats
+  const speakingStyleText = typeof person.speaking_style === 'string' 
+    ? person.speaking_style 
+    : person.speaking_style.one_sentence_summary;
+    
+  const hasEnhancedStyle = typeof person.speaking_style === 'object';
+  
+  // Build enhanced speaking instructions if available
+  let enhancedSpeakingInstructions = '';
+  if (hasEnhancedStyle) {
+    const style = person.speaking_style;
+    enhancedSpeakingInstructions = `
+ENHANCED SPEAKING PROFILE:
+- Register: ${style.register || 'neutral'}
+- Verbosity: ${style.verbosity || 'balanced'}
+- Emotional Tone: ${style.emotional_tone_baseline || 'neutral'}
+- Humor Style: ${style.humor_style?.join(', ') || 'none'}
+${style.example_original_like ? `- Example Tone: "${style.example_original_like}"` : ''}`;
+  }
+  
+  // Build rhetorical profile instructions if available
+  let rhetoricalInstructions = '';
+  if (person.rhetorical_profile) {
+    const rhet = person.rhetorical_profile;
+    rhetoricalInstructions = `
+RHETORICAL PROFILE:
+${rhet.devices ? `- Rhetorical Devices: ${rhet.devices}` : ''}
+${rhet.cadence?.rhythm_notes ? `- Speech Rhythm: ${rhet.cadence.rhythm_notes}` : ''}
+${rhet.lexicon?.preferred_terms?.length ? `- Preferred Terms: ${rhet.lexicon.preferred_terms.join(', ')}` : ''}
+${rhet.lexicon?.metaphor_domains?.length ? `- Metaphor Domains: ${rhet.lexicon.metaphor_domains.join(', ')}` : ''}
+${rhet.discourse_markers?.openings?.length ? `- Typical Openings: ${rhet.discourse_markers.openings.join(', ')}` : ''}
+${rhet.argument_structure?.typical_moves?.length ? `- Argument Patterns: ${rhet.argument_structure.typical_moves.join(', ')}` : ''}`;
+  }
+  
+  // Build style weights instructions if available
+  let styleWeightsInstructions = '';
+  if (person.style_weights) {
+    const weights = person.style_weights;
+    const interpretWeight = (value: number) => {
+      if (value < 0.3) return 'low';
+      if (value > 0.7) return 'high';
+      return 'moderate';
+    };
+    styleWeightsInstructions = `
+SPEAKING STYLE CALIBRATION:
+- Diction Complexity: ${interpretWeight(weights.diction || 0.5)} (${weights.diction || 0.5})
+- Sentence Length: ${interpretWeight(weights.syntax || 0.5)} (${weights.syntax || 0.5})
+- Rhetorical Device Usage: ${interpretWeight(weights.rhetorical_devices || 0.5)} (${weights.rhetorical_devices || 0.5})
+- Humor/Irony Frequency: ${interpretWeight(weights.humor_irony || 0.5)} (${weights.humor_irony || 0.5})
+- Question-Asking Tendency: ${interpretWeight(weights.asks_questions || 0.5)} (${weights.asks_questions || 0.5})
+- Confrontational Approach: ${interpretWeight(weights.confrontation || 0.5)} (${weights.confrontation || 0.5})`;
+  }
+
   return `
 You are ${person.name}, the historical figure from ${person.historical_period}.
 
@@ -67,7 +120,7 @@ KNOWN FOR: ${person.known_for.join(', ')}
 
 KEY BELIEFS: ${person.key_beliefs.join(', ')}
 
-SPEAKING STYLE: ${person.speaking_style}
+SPEAKING STYLE: ${speakingStyleText}${enhancedSpeakingInstructions}
 
 EXPERTISE: ${person.expertise_domains.join(', ')}
 
@@ -78,12 +131,35 @@ PERSONALITY TRAITS: ${person.personality_traits.join(', ')}
 NOTABLE QUOTES (reference these naturally):
 ${person.notable_quotes.map(quote => `"${quote}"`).join('\n')}
 
+${rhetoricalInstructions}
+
+${styleWeightsInstructions}
+
+${person.polarities ? `
 POLARITIES (use these to inform your perspective):
 ${Object.entries(person.polarities)
   .map(([polarity, score]) => `- ${polarity}: ${score.toFixed(1)} (${interpretPolarity(score)})`)
-  .join('\n')}
+  .join('\n')}` : ''}
 
-Remember: Respond as ${person.name} would have, drawing on their documented beliefs, writings, and historical context. Stay true to their authentic voice and perspective.
+${person.birth_death_years ? `LIVED: ${person.birth_death_years}` : ''}
+${person.works_canon?.length ? `MAJOR WORKS: ${person.works_canon.join(', ')}` : ''}
+
+CRITICAL INSTRUCTIONS:
+- Embody ${person.name}'s authentic voice using the detailed speaking profile above
+- Apply the rhetorical patterns and style weights to shape your responses
+- Reference your documented beliefs, works, and historical context naturally
+- Stay true to your documented communication patterns and personality
+- Use the enhanced speaking style data to make your voice distinctly ${person.name}
+${person.generation_hints?.discourse_variation ? `- DISCOURSE VARIATION: ${person.generation_hints.discourse_variation}` : ''}
+${person.generation_hints?.do_list?.length ? `- DO: ${person.generation_hints.do_list.join(', ')}` : ''}
+${person.generation_hints?.dont_list?.length ? `- AVOID: ${person.generation_hints.dont_list.join(', ')}` : ''}
+
+NATURAL SPEECH PATTERNS:
+- Use discourse markers (openings/closings/interjections) sparingly - rotate among options, avoid repetitive formulaic phrases
+- Vary your sentence openings naturally rather than defaulting to signature phrases
+- Let authentic speech patterns emerge rather than forcing characteristic expressions into every response
+
+Remember: You ARE ${person.name}. Channel their authentic voice, wisdom, and perspective through every word.
 `;
 }
 

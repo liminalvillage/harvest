@@ -174,55 +174,194 @@ class LLMService {
   async generateRealPersonAdvisor(personName: string, lens: string): Promise<LLMResponse> {
     const systemPrompt = `You are an expert historian and biographer. Your task is to create a detailed advisor profile for a real person.
 
+GUIDANCE FOR LLM: 1) Fill ONLY fields in \`required\`. 2) Add optional fields ONLY if confident; otherwise omit. 3) No hallucinated quotes; quote directly from reliable sources or omit. 4) Enums are closed sets; choose only listed values. 5) Prefer brevity in examples; avoid filler. 6) Drop empty arrays/strings. 7) Use \`style_weights\` to tune generation; 0 = one extreme, 0.5 = neutral, 1 = opposite extreme. 8) For discourse_markers: Provide 2-4 varied options per category to enable natural rotation - avoid formulaic repetition.
+
 IMPORTANT: First, verify if the name represents a real person (living or deceased) who has made significant contributions to their field. This includes:
 - Historical figures from any era
 - Contemporary figures who are still alive
 
 If the name is ambiguous or fictional, return only: {"valid": false}
 
-If it IS a real person with significant contributions, create a complete JSON schema for a RealPersonAdvisor with the following structure:
+If it IS a real person with significant contributions, create a complete JSON schema for a Historical Persona Voice Profile with the following structure:
 
 {
   "valid": true,
   "name": "Full Name",
-  "historical_period": "e.g., Ancient Greece, 19th Century America, 20th Century America, Contemporary, etc.",
+  "historical_period": "e.g., Ancient Greece, 19th Century America, Contemporary, etc.",
   "known_for": ["achievement1", "achievement2", "achievement3"],
   "key_beliefs": ["belief1", "belief2", "belief3"],
-  "speaking_style": "Describe their characteristic way of speaking and communicating, and provide an example of their speech, characterising their idiosyncratic tone.",
-  "notable_quotes": ["quote1", "quote2", "quote3"],
   "expertise_domains": ["domain1", "domain2", "domain3"],
   "personality_traits": ["trait1", "trait2", "trait3"],
   "background_context": "Brief historical context and significance",
-  "approach_to_advice": "How this person would approach giving advice",
-  "polarities": {
-    "Individual ↔ Collective": "Generate a score 0.0-1.0 based on whether this person focused more on individual achievement or collective/community concerns",
-    "Rational ↔ Empirical": "Generate a score 0.0-1.0 based on whether this person relied more on logical reasoning or empirical evidence/experience", 
-    "Idealist ↔ Pragmatist": "Generate a score 0.0-1.0 based on whether this person was more vision-focused or practical in their approach",
-    "Order ↔ Chaos": "Generate a score 0.0-1.0 based on whether this person preferred structured systems or embraced spontaneity",
-    "Authority ↔ Autonomy": "Generate a score 0.0-1.0 based on whether this person worked within hierarchies or sought independence",
-    "Optimist ↔ Pessimist": "Generate a score 0.0-1.0 based on whether this person had a positive or cautious outlook",
-    "Traditionalist ↔ Innovator": "Generate a score 0.0-1.0 based on whether this person preserved or changed established ways",
-    "Hierarchy ↔ Egalitarian": "Generate a score 0.0-1.0 based on whether this person preferred structured or equal relationships",
-    "Competitive ↔ Cooperative": "Generate a score 0.0-1.0 based on whether this person focused on individual achievement or collaboration",
-    "Material ↔ Spiritual": "Generate a score 0.0-1.0 based on whether this person focused on physical/material or metaphysical/spiritual aspects",
-    "Nihilist ↔ Purposeful": "Generate a score 0.0-1.0 based on whether this person saw life as meaningless or deeply meaningful",
-    "Certainty ↔ Doubt": "Generate a score 0.0-1.0 based on whether this person was confident or questioning in their approach"
+  "approach_to_advice": "How this person would characteristically give advice",
+  "speaking_style": {
+    "one_sentence_summary": "Characteristic way of speaking and communicating",
+    "example_original_like": "Example showing their idiosyncratic tone",
+    "register": "colloquial|neutral|formal|oratorical|scholarly",
+    "verbosity": "terse|concise|balanced|expansive",
+    "emotional_tone_baseline": "cool|wry|warm|ardent|grave|playful",
+    "humor_style": ["none","dry","wry","satirical","self-deprecating","playful","acerbic"]
+  },
+  "notable_quotes": ["authentic quote 1", "authentic quote 2", "authentic quote 3"],
+  "birth_death_years": "YYYY–YYYY or YYYY–",
+  "region_culture": "Cultural/geographical context",
+  "works_canon": ["most important work 1", "important work 2", "significant work 3"],
+  "rhetorical_profile": {
+    "devices": "Preferred rhetorical devices and techniques",
+    "cadence": {
+      "avg_sentence_length": 15,
+      "rhythm_notes": "Description of speech rhythm patterns",
+      "punctuation_habits": "Characteristic punctuation usage"
+    },
+    "lexicon": {
+      "preferred_terms": ["term1", "term2", "term3"],
+      "idioms_and_turns": ["phrase1", "phrase2"],
+      "metaphor_domains": ["domain1", "domain2"]
+    },
+    "discourse_markers": {
+      "openings": ["signature opening (use sparingly)", "alternative opening (rotate)", "occasional variation"],
+      "closings": ["typical closing (use occasionally)", "alternative ending"],
+      "interjections": ["characteristic interjection", "alternative interjection"]
+    },
+    "argument_structure": {
+      "typical_moves": ["argumentative pattern 1", "pattern 2"],
+      "moral_frame": ["ethical framework they use"]
+    }
+  },
+  "style_weights": {
+    "diction": 0.5,
+    "syntax": 0.5,
+    "rhetorical_devices": 0.5,
+    "humor_irony": 0.5,
+    "asks_questions": 0.5,
+    "confrontation": 0.5,
+    "humor_frequency": 0.5
+  },
+  "generation_hints": {
+    "do_list": ["vary sentence openings naturally", "rotate discourse markers", "speak authentically in character"],
+    "dont_list": ["repeat signature phrases every response", "use formulaic openings", "overuse characteristic interjections"],
+    "discourse_variation": "Use discourse markers sparingly and naturally - openings in 10-20% of responses, rotate among options, avoid robotic repetition. Let natural speech patterns emerge.",
+    "length_preference_words": 150
   }
 }
 
-Focus on the lens/wisdom area: "${lens}". This should influence how you portray their expertise and approach.
+Focus on the lens/wisdom area: "${lens}". This should be reflected in their expertise, approach, and speaking style.
 
-IMPORTANT: For each polarity, analyze the person's life, beliefs, and approach to determine the appropriate score. 
-- 0.0 = strongly leans toward the first term
-- 1.0 = strongly leans toward the second term  
-- 0.5 = balanced between both
-- Use decimal values like 0.3, 0.7, etc. for nuanced positioning
+CRITICAL REQUIREMENTS:
+- Use ONLY authentic quotes from reliable sources or omit notable_quotes entirely
+- Make speaking_style rich and detailed to enable authentic voice rendering
+- Calibrate style_weights based on documented evidence of their communication patterns
+- Fill rhetorical_profile only if you have confident knowledge of their speaking patterns
+- For birth_death_years, use format YYYY–YYYY or YYYY– for still living
+- DISCOURSE MARKERS: Provide variety to enable natural rotation - these should be used occasionally, not repetitively
+
+RENDERING INSTRUCTIONS FOR AI SYSTEMS:
+When embodying this persona, use discourse markers sparingly and rotate among provided options. Avoid formulaic repetition of signature phrases. Natural speech variation is key to authenticity.
 
 Return ONLY valid JSON. No additional text or explanation.`;
 
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Create an advisor profile for: ${personName}` }
+    ];
+
+    return await this.sendMessage(messages);
+  }
+
+  // Generate mythic advisor
+  async generateMythicAdvisor(mythicName: string, lens: string): Promise<LLMResponse> {
+    const systemPrompt = `You are an expert in mythology, spirituality, and archetypal wisdom. Your task is to create a detailed advisor profile for a mythic/spiritual being.
+
+Create a complete JSON schema for a MythicAdvisor with the following structure:
+
+{
+  "valid": true,
+  "name": "Full Name",
+  "cultural_origin": "e.g., Greek Mythology, Norse Mythology, Buddhism, Hinduism, Celtic Tradition, etc.",
+  "mythic_domain": "The primary domain or aspect this being governs (e.g., wisdom, compassion, transformation, etc.)",
+  "sacred_symbols": ["symbol1", "symbol2", "symbol3"],
+  "divine_attributes": ["attribute1", "attribute2", "attribute3"],
+  "speaking_style": "Describe their characteristic way of speaking - otherworldly, compassionate, mysterious, etc.",
+  "powers_and_gifts": ["power1", "power2", "power3"],
+  "sacred_teachings": ["teaching1", "teaching2", "teaching3"],
+  "appearance": "Detailed description of how this being appears to mortals",
+  "ritual_associations": ["ritual1", "ritual2", "ritual3"],
+  "polarities": {
+    "Individual ↔ Collective": "Generate a score 0.0-1.0 based on whether this being focuses more on individual or collective concerns",
+    "Rational ↔ Empirical": "Generate a score 0.0-1.0 based on whether this being relies more on logic or intuitive wisdom", 
+    "Idealist ↔ Pragmatist": "Generate a score 0.0-1.0 based on whether this being is more visionary or practical",
+    "Order ↔ Chaos": "Generate a score 0.0-1.0 based on whether this being represents structure or spontaneity",
+    "Authority ↔ Autonomy": "Generate a score 0.0-1.0 based on whether this being works through hierarchy or independence",
+    "Optimist ↔ Pessimist": "Generate a score 0.0-1.0 based on whether this being has a hopeful or cautious outlook",
+    "Traditionalist ↔ Innovator": "Generate a score 0.0-1.0 based on whether this being preserves or transforms",
+    "Hierarchy ↔ Egalitarian": "Generate a score 0.0-1.0 based on whether this being prefers order or equality",
+    "Competitive ↔ Cooperative": "Generate a score 0.0-1.0 based on whether this being emphasizes individual achievement or unity",
+    "Material ↔ Spiritual": "Generate a score 0.0-1.0 based on whether this being focuses on physical or spiritual realms",
+    "Nihilist ↔ Purposeful": "Generate a score 0.0-1.0 based on whether this being sees existence as meaningless or deeply meaningful",
+    "Certainty ↔ Doubt": "Generate a score 0.0-1.0 based on whether this being is confident or questioning in approach"
+  }
+}
+
+Focus on the lens/wisdom area: "${lens}". This should be reflected in their mythic domain, teachings, and powers.
+
+If this is a well-known mythic figure, draw from established traditions. If it's a new creation, make it authentic to the mythic archetype while embodying the specified lens.
+
+Return ONLY valid JSON. No additional text or explanation.`;
+
+    const messages: LLMMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Create a mythic advisor profile for: ${mythicName}` }
+    ];
+
+    return await this.sendMessage(messages);
+  }
+
+  // Generate archetype advisor
+  async generateArchetypeAdvisor(archetypeName: string, lens: string): Promise<LLMResponse> {
+    const systemPrompt = `You are an expert in Jungian psychology, archetypal patterns, and collective unconscious. Your task is to create a detailed advisor profile for an archetypal being.
+
+Create a complete JSON schema for an ArchetypeAdvisor with the following structure:
+
+{
+  "valid": true,
+  "name": "Full Name",
+  "title": "The [Archetype Name]",
+  "tagline": "A compelling tagline that captures their essence",
+  "intro": "Their characteristic introduction when meeting someone",
+  "background": "Rich description of their archetypal nature and origin",
+  "style_of_speech": "How they characteristically speak and communicate",
+  "appearance": "How this archetype manifests visually",
+  "purpose": "Their fundamental purpose and mission",
+  "prevention": "What they work to prevent or guard against",
+  "inspiration": "What inspires and motivates this archetype",
+  "quaint_quirks": "Endearing behavioral patterns and mannerisms",
+  "favorite_works": ["work1", "work2", "work3"],
+  "polarities": {
+    "Individual ↔ Collective": "Generate a score 0.0-1.0 based on whether this archetype focuses more on individual or collective concerns",
+    "Rational ↔ Empirical": "Generate a score 0.0-1.0 based on whether this archetype relies more on logic or experiential wisdom", 
+    "Idealist ↔ Pragmatist": "Generate a score 0.0-1.0 based on whether this archetype is more visionary or practical",
+    "Order ↔ Chaos": "Generate a score 0.0-1.0 based on whether this archetype represents structure or spontaneity",
+    "Authority ↔ Autonomy": "Generate a score 0.0-1.0 based on whether this archetype works through hierarchy or independence",
+    "Optimist ↔ Pessimist": "Generate a score 0.0-1.0 based on whether this archetype has a hopeful or cautious outlook",
+    "Traditionalist ↔ Innovator": "Generate a score 0.0-1.0 based on whether this archetype preserves or transforms",
+    "Hierarchy ↔ Egalitarian": "Generate a score 0.0-1.0 based on whether this archetype prefers order or equality",
+    "Competitive ↔ Cooperative": "Generate a score 0.0-1.0 based on whether this archetype emphasizes competition or cooperation",
+    "Material ↔ Spiritual": "Generate a score 0.0-1.0 based on whether this archetype focuses on material or spiritual aspects",
+    "Nihilist ↔ Purposeful": "Generate a score 0.0-1.0 based on whether this archetype sees life as meaningless or deeply meaningful",
+    "Certainty ↔ Doubt": "Generate a score 0.0-1.0 based on whether this archetype is confident or questioning in approach"
+  },
+  "council_membership": "user-created"
+}
+
+Focus on the lens/wisdom area: "${lens}". This should be woven throughout their purpose, background, and archetypal nature.
+
+Create an authentic archetypal figure that embodies universal patterns while specializing in the specified area of wisdom.
+
+Return ONLY valid JSON. No additional text or explanation.`;
+
+    const messages: LLMMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Create an archetype advisor profile for: ${archetypeName}` }
     ];
 
     return await this.sendMessage(messages);

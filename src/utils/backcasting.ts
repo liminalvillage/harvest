@@ -10,6 +10,15 @@ import {
   createChildQuestGenerationPrompt,
   parseChildQuestResponse
 } from './timelineMapping';
+import {
+  createHolonicLLMPrompt,
+  parseHolonicLLMResponse,
+  createQuestNodeFromHolonicData,
+  buildQuestTreeHierarchy,
+  getAncestryChain,
+  getSiblingContext
+} from './holonicLLM';
+import type { HolonicLLMInput, HolonicLLMResponse } from '../types/holonicLLM';
 
 // Minimal shape we may receive from older callers
 export type AnyAdvisor = never; // We now require full CouncilAdvisorExtended everywhere
@@ -62,51 +71,119 @@ export async function generateSeedQuests(
   advisors: CouncilAdvisorExtended[]
 ): Promise<{ raw: string; seedQuests: QuestTreeNode[]; facilitator: CouncilAdvisorExtended }>
 {
+  console.log('🔮 Holonic generateSeedQuests called');
+  
   const headAdvisorName = questTree.headAdvisor;
   const facilitator = advisors.find(a => a.name === headAdvisorName) || advisors[0];
-  const persona = buildAdvisorPersonaContext(facilitator);
-
-  const prompt = `
-**Recursive Backcasting: Seed Quest Generation**
-
-You are ${headAdvisorName}, facilitating the council's backcasting process.
-
-${persona}
-
-**Vision**: "${questTree.vision.statement}"
-**Principles**: ${questTree.vision.principles.join(', ')}
-
-**Task**: Generate exactly 3 seed quests that must be completed for this vision to be fully realized.
-
-These are the foundational quests - the major domains of work that everything else builds upon.
-
-Each seed quest should be:
-1. **Essential** - the vision cannot be achieved without it
-2. **Distinct** - covers a different aspect than the others
-3. **Achievable** - can be broken down into actionable steps
-4. **Aligned** - supports the principles and vision
-
-**IMPORTANT**: Please format your response exactly as follows:
-
-SEED QUEST 1: [title]
-SEED QUEST 2: [title]  
-SEED QUEST 3: [title]
-
-RATIONALE: [brief explanation of why these three domains are fundamental to achieving the vision]
-`;
-
-  const response = await llmService.sendMessage([
-    { role: 'system', content: 'You are a recursive backcasting facilitator helping to create quest trees.' },
-    { role: 'user', content: prompt }
-  ]);
-
-  const titles = parseChildQuestResponse(response.content);
-  if (titles.length !== 3) {
-    throw new Error(`Expected 3 seed quests, got ${titles.length}`);
+  
+  if (!facilitator) {
+    throw new Error(`Facilitator ${headAdvisorName} not found in advisor list`);
   }
 
-  const created = createSeedQuests(questTree, titles);
-  return { raw: response.content, seedQuests: created, facilitator };
+  // Build holonic input for seed generation
+  const holonicInput: HolonicLLMInput = {
+    vision: questTree.vision,
+    designStreamsContext: {
+      additionalContext: "Future placeholder for elemental insights, advisor conversations, and design stream outputs"
+    },
+    facilitatingAdvisor: facilitator,
+    questTreeContext: {
+      maxGenerations: questTree.maxGenerations,
+      currentGeneration: 0, // Starting from vision
+      fullTree: questTree,
+      focusNodeId: 'vision', // No actual node for vision
+      ancestryChain: [], // No ancestry for seed generation
+      siblingContext: [] // No siblings for seed generation
+    },
+    targetGeneration: 1, // Generating first generation (seed quests)
+    requestType: 'seed_generation'
+  };
+
+  console.log('🔮 Creating holonic seed generation prompt...');
+  const prompt = createHolonicLLMPrompt(holonicInput);
+  console.log('🔮 Seed prompt preview (first 300 chars):', prompt.substring(0, 300));
+
+  console.log('🔮 Sending holonic seed generation request...');
+  let response;
+  try {
+    response = await llmService.sendMessage([
+      { role: 'system', content: 'You are a holonic quest generation system creating foundational seed quests.' },
+      { role: 'user', content: prompt }
+    ]);
+    console.log('🔮 Holonic seed response received, length:', response.content.length);
+    console.log('🔮 Seed response preview (first 300 chars):', response.content.substring(0, 300));
+  } catch (error) {
+    console.error('🔮 Holonic seed LLM request failed:', error);
+    throw error;
+  }
+
+  console.log('🔮 Parsing holonic seed response...');
+  const parseResult = parseHolonicLLMResponse(response.content);
+  
+  if (!parseResult.success || !parseResult.questNodes) {
+    // NO FALLBACK DURING DEVELOPMENT - Surface the error clearly
+    console.error('🚨 HOLONIC SEED PARSING FAILED:', parseResult.error);
+    console.error('🚨 Raw Seed LLM Response:', response.content);
+    console.error('🚨 This indicates the LLM is not returning proper JSON format for seed generation');
+    
+    // Throw detailed error for development troubleshooting
+    throw new Error(`🚨 HOLONIC SEED GENERATION FAILURE: ${parseResult.error}
+    
+    Raw response: ${response.content.substring(0, 500)}...
+    
+    This means:
+    1. The seed generation prompt may need adjustment
+    2. The LLM is not following JSON format instructions for seeds
+    3. The response parser may have bugs for seed generation
+    
+    Check console logs above for full details.`);
+  }
+
+  console.log('🔮 Creating rich seed quest nodes from holonic data...');
+  const seedQuests: QuestTreeNode[] = parseResult.questNodes.map((questData, index) => {
+    const nodeId = `seed-${index}-${Date.now()}`;
+    
+    return {
+      id: nodeId,
+      title: questData.title,
+      description: questData.description,
+      parentId: null, // Seeds have no parent
+      childIds: [],
+      generation: 1, // First generation
+      generationIndex: index,
+      status: 'pending',
+      dependencies: questData.dependencies,
+      skillsRequired: questData.skillsRequired,
+      resourcesRequired: questData.resourcesRequired,
+      impactCategory: questData.impactCategory,
+      estimatedDuration: questData.estimatedDuration,
+      estimatedStartDate: undefined,
+      estimatedEndDate: undefined,
+      participants: [],
+      futureState: questData.futureState,
+      assumptions: questData.assumptions,
+      questions: questData.questions,
+      actions: questData.actions,
+      successMetrics: questData.successMetrics,
+      feedbackLoopFrequency: undefined,
+      created: new Date().toISOString(),
+      createdBy: 'holonic_llm_seeds',
+      lastModified: new Date().toISOString(),
+      facilitatingAdvisor: questTree.headAdvisor,
+      advisorInsights: []
+    };
+  });
+
+  // Add seed quests to quest tree
+  seedQuests.forEach(seed => {
+    questTree.nodes[seed.id] = seed;
+    questTree.rootNodeIds.push(seed.id);
+  });
+
+  console.log('🔮 Holonic seed quests created:', seedQuests.length);
+  console.log('🔮 Seed relationships:', parseResult.metadata?.siblingRelationships);
+  
+  return { raw: response.content, seedQuests, facilitator };
 }
 
 export async function expandQuestNode(
@@ -116,26 +193,105 @@ export async function expandQuestNode(
   advisors: CouncilAdvisorExtended[]
 ): Promise<{ raw: string; childQuests: QuestTreeNode[]; facilitator: CouncilAdvisorExtended }>
 {
+  console.log('🔮 Holonic expandQuestNode called with:', { nodeId, maxGenerations: questTree.maxGenerations });
+  
+  const node = questTree.nodes[nodeId];
+  if (!node) {
+    throw new Error(`Node ${nodeId} not found in quest tree`);
+  }
+  
+  console.log('🔮 Node found:', { generation: node.generation, title: node.title });
+  
   const headAdvisorName = questTree.headAdvisor;
   const facilitator = advisors.find(a => a.name === headAdvisorName) || advisors[0];
-  const persona = buildAdvisorPersonaContext(facilitator);
-
-  const basePrompt = createChildQuestGenerationPrompt(questTree, nodeId, facilitator);
-  const prompt = `${persona}\n\n${basePrompt}`;
-
-  const response = await llmService.sendMessage([
-    { role: 'system', content: 'You are a recursive backcasting facilitator helping to create quest trees.' },
-    { role: 'user', content: prompt }
-  ]);
-
-  const titles = parseChildQuestResponse(response.content);
-  const branching = questTree.branchingFactor;
-  if (titles.length !== branching) {
-    throw new Error(`Expected ${branching} child quests, got ${titles.length}`);
+  
+  if (!facilitator) {
+    throw new Error(`Facilitator ${headAdvisorName} not found in advisor list`);
   }
 
-  const created = createChildQuests(questTree, nodeId, titles);
-  return { raw: response.content, childQuests: created, facilitator };
+  // Build holonic context with full tree awareness
+  const targetGeneration = node.generation + 1;
+  const ancestryChain = getAncestryChain(questTree, nodeId);
+  const siblingContext = getSiblingContext(questTree, nodeId);
+
+  console.log('🔮 Building holonic LLM input...');
+  const holonicInput: HolonicLLMInput = {
+    vision: questTree.vision,
+    designStreamsContext: {
+      additionalContext: "Future placeholder for elemental insights, advisor conversations, and design stream outputs"
+    },
+    facilitatingAdvisor: facilitator,
+    questTreeContext: {
+      maxGenerations: questTree.maxGenerations,
+      currentGeneration: node.generation,
+      fullTree: questTree,
+      focusNodeId: nodeId,
+      ancestryChain,
+      siblingContext
+    },
+    targetGeneration,
+    requestType: 'child_expansion'
+  };
+
+  console.log('🔮 Creating holonic prompt...');
+  const prompt = createHolonicLLMPrompt(holonicInput);
+  console.log('🔮 Prompt preview (first 300 chars):', prompt.substring(0, 300));
+
+  console.log('🔮 Sending holonic LLM request...');
+  let response;
+  try {
+    response = await llmService.sendMessage([
+      { role: 'system', content: 'You are a holonic quest generation system with full tree awareness.' },
+      { role: 'user', content: prompt }
+    ]);
+    console.log('🔮 Holonic response received, length:', response.content.length);
+    console.log('🔮 Response preview (first 300 chars):', response.content.substring(0, 300));
+  } catch (error) {
+    console.error('🔮 Holonic LLM request failed:', error);
+    throw error;
+  }
+
+  console.log('🔮 Parsing holonic response...');
+  const parseResult = parseHolonicLLMResponse(response.content);
+  
+  if (!parseResult.success || !parseResult.questNodes) {
+    // NO FALLBACK DURING DEVELOPMENT - Surface the error clearly
+    console.error('🚨 HOLONIC PARSING FAILED:', parseResult.error);
+    console.error('🚨 Raw LLM Response:', response.content);
+    console.error('🚨 This indicates the LLM is not returning proper JSON format');
+    
+    // Throw detailed error for development troubleshooting
+    throw new Error(`🚨 HOLONIC LLM INTEGRATION FAILURE: ${parseResult.error}
+    
+    Raw response: ${response.content.substring(0, 500)}...
+    
+    This means:
+    1. The LLM prompt may need adjustment
+    2. The LLM is not following JSON format instructions
+    3. The response parser may have bugs
+    
+    Check console logs above for full details.`);
+  }
+
+  console.log('🔮 Creating rich quest nodes from holonic data...');
+  const childQuests: QuestTreeNode[] = parseResult.questNodes.map((questData, index) => 
+    createQuestNodeFromHolonicData(questData, nodeId, targetGeneration, index, questTree)
+  );
+
+  // Update parent node's childIds
+  const parentNode = questTree.nodes[nodeId];
+  const newChildIds = childQuests.map(child => child.id);
+  parentNode.childIds.push(...newChildIds);
+
+  // Add new nodes to tree
+  childQuests.forEach(child => {
+    questTree.nodes[child.id] = child;
+  });
+
+  console.log('🔮 Holonic child quests created:', childQuests.length);
+  console.log('🔮 Sibling relationships:', parseResult.metadata?.siblingRelationships);
+  
+  return { raw: response.content, childQuests, facilitator };
 }
 
 

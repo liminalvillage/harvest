@@ -73,8 +73,8 @@ let filteredSeatPickerOptions: CouncilAdvisorExtended[] = [];
 let seatPickerQuery = '';
 let showCreateInPicker = false;
 
-    // Standalone "Seat Your Council" modal
-    let showSeatCouncilModal = false;
+    // DEPRECATED 2024-12-19: Standalone "Seat Your Council" modal
+    // let showSeatCouncilModal = false;
 
 	// Ritual state management
 	let showRitual = false;
@@ -187,14 +187,14 @@ let showCreateInPicker = false;
 	}
 
 	// Reactive statement to trigger UI update when AdvisorService becomes available
-	$: if (advisorService && connectionReady && Object.keys(circleInputs).length > 0) {
+	//$: if (advisorService && connectionReady && Object.keys(circleInputs).length > 0) {
 		// Force reactive update of the UI to display advisor names properly
-		console.log('🔄 Triggering reactive UI update for advisor names');
+	//	console.log('🔄 Triggering reactive UI update for advisor names');
 		// Small delay to ensure cache is populated
-		setTimeout(() => {
-			circleInputs = { ...circleInputs };
-		}, 100);
-	}
+	//	setTimeout(() => {
+	//		circleInputs = { ...circleInputs };
+	//	}, 100);
+	//}
 
 	// Holonic update system - keeps all parts synchronized without problematic subscriptions
 	function updateMetatronFromSession() {
@@ -586,9 +586,10 @@ What matter brings you before the council today?`;
 			console.warn(`⚠️ Advisor with ID "${advisorId}" not found, will open seat picker`);
 		}
 		
-        // No advisor seated here yet — open seat picker instead of free-text editing
+        // No advisor seated here yet — open advisor creation form directly
         selectedCircleForAction = circleId;
         showSeatPicker = true;
+        showCreateInPicker = true;
 	}
 
 	// Handle circle input change
@@ -689,11 +690,15 @@ What matter brings you before the council today?`;
 	async function addAdvisor() {
 		if (currentAdvisorName.trim() && currentAdvisorLens.trim()) {
 			
-			// Handle real person generation
+			// Handle LLM generation for all types
 			if (selectedAdvisorType === 'real') {
 				await generateRealPersonAdvisor();
+			} else if (selectedAdvisorType === 'mythic') {
+				await generateMythicAdvisor();
+			} else if (selectedAdvisorType === 'archetype') {
+				await generateArchetypeAdvisor();
 			} else {
-				// HOLONIC: Handle mythic/archetype advisor creation via AdvisorService
+				// Fallback: Manual creation (shouldn't happen with new flow)
 				if (!advisorService) {
 					console.error('❌ AdvisorService not available - cannot create advisor');
 					alert('Error: Advisor system not ready. Please refresh the page and try again.');
@@ -705,23 +710,79 @@ What matter brings you before the council today?`;
 				if (selectedAdvisorType === 'mythic') {
 					characterSpec = {
 						name: currentAdvisorName.trim(),
-						type: 'mythic',
-						realm_of_origin: 'Created realm',
-						powers_abilities: [`Wisdom of ${currentAdvisorLens.trim()}`],
-						symbols_artifacts: [],
-						mythological_context: `A mythic advisor representing ${currentAdvisorLens.trim()}`,
-						speaking_style: `Speaks from the perspective of mythic wisdom`,
-						background_context: `A ${selectedAdvisorType} advisor representing ${currentAdvisorLens.trim()}`
+						cultural_origin: "User-created realm",
+						mythic_domain: currentAdvisorLens.trim(),
+						sacred_symbols: ["Sacred geometry", "Flowing energy", "Cosmic patterns"],
+						divine_attributes: [
+							`Embodiment of ${currentAdvisorLens.trim()}`,
+							"Universal wisdom",
+							"Transformative guidance"
+						],
+						speaking_style: `Speaks with the profound wisdom of ${currentAdvisorLens.trim()}, offering guidance that transcends ordinary understanding`,
+						powers_and_gifts: [
+							`Mastery of ${currentAdvisorLens.trim()}`,
+							"Insight into hidden patterns", 
+							"Ability to transform perspective"
+						],
+						sacred_teachings: [
+							`The path of ${currentAdvisorLens.trim()} leads to wisdom`,
+							"All beings are interconnected through universal consciousness",
+							"Understanding comes through direct experience"
+						],
+						appearance: `A luminous being that embodies the essence of ${currentAdvisorLens.trim()}, radiating wisdom and compassion`,
+						ritual_associations: [
+							"Meditation and contemplation",
+							"Wisdom circles",
+							"Transformational ceremonies"
+						],
+						polarities: {
+							"Individual ↔ Collective": 0.7,
+							"Rational ↔ Empirical": 0.8,
+							"Idealist ↔ Pragmatist": 0.4,
+							"Order ↔ Chaos": 0.3,
+							"Authority ↔ Autonomy": 0.4,
+							"Optimist ↔ Pessimist": 0.2,
+							"Traditionalist ↔ Innovator": 0.6,
+							"Hierarchy ↔ Egalitarian": 0.8,
+							"Competitive ↔ Cooperative": 0.8,
+							"Material ↔ Spiritual": 0.9,
+							"Nihilist ↔ Purposeful": 0.9,
+							"Certainty ↔ Doubt": 0.3
+						}
 					};
 				} else if (selectedAdvisorType === 'archetype') {
 					characterSpec = {
 						name: currentAdvisorName.trim(),
-						type: 'archetype',
-						jung_archetype: 'Sage',
-						council_membership: 'user-created',
-						appearance: `Appears as a wise ${currentAdvisorLens.trim()} guide`,
-						speaking_style: `Speaks from the perspective of archetypal wisdom`,
-						background_context: `A ${selectedAdvisorType} advisor representing ${currentAdvisorLens.trim()}`
+						title: `The ${currentAdvisorName.trim()}`,
+						tagline: `Guardian of ${currentAdvisorLens.trim()}, Archetype of Wisdom`,
+						intro: `Greetings, I am ${currentAdvisorName.trim()}, the archetypal embodiment of ${currentAdvisorLens.trim()}.`,
+						background: `Born from the collective unconscious and the universal need for ${currentAdvisorLens.trim()}, I represent the timeless wisdom and patterns that guide humanity toward deeper understanding and transformation.`,
+						style_of_speech: `I speak with the authority of archetypal wisdom, using metaphors and insights drawn from the deep well of ${currentAdvisorLens.trim()}. My words carry the weight of collective human experience.`,
+						appearance: `I manifest as a figure that embodies the essence of ${currentAdvisorLens.trim()}, radiating the archetypal energy that has guided humanity throughout history. My presence is both timeless and immediate.`,
+						purpose: `I exist to guide seekers toward the deeper understanding and application of ${currentAdvisorLens.trim()}, helping them access the archetypal wisdom that can transform their perspective and actions.`,
+						prevention: `I work to prevent the loss of connection to the archetypal wisdom of ${currentAdvisorLens.trim()}, ensuring that these essential patterns continue to guide human development and understanding.`,
+						inspiration: `I draw inspiration from the collective wisdom of all who have embodied ${currentAdvisorLens.trim()} throughout history, synthesizing their insights into archetypal guidance for the present moment.`,
+						quaint_quirks: `I often speak in archetypal patterns and symbols, and when I share wisdom about ${currentAdvisorLens.trim()}, the air around me seems to shimmer with ancient knowledge and timeless understanding.`,
+						favorite_works: [
+							"The Archetypes and the Collective Unconscious by Carl Jung",
+							"The Hero with a Thousand Faces by Joseph Campbell",
+							"Women Who Run With the Wolves by Clarissa Pinkola Estés"
+						],
+						polarities: {
+							"Individual ↔ Collective": 0.8,
+							"Rational ↔ Empirical": 0.6,
+							"Idealist ↔ Pragmatist": 0.4,
+							"Order ↔ Chaos": 0.4,
+							"Authority ↔ Autonomy": 0.5,
+							"Optimist ↔ Pessimist": 0.3,
+							"Traditionalist ↔ Innovator": 0.6,
+							"Hierarchy ↔ Egalitarian": 0.7,
+							"Competitive ↔ Cooperative": 0.7,
+							"Material ↔ Spiritual": 0.7,
+							"Nihilist ↔ Purposeful": 0.9,
+							"Certainty ↔ Doubt": 0.4
+						},
+						council_membership: 'user-created'
 					};
 				}
 				
@@ -861,6 +922,156 @@ What matter brings you before the council today?`;
 		}
 	}
 
+	async function generateMythicAdvisor() {
+		if (!holosphere || !holonID) {
+			console.error("Cannot generate advisor: holosphere or holonID is null");
+			return;
+		}
+
+		isGeneratingAdvisor = true;
+		generationProgress = `Channeling the mythic essence of ${currentAdvisorName.trim()}...`;
+
+		try {
+			// Use component-level llmService
+			if (!llmService) {
+				llmService = new LLMService();
+			}
+			const response = await llmService.generateMythicAdvisor(
+				currentAdvisorName.trim(), 
+				currentAdvisorLens.trim()
+			);
+
+			if (response.error) {
+				throw new Error(response.error);
+			}
+
+			// Parse the JSON response
+			let advisorData;
+			try {
+				advisorData = JSON.parse(response.content);
+			} catch (parseError) {
+				throw new Error('Invalid JSON response from LLM');
+			}
+
+			// Create the full advisor structure
+			const newAdvisor: CouncilAdvisorExtended = {
+				name: advisorData.name,
+				type: 'mythic',
+				lens: currentAdvisorLens.trim(),
+				characterSpec: advisorData
+			};
+
+			// Create advisor via AdvisorService
+			if (advisorService) {
+				console.log(`🎭 Creating mythic advisor via AdvisorService: ${advisorData.name}`);
+				const advisorId = await advisorService.createAdvisor('mythic', newAdvisor, userID || 'ANONYMOUS');
+				console.log(`✅ Successfully created mythic advisor with ID: ${advisorId}`);
+			} else {
+				console.error('❌ AdvisorService not available - cannot create advisor');
+				alert('Error: Advisor system not ready. Please refresh the page and try again.');
+				return;
+			}
+
+			// Clear form
+			currentAdvisorName = '';
+			currentAdvisorLens = '';
+			saveHistoryData();
+			
+			// Reload advisors list
+			await loadHolonAdvisors();
+			
+			// Refresh seat picker if it's open
+			if (showSeatPicker) {
+				openSeatPicker();
+			}
+			
+			// Show success message
+			alert(`✅ Mythic Advisor Created Successfully!\n\n${advisorData.name} has been channeled and added to your advisor library.\n\nTo use this advisor in your ritual, click the "➕ Add to Ritual" button on their card below.`);
+
+		} catch (error) {
+			console.error('Error generating mythic advisor:', error);
+			alert(error instanceof Error ? error.message : 'Failed to generate mythic advisor');
+		} finally {
+			isGeneratingAdvisor = false;
+			generationProgress = '';
+		}
+	}
+
+	async function generateArchetypeAdvisor() {
+		if (!holosphere || !holonID) {
+			console.error("Cannot generate advisor: holosphere or holonID is null");
+			return;
+		}
+
+		isGeneratingAdvisor = true;
+		generationProgress = `Awakening the archetypal essence of ${currentAdvisorName.trim()}...`;
+
+		try {
+			// Use component-level llmService
+			if (!llmService) {
+				llmService = new LLMService();
+			}
+			const response = await llmService.generateArchetypeAdvisor(
+				currentAdvisorName.trim(), 
+				currentAdvisorLens.trim()
+			);
+
+			if (response.error) {
+				throw new Error(response.error);
+			}
+
+			// Parse the JSON response
+			let advisorData;
+			try {
+				advisorData = JSON.parse(response.content);
+			} catch (parseError) {
+				throw new Error('Invalid JSON response from LLM');
+			}
+
+			// Create the full advisor structure
+			const newAdvisor: CouncilAdvisorExtended = {
+				name: advisorData.name,
+				type: 'archetype',
+				lens: currentAdvisorLens.trim(),
+				characterSpec: advisorData
+			};
+
+			// Create advisor via AdvisorService
+			if (advisorService) {
+				console.log(`🎭 Creating archetype advisor via AdvisorService: ${advisorData.name}`);
+				const advisorId = await advisorService.createAdvisor('archetype', newAdvisor, userID || 'ANONYMOUS');
+				console.log(`✅ Successfully created archetype advisor with ID: ${advisorId}`);
+			} else {
+				console.error('❌ AdvisorService not available - cannot create advisor');
+				alert('Error: Advisor system not ready. Please refresh the page and try again.');
+				return;
+			}
+
+			// Clear form
+			currentAdvisorName = '';
+			currentAdvisorLens = '';
+			saveHistoryData();
+			
+			// Reload advisors list
+			await loadHolonAdvisors();
+			
+			// Refresh seat picker if it's open
+			if (showSeatPicker) {
+				openSeatPicker();
+			}
+			
+			// Show success message
+			alert(`✅ Archetype Advisor Created Successfully!\n\n${advisorData.name} has been awakened and added to your advisor library.\n\nTo use this advisor in your ritual, click the "➕ Add to Ritual" button on their card below.`);
+
+		} catch (error) {
+			console.error('Error generating archetype advisor:', error);
+			alert(error instanceof Error ? error.message : 'Failed to generate archetype advisor');
+		} finally {
+			isGeneratingAdvisor = false;
+			generationProgress = '';
+		}
+	}
+
 	// Load advisors from HoloSphere
 	async function loadHolonAdvisors() {
 		if (!holosphere || !holonID) {
@@ -872,13 +1083,34 @@ What matter brings you before the council today?`;
 			console.log('Loading advisors for holonID:', holonID);
 			if (advisorService) {
 				const allAdvisors = await advisorService.getAllAdvisors();
-				// Filter for user-created advisors (not HEC)
+				// Filter for user-created advisors (exclude all system advisors: HEC + static advisors)
+				console.log('🔍 Filtering advisors. All advisors:', allAdvisors.map(a => ({
+					name: a.name,
+					type: a.type,
+					creatorUserId: a.creatorUserId,
+					id: a.id
+				})));
+				
 				holonAdvisors = allAdvisors.filter(advisor => {
+					// Exclude HEC archetype advisors
 					if (advisor.type === 'archetype') {
 						const archetypeSpec = advisor.characterSpec as any;
-						return archetypeSpec?.council_membership !== 'ai-ecosystem';
+						const isHEC = archetypeSpec?.council_membership === 'ai-ecosystem';
+						if (isHEC) {
+							console.log(`🏛️ Excluding HEC advisor: ${advisor.name}`);
+							return false;
+						}
 					}
-					return true; // Include non-archetype advisors (real/mythic)
+					
+					// Exclude static system advisors (Joanna Macy, Quan Yin, etc.)
+					// These are migrated system advisors that should be treated like HEC members
+					if (advisor.creatorUserId === 'QBFRANK') {
+						console.log(`🛡️ Excluding static system advisor: ${advisor.name} (creatorUserId: ${advisor.creatorUserId})`);
+						return false;
+					}
+					
+					console.log(`✅ Including user-created advisor: ${advisor.name} (creatorUserId: ${advisor.creatorUserId})`);
+					return true; // Include only true user-created advisors
 				});
 				console.log('Loaded holon advisors:', holonAdvisors.length);
 			} else {
@@ -888,6 +1120,9 @@ What matter brings you before the council today?`;
 			console.error('Error loading holon advisors:', error);
 		}
 	}
+
+	// Note: Static system advisors (Joanna Macy, Quan Yin) are now properly excluded from holonAdvisors
+	// by filtering on creatorUserId === 'QBFRANK', so no special protection function needed
 
 	// Delete advisor using holonic system
 	async function deleteHolonAdvisor(advisorKey: string) {
@@ -1011,6 +1246,7 @@ function selectSeatAdvisor(a: CouncilAdvisorExtended) {
         saveCircleInput(selectedCircleForAction);
     }
     showSeatPicker = false;
+    showCreateInPicker = false;
 	}
 
 	// HOLONIC: Remove advisor ID from ritual by index
@@ -2255,8 +2491,9 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
     const seatId = selectedCircleForAction;
 		closeCircleSelectionModal();
     selectedCircleForAction = seatId;
-    // Open seat picker modal (curated HEC + user-created advisors)
+    // Open advisor creation form directly (skip seat picker)
     showSeatPicker = true;
+    showCreateInPicker = true;
 	}
 
 	async function sendAdvisorMessage(userMessage: string) {
@@ -2608,6 +2845,10 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 					
 					for (const advisor of deleteAdvisors) {
 						console.log(`   🗑️ Deleting: ID "${advisor.id}" (HasSpec: ${!!advisor.characterSpec})`);
+						
+						// Note: Static system advisors are excluded from holonAdvisors list, 
+						// so they won't appear in duplicates anyway
+						
 						try {
 							await advisorService.deleteAdvisor(advisor.id);
 							deletedCount++;
@@ -2920,6 +3161,8 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 								<div class="absolute inset-0 bg-gradient-to-r from-green-500/10 to-emerald-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
 							</button>
 							
+                            <!-- DEPRECATED 2024-12-19: "Seat Your Council" button - functionality moved to direct circle interaction on Metatron table -->
+                            <!-- 
                             <button 
                                 on:click={() => { showSeatCouncilModal = true; }}
                                 class="group relative bg-gray-800 hover:bg-gray-700 border-2 border-blue-500/50 hover:border-blue-400 text-white py-6 px-8 rounded-3xl transition-all duration-300 flex items-center justify-center gap-4 text-lg font-medium shadow-2xl hover:shadow-blue-500/25 backdrop-blur-sm"
@@ -2930,6 +3173,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
                                 Seat Your Council
                                 <div class="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 opacity-0 group-hover:opacity-100 rounded-3xl transition-opacity duration-300"></div>
 							</button>
+                            -->
 							
 							<button 
 								on:click={startRitual}
@@ -3066,7 +3310,8 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 				</div>
 			</div>
 
-			<!-- Temporary Debugging Tools -->
+			<!-- Temporary Debugging Tools - COMMENTED OUT 2024-12-19 - Can be restored if needed -->
+			<!-- 
 			<div class="bg-yellow-900 border border-yellow-600 rounded-3xl shadow-xl p-6">
 				<h3 class="text-xl font-bold text-yellow-100 mb-4">🔧 Debug Tools</h3>
 				<div class="space-y-3">
@@ -3093,6 +3338,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 					Use "Investigate" first to see what duplicates exist, then "Cleanup" to remove them.
 				</p>
 			</div>
+			-->
 		</div>
 	</div>
 </div>
@@ -3217,7 +3463,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
         <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl relative border border-gray-700">
             <div class="p-6 border-b border-gray-700 flex items-center justify-between">
                 <h3 class="text-white text-xl font-bold">Select an Advisor</h3>
-                <button class="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-700" on:click={() => { showSeatPicker = false; }} aria-label="Close">
+                <button class="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-700" on:click={() => { showSeatPicker = false; showCreateInPicker = false; }} aria-label="Close">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
@@ -3238,7 +3484,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
                             <div>
                                 <label class="block text-gray-300 mb-1 text-sm">Advisor Name</label>
                                 <input class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white"
-                                    bind:value={currentAdvisorName} placeholder="e.g., Donella Meadows" />
+                                    bind:value={currentAdvisorName} placeholder="e.g., Donella Meadows" use:focusOnMount />
                             </div>
                             <div>
                                 <label class="block text-gray-300 mb-1 text-sm">Type</label>
@@ -3254,16 +3500,13 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
                                     bind:value={currentAdvisorLens} placeholder="e.g., deep ecology" />
                             </div>
                         </div>
-                        <div class="flex gap-2">
+                        <div class="flex">
                             <button
-                                class="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold disabled:bg-gray-600"
+                                class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold disabled:bg-gray-600"
                                 disabled={!currentAdvisorName.trim() || !currentAdvisorLens.trim() || isGeneratingAdvisor}
                                 on:click={async () => { await addAdvisor(); openSeatPicker(); showCreateInPicker = false; }}
                             >
                                 {#if isGeneratingAdvisor}Creating…{:else}Create Advisor{/if}
-                            </button>
-                            <button class="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 text-white" on:click={() => { showCreateInPicker = false; }}>
-                                Cancel
                             </button>
                         </div>
                     </div>
@@ -3843,7 +4086,11 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 	</div>
 {/if}
 
-<!-- Seat Your Council Modal -->
+<!-- DEPRECATED 2024-12-19: "Seat Your Council" modal - functionality moved to direct circle interaction on Metatron table -->
+<!-- Users can now seat/replace advisors directly by clicking circles on the main Metatron display -->
+<!-- This modal was redundant - same SeatCouncilContent component is used inline in ritual workflow -->
+<!-- Can be fully removed after confirming no regressions -->
+<!-- 
 {#if showSeatCouncilModal}
 	<div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
 		<div class="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] relative border border-gray-700 flex flex-col">
@@ -3877,4 +4124,5 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 		</div>
 	</div>
 {/if}
+-->
 

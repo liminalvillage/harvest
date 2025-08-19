@@ -35,18 +35,88 @@ export interface CouncilAdvisorExtended {
   characterSpec: ArchetypeAdvisor | RealPersonAdvisor | MythicAdvisor;
 }
 
+// Enhanced speaking style for new schema (backward compatible)
+export interface SpeakingStyleExtended {
+  one_sentence_summary: string;
+  example_original_like?: string;
+  register?: 'colloquial' | 'neutral' | 'formal' | 'oratorical' | 'scholarly';
+  verbosity?: 'terse' | 'concise' | 'balanced' | 'expansive';
+  emotional_tone_baseline?: 'cool' | 'wry' | 'warm' | 'ardent' | 'grave' | 'playful';
+  humor_style?: Array<'none' | 'dry' | 'wry' | 'satirical' | 'self-deprecating' | 'playful' | 'acerbic'>;
+}
+
+export interface RhetoricalProfile {
+  devices?: string;
+  cadence?: {
+    avg_sentence_length?: number;
+    rhythm_notes?: string;
+    punctuation_habits?: string;
+  };
+  lexicon?: {
+    preferred_terms?: string[];
+    idioms_and_turns?: string[];
+    metaphor_domains?: string[];
+  };
+  accent_rendering?: {
+    mode?: 'none' | 'light_dialect_markers' | 'phonetic_stylization';
+    dialect_markers?: string[];
+    phonetic_rules?: string;
+  };
+  discourse_markers?: {
+    openings?: string[];
+    closings?: string[];
+    interjections?: string[];
+  };
+  argument_structure?: {
+    typical_moves?: string[];
+    moral_frame?: string[];
+  };
+}
+
+export interface StyleWeights {
+  diction?: number; // 0-1: plain/simple to ornate/technical
+  syntax?: number; // 0-1: short/direct to long/complex
+  rhetorical_devices?: number; // 0-1: rarely uses to frequent/foregrounded
+  humor_irony?: number; // 0-1: no humor to frequent
+  asks_questions?: number; // 0-1: never asks to frequent Socratic probing
+  confrontation?: number; // 0-1: gentle to combative
+  humor_frequency?: number; // 0-1: none to constant
+}
+
+export interface GenerationHints {
+  do_list?: string[];
+  dont_list?: string[];
+  reply_structure?: string;
+  length_preference_words?: number;
+  discourse_variation?: string;
+}
+
 export interface RealPersonAdvisor {
+  // Core required fields (backward compatible)
   name: string;
   historical_period: string;
   known_for: string[];
   key_beliefs: string[];
-  speaking_style: string;
+  speaking_style: string | SpeakingStyleExtended; // Enhanced: string OR rich object
   notable_quotes: string[];
   expertise_domains: string[];
   personality_traits: string[];
   background_context: string;
   approach_to_advice: string;
-  polarities: PolarityScore;
+  
+  // Enhanced biographical fields (new schema)
+  aliases?: string[];
+  birth_death_years?: string; // YYYY–YYYY format
+  region_culture?: string;
+  works_canon?: string[]; // Max 3 most important works
+  
+  // Enhanced behavioral modeling (new schema)
+  rhetorical_profile?: RhetoricalProfile;
+  style_weights?: StyleWeights;
+  generation_hints?: GenerationHints;
+  
+  // Backward compatibility: keep polarities optional for transition
+  polarities?: PolarityScore;
 }
 
 export interface MythicAdvisor {

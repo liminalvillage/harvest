@@ -1,21 +1,44 @@
 // Timeline Mapping / Recursive Backcasting Utilities
+// Truly holonic: minimal, self-similar, composable
 
-import type { QuestTree, QuestTreeNode, BackcastingSession, InquiryLoop, GenerationConfig } from '../types/questTree';
+import type { QuestTree, QuestTreeNode, GenerationConfig } from '../types/questTree';
 import type { RitualSession } from './holonCreator';
 import type { CouncilAdvisorExtended } from '../types/advisor-schema';
 
-/**
- * Creates a new quest tree from a ritual session
- */
+// ============================================================================
+// HOLONIC CORE: Single Source of Truth for Generation Wisdom
+// ============================================================================
+
+const GENERATION_WISDOM = {
+  guidance: [
+    "foundational domains that everything builds upon",
+    "major phases or components needed to complete the parent quest", 
+    "concrete work streams with clear deliverables",
+    "specific tasks or milestones that can be completed in days/weeks",
+    "granular action items with clear next steps",
+    "immediate, actionable steps that can be started today"
+  ],
+  examples: [
+    "'Establish Supply Chain', 'Build Community Support', 'Create Technical Infrastructure'",
+    "'Research Suppliers', 'Design Partnership Framework', 'Develop Pilot Program'",
+    "'Contact 5 Local Suppliers', 'Draft Partnership Agreement', 'Recruit 10 Beta Users'",
+    "'Call Johnson Lumber Co.', 'Write Partnership MOU Section 1', 'Post Recruitment on NextDoor'",
+    "'Find Johnson Lumber phone number', 'Research partnership legal requirements', 'Create NextDoor account'",
+    "'Google Johnson Lumber contact info', 'Download partnership template', 'Sign up at nextdoor.com'"
+  ]
+};
+
+// ============================================================================
+// HOLONIC OPERATIONS: Self-Similar Patterns
+// ============================================================================
+
 export function createQuestTreeFromRitual(
   ritualSession: RitualSession,
   headAdvisor: string,
   config: GenerationConfig
 ): QuestTree {
-  const treeId = `tree-${Date.now()}`;
-  
   return {
-    id: treeId,
+    id: `tree-${Date.now()}`,
     vision: {
       statement: ritualSession.wish_statement,
       principles: ritualSession.declared_values || [],
@@ -25,7 +48,7 @@ export function createQuestTreeFromRitual(
     rootNodeIds: [],
     maxGenerations: config.number,
     branchingFactor: config.branchingFactor,
-    impactDimensions: [], // Will be co-defined with user
+    impactDimensions: [],
     created: new Date().toISOString(),
     createdBy: 'council_ritual',
     lastModified: new Date().toISOString(),
@@ -34,77 +57,30 @@ export function createQuestTreeFromRitual(
   };
 }
 
-/**
- * Creates seed quests (generation 1) from the vision
- */
-export function createSeedQuests(
+// Unified quest creation - works for seeds (parentId=null) and children
+export function createQuests(
   questTree: QuestTree,
-  seedQuestTitles: string[]
+  titles: string[],
+  parentId: string | null = null
 ): QuestTreeNode[] {
-  const seedQuests: QuestTreeNode[] = [];
+  const parent = parentId ? questTree.nodes[parentId] : null;
+  const generation = parent ? parent.generation + 1 : 1;
   
-  seedQuestTitles.forEach((title, index) => {
-    const nodeId = `seed-${index}-${Date.now()}`;
+  return titles.map((title, index) => {
+    const nodeId = parentId ? `${parentId}-child-${index}-${Date.now()}` : `seed-${index}-${Date.now()}`;
     
-    const seedQuest: QuestTreeNode = {
+    const node: QuestTreeNode = {
       id: nodeId,
       title,
-      parentId: null, // Seeds have no parent - they connect directly to vision
+      parentId,
       childIds: [],
-      generation: 1,
+      generation,
       generationIndex: index,
       status: 'pending',
-      dependencies: [],
+      dependencies: parentId ? [parentId] : [],
       skillsRequired: [],
       resourcesRequired: [],
-      impactCategory: 'social', // Default, can be updated
-      participants: [],
-      assumptions: [],
-      questions: [],
-      actions: [],
-      created: new Date().toISOString(),
-      createdBy: 'timeline_mapping',
-      lastModified: new Date().toISOString()
-    };
-    
-    seedQuests.push(seedQuest);
-    questTree.nodes[nodeId] = seedQuest;
-    questTree.rootNodeIds.push(nodeId);
-  });
-  
-  return seedQuests;
-}
-
-/**
- * Creates child quests for a given parent quest
- */
-export function createChildQuests(
-  questTree: QuestTree,
-  parentNodeId: string,
-  childQuestTitles: string[]
-): QuestTreeNode[] {
-  const parentNode = questTree.nodes[parentNodeId];
-  if (!parentNode) {
-    throw new Error(`Parent node ${parentNodeId} not found`);
-  }
-  
-  const childQuests: QuestTreeNode[] = [];
-  
-  childQuestTitles.forEach((title, index) => {
-    const nodeId = `${parentNodeId}-child-${index}-${Date.now()}`;
-    
-    const childQuest: QuestTreeNode = {
-      id: nodeId,
-      title,
-      parentId: parentNodeId,
-      childIds: [],
-      generation: parentNode.generation + 1,
-      generationIndex: index,
-      status: 'pending',
-      dependencies: [parentNodeId], // Child depends on parent by default
-      skillsRequired: [],
-      resourcesRequired: [],
-      impactCategory: parentNode.impactCategory, // Inherit from parent
+      impactCategory: parent?.impactCategory || 'social',
       participants: [],
       assumptions: [],
       questions: [],
@@ -112,277 +88,181 @@ export function createChildQuests(
       created: new Date().toISOString(),
       createdBy: 'timeline_mapping',
       lastModified: new Date().toISOString(),
-      facilitatingAdvisor: parentNode.facilitatingAdvisor
+      facilitatingAdvisor: parent?.facilitatingAdvisor
     };
-    
-    childQuests.push(childQuest);
-    questTree.nodes[nodeId] = childQuest;
-    parentNode.childIds.push(nodeId);
-  });
-  
-  return childQuests;
-}
 
-/**
- * Creates the recursive inquiry loop context for AI council
- */
-export function createRecursiveInquiryContext(
-  questTree: QuestTree,
-  currentNodeId: string,
-  facilitatingAdvisor: CouncilAdvisorExtended
-): string {
-  const currentNode = questTree.nodes[currentNodeId];
-  if (!currentNode) {
-    throw new Error(`Quest node ${currentNodeId} not found`);
-  }
-  
-  // Build context from the vision and values
-  const vision = questTree.vision.statement;
-  const principles = questTree.vision.principles.join(', ');
-  
-  // Build context from parent and sibling quests
-  let questContext = '';
-  if (currentNode.parentId) {
-    const parentNode = questTree.nodes[currentNode.parentId];
-    questContext += `Parent Quest: "${parentNode.title}"\n`;
-    
-    // Add sibling context
-    const siblings = parentNode.childIds
-      .filter(id => id !== currentNodeId)
-      .map(id => questTree.nodes[id].title);
-    if (siblings.length > 0) {
-      questContext += `Sibling Quests: ${siblings.join(', ')}\n`;
+    // Add to quest tree
+    questTree.nodes[nodeId] = node;
+    if (parentId) {
+      parent!.childIds.push(nodeId);
+    } else {
+      questTree.rootNodeIds.push(nodeId);
     }
-  }
-  
-  // Add any previous assumptions, questions, actions
-  let previousWork = '';
-  if (currentNode.assumptions.length > 0) {
-    previousWork += `Previous Assumptions: ${currentNode.assumptions.join(', ')}\n`;
-  }
-  if (currentNode.questions.length > 0) {
-    previousWork += `Previous Questions: ${currentNode.questions.join(', ')}\n`;
-  }
-  if (currentNode.actions.length > 0) {
-    previousWork += `Previous Actions: ${currentNode.actions.join(', ')}\n`;
-  }
-  
-  return `
-**Recursive Backcasting Facilitation**
 
-You are ${facilitatingAdvisor.name}, facilitating the council's recursive inquiry for quest creation.
-
-**Vision**: ${vision}
-**Principles**: ${principles}
-
-**Current Quest**: "${currentNode.title}"
-- Generation: ${currentNode.generation}
-- Position: ${currentNode.generationIndex + 1} of ${questTree.branchingFactor}
-
-${questContext}
-
-${previousWork}
-
-**Recursive Inquiry Protocol**:
-Run this inquiry loop for the current quest:
-
-1. **What do we know?** - from the vision, principles, and previous quests
-2. **What assumptions are we making?** - about this quest and its execution
-3. **What questions arise?** - from these assumptions
-4. **What actions can we take?** - specific, achievable steps
-
-As the facilitating advisor, guide the council through this inquiry to:
-- Define 3 child quests that must be completed for this quest to succeed
-- Identify key assumptions, questions, and actionable steps
-- Ensure alignment with the vision and principles
-
-Keep responses focused and actionable. Each child quest should be:
-- Independently executable
-- A clear step toward completing the parent quest
-- Aligned with the regenerative vision
-`;
+    return node;
+  });
 }
 
-/**
- * Creates AI prompt for generating child quests
- */
+// Backwards compatibility
+export const createSeedQuests = (questTree: QuestTree, titles: string[]) => createQuests(questTree, titles);
+export const createChildQuests = (questTree: QuestTree, parentId: string, titles: string[]) => createQuests(questTree, titles, parentId);
+
 export function createChildQuestGenerationPrompt(
   questTree: QuestTree,
   parentNodeId: string,
   facilitatingAdvisor: CouncilAdvisorExtended
 ): string {
-  const parentNode = questTree.nodes[parentNodeId];
-  const vision = questTree.vision.statement;
-  const principles = questTree.vision.principles.join(', ');
-  
-  return `
-**Generate Child Quests**
+  const parent = questTree.nodes[parentNodeId];
+  if (!parent) throw new Error(`Parent node ${parentNodeId} not found`);
+
+  const gen = parent.generation + 1;
+  const guidance = GENERATION_WISDOM.guidance[gen - 1] || "specific, actionable steps";
+  const examples = GENERATION_WISDOM.examples[gen - 1] || "concrete actions";
+  const actionLevel = gen >= 4 ? 'concrete and immediately actionable' : 'specific than higher-level strategic planning';
+
+  return `**Generate Child Quests - Generation ${gen}**
 
 You are ${facilitatingAdvisor.name}, working with the council to break down a quest into actionable sub-quests.
 
-**Vision**: ${vision}
-**Principles**: ${principles}
+**Vision**: ${questTree.vision.statement}
+**Principles**: ${questTree.vision.principles.join(', ')}
 
-**Parent Quest**: "${parentNode.title}"
-${parentNode.description ? `Description: ${parentNode.description}` : ''}
+**Quest Tree Context**:
+- **Current Generation**: ${gen} (of ${questTree.maxGenerations} max)
+- **Parent Quest**: "${parent.title}"
 
-**Task**: Generate exactly 3 child quests that must be completed for "${parentNode.title}" to be successful.
+**Scale & Granularity Guidance**:
+These are ${guidance}.
+At Generation ${gen}, quests should be more ${actionLevel}.
+
+**Scale Examples for Gen ${gen}**:
+Example: ${examples}
+
+**Task**: Generate exactly 3 child quests that must be completed for "${parent.title}" to be successful.
 
 Each child quest should be:
 1. **Independently executable** - can be worked on separately
-2. **Specific and actionable** - clear what needs to be done
+2. **Appropriately scaled** - right level of detail for Generation ${gen}
 3. **Necessary** - the parent quest cannot succeed without it
-4. **Aligned** - supports the vision and principles
-
-Please provide:
-1. **Three child quest titles** (one line each)
-2. **Brief rationale** for why these three are essential
+4. **Sequential or parallel** - logical flow from these 3 to complete the parent
+5. **Aligned** - supports the vision and principles
 
 Format your response as:
 CHILD QUEST 1: [title]
 CHILD QUEST 2: [title]  
 CHILD QUEST 3: [title]
 
-RATIONALE: [brief explanation of why these three are necessary and sufficient]
-`;
+RATIONALE: [brief explanation of why these three are necessary and sufficient at this level of granularity]`;
 }
 
-/**
- * Parses AI response to extract quest titles (both seed and child quests)
- */
-export function parseChildQuestResponse(response: string): string[] {
-  const lines = response.split('\n');
-  const questTitles: string[] = [];
+export function createRecursiveInquiryContext(
+  questTree: QuestTree,
+  currentNodeId: string,
+  facilitatingAdvisor: CouncilAdvisorExtended
+): string {
+  const node = questTree.nodes[currentNodeId];
+  if (!node) throw new Error(`Quest node ${currentNodeId} not found`);
   
-  for (const line of lines) {
-    const trimmedLine = line.trim();
-    
-    // Look for various quest patterns
-    const questPatterns = [
-      /^SEED QUEST \d+:\s*(.+)$/i,
-      /^CHILD QUEST \d+:\s*(.+)$/i,
-      /^QUEST \d+:\s*(.+)$/i,
-      /^(\d+)\.\s*(.+)$/i, // Numbered lists
-      /^[-*]\s*(.+)$/i     // Bullet points
-    ];
-    
-    for (const pattern of questPatterns) {
-      const match = trimmedLine.match(pattern);
-      if (match) {
-        const title = match[1].trim();
-        if (title && !title.toLowerCase().includes('rationale') && !title.toLowerCase().includes('explanation')) {
-          questTitles.push(title);
-          break; // Only match one pattern per line
+  const parent = node.parentId ? questTree.nodes[node.parentId] : null;
+  const siblings = parent ? parent.childIds.filter(id => id !== currentNodeId).map(id => questTree.nodes[id].title) : [];
+
+  return `**Recursive Backcasting Facilitation**
+
+You are ${facilitatingAdvisor.name}, facilitating the council's recursive inquiry for quest creation.
+
+**Vision**: ${questTree.vision.statement}
+**Principles**: ${questTree.vision.principles.join(', ')}
+
+**Current Quest**: "${node.title}"
+- Generation: ${node.generation}
+- Position: ${node.generationIndex + 1} of ${questTree.branchingFactor}
+
+${parent ? `Parent Quest: "${parent.title}"` : ''}
+${siblings.length ? `Sibling Quests: ${siblings.join(', ')}` : ''}
+
+**Recursive Inquiry Protocol**:
+1. **What do we know?** - from the vision, principles, and previous quests
+2. **What assumptions are we making?** - about this quest and its execution
+3. **What questions arise?** - from these assumptions
+4. **What actions can we take?** - specific, achievable steps
+
+Keep responses focused and actionable. Each child quest should be:
+- Independently executable
+- A clear step toward completing the parent quest
+- Aligned with the regenerative vision`;
+}
+
+export function parseChildQuestResponse(response: string): string[] {
+  const patterns = [
+    /^SEED QUEST \d+:\s*(.+)$/i,
+    /^CHILD QUEST \d+:\s*(.+)$/i,
+    /^QUEST \d+:\s*(.+)$/i,
+    /^(\d+)\.\s*(.+)$/i,
+    /^[-*]\s*(.+)$/i
+  ];
+  
+  const titles = response
+    .split('\n')
+    .map(line => line.trim())
+    .map(line => {
+      for (const pattern of patterns) {
+        const match = line.match(pattern);
+        if (match) {
+          const title = match[1].trim();
+          if (title && !title.toLowerCase().includes('rationale')) {
+            return title;
+          }
         }
       }
-    }
-  }
-  
-  // If we found quests, return them. Otherwise, try to extract from the full response
-  if (questTitles.length > 0) {
-    return questTitles;
-  }
-  
-  // Fallback: Look for any lines that might be quest titles
-  const fallbackLines = lines.filter(line => {
-    const trimmed = line.trim();
-    return trimmed.length > 5 && 
-           trimmed.length < 100 && 
-           !trimmed.toLowerCase().includes('rationale') &&
-           !trimmed.toLowerCase().includes('explanation') &&
-           !trimmed.toLowerCase().includes('vision') &&
-           !trimmed.toLowerCase().includes('principle');
-  });
-  
-  // Take the first 3 lines that look like quest titles
-  return fallbackLines.slice(0, 3).map(line => line.trim());
+      return null;
+    })
+    .filter(Boolean) as string[];
+
+  // Fallback: reasonable lines if parsing fails
+  return titles.length > 0 ? titles : response
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 5 && line.length < 100 && !line.toLowerCase().includes('rationale'))
+    .slice(0, 3);
 }
 
-/**
- * Calculates quest tree statistics
- */
-export function calculateTreeStats(questTree: QuestTree): {
-  totalNodes: number;
-  nodesByGeneration: Record<number, number>;
-  completionRate: number;
-  criticalPath: string[];
-} {
-  const nodes = Object.values(questTree.nodes);
-  const totalNodes = nodes.length;
-  
-  const nodesByGeneration: Record<number, number> = {};
-  let completedNodes = 0;
-  
-  nodes.forEach(node => {
-    nodesByGeneration[node.generation] = (nodesByGeneration[node.generation] || 0) + 1;
-    if (node.status === 'completed') {
-      completedNodes++;
-    }
-  });
-  
-  const completionRate = totalNodes > 0 ? (completedNodes / totalNodes) * 100 : 0;
-  
-  // Simple critical path calculation (nodes with most dependencies)
-  const criticalPath = nodes
-    .sort((a, b) => b.dependencies.length - a.dependencies.length)
-    .slice(0, 3)
-    .map(node => node.title);
-  
-  return {
-    totalNodes,
-    nodesByGeneration,
-    completionRate,
-    criticalPath
-  };
-}
-
-/**
- * Validates quest tree structure
- */
-export function validateQuestTree(questTree: QuestTree): {
-  isValid: boolean;
-  errors: string[];
-} {
+export function validateQuestTree(questTree: QuestTree) {
   const errors: string[] = [];
   
-  // Check that all referenced nodes exist
-  Object.values(questTree.nodes).forEach(node => {
+  // Check roots exist
+  questTree.rootNodeIds.forEach(id => {
+    if (!questTree.nodes[id]) errors.push(`Root node ${id} not found`);
+  });
+  
+  // Check parent-child relationships
+  Object.entries(questTree.nodes).forEach(([id, node]) => {
     if (node.parentId && !questTree.nodes[node.parentId]) {
-      errors.push(`Node ${node.id} references non-existent parent ${node.parentId}`);
+      errors.push(`Node ${id} has non-existent parent`);
     }
-    
     node.childIds.forEach(childId => {
-      if (!questTree.nodes[childId]) {
-        errors.push(`Node ${node.id} references non-existent child ${childId}`);
-      }
-    });
-    
-    node.dependencies.forEach(depId => {
-      if (!questTree.nodes[depId]) {
-        errors.push(`Node ${node.id} has dependency on non-existent node ${depId}`);
+      if (!questTree.nodes[childId] || questTree.nodes[childId].parentId !== id) {
+        errors.push(`Invalid child relationship for ${id}`);
       }
     });
   });
   
-  // Check root nodes are actually in the tree
-  questTree.rootNodeIds.forEach(rootId => {
-    if (!questTree.nodes[rootId]) {
-      errors.push(`Root node ${rootId} not found in tree nodes`);
-    }
-  });
+  return { isValid: errors.length === 0, errors };
+}
+
+export function calculateTreeStats(questTree: QuestTree) {
+  const nodes = Object.values(questTree.nodes);
+  const byGeneration: Record<number, number> = {};
+  let completed = 0;
   
-  // Check generation consistency
-  Object.values(questTree.nodes).forEach(node => {
-    if (node.parentId) {
-      const parent = questTree.nodes[node.parentId];
-      if (parent && parent.generation !== node.generation - 1) {
-        errors.push(`Node ${node.id} generation ${node.generation} inconsistent with parent generation ${parent.generation}`);
-      }
-    }
+  nodes.forEach(node => {
+    byGeneration[node.generation] = (byGeneration[node.generation] || 0) + 1;
+    if (node.status === 'completed') completed++;
   });
   
   return {
-    isValid: errors.length === 0,
-    errors
+    totalNodes: nodes.length,
+    nodesByGeneration: byGeneration,
+    completionRate: nodes.length > 0 ? completed / nodes.length : 0,
+    maxDepth: Math.max(...nodes.map(n => n.generation), 0)
   };
 }
