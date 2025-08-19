@@ -35,6 +35,15 @@
         ? new Date(quest.when).toTimeString().slice(0, 5)
         : "12:00";
 
+    // Dependency management
+    let showDependencyEditor = false;
+    let availableTasks: Array<{id: string, title: string}> = [];
+
+    // Recurring task management
+    let showRecurringEditor = false;
+    let recurringTaskId = quest.recurringTaskId || '';
+    let recurringStatus = quest.status || 'ongoing';
+
     let editingTitle = false;
     let editedTitle = quest.title;
 
@@ -83,6 +92,7 @@
         document.addEventListener("click", handleClickOutside);
 
         let unsubscribeUsers: (() => void) | undefined;
+        let unsubscribeQuests: (() => void) | undefined;
 
         if (holosphere && holonId) {
             // Fetch initial users and build a userStore keyed by user.username
@@ -156,12 +166,56 @@
             } catch (e) {
                 console.error("Error subscribing to user updates in TaskModal:", e);
             }
+
+            // Fetch available tasks for dependencies
+            (async () => {
+                try {
+                    const initialQuestsData = await holosphere.getAll(holonId, "quests");
+                    if (Array.isArray(initialQuestsData)) {
+                        availableTasks = initialQuestsData
+                            .filter((q: any) => q && q.id && q.id !== questId) // Exclude current task
+                            .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task' }));
+                    } else if (typeof initialQuestsData === 'object' && initialQuestsData !== null) {
+                        availableTasks = Object.values(initialQuestsData)
+                            .filter((q: any) => q && q.id && q.id !== questId) // Exclude current task
+                            .map((q: any) => ({ id: q.id, title: q.title || 'Untitled Task' }));
+                    }
+
+                    // Subscribe to quest updates
+                    const questOff = holosphere.subscribe(holonId, "quests", (updatedQuest: any, subKey?: string) => {
+                        if (updatedQuest && updatedQuest.id && updatedQuest.id !== questId) {
+                            // Update available tasks
+                            const existingIndex = availableTasks.findIndex(t => t.id === updatedQuest.id);
+                            if (existingIndex >= 0) {
+                                availableTasks[existingIndex] = { 
+                                    id: updatedQuest.id, 
+                                    title: updatedQuest.title || 'Untitled Task' 
+                                };
+                            } else {
+                                availableTasks = [...availableTasks, { 
+                                    id: updatedQuest.id, 
+                                    title: updatedQuest.title || 'Untitled Task' 
+                                }];
+                            }
+                            availableTasks = [...availableTasks]; // Trigger reactivity
+                        }
+                    });
+                    if (typeof questOff === 'function') {
+                        unsubscribeQuests = questOff;
+                    }
+                } catch (e) {
+                    console.error("Error fetching quests for dependencies in TaskModal:", e);
+                }
+            })();
         }
 
         return () => {
             document.removeEventListener("click", handleClickOutside);
             if (unsubscribeUsers) {
                 unsubscribeUsers();
+            }
+            if (unsubscribeQuests) {
+                unsubscribeQuests();
             }
         };
     });
@@ -669,6 +723,41 @@
         }
     }
 
+    // Dependency management functions
+    async function addDependency(taskId: string) {
+        if (!taskId) return;
+        
+        const currentDependencies = quest.dependsOn || [];
+        if (!currentDependencies.includes(taskId)) {
+            const updatedDependencies = [...currentDependencies, taskId];
+            await updateQuest({ dependsOn: updatedDependencies });
+        }
+    }
+
+    async function removeDependency(index: number) {
+        const currentDependencies = quest.dependsOn || [];
+        const updatedDependencies = currentDependencies.filter((_, i) => i !== index);
+        await updateQuest({ dependsOn: updatedDependencies });
+    }
+
+    async function saveRecurringSettings() {
+        const updates: any = {};
+        
+        if (recurringTaskId !== quest.recurringTaskId) {
+            updates.recurringTaskId = recurringTaskId || null;
+        }
+        
+        if (recurringStatus !== quest.status) {
+            updates.status = recurringStatus;
+        }
+        
+        if (Object.keys(updates).length > 0) {
+            await updateQuest(updates);
+        }
+        
+        showRecurringEditor = false;
+    }
+
     // Add function to create checklist for this task
     async function createChecklistForTask() {
         if (!holosphere || !holonId || !questId) {
@@ -778,7 +867,7 @@
     transition:fade
 >
     <div
-        class="bg-gray-800 rounded-xl max-w-2xl w-full shadow-xl relative"
+        class="bg-gray-800 rounded-xl max-w-2xl w-full max-h-[90vh] shadow-xl relative flex flex-col"
         transition:scale={{ duration: 200, start: 0.95 }}
         role="dialog"
         aria-modal="true"
@@ -809,7 +898,7 @@
             </svg>
         </button>
 
-        <div class="p-6">
+        <div class="p-6 overflow-y-auto flex-1 modal-content">
             <!-- Header -->
             <div class="flex justify-between items-start mb-6">
                 <div>
@@ -908,9 +997,49 @@
                             {quest.category}
                         </span>
                     {/if}
-                    </div>
-                </div>
-            </div>
+                            </div>
+    </div>
+</div>
+
+<style>
+    /* Custom scrollbar for webkit browsers */
+    ::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #374151;
+        border-radius: 3px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: #6B7280;
+        border-radius: 3px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: #9CA3AF;
+    }
+
+    /* Modal content scrollbar styling */
+    .modal-content::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .modal-content::-webkit-scrollbar-track {
+        background: #374151;
+        border-radius: 4px;
+    }
+    
+    .modal-content::-webkit-scrollbar-thumb {
+        background: #6B7280;
+        border-radius: 4px;
+    }
+    
+    .modal-content::-webkit-scrollbar-thumb:hover {
+        background: #9CA3AF;
+    }
+</style>
 
             <div class="space-y-6 text-gray-300">
                 <!-- Description -->
@@ -958,6 +1087,191 @@
                         {/if}
                     {/if}
                 </div>
+
+                <!-- Dependencies Section -->
+                <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-lg font-semibold flex items-center gap-2">
+                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Dependencies
+                        </h3>
+                        <button
+                            class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                            on:click={() => showDependencyEditor = !showDependencyEditor}
+                            on:touchstart={handleButtonTouchStart}
+                            on:touchend={handleButtonTouchEnd}
+                            on:touchcancel={handleButtonTouchCancel}
+                            type="button"
+                        >
+                            {showDependencyEditor ? 'Cancel' : 'Edit Dependencies'}
+                        </button>
+                    </div>
+
+                    {#if showDependencyEditor}
+                        <div class="bg-gray-700 p-4 rounded-lg border border-gray-600 space-y-4">
+                            <div class="space-y-2">
+                                <label for="dependency-select" class="block text-sm font-medium text-gray-300">
+                                    Add Task Dependency
+                                </label>
+                                <div class="flex gap-2">
+                                    <select
+                                        id="dependency-select"
+                                        class="flex-1 bg-gray-800 text-white rounded-lg border border-gray-600 p-2 text-sm"
+                                        on:change={(e) => {
+                                            const selectedId = e.target.value;
+                                            if (selectedId && selectedId !== 'default') {
+                                                addDependency(selectedId);
+                                                e.target.value = 'default'; // Reset selection
+                                            }
+                                        }}
+                                    >
+                                        <option value="default">Select a task...</option>
+                                        {#each availableTasks.filter(task => !quest.dependsOn?.includes(task.id)) as task}
+                                            <option value={task.id}>{task.title}</option>
+                                        {/each}
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            {#if quest.dependsOn && quest.dependsOn.length > 0}
+                                <div class="space-y-2">
+                                    <label class="block text-sm font-medium text-gray-300">Current Dependencies</label>
+                                    <div class="space-y-2">
+                                        {#each quest.dependsOn as depId, index}
+                                            {@const depTask = availableTasks.find(t => t.id === depId)}
+                                            <div class="flex items-center justify-between bg-gray-800 p-2 rounded border border-gray-600">
+                                                <span class="text-sm text-gray-300">
+                                                    {depTask ? depTask.title : depId}
+                                                </span>
+                                                <button
+                                                    class="text-red-400 hover:text-red-300 transition-colors touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center p-1"
+                                                    on:click={() => removeDependency(index)}
+                                                    on:touchstart={handleButtonTouchStart}
+                                                    on:touchend={handleButtonTouchEnd}
+                                                    on:touchcancel={handleButtonTouchCancel}
+                                                    type="button"
+                                                >
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                </div>
+                            {/if}
+                        </div>
+                    {:else if quest.dependsOn && quest.dependsOn.length > 0}
+                        <div class="space-y-2">
+                            <div class="text-sm text-gray-300">This task depends on:</div>
+                            <div class="space-y-2">
+                                {#each quest.dependsOn as depId}
+                                    {@const depTask = availableTasks.find(t => t.id === depId)}
+                                    <div class="bg-gray-800 p-2 rounded border border-gray-600">
+                                        <span class="text-sm text-gray-300">
+                                            {depTask ? depTask.title : depId}
+                                        </span>
+                                    </div>
+                                {/each}
+                            </div>
+                        </div>
+                    {:else}
+                        <p class="text-gray-500 text-sm">No dependencies</p>
+                    {/if}
+                </div>
+
+                <!-- Recurring Section -->
+                {#if quest.recurringTaskId || quest.status === 'recurring' || quest.status === 'repeating'}
+                    <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-lg font-semibold flex items-center gap-2">
+                                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                                Recurring Task
+                            </h3>
+                            <button
+                                class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                on:click={() => showRecurringEditor = !showRecurringEditor}
+                                on:touchstart={handleButtonTouchStart}
+                                on:touchend={handleButtonTouchEnd}
+                                on:touchcancel={handleButtonTouchCancel}
+                                type="button"
+                            >
+                                {showRecurringEditor ? 'Cancel' : 'Edit Recurring'}
+                            </button>
+                        </div>
+
+                        {#if showRecurringEditor}
+                            <div class="bg-gray-700 p-4 rounded-lg border border-gray-600 space-y-4">
+                                <div class="space-y-2">
+                                    <label for="recurring-task-id" class="block text-sm font-medium text-gray-300">
+                                        Recurring Task ID
+                                    </label>
+                                    <input
+                                        id="recurring-task-id"
+                                        type="text"
+                                        bind:value={recurringTaskId}
+                                        placeholder="Enter recurring task ID..."
+                                        class="w-full bg-gray-800 text-white rounded-lg border border-gray-600 p-2 text-sm"
+                                    />
+                                </div>
+                                
+                                <div class="space-y-2">
+                                    <label for="recurring-status" class="block text-sm font-medium text-gray-300">
+                                        Recurring Status
+                                    </label>
+                                    <select
+                                        id="recurring-status"
+                                        bind:value={recurringStatus}
+                                        class="w-full bg-gray-800 text-white rounded-lg border border-gray-600 p-2 text-sm"
+                                    >
+                                        <option value="ongoing">Ongoing</option>
+                                        <option value="recurring">Recurring</option>
+                                        <option value="repeating">Repeating</option>
+                                        <option value="completed">Completed</option>
+                                    </select>
+                                </div>
+
+                                <div class="flex justify-end space-x-2">
+                                    <button
+                                        class="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                        on:click={() => showRecurringEditor = false}
+                                        on:touchstart={handleButtonTouchStart}
+                                        on:touchend={handleButtonTouchEnd}
+                                        on:touchcancel={handleButtonTouchCancel}
+                                        type="button"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                        on:click={saveRecurringSettings}
+                                        on:touchstart={handleButtonTouchStart}
+                                        on:touchend={handleButtonTouchEnd}
+                                        on:touchcancel={handleButtonTouchCancel}
+                                        type="button"
+                                    >
+                                        Save
+                                    </button>
+                                </div>
+                            </div>
+                        {:else}
+                            <div class="space-y-2">
+                                {#if quest.recurringTaskId}
+                                    <div class="bg-gray-800 p-2 rounded border border-gray-600">
+                                        <span class="text-sm text-gray-300">Recurring Task ID: {quest.recurringTaskId}</span>
+                                    </div>
+                                {/if}
+                                <div class="bg-gray-800 p-2 rounded border border-gray-600">
+                                    <span class="text-sm text-gray-300">Status: {quest.status}</span>
+                                </div>
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
 
                 <!-- Schedule Section -->
                 <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">

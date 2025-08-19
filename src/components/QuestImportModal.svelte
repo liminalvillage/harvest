@@ -394,7 +394,7 @@
 								class="hidden"
 								on:change={handleFileSelect}
 							/>
-							<span class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+							<span class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors">
 								Choose File
 							</span>
 						</label>
@@ -470,7 +470,7 @@
 							<div class="flex gap-2">
 								<button
 									on:click={parseClipboardContent}
-									class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+									class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
 									disabled={!clipboardContent.trim()}
 								>
 									Parse JSON
@@ -589,7 +589,7 @@
 				{#if activeTab === 'library'}
 					<button
 						on:click={importSelectedQuests}
-						class="px-6 py-2.5 text-sm font-medium rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+						class="px-6 py-2.5 text-sm font-medium rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
 						disabled={selectedLibraryQuests.length === 0}
 					>
 						{isLoading ? 'Processing...' : `Import ${selectedLibraryQuests.length} Quest${selectedLibraryQuests.length !== 1 ? 's' : ''}`}

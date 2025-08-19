@@ -431,22 +431,25 @@
             </button>
         {/if}
 
-        <!-- Wallet -->
-        {#if $walletAddress}
-            <div class="wallet-info">
-                <span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
-                <button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
-            </div>
-        {:else}
-            <button on:click={connectWallet} class="wallet-button">
-                Connect Wallet
+        <!-- Wallet and API Keys - Vertical Layout -->
+        <div class="flex flex-col gap-2">
+            <!-- Wallet -->
+            {#if $walletAddress}
+                <div class="wallet-info">
+                    <span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
+                    <button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
+                </div>
+            {:else}
+                <button on:click={connectWallet} class="wallet-button">
+                    Connect Wallet
+                </button>
+            {/if}
+            
+            <!-- API Key Configuration Button -->
+            <button on:click={openApiModal} class="wallet-button">
+                🔐 API Keys
             </button>
-        {/if}
-        
-        <!-- API Key Configuration Button -->
-        <button on:click={openApiModal} class="wallet-button">
-            🔐 API Keys
-        </button>
+        </div>
     </div>
 </div>
 

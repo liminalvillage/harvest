@@ -1466,7 +1466,7 @@
 					
 					<button
 						on:click={() => showImportModal = true}
-						class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-full flex items-center gap-2 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl text-sm font-medium"
+						class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center gap-2 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl text-sm font-medium"
 						aria-label="Import quests from JSON file or library"
 						title="Import quests from JSON file or library"
 					>
