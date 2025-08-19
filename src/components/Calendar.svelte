@@ -1203,6 +1203,7 @@
     <div class="flex justify-between items-center mb-6">
         <div class="flex items-center gap-4">
             <div class="flex gap-2">
+                <!-- svelte-ignore a11y_consider_explicit_label -->
                 <button 
                     class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
                     on:click={() => handleNavigation(-1)}
@@ -1429,6 +1430,16 @@
                                 eventDate.setHours(i + 6);
                                 handleDateClick(eventDate);
                             }}
+                            on:keydown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    const eventDate = new Date(currentDate);
+                                    eventDate.setHours(i + 6);
+                                    handleDateClick(eventDate);
+                                }
+                            }}
+                            role="button"
+                            tabindex="0"
                         >
                             <div class="text-xs text-gray-500 group-hover:text-gray-400">
                                 {(i + 6).toString().padStart(2, '0')}:00

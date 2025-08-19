@@ -60,6 +60,15 @@
 	let holonID: string = '';
 	let showToast = false;
 
+	// API Key Configuration Modal
+	// NOTE: This is a placeholder UI - keys are collected but not stored/used yet
+	let showApiModal = false;
+	let apiKeys = {
+		openai: '',
+		anthropic: '',
+		groq: ''
+	};
+
 	// Ethereum wallet connection
 	async function connectWallet() {
 		if (browser && typeof window.ethereum !== 'undefined') {
@@ -134,6 +143,46 @@
 	function disconnectWallet() {
 		walletAddress.set(null);
 		// Potentially clear other related stored data if needed
+	}
+
+	// API Key Modal Functions
+	// NOTE: This is a placeholder implementation for future secure API key management
+	// Currently, the modal collects keys but does NOT save or use them anywhere
+	
+	function openApiModal() {
+		showApiModal = true;
+	}
+
+	function closeApiModal() {
+		showApiModal = false;
+		// Clear the input fields when closing (since we're not saving)
+		// This ensures keys don't remain in memory
+		apiKeys = {
+			openai: '',
+			anthropic: '',
+			groq: ''
+		};
+	}
+
+	function handleApiSubmit() {
+		// CURRENT BEHAVIOR: Keys are logged (redacted) but immediately discarded
+		// The LLMService still uses environment variables only (src/utils/llm-service.ts)
+		// 
+		// TODO FOR FUTURE IMPLEMENTATION:
+		// 1. Implement secure storage (encrypted localStorage or secure session storage)
+		// 2. Update LLMService to accept runtime API keys instead of just env vars
+		// 3. Add API key validation (format checking, test API calls)
+		// 4. Add key management UI (show which keys are set, allow individual clearing)
+		// 5. Consider key expiration/refresh mechanisms
+		
+		console.log('API Keys entered (not saved for security):', {
+			openai: apiKeys.openai ? '***' : 'empty',
+			anthropic: apiKeys.anthropic ? '***' : 'empty', 
+			groq: apiKeys.groq ? '***' : 'empty'
+		});
+		
+		// Keys are immediately discarded for security
+		closeApiModal();
 	}
 
 	// Use centralized holon name service
@@ -393,6 +442,11 @@
                 Connect Wallet
             </button>
         {/if}
+        
+        <!-- API Key Configuration Button -->
+        <button on:click={openApiModal} class="wallet-button">
+            🔐 API Keys
+        </button>
     </div>
 </div>
 
@@ -404,4 +458,77 @@
 	>
 		To begin using the dashboard, please type the Holon ID in the search bar.<br/> You can get the Holon ID using the command /id on any chat containing the Telegram bot @HolonsBot.
 	</button>
+{/if}
+
+<!-- API Key Configuration Modal -->
+{#if showApiModal}
+	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={closeApiModal} on:keydown={(e) => e.key === 'Escape' && closeApiModal()}>
+		<div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4" role="document" on:click={(e) => e.stopPropagation()}>
+			<div class="flex justify-between items-center mb-4">
+				<h2 class="text-xl font-bold text-white">🔐 API Key Configuration</h2>
+				<button on:click={closeApiModal} class="text-gray-400 hover:text-white" aria-label="Close modal">
+					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+					</svg>
+				</button>
+			</div>
+			
+			<form on:submit|preventDefault={handleApiSubmit} class="space-y-4">
+				<div>
+					<label for="openai-key" class="block text-sm font-medium text-gray-300 mb-2">OpenAI API Key</label>
+					<input
+						type="password"
+						id="openai-key"
+						bind:value={apiKeys.openai}
+						placeholder="sk-..."
+						class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+					/>
+				</div>
+				
+				<div>
+					<label for="anthropic-key" class="block text-sm font-medium text-gray-300 mb-2">Anthropic API Key</label>
+					<input
+						type="password"
+						id="anthropic-key"
+						bind:value={apiKeys.anthropic}
+						placeholder="sk-ant-..."
+						class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+					/>
+				</div>
+				
+				<div>
+					<label for="groq-key" class="block text-sm font-medium text-gray-300 mb-2">Groq API Key</label>
+					<input
+						type="password"
+						id="groq-key"
+						bind:value={apiKeys.groq}
+						placeholder="gsk_..."
+						class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+					/>
+				</div>
+				
+				<div class="bg-yellow-900 border border-yellow-600 rounded-md p-3 mb-4">
+					<p class="text-sm text-yellow-200">
+						⚠️ <strong>Security Notice:</strong> API keys are not saved for security reasons. You'll need to re-enter them each session until secure storage is implemented.
+					</p>
+				</div>
+				
+				<div class="flex justify-end space-x-3">
+					<button
+						type="button"
+						on:click={closeApiModal}
+						class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+					>
+						Cancel
+					</button>
+					<button
+						type="submit"
+						class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+					>
+						Apply
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
 {/if}
