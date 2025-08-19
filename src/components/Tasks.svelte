@@ -14,6 +14,7 @@
 	import Confetti from "./Confetti.svelte";
 	import { getHologramSourceName } from "../utils/holonNames";
 	import { taskSortStore, updateTaskSort, sortTasks, type SortCriteria } from "../dashboard/store";
+	import { addItalianQuestsToHolosphere } from "../utils/italianQuests";
 
 	interface Quest {
 		id: string;
@@ -189,9 +190,9 @@
 				}
 			}
 
-			// Show tasks and recurring tasks (default to 'task' if type is missing)
+			// Show tasks, quests, and recurring items (default to 'task' if type is missing)
 			const type = quest.type || 'task'; 
-			if (type !== 'task' && type !== 'recurring') {
+			if (type !== 'task' && type !== 'recurring' && type !== 'quest') {
 				return false;
 			}
 
@@ -564,6 +565,28 @@
 			participants: [],
 			appreciation: []
 		};
+	}
+
+	// Function to load Italian quests with dependencies
+	async function loadItalianQuests() {
+		if (!holosphere || !holonID) {
+			console.error("Cannot load Italian quests: holosphere or holonID is null");
+			return;
+		}
+
+		try {
+			console.log("Loading TZM Event Italian quests with dependencies...");
+			await addItalianQuestsToHolosphere(holosphere, holonID);
+			
+			// Show success notification
+			alert("TZM Event Italian quests loaded successfully! Check the Canvas view to see the dependency relationships.");
+			
+			// Refresh the quest list
+			await fetchData();
+		} catch (error) {
+			console.error('Error loading Italian quests:', error);
+			alert("Error loading Italian quests. Please check the console for details.");
+		}
 	}
 
 	// Add onMount to initialize the dialog
@@ -1209,7 +1232,7 @@
 	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-6 px-3 sm:py-8 sm:px-8 rounded-3xl shadow-2xl">
 		<div class="flex flex-col sm:flex-row justify-between items-center sm:gap-0 gap-2">
 			<div class="text-center sm:text-left mb-2 sm:mb-0 flex-1 min-w-0">
-				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">Tasks Overview</h1>
+				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">Tasks & Quests</h1>
 			</div>
 			<!-- Hide date on xs screens -->
 			<p class="text-gray-300 text-base sm:text-lg flex-shrink-0 hidden sm:block">{new Date().toDateString()}</p>
@@ -1227,7 +1250,7 @@
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
 								([_, quest]) =>
-									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
 									!quest.participants?.length &&
 									quest.status !== "completed"
 							).length}
@@ -1238,17 +1261,17 @@
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
 								([_, quest]) => 
-									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
 									quest.status !== "completed"
 							).length}
 						</div>
-						<div class="text-sm text-gray-400">Open Tasks</div>
+						<div class="text-sm text-gray-400">Open Items</div>
 					</div>
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
 								([_, quest]) => 
-									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
 									(quest.status === "recurring" || quest.status === "repeating")
 							).length}
 						</div>
@@ -1258,7 +1281,7 @@
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
 								([_, quest]) => 
-									(!quest.type || quest.type === "task" || quest.type === "recurring") &&
+									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
 									quest.status === "completed"
 							).length}
 						</div>
@@ -1267,10 +1290,10 @@
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(([_, quest]) => 
-								!quest.type || quest.type === "task"
+								quest.type === "quest"
 							).length}
 						</div>
-						<div class="text-sm text-gray-400">Total Tasks</div>
+						<div class="text-sm text-gray-400">Quests</div>
 					</div>
 				</div>
 
@@ -1409,14 +1432,24 @@
 					</div>
 				</div>
 
-				<!-- Add Task Button -->
-				<div class="flex justify-center mb-6">
+				<!-- Action Buttons -->
+				<div class="flex justify-center gap-4 mb-6">
 					<button
 						on:click={showDialog}
 						class="w-12 h-12 bg-gray-600 hover:bg-gray-500 text-white rounded-full flex items-center justify-center transition-all duration-300 transform hover:scale-110 shadow-lg hover:shadow-xl"
 						aria-label="Add new task"
 					>
 						<span class="text-xl font-bold leading-none">+</span>
+					</button>
+					
+					<button
+						on:click={loadItalianQuests}
+						class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-full flex items-center gap-2 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl text-sm font-medium"
+						aria-label="Load TZM Event Italian quests with dependencies"
+						title="Load TZM Event Italian quests with dependencies"
+					>
+						<span>🇮🇹</span>
+						TZM Quests
 					</button>
 				</div>
 
@@ -1522,6 +1555,24 @@
 											{#if quest.description}
 												<p class="text-xs sm:text-sm mb-1 sm:mb-2 line-clamp-2 {quest.status === 'completed' ? 'text-gray-700' : 'text-gray-700'}">{quest.description}</p>
 											{/if}
+											
+											{#if quest.dependsOn && quest.dependsOn.length > 0}
+												<div class="text-xs text-gray-600 mb-1">
+													<span class="text-blue-600">📌 Depends on:</span>
+													{#each quest.dependsOn as depId, index}
+														{@const depQuest = Object.entries(store).find(([key, q]) => key === depId)}
+														{#if depQuest}
+															<span class="inline-block bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md text-xs mr-1 mb-1">
+																{depQuest[1].title.length > 20 ? depQuest[1].title.substring(0, 20) + '...' : depQuest[1].title}
+															</span>
+														{:else}
+															<span class="inline-block bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md text-xs mr-1 mb-1">
+																Unknown dependency
+															</span>
+														{/if}
+													{/each}
+												</div>
+											{/if}
 										</div>
 									</div>
 									
@@ -1580,8 +1631,8 @@
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 									</svg>
 								</div>
-								<h3 class="text-lg font-medium text-white mb-2">No tasks found</h3>
-								<p class="text-gray-400 mb-4">Get started by creating your first task</p>
+								<h3 class="text-lg font-medium text-white mb-2">No tasks or quests found</h3>
+								<p class="text-gray-400 mb-4">Get started by creating your first task or quest</p>
 								<button
 									on:click={showDialog}
 									class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors"

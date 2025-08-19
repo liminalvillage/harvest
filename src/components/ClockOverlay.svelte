@@ -156,7 +156,7 @@
         isLoadingWeather = true;
         
         try {
-            // Get user's location
+            // Get user's location - automatically request permission
             if ("geolocation" in navigator) {
                 navigator.geolocation.getCurrentPosition(async (position) => {
                     const { latitude, longitude } = position.coords;
@@ -305,8 +305,8 @@
             // Combine and sort all items chronologically
             const allItems = [...todayEvents, ...todayScheduledTasks].sort((a, b) => a.time - b.time);
             
-            // Take only the top 3 items after sorting
-            todaysEvents = allItems.slice(0, 3).map(item => ({
+            // Show all items after sorting (not limited to 3)
+            todaysEvents = allItems.map(item => ({
                 id: item.id,
                 title: item.title,
                 time: item.displayTime,
@@ -347,8 +347,8 @@
             const currentSortState = $taskSortStore;
             const sortedTasks = sortTasks(activeTasks, currentSortState);
             
-            // Take only the top 3 tasks after sorting
-            const topTaskEntries = sortedTasks.slice(0, 3);
+            // Show all sorted tasks (not limited to 3)
+            const topTaskEntries = sortedTasks;
             
             topTasks = topTaskEntries.map(([key, task]: [string, any]) => ({
                 id: key,
@@ -571,12 +571,12 @@
                     <!-- Events, Scheduled Tasks, and Active Tasks Grid -->
                     <div class="w-full max-w-5xl grid md:grid-cols-2 gap-8">
                         <!-- Today's Earliest 3 Scheduled Items -->
-                        <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                        <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden">
                                 <h3 class="text-xl font-semibold text-white mb-4 flex items-center">
                                 <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                     </svg>
-                                Today's Next 3
+                                Today's Schedule
                                 </h3>
                                 
                             {#if isLoadingEvents}
@@ -585,9 +585,9 @@
                                     <span class="text-white/60 text-sm">Loading next items...</span>
                                     </div>
                             {:else if todaysEvents.length > 0}
-                                <div class="space-y-3">
+                                <div class="space-y-3 max-h-60 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
                                     {#each todaysEvents as event}
-                                        <div class="bg-white/5 rounded-lg p-3 border border-white/10">
+                                        <div class="bg-white/5 rounded-lg p-3 border border-white/10 flex-shrink-0">
                                             <div class="flex justify-between items-start mb-1">
                                                 <div class="flex items-center flex-1 pr-2">
                                                     <!-- Event/Task type icon -->
@@ -633,13 +633,13 @@
                                     <svg class="w-12 h-12 text-white/30 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                     </svg>
-                                    <p class="text-white/50 text-sm">No scheduled items with start times today</p>
+                                    <p class="text-white/50 text-sm">No scheduled items today</p>
                                 </div>
                             {/if}
                             </div>
 
                         <!-- Top Tasks -->
-                        <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                        <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden">
                                 <h3 class="text-xl font-semibold text-white mb-4 flex items-center">
                                 <svg class="w-6 h-6 mr-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -653,9 +653,9 @@
                                     <span class="text-white/60 text-sm">Loading tasks...</span>
                                         </div>
                             {:else if topTasks.length > 0}
-                                <div class="space-y-3">
+                                <div class="space-y-3 max-h-60 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
                                     {#each topTasks as task}
-                                        <div class="bg-white/5 rounded-lg p-3 border border-white/10">
+                                        <div class="bg-white/5 rounded-lg p-3 border border-white/10 flex-shrink-0">
                                             <div class="flex justify-between items-start mb-1">
                                                 <h4 class="font-medium text-white text-sm truncate flex-1 pr-2">
                                                     {task.title}
@@ -706,5 +706,24 @@
 <style>
     kbd {
         box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+    }
+    
+    /* Custom scrollbar styles */
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 3px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.5);
     }
 </style>

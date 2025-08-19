@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { createEventDispatcher, getContext, onMount } from 'svelte';
+    import { createEventDispatcher, getContext, onMount, afterUpdate } from 'svelte';
     import { formatDate, formatTime } from '../utils/date.js';
     import HoloSphere from 'holosphere';
     import DrawingTools from './DrawingTools.svelte';
@@ -35,7 +35,7 @@
     const INITIAL_OFFSET = { x: 0, y: 0 };
     
     // New task inbox area
-    const INBOX_CENTER = { x: -100, y: -100 };
+    const INBOX_CENTER = { x: 200, y: 200 };
     const INBOX_WIDTH = 400;
     const INBOX_HEIGHT = 300;
 
@@ -64,6 +64,91 @@
 
     const CARD_WIDTH = 320; // Based on w-80 class (20rem * 16px/rem)
     const CARD_HEIGHT_ESTIMATE = 120; // Estimated height for arrow connection
+
+    // Track card DOM elements and measure viewport-relative positions
+    let cardElements = new Map<string, HTMLElement>();
+    let measuredCardRects = new Map<string, { x:number; y:number; width:number; height:number }>();
+
+    function registerCardElement(cardKey: string, element: HTMLElement | null) {
+        if (element) {
+            cardElements.set(cardKey, element);
+        } else {
+            cardElements.delete(cardKey);
+        }
+        // Force reactivity on the map for Svelte
+        cardElements = new Map(cardElements);
+    }
+
+    // Svelte action to track card elements
+    function trackCardElement(node: HTMLElement, cardKey: string) {
+        registerCardElement(cardKey, node);
+        return {
+            update(newKey: string) {
+                if (newKey !== cardKey) {
+                    registerCardElement(cardKey, null);
+                    registerCardElement(newKey, node);
+                }
+            },
+            destroy() {
+                registerCardElement(cardKey, null);
+            }
+        };
+    }
+
+    // Get measured DOM position of a card relative to the viewport container
+    function getCardPosition(cardKey: string): { x: number; y: number; width: number; height: number } | null {
+        const cached = measuredCardRects.get(cardKey);
+        if (cached) return cached;
+        return null;
+    }
+
+    // Get card position accounting for both measured viewport position and drag visuals
+    function getCardPositionWithDrag(cardKey: string): { x: number; y: number; width: number; height: number } | null {
+        const measured = getCardPosition(cardKey);
+        if (!measured) return null;
+
+        // If this card is being dragged, we need to calculate the offset
+        if (draggedCardVisuals && draggedCardVisuals.key === cardKey) {
+            const card = questCards.find(c => c.key === cardKey);
+            if (card) {
+                // Calculate the difference between drag position and original position in canvas coordinates
+                const canvasDragX = draggedCardVisuals.x;
+                const canvasDragY = draggedCardVisuals.y;
+                const canvasOriginalX = card.x;
+                const canvasOriginalY = card.y;
+                
+                // Convert the canvas coordinate difference to viewport pixels
+                const viewportOffsetX = (canvasDragX - canvasOriginalX) * zoom;
+                const viewportOffsetY = (canvasDragY - canvasOriginalY) * zoom;
+                
+                return {
+                    x: measured.x + viewportOffsetX,
+                    y: measured.y + viewportOffsetY,
+                    width: measured.width,
+                    height: measured.height
+                };
+            }
+        }
+        
+        return measured;
+    }
+
+    // Measure positions of all known cards after each paint so arrows stay in sync with pan/zoom/drag
+    afterUpdate(() => {
+        if (!viewContainer) return;
+        const containerRect = viewContainer.getBoundingClientRect();
+        const newRects = new Map<string, { x:number; y:number; width:number; height:number }>();
+        cardElements.forEach((el, key) => {
+            const r = el.getBoundingClientRect();
+            newRects.set(key, {
+                x: r.left - containerRect.left,
+                y: r.top - containerRect.top,
+                width: r.width,
+                height: r.height
+            });
+        });
+        measuredCardRects = newRects; // trigger reactivity
+    });
 
     // Clear position tracking when holonID changes and load hologram positions
     $: if (holonID) {
@@ -1366,6 +1451,8 @@
             </div>
         </div>
 
+        
+
         {#each questCards as card (card.key)}
             <div
                 class="absolute task-card"
@@ -1388,6 +1475,7 @@
                     }
                 }}
                 role="presentation"
+                use:trackCardElement={card.key}
             >
 
 
@@ -1508,7 +1596,85 @@
 
             </div>
         {/each}
+
     </div>
+
+    <!-- Dependency arrows - viewport level using measured positions -->
+    <svg 
+        class="absolute pointer-events-none inset-0"
+        style="width: 100%; height: 100%;"
+        xmlns="http://www.w3.org/2000/svg"
+    >
+        <defs>
+            {#each questCards as card (card.key)}
+                {#if card.quest.dependsOn && card.quest.dependsOn.length > 0}
+                    {#each card.quest.dependsOn as dependencyId}
+                        {#if card.quest.dependsOn.indexOf(dependencyId) < 6}
+                        <marker 
+                            id="arrowhead-{card.key}-{dependencyId}"
+                            markerWidth="10" 
+                            markerHeight="7" 
+                            refX="9" 
+                            refY="3.5" 
+                            orient="auto"
+                        >
+                            <polygon 
+                                points="0 0, 10 3.5, 0 7" 
+                                fill="#3B82F6" 
+                                opacity="0.8"
+                            />
+                        </marker>
+                        {/if}
+                    {/each}
+                {/if}
+            {/each}
+        </defs>
+
+        <!-- Force reactivity on pan, zoom, and drag state changes -->
+        {#key `${pan.x}-${pan.y}-${zoom}-${draggedCardVisuals?.key}-${draggedCardVisuals?.x}-${draggedCardVisuals?.y}`}
+            {#each questCards as card (card.key)}
+                {#if card.quest.dependsOn && card.quest.dependsOn.length > 0}
+                    {#each card.quest.dependsOn as dependencyId}
+                        {#if card.quest.dependsOn.indexOf(dependencyId) < 6}
+                            {@const dependencyCard = questCards.find(c => c.key === dependencyId)}
+                            {#if dependencyCard}
+                                <!-- Get measured viewport positions with drag updates -->
+                                {@const depMeasured = getCardPositionWithDrag(dependencyCard.key)}
+                                {@const cardMeasured = getCardPositionWithDrag(card.key)}
+                                
+                                {#if depMeasured && cardMeasured}
+                                    <!-- Arrow from bottom center of dependency to top center of dependent card -->
+                                    {@const startX = depMeasured.x + depMeasured.width / 2}
+                                    {@const startY = depMeasured.y + depMeasured.height}
+                                    {@const endX = cardMeasured.x + cardMeasured.width / 2}
+                                    {@const endY = cardMeasured.y}
+                                    
+                                    <!-- Create curved arrow with better control points -->
+                                    {@const deltaY = Math.abs(endY - startY)}
+                                    {@const deltaX = Math.abs(endX - startX)}
+                                    {@const controlOffset = Math.max(30, Math.min(80, deltaY / 3))}
+                                    {@const control1X = startX}
+                                    {@const control1Y = startY + controlOffset}
+                                    {@const control2X = endX}
+                                    {@const control2Y = endY - controlOffset}
+
+                                    <path 
+                                        d="M {startX} {startY} C {control1X} {control1Y}, {control2X} {control2Y}, {endX} {endY}"
+                                        stroke="#3B82F6" 
+                                        stroke-width="2" 
+                                        fill="none" 
+                                        opacity="0.8"
+                                        marker-end="url(#arrowhead-{card.key}-{dependencyId})"
+                                        stroke-dasharray="0"
+                                    />
+                                {/if}
+                            {/if}
+                        {/if}
+                    {/each}
+                {/if}
+            {/each}
+        {/key}
+    </svg>
 </div>
 
 <style>
@@ -1524,14 +1690,7 @@
         backface-visibility: hidden;
         -webkit-font-smoothing: subpixel-antialiased;
         position: relative; /* Ensure dots are positioned relative to the card */
-    }
-
-    .cursor-move {
         user-select: none;
-    }
-
-    .cursor-crosshair {
-        cursor: crosshair;
     }
 
     div {
