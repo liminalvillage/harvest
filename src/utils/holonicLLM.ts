@@ -99,9 +99,28 @@ export function getSiblingContext(questTree: QuestTree, nodeId: string): Sibling
  * Holonic principle: Present the whole system while focusing on one part
  */
 export function buildQuestTreeHierarchy(questTree: QuestTree, focusNodeId: string): QuestTreeHierarchy {
+  // Special handling for seed generation (no actual focus node)
+  if (focusNodeId === 'vision') {
+    return {
+      ancestry: [],
+      siblings: [],
+      focusNode: {
+        id: 'vision',
+        title: questTree.vision.statement,
+        description: `Vision: ${questTree.vision.statement}`,
+        generation: 0,
+        existingChildren: questTree.rootNodeIds || []
+      }
+    };
+  }
+  
   const ancestry = getAncestryChain(questTree, focusNodeId);
   const siblings = getSiblingContext(questTree, focusNodeId);
   const focusNode = questTree.nodes[focusNodeId];
+  
+  if (!focusNode) {
+    throw new Error(`Focus node ${focusNodeId} not found in quest tree`);
+  }
   
   return {
     ancestry: ancestry.map(node => ({
