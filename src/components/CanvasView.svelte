@@ -102,36 +102,7 @@
         return null;
     }
 
-    // Get card position accounting for both measured viewport position and drag visuals
-    function getCardPositionWithDrag(cardKey: string): { x: number; y: number; width: number; height: number } | null {
-        const measured = getCardPosition(cardKey);
-        if (!measured) return null;
 
-        // If this card is being dragged, we need to calculate the offset
-        if (draggedCardVisuals && draggedCardVisuals.key === cardKey) {
-            const card = questCards.find(c => c.key === cardKey);
-            if (card) {
-                // Calculate the difference between drag position and original position in canvas coordinates
-                const canvasDragX = draggedCardVisuals.x;
-                const canvasDragY = draggedCardVisuals.y;
-                const canvasOriginalX = card.x;
-                const canvasOriginalY = card.y;
-                
-                // Convert the canvas coordinate difference to viewport pixels
-                const viewportOffsetX = (canvasDragX - canvasOriginalX) * zoom;
-                const viewportOffsetY = (canvasDragY - canvasOriginalY) * zoom;
-                
-                return {
-                    x: measured.x + viewportOffsetX,
-                    y: measured.y + viewportOffsetY,
-                    width: measured.width,
-                    height: measured.height
-                };
-            }
-        }
-        
-        return measured;
-    }
 
     // Measure positions of all known cards after each paint so arrows stay in sync with pan/zoom/drag
     afterUpdate(() => {
@@ -1599,7 +1570,7 @@
 
     </div>
 
-    <!-- Dependency arrows - viewport level using measured positions -->
+    <!-- Dependency arrows - outside canvas, using DOM coordinates -->
     <svg 
         class="absolute pointer-events-none inset-0"
         style="width: 100%; height: 100%;"
@@ -1609,7 +1580,6 @@
             {#each questCards as card (card.key)}
                 {#if card.quest.dependsOn && card.quest.dependsOn.length > 0}
                     {#each card.quest.dependsOn as dependencyId}
-                        {#if card.quest.dependsOn.indexOf(dependencyId) < 6}
                         <marker 
                             id="arrowhead-{card.key}-{dependencyId}"
                             markerWidth="10" 
@@ -1624,50 +1594,51 @@
                                 opacity="0.8"
                             />
                         </marker>
-                        {/if}
                     {/each}
                 {/if}
             {/each}
         </defs>
 
-        <!-- Force reactivity on pan, zoom, and drag state changes -->
-        {#key `${pan.x}-${pan.y}-${zoom}-${draggedCardVisuals?.key}-${draggedCardVisuals?.x}-${draggedCardVisuals?.y}`}
+        <!-- Force reactivity on pan, zoom, and drag -->
+        {#key `${pan.x}-${pan.y}-${zoom}-${draggedCardVisuals?.key}-${draggedCardVisuals?.x}-${draggedCardVisuals?.y}-${measuredCardRects.size}`}
             {#each questCards as card (card.key)}
                 {#if card.quest.dependsOn && card.quest.dependsOn.length > 0}
                     {#each card.quest.dependsOn as dependencyId}
-                        {#if card.quest.dependsOn.indexOf(dependencyId) < 6}
-                            {@const dependencyCard = questCards.find(c => c.key === dependencyId)}
-                            {#if dependencyCard}
-                                <!-- Get measured viewport positions with drag updates -->
-                                {@const depMeasured = getCardPositionWithDrag(dependencyCard.key)}
-                                {@const cardMeasured = getCardPositionWithDrag(card.key)}
+                        {@const dependencyCard = questCards.find(c => c.key === dependencyId)}
+                        {#if dependencyCard}
+                            <!-- Get actual DOM positions with drag updates -->
+                            {@const depMeasured = getCardPosition(dependencyCard.key)}
+                            {@const cardMeasured = getCardPosition(card.key)}
+                            
+                            {#if depMeasured && cardMeasured}
+                                <!-- Use direct DOM positions - no displacement calculation needed -->
+                                {@const depX = depMeasured.x}
+                                {@const depY = depMeasured.y}
+                                {@const cardX = cardMeasured.x}
+                                {@const cardY = cardMeasured.y}
                                 
-                                {#if depMeasured && cardMeasured}
-                                    <!-- Arrow from bottom center of dependency to top center of dependent card -->
-                                    {@const startX = depMeasured.x + depMeasured.width / 2}
-                                    {@const startY = depMeasured.y + depMeasured.height}
-                                    {@const endX = cardMeasured.x + cardMeasured.width / 2}
-                                    {@const endY = cardMeasured.y}
-                                    
-                                    <!-- Create curved arrow with better control points -->
-                                    {@const deltaY = Math.abs(endY - startY)}
-                                    {@const deltaX = Math.abs(endX - startX)}
-                                    {@const controlOffset = Math.max(30, Math.min(80, deltaY / 3))}
-                                    {@const control1X = startX}
-                                    {@const control1Y = startY + controlOffset}
-                                    {@const control2X = endX}
-                                    {@const control2Y = endY - controlOffset}
+                                <!-- Simple DOM coordinate arrows -->
+                                {@const startX = depX + depMeasured.width / 2}
+                                {@const startY = depY + depMeasured.height}
+                                {@const endX = cardX + cardMeasured.width / 2}
+                                {@const endY = cardY}
+                                
+                                <!-- Simple curved arrow -->
+                                {@const deltaY = Math.abs(endY - startY)}
+                                {@const controlOffset = Math.max(30, Math.min(80, deltaY / 3))}
+                                {@const control1X = startX}
+                                {@const control1Y = startY + controlOffset}
+                                {@const control2X = endX}
+                                {@const control2Y = endY - controlOffset}
 
-                                    <path 
-                                        d="M {startX} {startY} C {control1X} {control1Y}, {control2X} {control2Y}, {endX} {endY}"
-                                        stroke="#3B82F6" 
-                                        stroke-width="2" 
-                                        fill="none" 
-                                        opacity="0.8"
-                                        marker-end="url(#arrowhead-{card.key}-{dependencyId})"
-                                        stroke-dasharray="0"
-                                    />
-                                {/if}
+                                <path 
+                                    d="M {startX} {startY} C {control1X} {control1Y}, {control2X} {control2Y}, {endX} {endY}"
+                                    stroke="#3B82F6" 
+                                    stroke-width="2" 
+                                    fill="none" 
+                                    opacity="0.8"
+                                    marker-end="url(#arrowhead-{card.key}-{dependencyId})"
+                                />
                             {/if}
                         {/if}
                     {/each}
