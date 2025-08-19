@@ -14,7 +14,8 @@
 	import Confetti from "./Confetti.svelte";
 	import { getHologramSourceName } from "../utils/holonNames";
 	import { taskSortStore, updateTaskSort, sortTasks, type SortCriteria } from "../dashboard/store";
-	import { addItalianQuestsToHolosphere } from "../utils/italianQuests";
+	// Add new imports for quest library
+	import QuestImportModal from "./QuestImportModal.svelte";
 
 	interface Quest {
 		id: string;
@@ -567,25 +568,44 @@
 		};
 	}
 
-	// Function to load Italian quests with dependencies
-	async function loadItalianQuests() {
+
+
+	// Add function to handle quest import
+	async function handleQuestImport(event: CustomEvent<Quest[]>) {
+		const importedQuests = event.detail;
 		if (!holosphere || !holonID) {
-			console.error("Cannot load Italian quests: holosphere or holonID is null");
+			console.error("Cannot import quests: holosphere or holonID is null");
 			return;
 		}
 
 		try {
-			console.log("Loading TZM Event Italian quests with dependencies...");
-			await addItalianQuestsToHolosphere(holosphere, holonID);
+			console.log(`Importing ${importedQuests.length} quests...`);
 			
+			// Import quests one by one
+			for (const quest of importedQuests) {
+				// Generate new ID and timestamp
+				const newQuest = {
+					...quest,
+					id: generateId(),
+					created: new Date().toISOString(),
+					orderIndex: filteredQuests.length + (quest.orderIndex || 0)
+				};
+
+				// Add to holosphere
+				await holosphere.put(holonID, 'quests', newQuest);
+			}
+
 			// Show success notification
-			alert("TZM Event Italian quests loaded successfully! Check the Canvas view to see the dependency relationships.");
+			alert(`Successfully imported ${importedQuests.length} quests!`);
 			
 			// Refresh the quest list
 			await fetchData();
+			
+			// Close import modal
+			showImportModal = false;
 		} catch (error) {
-			console.error('Error loading Italian quests:', error);
-			alert("Error loading Italian quests. Please check the console for details.");
+			console.error('Error importing quests:', error);
+			alert("Error importing quests. Please check the console for details.");
 		}
 	}
 
@@ -1224,6 +1244,8 @@
 		}
 	}
 
+	// Add state for import modal
+	let showImportModal = false;
 
 </script>
 
@@ -1443,13 +1465,15 @@
 					</button>
 					
 					<button
-						on:click={loadItalianQuests}
-						class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-full flex items-center gap-2 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl text-sm font-medium"
-						aria-label="Load TZM Event Italian quests with dependencies"
-						title="Load TZM Event Italian quests with dependencies"
+						on:click={() => showImportModal = true}
+						class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-full flex items-center gap-2 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl text-sm font-medium"
+						aria-label="Import quests from JSON file or library"
+						title="Import quests from JSON file or library"
 					>
-						<span>🇮🇹</span>
-						TZM Quests
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+						</svg>
+						Import Quests
 					</button>
 				</div>
 
@@ -1764,6 +1788,14 @@
 {/if}
 {#if showConfetti}
 	<Confetti />
+{/if}
+
+<!-- Quest Import Modal -->
+{#if showImportModal}
+	<QuestImportModal
+		on:close={() => showImportModal = false}
+		on:import={handleQuestImport}
+	/>
 {/if}
 
 <style>
