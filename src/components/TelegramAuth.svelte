@@ -28,7 +28,7 @@
 		// Check if user is already authenticated via localStorage
 		checkStoredAuth();
 		
-		// If not authenticated, initialize Telegram Login Widget
+		// Only initialize Telegram Login Widget if not authenticated
 		if (!isAuthenticated) {
 			initTelegramWidget();
 		}
@@ -50,11 +50,16 @@
 				// Auth expired, clear storage
 				localStorage.removeItem('telegramUser');
 				localStorage.removeItem('telegramAuthDate');
+				// Initialize widget since user is no longer authenticated
+				initTelegramWidget();
 			}
 		}
 	}
 
 	function initTelegramWidget() {
+		// Only initialize if not already authenticated
+		if (isAuthenticated) return;
+		
 		// Create script element for Telegram Login Widget
 		const script = document.createElement('script');
 		script.src = 'https://telegram.org/js/telegram-widget.js?22';
@@ -145,6 +150,9 @@
 		localStorage.removeItem('telegramUser');
 		localStorage.removeItem('telegramAuthDate');
 		
+		// Re-initialize the widget after logout
+		initTelegramWidget();
+		
 		dispatch('logout');
 	}
 </script>
@@ -183,7 +191,7 @@
 			</button>
 		</div>
 	{:else}
-		<!-- Login Section -->
+		<!-- Login Section - Only shown when not authenticated -->
 		<div class="login-section">
 			<div class="login-header">
 				<div class="telegram-icon">📱</div>

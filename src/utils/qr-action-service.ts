@@ -71,7 +71,7 @@ export class QRActionService {
 	}
 
 	/**
-	 * Assign a role to the user
+	 * Assign a role to the user, creating it if it doesn't exist
 	 */
 	private async assignRole(
 		params: QRActionParams,
@@ -119,21 +119,37 @@ export class QRActionService {
 			// Save user data
 			await this.holosphere.put(params.holonID, 'users', userData);
 
-			// Update role data if it exists
-			const roleData = await this.holosphere.get(params.holonID, 'roles', params.title);
-			if (roleData) {
-				if (!roleData.participants) roleData.participants = [];
-				if (!roleData.participants.some((p: any) => p.id === user.id.toString())) {
-					roleData.participants.push({
-						id: user.id.toString(),
-						username: user.username || `user_${user.id}`,
-						first_name: user.first_name,
-						last_name: user.last_name || '',
-						assigned_at: new Date().toISOString()
-					});
-					await this.holosphere.put(params.holonID, 'roles', roleData);
-				}
+			// Check if role exists, create it if it doesn't
+			let roleData = await this.holosphere.get(params.holonID, 'roles', params.title);
+			if (!roleData) {
+				// Create new role
+				roleData = {
+					title: params.title,
+					description: params.desc || `Role created via QR code`,
+					created_at: new Date().toISOString(),
+					created_by: user.id.toString(),
+					participants: [],
+					permissions: [],
+					status: 'active'
+				};
+				console.log(`Creating new role: ${params.title}`);
 			}
+
+			// Add user to role participants if not already there
+			if (!roleData.participants) roleData.participants = [];
+			if (!roleData.participants.some((p: any) => p.id === user.id.toString())) {
+				roleData.participants.push({
+					id: user.id.toString(),
+					username: user.username || `user_${user.id}`,
+					first_name: user.first_name,
+					last_name: user.last_name || '',
+					assigned_at: new Date().toISOString(),
+					assigned_via: 'qr_code'
+				});
+			}
+
+			// Save role data
+			await this.holosphere.put(params.holonID, 'roles', roleData);
 
 			return {
 				success: true,
@@ -152,7 +168,7 @@ export class QRActionService {
 	}
 
 	/**
-	 * Join an event
+	 * Join an event, creating it if it doesn't exist
 	 */
 	private async joinEvent(
 		params: QRActionParams,
@@ -190,6 +206,39 @@ export class QRActionService {
 			// Save user data
 			await this.holosphere.put(params.holonID, 'users', userData);
 
+			// Check if event exists, create it if it doesn't
+			let eventData = await this.holosphere.get(params.holonID, 'events', params.title);
+			if (!eventData) {
+				// Create new event
+				eventData = {
+					title: params.title,
+					description: params.desc || `Event created via QR code`,
+					created_at: new Date().toISOString(),
+					created_by: user.id.toString(),
+					participants: [],
+					status: 'active',
+					start_date: new Date().toISOString(),
+					end_date: null
+				};
+				console.log(`Creating new event: ${params.title}`);
+			}
+
+			// Add user to event participants if not already there
+			if (!eventData.participants) eventData.participants = [];
+			if (!eventData.participants.some((p: any) => p.id === user.id.toString())) {
+				eventData.participants.push({
+					id: user.id.toString(),
+					username: user.username || `user_${user.id}`,
+					first_name: user.first_name,
+					last_name: user.last_name || '',
+					joined_at: new Date().toISOString(),
+					joined_via: 'qr_code'
+				});
+			}
+
+			// Save event data
+			await this.holosphere.put(params.holonID, 'events', eventData);
+
 			return {
 				success: true,
 				message: `Successfully joined event: ${params.title}`,
@@ -206,7 +255,7 @@ export class QRActionService {
 	}
 
 	/**
-	 * Assign a task
+	 * Assign a task, creating it if it doesn't exist
 	 */
 	private async assignTask(
 		params: QRActionParams,
@@ -244,6 +293,40 @@ export class QRActionService {
 			// Save user data
 			await this.holosphere.put(params.holonID, 'users', userData);
 
+			// Check if task exists, create it if it doesn't
+			let taskData = await this.holosphere.get(params.holonID, 'tasks', params.title);
+			if (!taskData) {
+				// Create new task
+				taskData = {
+					title: params.title,
+					description: params.desc || `Task created via QR code`,
+					created_at: new Date().toISOString(),
+					created_by: user.id.toString(),
+					participants: [],
+					status: 'assigned',
+					priority: 'medium',
+					due_date: null,
+					completed_at: null
+				};
+				console.log(`Creating new task: ${params.title}`);
+			}
+
+			// Add user to task participants if not already there
+			if (!taskData.participants) taskData.participants = [];
+			if (!taskData.participants.some((p: any) => p.id === user.id.toString())) {
+				taskData.participants.push({
+					id: user.id.toString(),
+					username: user.username || `user_${user.id}`,
+					first_name: user.first_name,
+					last_name: user.last_name || '',
+					assigned_at: new Date().toISOString(),
+					assigned_via: 'qr_code'
+				});
+			}
+
+			// Save task data
+			await this.holosphere.put(params.holonID, 'tasks', taskData);
+
 			return {
 				success: true,
 				message: `Successfully assigned task: ${params.title}`,
@@ -260,7 +343,7 @@ export class QRActionService {
 	}
 
 	/**
-	 * Award a badge
+	 * Award a badge, creating it if it doesn't exist
 	 */
 	private async awardBadge(
 		params: QRActionParams,
@@ -298,6 +381,38 @@ export class QRActionService {
 			// Save user data
 			await this.holosphere.put(params.holonID, 'users', userData);
 
+			// Check if badge exists, create it if it doesn't
+			let badgeData = await this.holosphere.get(params.holonID, 'badges', params.title);
+			if (!badgeData) {
+				// Create new badge
+				badgeData = {
+					title: params.title,
+					description: params.desc || `Badge created via QR code`,
+					created_at: new Date().toISOString(),
+					created_by: user.id.toString(),
+					awarded_to: [],
+					icon: '🏆',
+					rarity: 'common'
+				};
+				console.log(`Creating new badge: ${params.title}`);
+			}
+
+			// Add user to badge recipients if not already there
+			if (!badgeData.awarded_to) badgeData.awarded_to = [];
+			if (!badgeData.awarded_to.some((p: any) => p.id === user.id.toString())) {
+				badgeData.awarded_to.push({
+					id: user.id.toString(),
+					username: user.username || `user_${user.id}`,
+					first_name: user.first_name,
+					last_name: user.last_name || '',
+					awarded_at: new Date().toISOString(),
+					awarded_via: 'qr_code'
+				});
+			}
+
+			// Save badge data
+			await this.holosphere.put(params.holonID, 'badges', badgeData);
+
 			return {
 				success: true,
 				message: `Successfully awarded badge: ${params.title}`,
@@ -314,7 +429,7 @@ export class QRActionService {
 	}
 
 	/**
-	 * Process an invite
+	 * Process an invite, creating it if it doesn't exist
 	 */
 	private async processInvite(
 		params: QRActionParams,
@@ -345,6 +460,38 @@ export class QRActionService {
 
 			// Save user data
 			await this.holosphere.put(params.holonID, 'users', userData);
+
+			// Check if invite exists, create it if it doesn't
+			let inviteData = await this.holosphere.get(params.holonID, 'invites', params.title);
+			if (!inviteData) {
+				// Create new invite
+				inviteData = {
+					title: params.title,
+					description: params.desc || `Invite created via QR code`,
+					created_at: new Date().toISOString(),
+					created_by: params.title,
+					accepted_by: [],
+					status: 'active',
+					expires_at: null
+				};
+				console.log(`Creating new invite: ${params.title}`);
+			}
+
+			// Add user to invite acceptors if not already there
+			if (!inviteData.accepted_by) inviteData.accepted_by = [];
+			if (!inviteData.accepted_by.some((p: any) => p.id === user.id.toString())) {
+				inviteData.accepted_by.push({
+					id: user.id.toString(),
+					username: user.username || `user_${user.id}`,
+					first_name: user.first_name,
+					last_name: user.last_name || '',
+					accepted_at: new Date().toISOString(),
+					accepted_via: 'qr_code'
+				});
+			}
+
+			// Save invite data
+			await this.holosphere.put(params.holonID, 'invites', inviteData);
 
 			return {
 				success: true,
