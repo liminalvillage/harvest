@@ -500,7 +500,7 @@
 
                 
             <!-- Main Dashboard Content -->
-            <div class="h-full p-8 flex flex-col">
+            <div class="h-full p-8 pb-16 flex flex-col">
                 <!-- Top Section: Date, Holons Logo, and Weather -->
                 <div class="flex justify-between items-start mb-8">
                     <!-- Date Section -->
@@ -569,7 +569,7 @@
                     </div>
 
                     <!-- Events, Scheduled Tasks, and Active Tasks Grid -->
-                    <div class="w-full max-w-5xl grid md:grid-cols-2 gap-8">
+                    <div class="w-full max-w-5xl grid md:grid-cols-2 gap-8 px-4">
                         <!-- Today's Earliest 3 Scheduled Items -->
                         <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden">
                                 <h3 class="text-xl font-semibold text-white mb-4 flex items-center">
@@ -585,7 +585,7 @@
                                     <span class="text-white/60 text-sm">Loading next items...</span>
                                     </div>
                             {:else if todaysEvents.length > 0}
-                                <div class="space-y-3 max-h-60 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
+                                <div class="space-y-3 max-h-40 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
                                     {#each todaysEvents as event}
                                         <div class="bg-white/5 rounded-lg p-3 border border-white/10 flex-shrink-0">
                                             <div class="flex justify-between items-start mb-1">
@@ -653,7 +653,7 @@
                                     <span class="text-white/60 text-sm">Loading tasks...</span>
                                         </div>
                             {:else if topTasks.length > 0}
-                                <div class="space-y-3 max-h-60 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
+                                <div class="space-y-3 max-h-40 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
                                     {#each topTasks as task}
                                         <div class="bg-white/5 rounded-lg p-3 border border-white/10 flex-shrink-0">
                                             <div class="flex justify-between items-start mb-1">
