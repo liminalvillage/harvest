@@ -2,7 +2,7 @@ import { writable } from 'svelte/store';
 
 export const sidebarExpanded = writable(false);
 export const ID = writable<string | null>(null);
-export const autoTransitionEnabled = writable<boolean>(true);
+export const autoTransitionEnabled = writable<boolean>(false);
 export const walletAddress = writable<string | null>(null);
 
 // Task sorting types and store

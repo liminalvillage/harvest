@@ -66,19 +66,11 @@
 		// Set up mouse move listener
 		window.addEventListener('mousemove', handleMouseMove);
 
-		// Set up interval for route switching
-		const interval = setInterval(() => {
-			const now = Date.now();
-			// Only switch if auto-transition is enabled
-			if ($autoTransitionEnabled && now - lastMouseMove >= 10 * 1000) {
-				currentRouteIndex = (currentRouteIndex + 1) % allowedRoutes.length;
-				goto('/' + $page.params.id + allowedRoutes[currentRouteIndex].link);
-			}
-		}, 10000); // 10 seconds
+		// Auto-switching is disabled by default - removed timer logic
+		// Users can manually enable it if needed through the store
 
 		// Cleanup on component destroy
 		onDestroy(() => {
-			clearInterval(interval);
 			window.removeEventListener('mousemove', handleMouseMove);
 		});
 	}

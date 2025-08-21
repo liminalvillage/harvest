@@ -4,7 +4,7 @@
 
 	export let data: any;
 
-	$: ({ action, title, chatId, desc, hasValidParams } = data);
+	$: ({ action, title, desc, holonID, deckId, cardId, hasValidParams } = data);
 </script>
 
 <svelte:head>
@@ -14,17 +14,17 @@
 
 <div class="max-w-md w-full">
 	{#if hasValidParams}
-		<QRCode {action} {title} {chatId} {desc} />
+		<QRCode {action} {title} {desc} {holonID} {deckId} {cardId} />
 	{:else}
 		<div class="bg-gray-800 rounded-3xl p-8 text-center">
 			<h1 class="text-2xl font-bold text-white mb-4">Invalid QR Parameters</h1>
 			<p class="text-gray-400 mb-4">
-				Missing required parameters: action, title, or chatId
+				Missing required parameters: action, title, or holonID
 			</p>
 			<div class="text-sm text-gray-500">
 				<p>Expected URL format:</p>
 				<p class="font-mono text-xs mt-2">
-					/qr?action=badge&title=Title&chatId=123&desc=Description
+					/qr?action=event&title=Title&desc=Description&holonID=123&deckId=Deck&cardId=Card
 				</p>
 			</div>
 		</div>
