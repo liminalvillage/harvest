@@ -312,6 +312,20 @@
 		replaceState(url.toString(), { replaceState: true });
 	}
 
+	// Handle dependency click to open dependency task modal
+	function handleDependencyClick(dependencyId: string) {
+		// Close current task modal if open
+		selectedTask = null;
+		
+		// Update URL with dependency task parameter
+		const url = new URL(window.location.href);
+		url.searchParams.set('task', dependencyId);
+		replaceState(url.toString(), { replaceState: true });
+		
+		// Open the dependency task modal
+		handleTaskClick(dependencyId, store[dependencyId]);
+	}
+
 	// Add this helper function after the existing functions
 	function generateId() {
 		return ''+ Date.now();
@@ -1229,6 +1243,26 @@
 		}
 	}
 
+	// Listen for dependency task modal requests
+	onMount(() => {
+		const handleDependencyTask = (event: CustomEvent) => {
+			const { taskId } = event.detail;
+			if (taskId && store[taskId]) {
+				// Close current modal if open
+				selectedTask = null;
+				
+				// Open the new task modal
+				selectedTask = { key: taskId, quest: store[taskId] };
+			}
+		};
+		
+		window.addEventListener('openDependencyTask', handleDependencyTask as EventListener);
+		
+		return () => {
+			window.removeEventListener('openDependencyTask', handleDependencyTask as EventListener);
+		};
+	});
+
 	// Modify the reactive statements to be more efficient and avoid triggering excessive re-processing
 
 
@@ -1566,18 +1600,25 @@
 					<div class="space-y-2 sm:space-y-3">
 										{#each filteredQuests as [key, quest]}
 					{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
-						<button
+						<div
 							id={key}
-							class="w-full task-card relative text-left group"
+							class="w-full task-card relative text-left group cursor-pointer"
 							on:click|stopPropagation={() => handleTaskClick(key, quest)}
 							draggable="true"
 							on:dragstart={(e) => handleDragStart(e, key)}
 							on:dragover={(e) => handleDragOver(e, key)}
 							on:drop={(e) => handleDrop(e, key)}
 							on:dragend={handleDragEnd}
+							role="button"
+							tabindex="0"
 							aria-label={`Open task: ${quest.title}`}
 							class:dragging={$dragState.draggedId === key}
 							class:drag-over={$dragState.dragOverId === key}
+							on:keydown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									handleTaskClick(key, quest);
+								}
+							}}
 						>
 							<div
 								class="p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
@@ -1642,19 +1683,33 @@
 											
 											{#if quest.dependsOn && quest.dependsOn.length > 0}
 												<div class="text-xs text-gray-600 mb-1">
-													<span class="text-blue-600">📌 Depends on:</span>
-													{#each quest.dependsOn as depId, index}
-														{@const depQuest = Object.entries(store).find(([key, q]) => key === depId)}
-														{#if depQuest}
-															<span class="inline-block bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md text-xs mr-1 mb-1">
-																{depQuest[1].title.length > 20 ? depQuest[1].title.substring(0, 20) + '...' : depQuest[1].title}
-															</span>
-														{:else}
-															<span class="inline-block bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md text-xs mr-1 mb-1">
-																Unknown dependency
-															</span>
-														{/if}
-													{/each}
+													<div class="flex items-center gap-1 mb-1">
+														<span class="text-blue-600 flex-shrink-0">📌 Depends on:</span>
+													</div>
+													<div class="flex flex-wrap items-center gap-1">
+														{#each quest.dependsOn as depId, index}
+															{@const depQuest = Object.entries(store).find(([key, q]) => key === depId)}
+															{#if depQuest}
+																<button
+																	class="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md text-xs hover:bg-blue-200 transition-colors cursor-pointer touch-manipulation min-h-[24px] min-w-[24px] flex-shrink-0"
+																	on:click|stopPropagation={() => handleDependencyClick(depId)}
+																	on:touchstart|stopPropagation={(e) => e.preventDefault()}
+																	on:touchend|stopPropagation={(e) => {
+																		e.preventDefault();
+																		handleDependencyClick(depId);
+																	}}
+																	title="Click to open dependency task: {depQuest[1].title}"
+																	type="button"
+																>
+																	{depQuest[1].title.length > 20 ? depQuest[1].title.substring(0, 20) + '...' : depQuest[1].title}
+																</button>
+															{:else}
+																<span class="inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md text-xs flex-shrink-0">
+																	Unknown dependency
+																</span>
+															{/if}
+														{/each}
+													</div>
 												</div>
 											{/if}
 										</div>
@@ -1704,7 +1759,7 @@
 									</div>
 								</div>
 							</div>
-						</button>
+						</div>
 							{/if}
 						{/each}
 						
@@ -1880,6 +1935,7 @@
 		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+		line-clamp: 2;
 	}
 
 	/* Smooth animations */

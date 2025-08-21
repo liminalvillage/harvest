@@ -785,6 +785,19 @@
         }
     }
 
+    // Function to open dependency modal
+    function openDependencyModal(dependencyId: string) {
+        // Close current modal first
+        dispatch("close");
+        
+        // Dispatch a custom event to notify the Tasks component
+        const event = new CustomEvent('openDependencyTask', {
+            detail: { taskId: dependencyId },
+            bubbles: true
+        });
+        window.dispatchEvent(event);
+    }
+
     // Add publish functionality
     let isPublishing = false;
     let publishStatus = '';
@@ -1144,9 +1157,22 @@
                                         {#each quest.dependsOn as depId, index}
                                             {@const depTask = availableTasks.find(t => t.id === depId)}
                                             <div class="flex items-center justify-between bg-gray-800 p-2 rounded border border-gray-600">
-                                                <span class="text-sm text-gray-300">
-                                                    {depTask ? depTask.title : depId}
-                                                </span>
+                                                <button
+                                                    class="flex-1 text-left text-sm text-gray-300 hover:text-white transition-colors touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center p-1 mr-2"
+                                                    on:click={() => openDependencyModal(depId)}
+                                                    on:touchstart={handleButtonTouchStart}
+                                                    on:touchend={handleButtonTouchEnd}
+                                                    on:touchcancel={handleButtonTouchCancel}
+                                                    type="button"
+                                                    title="Click to open dependency task"
+                                                >
+                                                    <span class="flex-1 text-left">
+                                                        {depTask ? depTask.title : depId}
+                                                    </span>
+                                                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                                    </svg>
+                                                </button>
                                                 <button
                                                     class="text-red-400 hover:text-red-300 transition-colors touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center p-1"
                                                     on:click={() => removeDependency(index)}
@@ -1172,11 +1198,22 @@
                             <div class="space-y-2">
                                 {#each quest.dependsOn as depId}
                                     {@const depTask = availableTasks.find(t => t.id === depId)}
-                                    <div class="bg-gray-800 p-2 rounded border border-gray-600">
-                                        <span class="text-sm text-gray-300">
+                                    <button
+                                        class="w-full text-left bg-gray-800 p-2 rounded border border-gray-600 hover:bg-gray-700 hover:border-gray-500 transition-colors text-sm text-gray-300 hover:text-white touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                        on:click={() => openDependencyModal(depId)}
+                                        on:touchstart={handleButtonTouchStart}
+                                        on:touchend={handleButtonTouchEnd}
+                                        on:touchcancel={handleButtonTouchCancel}
+                                        title="Click to open dependency task"
+                                        type="button"
+                                    >
+                                        <span class="flex-1 text-left">
                                             {depTask ? depTask.title : depId}
                                         </span>
-                                    </div>
+                                        <svg class="w-4 h-4 text-gray-400 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                        </svg>
+                                    </button>
                                 {/each}
                             </div>
                         </div>
