@@ -17,6 +17,9 @@
 	// Add new imports for quest library
 	import QuestImportModal from "./QuestImportModal.svelte";
 
+	// Add filterType prop to allow filtering by quest type
+	export let filterType: 'task' | 'event' | 'all' = 'all';
+
 	interface Quest {
 		id: string;
 		title: string;
@@ -77,7 +80,7 @@
 		description: '',
 		category: '',
 		status: 'ongoing',
-		type: 'task',
+		type: filterType === 'all' ? 'task' : filterType, // Use filterType for new items
 		participants: [],
 		appreciation: []
 	};
@@ -109,7 +112,7 @@
 	$: sortDirection = $taskSortStore.direction;
 
 	// SVG Paths for sort icons
-	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"; // Calendar icon
+	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z"; // Calendar icon
 	const orderIndexIconPath = "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"; // Heroicons bars-3
 	const directionalSortIconPath = "M12 5v14M19 12l-7 7-7-7"; // Current arrow
 	let currentIconPath = calendarIconPath; // Initial icon
@@ -191,10 +194,18 @@
 				}
 			}
 
-			// Show tasks, quests, and recurring items (default to 'task' if type is missing)
-			const type = quest.type || 'task'; 
-			if (type !== 'task' && type !== 'recurring' && type !== 'quest') {
-				return false;
+			// Apply type filtering based on filterType prop
+			if (filterType !== 'all') {
+				const type = quest.type || 'task';
+				if (type !== filterType) {
+					return false;
+				}
+			} else {
+				// Show tasks, quests, and recurring items (default to 'task' if type is missing)
+				const type = quest.type || 'task'; 
+				if (type !== 'task' && type !== 'recurring' && type !== 'quest') {
+					return false;
+				}
 			}
 
 			// Default to 'ongoing' if status is missing.
@@ -373,7 +384,7 @@
 				description: '',
 				category: '',
 				status: 'ongoing',
-				type: 'task',
+				type: filterType === 'all' ? 'task' : filterType, // Use filterType for new items
 				participants: [],
 				appreciation: []
 			};
@@ -562,7 +573,7 @@
 			description: '',
 			category: '',
 			status: 'ongoing',
-			type: 'task',
+			type: filterType === 'all' ? 'task' : filterType, // Use filterType for new items
 			participants: [],
 			appreciation: []
 		};
@@ -1254,7 +1265,9 @@
 	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-6 px-3 sm:py-8 sm:px-8 rounded-3xl shadow-2xl">
 		<div class="flex flex-col sm:flex-row justify-between items-center sm:gap-0 gap-2">
 			<div class="text-center sm:text-left mb-2 sm:mb-0 flex-1 min-w-0">
-				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">Tasks & Quests</h1>
+				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">
+					{filterType === 'event' ? 'Events' : filterType === 'task' ? 'Tasks' : 'Tasks & Quests'}
+				</h1>
 			</div>
 			<!-- Hide date on xs screens -->
 			<p class="text-gray-300 text-base sm:text-lg flex-shrink-0 hidden sm:block">{new Date().toDateString()}</p>
@@ -1271,10 +1284,20 @@
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
-								([_, quest]) =>
-									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
-									!quest.participants?.length &&
-									quest.status !== "completed"
+								([_, quest]) => {
+									// Apply type filtering
+									if (filterType !== 'all') {
+										const type = quest.type || 'task';
+										if (type !== filterType) return false;
+									} else {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") {
+											// Continue with other filters
+										} else {
+											return false;
+										}
+									}
+									return !quest.participants?.length && quest.status !== "completed";
+								}
 							).length}
 						</div>
 						<div class="text-sm text-gray-400">Unassigned</div>
@@ -1282,9 +1305,20 @@
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
-								([_, quest]) => 
-									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
-									quest.status !== "completed"
+								([_, quest]) => {
+									// Apply type filtering
+									if (filterType !== 'all') {
+										const type = quest.type || 'task';
+										if (type !== filterType) return false;
+									} else {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") {
+											// Continue with other filters
+										} else {
+											return false;
+										}
+									}
+									return quest.status !== "completed";
+								}
 							).length}
 						</div>
 						<div class="text-sm text-gray-400">Open Items</div>
@@ -1292,9 +1326,20 @@
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
-								([_, quest]) => 
-									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
-									(quest.status === "recurring" || quest.status === "repeating")
+								([_, quest]) => {
+									// Apply type filtering
+									if (filterType !== 'all') {
+										const type = quest.type || 'task';
+										if (type !== filterType) return false;
+									} else {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") {
+											// Continue with other filters
+										} else {
+											return false;
+										}
+									}
+									return (quest.status === "recurring" || quest.status === "repeating");
+								}
 							).length}
 						</div>
 						<div class="text-sm text-gray-400">Recurring</div>
@@ -1302,20 +1347,35 @@
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
-								([_, quest]) => 
-									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
-									quest.status === "completed"
+								([_, quest]) => {
+									// Apply type filtering
+									if (filterType !== 'all') {
+										const type = quest.type || 'task';
+										if (type !== filterType) return false;
+									} else {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") {
+											// Continue with other filters
+										} else {
+											return false;
+										}
+									}
+									return quest.status === "completed";
+								}
 							).length}
 						</div>
 						<div class="text-sm text-gray-400">Completed</div>
 					</div>
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
-							{quests.filter(([_, quest]) => 
-								quest.type === "quest"
-							).length}
+							{quests.filter(([_, quest]) => {
+								if (filterType !== 'all') {
+									const type = quest.type || 'task';
+									return type === filterType;
+								}
+								return quest.type === "quest";
+							}).length}
 						</div>
-						<div class="text-sm text-gray-400">Quests</div>
+						<div class="text-sm text-gray-400">{filterType === 'event' ? 'Events' : filterType === 'task' ? 'Tasks' : 'Quests'}</div>
 					</div>
 				</div>
 
@@ -1767,14 +1827,14 @@
 						>
 							Cancel
 						</button>
-						<button
-							type="submit"
-							class="px-6 py-2.5 text-sm font-medium rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-							disabled={!newTask.title.trim()}
-							aria-label="Add new task"
-						>
-							Create Task
-						</button>
+													<button
+								type="submit"
+								class="px-6 py-2.5 text-sm font-medium rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+								disabled={!newTask.title.trim()}
+								aria-label="Add new {filterType === 'event' ? 'event' : 'task'}"
+							>
+								Create {filterType === 'event' ? 'Event' : 'Task'}
+							</button>
 					</div>
 				</form>
 			</div>

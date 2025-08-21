@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
+	import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 	import { ID } from '../dashboard/store';
 
 	export let holonID: string = '';
@@ -30,29 +30,67 @@
 		
 		// Only initialize Telegram Login Widget if not authenticated
 		if (!isAuthenticated) {
-			initTelegramWidget();
+			// Add a small delay to ensure the component is fully mounted
+			setTimeout(() => {
+				if (!isAuthenticated) {
+					initTelegramWidget();
+				}
+			}, 100);
+		}
+		
+		// Also check for URL parameters that might indicate successful auth
+		const urlParams = new URLSearchParams(window.location.search);
+		const telegramAuth = urlParams.get('telegram_auth');
+		if (telegramAuth && !isAuthenticated) {
+			try {
+				const authData = JSON.parse(decodeURIComponent(telegramAuth));
+				if (authData.id && authData.first_name) {
+					handleAuthSuccess(authData);
+					// Clean up URL parameter
+					urlParams.delete('telegram_auth');
+					const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+					window.history.replaceState({}, '', newUrl);
+				}
+			} catch (error) {
+				console.warn('Could not parse Telegram auth data from URL:', error);
+			}
+		}
+	});
+
+	onDestroy(() => {
+		// Clean up global callback function to prevent memory leaks
+		if ((window as any).onTelegramAuth) {
+			delete (window as any).onTelegramAuth;
 		}
 	});
 
 	function checkStoredAuth() {
-		const storedUser = localStorage.getItem('telegramUser');
-		const storedAuthDate = localStorage.getItem('telegramAuthDate');
-		
-		if (storedUser && storedAuthDate) {
-			const userData = JSON.parse(storedUser);
-			const authDate = parseInt(storedAuthDate);
-			const currentTime = Math.floor(Date.now() / 1000);
+		try {
+			const storedUser = localStorage.getItem('telegramUser');
+			const storedAuthDate = localStorage.getItem('telegramAuthDate');
 			
-			// Check if auth is still valid (24 hours)
-			if (currentTime - authDate < 24 * 60 * 60) {
-				handleAuthSuccess(userData);
-			} else {
-				// Auth expired, clear storage
-				localStorage.removeItem('telegramUser');
-				localStorage.removeItem('telegramAuthDate');
-				// Initialize widget since user is no longer authenticated
-				initTelegramWidget();
+			if (storedUser && storedAuthDate) {
+				const userData = JSON.parse(storedUser);
+				const authDate = parseInt(storedAuthDate);
+				const currentTime = Math.floor(Date.now() / 1000);
+				
+				// Check if auth is still valid (24 hours)
+				if (currentTime - authDate < 24 * 60 * 60) {
+					handleAuthSuccess(userData);
+				} else {
+					// Auth expired, clear storage
+					localStorage.removeItem('telegramUser');
+					localStorage.removeItem('telegramAuthDate');
+					// Initialize widget since user is no longer authenticated
+					initTelegramWidget();
+				}
 			}
+		} catch (error) {
+			console.error('Error checking stored authentication:', error);
+			// Clear corrupted data and reinitialize
+			localStorage.removeItem('telegramUser');
+			localStorage.removeItem('telegramAuthDate');
+			initTelegramWidget();
 		}
 	}
 
@@ -60,41 +98,52 @@
 		// Only initialize if not already authenticated
 		if (isAuthenticated) return;
 		
-		// Create script element for Telegram Login Widget
-		const script = document.createElement('script');
-		script.src = 'https://telegram.org/js/telegram-widget.js?22';
-		script.setAttribute('data-telegram-login', 'ZeitCampBot');
-		script.setAttribute('data-size', 'large');
-		script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-		script.setAttribute('data-request-access', 'write');
-		script.onload = () => {
-			widgetLoaded = true;
-		};
-		script.onerror = () => {
-			errorMessage = 'Failed to load Telegram Login Widget. This is likely due to an invalid domain configuration. Please configure your domain in BotFather using /setdomain.';
+		try {
+			// Create script element for Telegram Login Widget
+			const script = document.createElement('script');
+			script.src = 'https://telegram.org/js/telegram-widget.js?22';
+			script.setAttribute('data-telegram-login', 'ZeitCampBot');
+			script.setAttribute('data-size', 'large');
+			script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+			script.setAttribute('data-request-access', 'write');
+			script.onload = () => {
+				widgetLoaded = true;
+			};
+			script.onerror = () => {
+				errorMessage = 'Failed to load Telegram Login Widget. This is likely due to an invalid domain configuration. Please configure your domain in BotFather using /setdomain.';
+				widgetLoaded = false;
+			};
+			
+			// Add to widget container if it exists, otherwise to body
+			if (widgetContainer) {
+				widgetContainer.appendChild(script);
+			} else {
+				document.body.appendChild(script);
+			}
+			
+			// Define the callback function globally so Telegram can call it
+			(window as any).onTelegramAuth = (user: any) => {
+				try {
+					console.log('Telegram auth successful:', user);
+					handleAuthSuccess({
+						id: user.id,
+						first_name: user.first_name,
+						last_name: user.last_name,
+						username: user.username,
+						photo_url: user.photo_url,
+						auth_date: user.auth_date,
+						hash: user.hash
+					});
+				} catch (error) {
+					console.error('Error handling Telegram auth success:', error);
+					errorMessage = 'Authentication succeeded but there was an error processing the user data.';
+				}
+			};
+		} catch (error) {
+			console.error('Error initializing Telegram widget:', error);
+			errorMessage = 'Failed to initialize Telegram Login Widget. Please try refreshing the page.';
 			widgetLoaded = false;
-		};
-		
-		// Add to widget container if it exists, otherwise to body
-		if (widgetContainer) {
-			widgetContainer.appendChild(script);
-		} else {
-			document.body.appendChild(script);
 		}
-		
-		// Define the callback function globally so Telegram can call it
-		(window as any).onTelegramAuth = (user: any) => {
-			console.log('Telegram auth successful:', user);
-			handleAuthSuccess({
-				id: user.id,
-				first_name: user.first_name,
-				last_name: user.last_name,
-				username: user.username,
-				photo_url: user.photo_url,
-				auth_date: user.auth_date,
-				hash: user.hash
-			});
-		};
 	}
 
 	function handleAuthSuccess(userData: TelegramUser) {
@@ -102,8 +151,15 @@
 		currentUser = userData;
 		errorMessage = '';
 		
-		// Call the parent callback
-		onAuthSuccess(userData);
+		// Only call the parent callback if it's actually provided and is a function
+		if (typeof onAuthSuccess === 'function') {
+			try {
+				onAuthSuccess(userData);
+			} catch (error) {
+				console.warn('Error in onAuthSuccess callback:', error);
+				// Continue with authentication success even if callback fails
+			}
+		}
 		
 		// Dispatch event for other components
 		dispatch('authSuccess', { user: userData });
@@ -161,6 +217,7 @@
 	{#if isAuthenticated && currentUser}
 		<!-- Authenticated User Display -->
 		<div class="auth-success">
+			<div class="success-indicator">✅</div>
 			<div class="user-info">
 				{#if currentUser.photo_url}
 					<img 
@@ -180,6 +237,7 @@
 					{#if currentUser.username}
 						<div class="user-username">@{currentUser.username}</div>
 					{/if}
+					<div class="auth-status">Successfully authenticated</div>
 				</div>
 			</div>
 			<button 
@@ -203,14 +261,39 @@
 			
 			{#if errorMessage}
 				<div class="error-message">
-					{errorMessage}
-					<div class="mt-2 text-xs text-red-300">
-						For local development, use 'localhost:5173' as the domain in BotFather with /setdomain command. For production, use your actual domain.
+					<div class="error-title">⚠️ Authentication Error</div>
+					<div class="error-description">{errorMessage}</div>
+					<div class="error-help">
+						<strong>Need help?</strong>
+						<ul class="error-steps">
+							<li>Make sure you're using the correct domain</li>
+							<li>For local development, use 'localhost:5173' in BotFather</li>
+							<li>For production, use your actual domain</li>
+							<li>Try refreshing the page if the issue persists</li>
+						</ul>
+					</div>
+					<div class="error-actions">
+						<button 
+							on:click={() => {
+								errorMessage = '';
+								initTelegramWidget();
+							}}
+							class="retry-btn"
+						>
+							🔄 Retry
+						</button>
 					</div>
 				</div>
 			{/if}
 			
 			<div class="login-buttons">
+				{#if !widgetLoaded && !errorMessage}
+					<div class="widget-loading">
+						<div class="loading-spinner"></div>
+						<span>Loading Telegram Login Widget...</span>
+					</div>
+				{/if}
+				
 				<div bind:this={widgetContainer} class="telegram-widget-container mb-4"></div>
 				
 				<button 
@@ -243,6 +326,22 @@
 		margin: 0 auto;
 	}
 
+	.auth-success,
+	.login-section {
+		animation: slideIn 0.3s ease-out;
+	}
+
+	@keyframes slideIn {
+		from {
+			opacity: 0;
+			transform: translateY(10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
 	.auth-success {
 		display: flex;
 		align-items: center;
@@ -252,12 +351,30 @@
 		border-radius: 0.75rem;
 		color: white;
 		box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
+		position: relative;
+	}
+
+	.success-indicator {
+		position: absolute;
+		top: -0.5rem;
+		left: -0.5rem;
+		background: #22c55e;
+		border: 2px solid white;
+		border-radius: 50%;
+		width: 2rem;
+		height: 2rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-size: 1rem;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 	}
 
 	.user-info {
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
+		margin-left: 1.5rem;
 	}
 
 	.user-avatar {
@@ -290,6 +407,13 @@
 		.user-username {
 			font-size: 0.875rem;
 			opacity: 0.9;
+		}
+
+		.auth-status {
+			font-size: 0.75rem;
+			opacity: 0.8;
+			margin-top: 0.25rem;
+			font-style: italic;
 		}
 	}
 
@@ -340,13 +464,91 @@
 	}
 
 	.error-message {
-		background: rgba(239, 68, 68, 0.2);
+		background: rgba(239, 68, 68, 0.15);
 		border: 1px solid rgba(239, 68, 68, 0.4);
 		color: #fca5a5;
-		padding: 0.75rem;
-		border-radius: 0.5rem;
+		padding: 1rem;
+		border-radius: 0.75rem;
 		margin-bottom: 1rem;
 		font-size: 0.875rem;
+		text-align: left;
+	}
+
+	.error-title {
+		font-weight: 600;
+		font-size: 1rem;
+		margin-bottom: 0.5rem;
+		color: #fecaca;
+	}
+
+	.error-description {
+		margin-bottom: 0.75rem;
+		line-height: 1.4;
+	}
+
+	.error-help {
+		font-size: 0.8rem;
+		color: #fbbf24;
+		border-top: 1px solid rgba(239, 68, 68, 0.3);
+		padding-top: 0.75rem;
+	}
+
+	.error-help strong {
+		color: #fbbf24;
+		display: block;
+		margin-bottom: 0.5rem;
+	}
+
+	.error-steps {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+	}
+
+	.error-steps li {
+		position: relative;
+		padding-left: 1.25rem;
+		margin-bottom: 0.25rem;
+		line-height: 1.3;
+	}
+
+	.error-steps li:before {
+		content: "•";
+		position: absolute;
+		left: 0;
+		color: #fbbf24;
+		font-weight: bold;
+	}
+
+	.error-steps li:last-child {
+		margin-bottom: 0;
+	}
+
+	.error-actions {
+		margin-top: 1rem;
+	}
+
+	.retry-btn {
+		background: linear-gradient(135deg, #0088cc 0%, #0077b3 100%);
+		color: white;
+		border: none;
+		padding: 0.625rem 1.25rem;
+		border-radius: 0.5rem;
+		font-size: 0.875rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+		display: inline-block;
+
+		&:hover:not(:disabled) {
+			transform: translateY(-1px);
+			box-shadow: 0 4px 15px rgba(0, 136, 204, 0.4);
+		}
+
+		&:disabled {
+			opacity: 0.7;
+			cursor: not-allowed;
+		}
 	}
 
 	.login-buttons {
@@ -354,6 +556,16 @@
 		flex-direction: column;
 		gap: 0.75rem;
 		margin-bottom: 1.5rem;
+	}
+
+	.widget-loading {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+		color: rgba(255, 255, 255, 0.8);
+		font-size: 0.875rem;
 	}
 
 	.telegram-login-btn {
