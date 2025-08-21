@@ -798,6 +798,7 @@
                                     <button 
                                         on:click={() => adjustValue('completed', -1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Decrease completed tasks weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -813,6 +814,7 @@
                                     <button 
                                         on:click={() => adjustValue('completed', 1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Increase completed tasks weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -839,6 +841,7 @@
                                     <button 
                                         on:click={() => adjustValue('sent', -1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Decrease appreciation sent weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -854,6 +857,7 @@
                                     <button 
                                         on:click={() => adjustValue('sent', 1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Increase appreciation sent weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -880,6 +884,7 @@
                                     <button 
                                         on:click={() => adjustValue('received', -1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Decrease appreciation received weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -895,6 +900,7 @@
                                     <button 
                                         on:click={() => adjustValue('received', 1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Increase appreciation received weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -927,6 +933,7 @@
                                                 <button 
                                                     on:click={() => adjustCurrencyWeight(currency, -1)}
                                                     class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                                    aria-label="Decrease {currency} weight"
                                                 >
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -942,6 +949,7 @@
                                                 <button 
                                                     on:click={() => adjustCurrencyWeight(currency, 1)}
                                                     class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                                    aria-label="Increase {currency} weight"
                                                 >
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -976,6 +984,7 @@
                                         <button 
                                             on:click={() => adjustValue('hours', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Decrease hours weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -991,6 +1000,7 @@
                                         <button 
                                             on:click={() => adjustValue('hours', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Increase hours weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -1017,6 +1027,7 @@
                                         <button 
                                             on:click={() => adjustValue('collaboration', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Decrease collaboration weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -1032,6 +1043,7 @@
                                         <button 
                                             on:click={() => adjustValue('collaboration', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Increase collaboration weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -1058,6 +1070,7 @@
                                         <button 
                                             on:click={() => adjustValue('wants', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Decrease wants weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -1073,6 +1086,7 @@
                                         <button 
                                             on:click={() => adjustValue('wants', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Increase wants weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -1099,6 +1113,7 @@
                                         <button 
                                             on:click={() => adjustValue('offers', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Decrease offers weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -1114,11 +1129,12 @@
                                         <button 
                                             on:click={() => adjustValue('offers', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Increase offers weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                            </svg>
-                                        </button>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                    </button>
                                     </div>
                                 {:else}
                                     <div class="text-2xl font-bold {equation.offers > 0 ? 'text-indigo-400' : 'text-gray-500'}">{equation.offers}</div>

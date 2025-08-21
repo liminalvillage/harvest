@@ -719,6 +719,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 				<button
 					on:click={onClose}
 					class="text-white hover:text-white/80 transition-colors p-2 rounded-lg hover:bg-white/10"
+					aria-label="Close modal"
 				>
 					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -769,6 +770,13 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 											<div 
 						on:click={() => openAdvisorChat(advisor)}
 						class="bg-gray-600 rounded-lg p-3 hover:bg-gray-500 transition-colors cursor-pointer"
+						role="button"
+						tabindex="0"
+						on:keydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								openAdvisorChat(advisor);
+							}
+						}}
 					>
 													<div class="flex items-start justify-between">
 							<div class="flex-1">
@@ -812,6 +820,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 				<button
 					on:click={closeElementModal}
 					class="text-white hover:text-white/80 transition-colors p-2 rounded-lg hover:bg-white/10"
+					aria-label="Close element modal"
 				>
 					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -846,6 +855,13 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 								<div 
 									on:click={() => openAdvisorChat(advisor)}
 									class="bg-gray-700 rounded-lg p-3 hover:bg-gray-600 transition-colors cursor-pointer border-l-4 {elementData.borderColor}"
+									role="button"
+									tabindex="0"
+									on:keydown={(e) => {
+										if (e.key === 'Enter' || e.key === ' ') {
+											openAdvisorChat(advisor);
+										}
+									}}
 								>
 									<div class="flex items-start justify-between">
 										<div class="flex-1">
@@ -936,6 +952,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 				<button
 					on:click={closeBackcastModal}
 					class="text-white hover:text-white/80 transition-colors p-2 rounded-lg hover:bg-white/10"
+					aria-label="Close backcast modal"
 				>
 					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>

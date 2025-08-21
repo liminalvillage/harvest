@@ -1404,7 +1404,6 @@
                        top: {textPosition.y}px;
                        font-size: {currentStroke * 4}px;"
                 placeholder="Type text and press Enter"
-                autofocus
             />
         {/if}
 

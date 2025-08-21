@@ -760,7 +760,7 @@
 					<span class="sr-only">Include federated offers</span>
 					<span 
 						class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {includeFederatedOffers ? 'translate-x-6' : 'translate-x-1'}"
-					/>
+					></span>
 				</button>
 				{#if loadingFederated}
 					<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>

@@ -872,7 +872,9 @@
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
+        tabindex="-1"
         on:click|stopPropagation
+        on:keydown|stopPropagation
     >
         <button
             class="absolute top-4 right-4 text-gray-400 hover:text-white z-10 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center p-2"
@@ -1137,7 +1139,7 @@
                             
                             {#if quest.dependsOn && quest.dependsOn.length > 0}
                                 <div class="space-y-2">
-                                    <label class="block text-sm font-medium text-gray-300">Current Dependencies</label>
+                                    <label for="current-dependencies" class="block text-sm font-medium text-gray-300">Current Dependencies</label>
                                     <div class="space-y-2">
                                         {#each quest.dependsOn as depId, index}
                                             {@const depTask = availableTasks.find(t => t.id === depId)}
@@ -1152,6 +1154,7 @@
                                                     on:touchend={handleButtonTouchEnd}
                                                     on:touchcancel={handleButtonTouchCancel}
                                                     type="button"
+                                                    aria-label="Remove dependency"
                                                 >
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>

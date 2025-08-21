@@ -1019,11 +1019,16 @@
 
 	<!-- Task Details Modal -->
 	{#if showTaskDetails && selectedTask}
-		<div class="modal-overlay" on:click={closeTaskDetails}>
-			<div class="modal-content" on:click|stopPropagation>
+		<div class="modal-overlay" role="dialog" aria-modal="true" tabindex="-1">
+			<button 
+				class="absolute inset-0 w-full h-full" 
+				on:click={closeTaskDetails}
+				aria-label="Close modal backdrop"
+			></button>
+			<div class="modal-content" role="document">
 				<div class="modal-header">
 					<h2 class="modal-title">{selectedTask.title}</h2>
-					<button class="close-btn" on:click={closeTaskDetails}>
+					<button class="close-btn" on:click={closeTaskDetails} aria-label="Close task details">
 						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
 						</svg>
@@ -1068,11 +1073,16 @@
 
 	<!-- Edit Task Modal -->
 	{#if showEditModal && editingTask}
-		<div class="modal-overlay" on:click={closeEditModal}>
-			<div class="modal-content edit-modal" on:click|stopPropagation>
+		<div class="modal-overlay" role="dialog" aria-modal="true" tabindex="-1">
+			<button 
+				class="absolute inset-0 w-full h-full" 
+				on:click={closeEditModal}
+				aria-label="Close modal backdrop"
+			></button>
+			<div class="modal-content edit-modal" role="document">
 				<div class="modal-header">
 					<h2 class="modal-title">Edit Task</h2>
-					<button class="close-btn" on:click={closeEditModal}>
+					<button class="close-btn" on:click={closeEditModal} aria-label="Close edit modal">
 						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
 						</svg>

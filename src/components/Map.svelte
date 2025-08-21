@@ -1432,9 +1432,7 @@
 		z-index: 1;
 	}
 	
-	.hidden {
-		display: none;
-	}
+
 
 	/* Sidebar overlay styles */
 	.sidebar-overlay {

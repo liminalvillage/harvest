@@ -121,20 +121,20 @@
   <h4 class="text-gray-300 font-medium">Create a New Advisor</h4>
   <div class="grid md:grid-cols-3 gap-4">
     <div>
-      <label class="block text-gray-300 mb-2">Advisor Name</label>
-      <input bind:value={currentAdvisorName} placeholder="e.g., Donella Meadows" class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      <label for="advisor-name" class="block text-gray-300 mb-2">Advisor Name</label>
+      <input id="advisor-name" bind:value={currentAdvisorName} placeholder="e.g., Donella Meadows" class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
     </div>
     <div>
-      <label class="block text-gray-300 mb-2">Type</label>
-      <select bind:value={selectedAdvisorType} class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+      <label for="advisor-type" class="block text-gray-300 mb-2">Type</label>
+      <select id="advisor-type" bind:value={selectedAdvisorType} class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
         <option value="real">Historical/Real Person</option>
         <option value="mythic">Mythic/Spiritual Being</option>
         <option value="archetype">Archetypal Force</option>
       </select>
     </div>
     <div>
-      <label class="block text-gray-300 mb-2">Lens/Wisdom</label>
-      <input bind:value={currentAdvisorLens} placeholder="e.g., deep ecology" class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      <label for="advisor-lens" class="block text-gray-300 mb-2">Lens/Wisdom</label>
+      <input id="advisor-lens" bind:value={currentAdvisorLens} placeholder="e.g., deep ecology" class="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
     </div>
   </div>
   <button
@@ -221,11 +221,7 @@
     pointer-events: none;
   }
 
-  .metatron-circle.editing {
-    background: rgba(59, 130, 246, 0.6);
-    border-color: rgba(59, 130, 246, 0.8);
-    box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
-  }
+
 </style>
 
 

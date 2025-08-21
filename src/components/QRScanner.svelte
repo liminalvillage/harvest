@@ -212,21 +212,5 @@
         background: black;
     }
     
-    #qr-reader video {
-        width: 100% !important;
-        height: 100% !important;
-        object-fit: cover !important;
-        border-radius: 0.5rem;
-        display: block !important;
-    }
 
-    #qr-reader > div {
-        width: 100% !important;
-        height: 100% !important;
-        display: block !important;
-    }
-    
-    #qr-reader canvas {
-        display: none !important;
-    }
 </style> 

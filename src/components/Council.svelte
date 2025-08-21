@@ -3482,21 +3482,21 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
                     <div class="bg-gray-700 rounded-xl p-4 space-y-3">
                         <div class="grid md:grid-cols-3 gap-3">
                             <div>
-                                <label class="block text-gray-300 mb-1 text-sm">Advisor Name</label>
-                                <input class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white"
+                                <label for="advisor-name-input" class="block text-gray-300 mb-1 text-sm">Advisor Name</label>
+                                <input id="advisor-name-input" class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white"
                                     bind:value={currentAdvisorName} placeholder="e.g., Donella Meadows" use:focusOnMount />
                             </div>
                             <div>
-                                <label class="block text-gray-300 mb-1 text-sm">Type</label>
-                                <select class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white" bind:value={selectedAdvisorType}>
+                                <label for="advisor-type-select" class="block text-gray-300 mb-1 text-sm">Type</label>
+                                <select id="advisor-type-select" class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white" bind:value={selectedAdvisorType}>
                                     <option value="real">Historical/Real Person</option>
                                     <option value="mythic">Mythic/Spiritual Being</option>
                                     <option value="archetype">Archetypal Force</option>
                                 </select>
                             </div>
                             <div>
-                                <label class="block text-gray-300 mb-1 text-sm">Lens/Wisdom</label>
-                                <input class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white"
+                                <label for="advisor-lens-input" class="block text-gray-300 mb-1 text-sm">Lens/Wisdom</label>
+                                <input id="advisor-lens-input" class="w-full bg-gray-600 border border-gray-500 rounded px-3 py-2 text-white"
                                     bind:value={currentAdvisorLens} placeholder="e.g., deep ecology" />
                             </div>
                         </div>
@@ -3843,141 +3843,11 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 		pointer-events: none;
 	}
 
-	.metatron-circle.editing {
-		background: rgba(59, 130, 246, 0.6);
-		border-color: rgba(59, 130, 246, 0.8);
-		box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
-	}
+	
 
-	/* Center circle */
-	.center-circle {
-		left: 50%;
-		top: 50%;
-	}
+	
 
-	/* Inner ring circles - vertical */
-	.inner-circle.top {
-		left: 50%;
-		top: 28.6%;
-	}
 
-	.inner-circle.top-inner {
-		left: 50%;
-		top: 39.3%;
-	}
-
-	.inner-circle.bottom-inner {
-		left: 50%;
-		top: 60.7%;
-	}
-
-	.inner-circle.bottom {
-		left: 50%;
-		top: 71.4%;
-	}
-
-	/* Inner ring circles - horizontal */
-	.inner-circle.top-left {
-		left: 31.5%;
-		top: 39.3%;
-	}
-
-	.inner-circle.top-left-inner {
-		left: 40.8%;
-		top: 44.7%;
-	}
-
-	.inner-circle.top-right-inner {
-		left: 59.2%;
-		top: 44.7%;
-	}
-
-	.inner-circle.top-right {
-		left: 68.5%;
-		top: 39.3%;
-	}
-
-	.inner-circle.bottom-left {
-		left: 31.5%;
-		top: 60.7%;
-	}
-
-	.inner-circle.bottom-left-inner {
-		left: 40.8%;
-		top: 55.3%;
-	}
-
-	.inner-circle.bottom-right-inner {
-		left: 59.2%;
-		top: 55.3%;
-	}
-
-	.inner-circle.bottom-right {
-		left: 68.5%;
-		top: 60.7%;
-	}
-
-	/* Outer ring circles - vertical */
-	.outer-circle.top {
-		left: 50%;
-		top: 18.0%;
-	}
-
-	.outer-circle.top-outer {
-		left: 50%;
-		top: 7.3%;
-	}
-
-	.outer-circle.bottom {
-		left: 50%;
-		top: 82.0%;
-	}
-
-	.outer-circle.bottom-outer {
-		left: 50%;
-		top: 92.7%;
-	}
-
-	/* Outer ring circles - corners */
-	.outer-circle.top-left {
-		left: 22.3%;
-		top: 34.0%;
-	}
-
-	.outer-circle.top-left-outer {
-		left: 13.0%;
-		top: 28.6%;
-	}
-
-	.outer-circle.top-right {
-		left: 77.7%;
-		top: 34.0%;
-	}
-
-	.outer-circle.top-right-outer {
-		left: 87.0%;
-		top: 28.6%;
-	}
-
-	.outer-circle.bottom-left {
-		left: 22.3%;
-		top: 66.0%;
-	}
-
-	.outer-circle.bottom-left-outer {
-		left: 13.0%;
-		top: 71.4%;
-	}
-
-	.outer-circle.bottom-right {
-		left: 77.7%;
-		top: 66.0%;
-	}
-
-	.outer-circle.bottom-right-outer {
-		left: 87.0%;
-		top: 71.4%;
-	}
 
 	.label-text {
 		position: absolute;

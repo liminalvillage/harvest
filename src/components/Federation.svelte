@@ -992,6 +992,7 @@
                 <button 
                     on:click={closeDialog}
                     class="text-gray-400 hover:text-white transition-colors"
+                    aria-label="Close dialog"
                 >
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -1091,6 +1092,7 @@
                 <button 
                     on:click={() => showAddCustomLens = false}
                     class="text-gray-400 hover:text-white transition-colors"
+                    aria-label="Close custom lens dialog"
                 >
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
@@ -1110,7 +1112,7 @@
                         placeholder="Enter lens name..."
                         class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                         required
-                        autofocus={false}
+
                     />
                 </div>
 

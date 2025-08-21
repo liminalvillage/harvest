@@ -350,15 +350,16 @@
 							
 							<div class="space-y-4">
 								<div>
-									<label class="block text-sm font-medium text-gray-300 mb-2">Holon ID</label>
+									<div class="text-sm font-medium text-gray-300 mb-2">Holon ID</div>
 									<div class="px-4 py-3 bg-gray-600 text-gray-300 rounded-xl font-mono">
 										{settings.id || 'Not set'}
 									</div>
 								</div>
 
 								<div>
-									<label class="block text-sm font-medium text-gray-300 mb-2">Name</label>
+									<label for="holon-name" class="block text-sm font-medium text-gray-300 mb-2">Name</label>
 									<input 
+										id="holon-name"
 										type="text" 
 										bind:value={settings.name}
 										on:blur={() => updateSetting('name', settings.name)}
@@ -368,8 +369,9 @@
 								</div>
 
 								<div>
-									<label class="block text-sm font-medium text-gray-300 mb-2">Hex Address</label>
+									<label for="holon-hex" class="block text-sm font-medium text-gray-300 mb-2">Hex Address</label>
 									<input 
+										id="holon-hex"
 										type="text" 
 										bind:value={settings.hex}
 										on:blur={() => updateSetting('hex', settings.hex)}
@@ -386,8 +388,8 @@
 							
 							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 								<div>
-									<label class="block text-sm font-medium text-gray-300 mb-2">Language <span class="text-xs text-gray-400">(for Telegram bot only)</span></label>
-									<select bind:value={settings.language} on:change={() => updateSetting('language', settings.language)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+									<label for="holon-language" class="block text-sm font-medium text-gray-300 mb-2">Language <span class="text-xs text-gray-400">(for Telegram bot only)</span></label>
+									<select id="holon-language" bind:value={settings.language} on:change={() => updateSetting('language', settings.language)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
 										{#each languages as lang}
 											<option value={lang.code}>{lang.flag} {lang.name}</option>
 										{/each}
@@ -395,8 +397,8 @@
 								</div>
 
 								<div>
-									<label class="block text-sm font-medium text-gray-300 mb-2">Timezone</label>
-									<select bind:value={settings.timezone} on:change={() => updateSetting('timezone', settings.timezone)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+									<label for="holon-timezone" class="block text-sm font-medium text-gray-300 mb-2">Timezone</label>
+									<select id="holon-timezone" bind:value={settings.timezone} on:change={() => updateSetting('timezone', settings.timezone)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
 										<option value="">Select timezone</option>
 										{#each Object.entries(timezones) as [region, tzs]}
 											<optgroup label={region}>
@@ -414,7 +416,7 @@
 						<div class="mb-6">
 							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">🎨 Appearance</h3>
 							<div>
-								<label class="block text-sm font-medium text-gray-300 mb-2">Theme <span class="text-xs text-gray-400">(for Telegram bot only)</span></label>
+								<label for="holon-theme" class="block text-sm font-medium text-gray-300 mb-2">Theme <span class="text-xs text-gray-400">(for Telegram bot only)</span></label>
 								<div class="flex gap-2 flex-wrap">
 									{#each themes as theme}
 										<button 
@@ -434,8 +436,8 @@
 							<h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">📋 Task Limits</h3>
 							
 							<div>
-								<label class="block text-sm font-medium text-gray-300 mb-2">Maximum Tasks</label>
-								<select bind:value={settings.maxTasks} on:change={() => updateSetting('maxTasks', settings.maxTasks)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+								<label for="holon-max-tasks" class="block text-sm font-medium text-gray-300 mb-2">Maximum Tasks</label>
+								<select id="holon-max-tasks" bind:value={settings.maxTasks} on:change={() => updateSetting('maxTasks', settings.maxTasks)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
 									{#each maxTaskOptions as option}
 										<option value={option}>
 											{option === 0 ? 'Unlimited' : option}
@@ -571,8 +573,8 @@
 
 							<!-- Admin Selection -->
 							<div class="mb-4">
-								<label class="block text-sm font-medium text-gray-300 mb-2">Administrator</label>
-								<select bind:value={settings.admin} on:change={() => updateSetting('admin', settings.admin)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
+								<label for="holon-admin" class="block text-sm font-medium text-gray-300 mb-2">Administrator</label>
+								<select id="holon-admin" bind:value={settings.admin} on:change={() => updateSetting('admin', settings.admin)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
 									<option value="">Select admin</option>
 									{#each realUsers as user}
 										<option value={user.id || user.username}>{user.first_name || user.username || `User ${user.id}`}</option>

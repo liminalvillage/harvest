@@ -1215,6 +1215,7 @@
                 <button 
                     class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
                     on:click={() => handleNavigation(1)}
+                    aria-label="Next period"
                 >
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -1633,7 +1634,6 @@
             <form 
                 method="dialog"
                 class="bg-gray-800 p-6 rounded-xl schedule-modal border border-gray-700 shadow-xl max-w-md w-full"
-                role="dialog"
                 aria-labelledby="modal-title"
                 aria-describedby="modal-description"
             >

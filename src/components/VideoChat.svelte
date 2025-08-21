@@ -341,12 +341,16 @@
   <div class="videos">
     <div class="video-wrapper">
       <h3>My Video</h3>
-      <video bind:this={localVideoElement} autoplay muted playsinline></video>
+      <video bind:this={localVideoElement} autoplay muted playsinline>
+        <track kind="captions" src="" label="English" srclang="en" default />
+      </video>
     </div>
     {#each Array.from(remoteStreams.entries()) as [peerId, stream] (peerId)}
       <div class="video-wrapper">
         <h3>Remote Video ({peerId})</h3>
-        <video srcObject={stream} autoplay playsinline></video>
+        <video srcObject={stream} autoplay playsinline>
+          <track kind="captions" src="" label="English" srclang="en" default />
+        </video>
       </div>
     {/each}
   </div>

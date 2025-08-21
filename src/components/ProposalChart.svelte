@@ -218,8 +218,14 @@
                     <div 
                         class="absolute -top-2 -right-2 text-gray-400 hover:text-white cursor-pointer"
                         on:click={() => showModal = false}
+                        on:keydown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                showModal = false;
+                            }
+                        }}
                         role="button"
                         tabindex="0"
+                        aria-label="Close modal"
                     >
                         <svg
                             class="w-5 h-5"

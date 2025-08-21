@@ -859,6 +859,7 @@
 								class="ml-2 text-gray-400 hover:text-gray-300"
 								on:click={navigateUp}
 								title="Go up one level"
+								aria-label="Navigate up one level"
 							>
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18" />
@@ -1042,6 +1043,7 @@
 											class="text-green-400 hover:text-green-300"
 											on:click={() => navigateToPath(key)}
 											title="Navigate into this node"
+											aria-label="Navigate into node {key}"
 										>
 											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -1052,6 +1054,7 @@
 										class="text-blue-400 hover:text-blue-300"
 										on:click={() => exportEntry(key, data)}
 										title="Export entry"
+										aria-label="Export entry {key}"
 									>
 										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -1061,6 +1064,7 @@
 										class="text-orange-400 hover:text-orange-300"
 										on:click={() => recursivelyDeleteNode(key)}
 										title="Recursively delete entire node (sets all nested values to null)"
+										aria-label="Recursively delete node {key}"
 									>
 										<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1070,6 +1074,7 @@
 										class="text-red-400 hover:text-red-300"
 										on:click={() => deleteEntry(key)}
 										title="Delete entry"
+										aria-label="Delete entry {key}"
 									>
 										<svg
 											class="w-4 h-4"
@@ -1338,73 +1343,5 @@
 		white-space: nowrap;
 	}
 
-	.lens-select {
-		appearance: none;
-		background: transparent;
-		color: #333;
-		border: none;
-		padding: 4px 24px 4px 8px;
-		font-size: 14px;
-		cursor: pointer;
-		min-width: 120px;
-	}
 
-	.info-button {
-		background: none;
-		border: none;
-		padding: 4px;
-		color: #666;
-		cursor: pointer;
-		transition: color 0.2s;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.info-button:hover {
-		color: #333;
-	}
-
-	.info-tooltip {
-		position: absolute;
-		top: calc(100% + 8px);
-		left: 0;
-		background: white;
-		border-radius: 4px;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-		padding: 12px;
-		width: 280px;
-		font-size: 13px;
-		color: #333;
-		z-index: 1000;
-	}
-
-	.info-tooltip::before {
-		content: '';
-		position: absolute;
-		top: -6px;
-		left: 50%;
-		width: 12px;
-		height: 12px;
-		background: white;
-		transform: rotate(45deg) translateX(-50%);
-		box-shadow: -2px -2px 4px rgba(0,0,0,0.05);
-	}
-
-	.info-tooltip p {
-		margin: 0 0 8px 0;
-	}
-
-	.info-tooltip ul {
-		margin: 0;
-		padding-left: 16px;
-	}
-
-	.info-tooltip li {
-		margin: 4px 0;
-	}
-
-	.info-tooltip strong {
-		color: #000;
-	}
 </style>

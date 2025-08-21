@@ -465,8 +465,13 @@
 
 <!-- API Key Configuration Modal -->
 {#if showApiModal}
-	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={closeApiModal} on:keydown={(e) => e.key === 'Escape' && closeApiModal()}>
-		<div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4" role="document" on:click={(e) => e.stopPropagation()}>
+	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" role="dialog" aria-modal="true" tabindex="-1" on:keydown={(e) => e.key === 'Escape' && closeApiModal()}>
+		<button 
+			class="absolute inset-0 w-full h-full" 
+			on:click={closeApiModal}
+			aria-label="Close modal backdrop"
+		></button>
+		<div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4" role="document">
 			<div class="flex justify-between items-center mb-4">
 				<h2 class="text-xl font-bold text-white">🔐 API Key Configuration</h2>
 				<button on:click={closeApiModal} class="text-gray-400 hover:text-white" aria-label="Close modal">
