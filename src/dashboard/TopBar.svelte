@@ -15,7 +15,6 @@
 	import { browser } from '$app/environment';
 	import HoloSphere from 'holosphere';
 	import { ethers } from 'ethers';
-	import { fetchHolonName } from "../utils/holonNames";
 	import { addVisitedHolon, getWalletAddress } from "../utils/localStorage";
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
@@ -50,13 +49,6 @@
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let currentHolonName: string | undefined;
-
-	interface HolonInfo {
-		id: string;
-		name?: string;
-	}
-
-
 	let holonID: string = '';
 	let showToast = false;
 
@@ -193,10 +185,12 @@
 		}
 		
 		try {
-			currentHolonName = await fetchHolonName(holosphere, id);
+			// Fetch name directly from holosphere like in MyHolons
+			const settings = await holosphere.get(id, "settings", id);
+			currentHolonName = settings?.name || id;
 		} catch (error) {
 			console.error(`Error fetching name for holon ${id}:`, error);
-			currentHolonName = undefined;
+			currentHolonName = id; // Fallback to ID on error
 		}
 	}
 
@@ -376,34 +370,72 @@
 
     <!-- Dashboard-style bar - full width -->
     {#if !isPrimaryPage}
-        <button 
-            on:click={handleToggleMyHolons} 
-            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 px-4 sm:px-6 py-2 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-[1.01] relative overflow-hidden flex-1"
-            title="Open My Holons"
-        >
-            <!-- Gradient overlay -->
-            <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            
-            <!-- Bar content - responsive layout -->
-            <div class="relative z-10 flex flex-col sm:flex-row items-center gap-1 sm:gap-3">
-                <!-- Holons Logo -->
-                <div class="flex-shrink-0">
-                    <div class="w-12 h-12 sm:w-20 sm:h-20 group-hover:scale-105 transition-transform">
-                        <MyHolonsIcon />
+        <div class="flex-1 flex flex-col gap-3">
+            <!-- Title section - takes full width -->
+            <button 
+                on:click={handleToggleMyHolons} 
+                class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 px-4 sm:px-6 py-2 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-[1.01] relative overflow-hidden w-full"
+                title="Open My Holons"
+            >
+                <!-- Gradient overlay -->
+                <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                
+                <!-- Bar content - responsive layout -->
+                <div class="relative z-10 flex flex-row items-center gap-3">
+                    <!-- Holons Logo -->
+                    <div class="flex-shrink-0">
+                        <div class="w-12 h-12 sm:w-20 sm:h-20 group-hover:scale-105 transition-transform">
+                            <MyHolonsIcon />
+                        </div>
+                    </div>
+                    
+                    <!-- Title and ID -->
+                    <div class="text-left">
+                        <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
+                            {currentHolonName || 'Loading...'}
+                        </div>
+                        <div class="text-xs sm:text-sm text-gray-400 font-mono mt-1">
+                            {$ID || '...'}
+                        </div>
                     </div>
                 </div>
-                
-                <!-- Title and ID -->
-                <div class="text-center sm:text-left">
-                    <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
-                        {currentHolonName || 'Loading...'}
-                    </div>
-                    <div class="text-xs sm:text-sm text-gray-400 font-mono mt-1">
-                        {$ID || '...'}
-                    </div>
+            </button>
+            
+            <!-- Controls row - only visible on small screens -->
+            <div class="flex sm:hidden flex-row items-center justify-center gap-3">
+                <!-- Clock Overlay Button -->
+                <button 
+                    on:click={toggleClockOverlay}
+                    class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
+                    title="Show System Overview (Ctrl+Shift+C)"
+                    aria-label="Show System Overview"
+                >
+                    <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </button>
+
+                <!-- Wallet and API Keys - Horizontal Layout -->
+                <div class="flex flex-row gap-2">
+                    <!-- Wallet -->
+                    {#if $walletAddress}
+                        <div class="wallet-info">
+                            <span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
+                            <button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
+                        </div>
+                    {:else}
+                        <button on:click={connectWallet} class="wallet-button">
+                            Connect Wallet
+                        </button>
+                    {/if}
+                    
+                    <!-- API Key Configuration Button -->
+                    <button on:click={openApiModal} class="wallet-button">
+                        🔐 API Keys
+                    </button>
                 </div>
             </div>
-        </button>
+        </div>
     {:else}
         <!-- Root page - centered logo -->
         <div class="flex-1 flex items-center justify-center">
@@ -415,8 +447,8 @@
         </div>
     {/if}
 
-    <!-- Right side controls -->
-    <div class="z-10 ml-auto flex items-center gap-3">
+    <!-- Right side controls - only visible on larger screens -->
+    <div class="z-10 ml-auto hidden sm:flex flex-col items-center gap-3">
         <!-- Clock Overlay Button (only on dashboard pages) -->
         {#if !isPrimaryPage}
             <button 
@@ -431,7 +463,7 @@
             </button>
         {/if}
 
-        <!-- Wallet and API Keys - Vertical Layout -->
+        <!-- Wallet and API Keys - Vertical Layout on larger screens -->
         <div class="flex flex-col gap-2">
             <!-- Wallet -->
             {#if $walletAddress}
