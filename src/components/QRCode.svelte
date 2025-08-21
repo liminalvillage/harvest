@@ -6,6 +6,9 @@
 	export let title: string = '';
 	export let chatId: string = '';
 	export let desc: string = '';
+	export let holonID: string = '';
+	export let deckId: string = '';
+	export let cardId: string = '';
 
 	let qrContainer: HTMLDivElement;
 	let qrCode: string = '';
@@ -15,14 +18,23 @@
 	});
 
 	function generateQRCode() {
-		if (!action || !title || !chatId) {
+		if (!action || !title) {
 			console.error('Missing required parameters for QR code generation');
 			return;
 		}
 
 		// Create the URL that the QR code should point to
-		// Note: We're using the same URL structure as the original request
-		const qrUrl = `https://dashboard.holons.io/qr?action=${encodeURIComponent(action)}&title=${encodeURIComponent(title)}&chatId=${encodeURIComponent(chatId)}&desc=${encodeURIComponent(desc)}`;
+		// Following the format from the example URL
+		const params = new URLSearchParams();
+		params.append('action', action);
+		params.append('title', title);
+		if (desc) params.append('desc', desc);
+		if (holonID) params.append('holonID', holonID);
+		if (deckId) params.append('deckId', deckId);
+		if (cardId) params.append('cardId', cardId);
+		if (chatId) params.append('chatId', chatId);
+		
+		const qrUrl = `https://dashboard.holons.io/qr?${params.toString()}`;
 		
 		// Generate SVG QR code using a reliable service
 		// SVG format provides better quality and scalability
@@ -46,7 +58,7 @@
 		document.body.removeChild(link);
 	}
 
-	$: if (action && title && chatId) {
+	$: if (action && title) {
 		generateQRCode();
 	}
 </script>
@@ -85,7 +97,10 @@
 		<!-- Action Info -->
 		<div class="action-info">
 			<p><strong>Action:</strong> {action}</p>
-			<p><strong>Chat ID:</strong> {chatId}</p>
+			{#if holonID}<p><strong>Holon ID:</strong> {holonID}</p>{/if}
+			{#if deckId}<p><strong>Deck ID:</strong> {deckId}</p>{/if}
+			{#if cardId}<p><strong>Card ID:</strong> {cardId}</p>{/if}
+			{#if chatId}<p><strong>Chat ID:</strong> {chatId}</p>{/if}
 		</div>
 		
 		<!-- Download Button -->
