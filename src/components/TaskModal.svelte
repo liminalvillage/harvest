@@ -95,31 +95,31 @@
         let unsubscribeQuests: (() => void) | undefined;
 
         if (holosphere && holonId) {
-            // Fetch initial users and build a userStore keyed by user.username
+            // Fetch initial users and build a userStore keyed by user.id
             (async () => {
                 try {
                     const initialUsersData = await holosphere.getAll(holonId, "users");
-                    let usersKeyedByUsername: UserStore = {};
+                    let usersKeyedById: UserStore = {};
                     if (Array.isArray(initialUsersData)) {
                         initialUsersData.forEach(user => {
-                            if (user && user.username) { // Ensure user and user.username are valid
-                                usersKeyedByUsername[user.username] = user as User;
+                            if (user && user.id) { // Ensure user and user.id are valid
+                                usersKeyedById[user.id] = user as User;
                             } else {
-                                console.warn("[TaskModal.svelte] Invalid user or missing user.username in initialUsersData array item:", user);
+                                console.warn("[TaskModal.svelte] Invalid user or missing user.id in initialUsersData array item:", user);
                             }
                         });
                     } else if (typeof initialUsersData === 'object' && initialUsersData !== null) {
                         Object.values(initialUsersData).forEach((user: any) => {
-                            if (user && user.username) { // Ensure user and user.username are valid
-                                usersKeyedByUsername[user.username] = user as User;
+                            if (user && user.id) { // Ensure user and user.id are valid
+                                usersKeyedById[user.id] = user as User;
                             } else {
-                                console.warn("[TaskModal.svelte] Invalid user or missing user.username in initialUsersData object value:", user);
+                                console.warn("[TaskModal.svelte] Invalid user or missing user.id in initialUsersData object value:", user);
                             }
                         });
                     } else {
                         console.warn("[TaskModal.svelte] Initial users data for TaskModal is not array or object:", initialUsersData);
                     }
-                    userStore = usersKeyedByUsername;
+                    userStore = usersKeyedById;
                 } catch (e) {
                     console.error("[TaskModal.svelte] Error fetching initial users for TaskModal:", e);
                     userStore = {};
@@ -131,31 +131,28 @@
                 const off = holosphere.subscribe(holonId, "users", (updatedUser: User | null, subKey?: string) => {
                     const subKeyStr = String(subKey); 
 
-                    if (updatedUser && updatedUser.username) { // Prioritize username as the key
-                        const actualUserKey = updatedUser.username; // Canonical key is username
+                    if (updatedUser && updatedUser.id) { // Prioritize user.id as the key
+                        const actualUserKey = updatedUser.id; // Canonical key is user.id
                         
                         userStore = { ...userStore, [actualUserKey]: updatedUser };
 
-                        // If subKey from Holosphere was different and existed, remove it (if it wasn't another user's username)
-                        if (subKeyStr && subKeyStr !== actualUserKey && userStore.hasOwnProperty(subKeyStr) && (!userStore[subKeyStr] || userStore[subKeyStr]?.username !== subKeyStr)) {
+                        // If subKey from Holosphere was different and existed, remove it (if it wasn't another user's id)
+                        if (subKeyStr && subKeyStr !== actualUserKey && userStore.hasOwnProperty(subKeyStr) && (!userStore[subKeyStr] || userStore[subKeyStr]?.id !== subKeyStr)) {
                             delete userStore[subKeyStr];
                         }
 
                     } else if (updatedUser === null) { // Deletion
-                        // For deletion, if subKey is a username, use it. 
-                        // If subKey is some other ID, we need to find the user by that other ID and delete by username.
-                        // This part is tricky if subKey is not the username. We'll assume for now subKey might be the username for deletions or we can't reliably delete.
+                        // For deletion, if subKey is a user.id, use it. 
                         if (!subKeyStr || subKeyStr === 'undefined') {
                             console.warn(`[TaskModal.svelte] User Deletion: Received invalid or undefined subKey: '${subKeyStr}'.`);
-                        } else if (userStore.hasOwnProperty(subKeyStr)) { // If subKey itself is a username key
+                        } else if (userStore.hasOwnProperty(subKeyStr)) { // If subKey itself is a user.id key
                             delete userStore[subKeyStr];
                         } else {
-                            // If subKey was not a username, we might need to iterate userStore to find the user whose original_id matched subKey.
-                            // This is complex. For now, we log a warning if direct key deletion fails.
-                            console.warn(`[TaskModal.svelte] User Deletion: subKey '${subKeyStr}' not found as a username key. User might exist under a different key or is already deleted.`);
+                            // If subKey was not a user.id, we might need to iterate userStore to find the user whose original_id matched subKey.
+                            console.warn(`[TaskModal.svelte] User Deletion: subKey '${subKeyStr}' not found as a user.id key. User might exist under a different key or is already deleted.`);
                         }
                     } else {
-                        console.warn(`[TaskModal.svelte] User subscription: Unhandled case or invalid data (e.g. user without username). SubKey: '${subKeyStr}', User:`, updatedUser, "Update skipped.");
+                        console.warn(`[TaskModal.svelte] User subscription: Unhandled case or invalid data (e.g. user without id). SubKey: '${subKeyStr}', User:`, updatedUser, "Update skipped.");
                         return;
                     }
                     userStore = { ...userStore };
@@ -295,12 +292,12 @@
         });
     }
 
-    function isUserParticipant(usernameToTest: string): boolean {
-        // usernameToTest is a key from our userStore (now user.username)
+    function isUserParticipant(userIdToTest: string): boolean {
+        // userIdToTest is a key from our userStore (now user.id)
         if (!quest.participants || quest.participants.length === 0) return false;
         // quest.participants now stores { id: ACTUAL_USER_ID, username: USERNAME_STRING, firstName: ..., lastName: ... }
         return quest.participants.some(
-            (p: { id: string; username?: string }) => p.username === usernameToTest 
+            (p: { id: string; username?: string }) => p.id === userIdToTest 
         );
     }
 
@@ -399,16 +396,16 @@
         }
     }
 
-    async function toggleParticipant(usernameToAdd: string) {
-        // usernameToAdd is a key from our userStore (now user.username)
-        const user = userStore[usernameToAdd];
-        if (!user || !user.username) { 
-            console.error("User not found in userStore or user.username is missing, for key (username):", usernameToAdd, "User object:", user);
-            return;
-        }
+    	async function toggleParticipant(userIdToAdd: string) {
+		// userIdToAdd is a key from our userStore (now user.id)
+		const user = userStore[userIdToAdd];
+		if (!user || !user.id) {
+			console.error("User not found in userStore or user.id is missing, for key (user.id):", userIdToAdd, "User object:", user);
+			return;
+		}
 
-        // Check if user is already a participant using their username
-        if (isUserParticipant(user.username)) {
+        // Check if user is already a participant using their id
+        if (isUserParticipant(user.id)) {
             showDropdown = false;
             return;
         }

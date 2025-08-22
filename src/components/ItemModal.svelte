@@ -61,11 +61,17 @@
                 // Then subscribe to future updates
                 holosphere.subscribe(holonId, "users", (newUser: any, key?: string) => {
                     if (key && newUser) {
-                        const parsedUser = newUser;
-                        userStore = {
-                            ...userStore,
-                            [key]: parsedUser
-                        };
+                        // Use user.id as the canonical key if available
+                        const canonicalKey = newUser.id || key;
+                        
+                        if (newUser.id && key !== newUser.id) {
+                            // Remove the old key if it's different from the canonical key
+                            const { [key]: _, ...rest } = userStore;
+                            userStore = { ...rest, [canonicalKey]: newUser };
+                        } else {
+                            // Use the key directly
+                            userStore = { ...userStore, [canonicalKey]: newUser };
+                        }
                     } else if (key) {
                         const { [key]: _, ...rest } = userStore;
                         userStore = rest;

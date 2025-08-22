@@ -217,9 +217,20 @@
             holosphere.subscribe($ID, "users", async (newUser: any, key?: string) => {
                 if (!key) return; // Skip if no key
                 if (newUser) {
-                    const userData =  newUser;
+                    const userData = newUser;
                     if (!userData?.id) return; // Skip if no user ID
-                    users[key] = userData;
+                    
+                    // Use user.id as the canonical key if available
+                    const canonicalKey = userData.id || key;
+                    
+                    if (userData.id && key !== userData.id) {
+                        // Remove the old key if it's different from the canonical key
+                        const { [key]: _, ...rest } = users;
+                        users = { ...rest, [canonicalKey]: userData };
+                    } else {
+                        // Use the key directly
+                        users[key] = userData;
+                    }
                     users = users; // Trigger reactivity
                    
                     // Load profile for this user
@@ -227,11 +238,11 @@
                         const profile = await holosphere.get(userData.id, 'profile', userData.id );
                         console.log("profile found:",profile)
                         if (profile) {
-                            profiles[key] = profile;
+                            profiles[canonicalKey] = profile;
                             profiles = profiles; // Trigger reactivity
                         }
                     } catch (error) {
-                        console.error(`Error loading profile for user ${key}:`, error);
+                        console.error(`Error loading profile for user ${canonicalKey}:`, error);
                     }
                 } else {
                     delete users[key];

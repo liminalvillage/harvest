@@ -49,6 +49,7 @@
 	let isLoading = false;
 	let errorMessage = '';
 	let clipboardContent = '';
+	let clipboardFormat: 'json' | 'text' = 'json';
 
 	// Sample quest library - you can expand this with more quests
 	const questLibrary = [
@@ -132,7 +133,7 @@
 
 	async function parseClipboardContent() {
 		if (!clipboardContent.trim()) {
-			errorMessage = 'Please paste some JSON content';
+			errorMessage = clipboardFormat === 'json' ? 'Please paste some JSON content' : 'Please paste some text content';
 			return;
 		}
 
@@ -140,38 +141,125 @@
 			isLoading = true;
 			errorMessage = '';
 			
-			// Parse JSON
-			const data = JSON.parse(clipboardContent);
-			
-			// Handle different JSON formats (same logic as file parsing)
-			if (Array.isArray(data)) {
-				parsedQuests = data;
-			} else if (data.quests && Array.isArray(data.quests)) {
-				parsedQuests = data.quests;
-			} else if (data.tasks && Array.isArray(data.tasks)) {
-				parsedQuests = data.tasks;
-			} else if (typeof data === 'object') {
-				// If it's an object with quest IDs as keys
-				parsedQuests = Object.values(data);
+			if (clipboardFormat === 'json') {
+				// Parse JSON
+				const data = JSON.parse(clipboardContent);
+				
+				// Handle different JSON formats (same logic as file parsing)
+				if (Array.isArray(data)) {
+					parsedQuests = data;
+				} else if (data.quests && Array.isArray(data.quests)) {
+					parsedQuests = data.quests;
+				} else if (data.tasks && Array.isArray(data.tasks)) {
+					parsedQuests = data.tasks;
+				} else if (typeof data === 'object') {
+					// If it's an object with quest IDs as keys
+					parsedQuests = Object.values(data);
+				} else {
+					throw new Error('Invalid JSON format');
+				}
+
+				// Validate quest structure
+				parsedQuests = parsedQuests.filter(quest => 
+					quest && typeof quest === 'object' && quest.title
+				);
+
+				if (parsedQuests.length === 0) {
+					errorMessage = 'No valid quests found in the JSON content';
+				}
 			} else {
-				throw new Error('Invalid JSON format');
-			}
-
-			// Validate quest structure
-			parsedQuests = parsedQuests.filter(quest => 
-				quest && typeof quest === 'object' && quest.title
-			);
-
-			if (parsedQuests.length === 0) {
-				errorMessage = 'No valid quests found in the clipboard content';
+				// Parse simple text format
+				parsedQuests = parseSimpleTextFormat(clipboardContent);
+				
+				if (parsedQuests.length === 0) {
+					errorMessage = 'No valid tasks found in the text content';
+				}
 			}
 
 		} catch (error) {
 			console.error('Error parsing clipboard content:', error);
-			errorMessage = 'Error parsing JSON content. Please check the format.';
+			if (clipboardFormat === 'json') {
+				errorMessage = 'Error parsing JSON content. Please check the format.';
+			} else {
+				errorMessage = 'Error parsing text content. Please check the format.';
+			}
 			parsedQuests = [];
 		} finally {
 			isLoading = false;
+		}
+	}
+
+	function parseSimpleTextFormat(text: string): Quest[] {
+		const lines = text.split('\n').filter(line => line.trim());
+		const quests: Quest[] = [];
+		
+		for (const line of lines) {
+			const trimmedLine = line.trim();
+			if (!trimmedLine) continue;
+			
+			// Check if it's comma-separated
+			if (trimmedLine.includes(',')) {
+				const items = trimmedLine.split(',').map(item => item.trim()).filter(item => item);
+				for (const item of items) {
+					if (item) {
+						quests.push({
+							id: `temp_${Date.now()}_${Math.random()}`,
+							title: item,
+							status: 'ongoing',
+							type: 'task',
+							participants: [],
+							appreciation: []
+						});
+					}
+				}
+			} else {
+				// Single line item
+				quests.push({
+					id: `temp_${Date.now()}_${Math.random()}`,
+					title: trimmedLine,
+					status: 'ongoing',
+					type: 'task',
+					participants: [],
+					appreciation: []
+				});
+			}
+		}
+		
+		return quests;
+	}
+
+	function autoDetectFormat(content: string): 'json' | 'text' {
+		if (!content.trim()) return 'json';
+		
+		// Try to detect if it's JSON
+		try {
+			JSON.parse(content);
+			return 'json';
+		} catch {
+			// Not valid JSON, treat as text
+			return 'text';
+		}
+	}
+
+	function handleClipboardPaste() {
+		// Auto-detect format when content changes
+		if (clipboardContent.trim()) {
+			const detectedFormat = autoDetectFormat(clipboardContent);
+			if (detectedFormat !== clipboardFormat) {
+				clipboardFormat = detectedFormat;
+			}
+		}
+	}
+
+	async function pasteFromClipboard() {
+		try {
+			const text = await navigator.clipboard.readText();
+			clipboardContent = text;
+			// Auto-detect format after pasting
+			handleClipboardPaste();
+		} catch (error) {
+			console.error('Failed to read clipboard:', error);
+			errorMessage = 'Failed to read clipboard. Please paste manually.';
 		}
 	}
 
@@ -179,6 +267,7 @@
 		clipboardContent = '';
 		parsedQuests = [];
 		errorMessage = '';
+		clipboardFormat = 'json';
 	}
 
 	function handleDragOver(event: DragEvent) {
@@ -308,6 +397,7 @@
 		errorMessage = '';
 		activeTab = 'file';
 		clipboardContent = '';
+		clipboardFormat = 'json';
 	}
 
 	// Keyboard shortcuts
@@ -457,27 +547,73 @@
 			{:else if activeTab === 'clipboard'}
 				<!-- Clipboard Tab -->
 				<div class="space-y-6">
+					<!-- Format Selector -->
+					<div class="bg-gray-700 rounded-xl p-4">
+						<h4 class="text-white font-medium mb-3">Import Format</h4>
+						<div class="flex space-x-1 bg-gray-600 rounded-lg p-1">
+							<button
+								class="flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors {clipboardFormat === 'json' ? 'bg-gray-500 text-white' : 'text-gray-400 hover:text-white'}"
+								on:click={() => clipboardFormat = 'json'}
+							>
+								📄 JSON
+							</button>
+							<button
+								class="flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors {clipboardFormat === 'text' ? 'bg-gray-500 text-white' : 'text-gray-400 hover:text-white'}"
+								on:click={() => clipboardFormat = 'text'}
+							>
+								📝 Simple Text
+							</button>
+						</div>
+					</div>
+
 					<div class="bg-gray-700 rounded-xl p-6">
-						<h4 class="text-white font-medium mb-3">Paste JSON Content</h4>
+						<h4 class="text-white font-medium mb-3">
+							{clipboardFormat === 'json' ? 'Paste JSON Content' : 'Paste Simple Text'}
+						</h4>
+						
+						{#if clipboardFormat === 'text'}
+							<div class="bg-blue-500/20 border border-blue-500/50 rounded-lg p-3 mb-4">
+								<div class="text-blue-300 text-sm">
+									<strong>Supported formats:</strong>
+									<ul class="list-disc list-inside mt-2 space-y-1">
+										<li>One task per line</li>
+										<li>Comma-separated tasks on a single line</li>
+										<li>Mixed format (some lines with commas, some without)</li>
+									</ul>
+									<p class="mt-2 text-xs">Example: "Task 1, Task 2" or "Task 1\nTask 2"</p>
+								</div>
+							</div>
+						{/if}
+						
 						<textarea
 							bind:value={clipboardContent}
-							placeholder="Paste your JSON content here..."
+							on:input={handleClipboardPaste}
+							placeholder={clipboardFormat === 'json' ? 'Paste your JSON content here...' : 'Paste your task list here...\n\nExamples:\nTask 1, Task 2, Task 3\n\nOr:\nTask 1\nTask 2\nTask 3'}
 							class="w-full h-48 px-4 py-3 rounded-xl bg-gray-600 text-white placeholder-gray-400 border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors resize-none font-mono text-sm"
 						></textarea>
 						<div class="flex items-center justify-between mt-3">
-							<button
-								on:click={clearClipboardInput}
-								class="px-4 py-2 text-gray-400 hover:text-white transition-colors text-sm"
-							>
-								Clear
-							</button>
+							<div class="flex gap-2">
+								<button
+									on:click={pasteFromClipboard}
+									class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+									title="Paste content from clipboard"
+								>
+									📋 Paste from Clipboard
+								</button>
+								<button
+									on:click={clearClipboardInput}
+									class="px-4 py-2 text-gray-400 hover:text-white transition-colors text-sm"
+								>
+									Clear
+								</button>
+							</div>
 							<div class="flex gap-2">
 								<button
 									on:click={parseClipboardContent}
 									class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
 									disabled={!clipboardContent.trim()}
 								>
-									Parse JSON
+									Parse {clipboardFormat === 'json' ? 'JSON' : 'Text'}
 								</button>
 								<button
 									on:click={importSelectedQuests}
