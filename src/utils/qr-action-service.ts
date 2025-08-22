@@ -78,10 +78,13 @@ export class QRActionService {
 		user: TelegramUser
 	): Promise<QRActionResult> {
 		try {
+			console.log(`[QRActionService] Starting role assignment for user ${user.id} to role: ${params.title}`);
+			
 			// Check if user already has this role
 			const existingUser = await this.holosphere.get(params.holonID, 'users', user.id.toString());
 			
 			if (existingUser && existingUser.roles && existingUser.roles.includes(params.title)) {
+				console.log(`[QRActionService] User ${user.id} already has role: ${params.title}`);
 				return {
 					success: true,
 					message: `You already have the role: ${params.title}`,
@@ -98,14 +101,19 @@ export class QRActionService {
 				last_name: user.last_name || '',
 				roles: [],
 				actions: [],
-				joined_at: new Date().toISOString()
+				joined_at: new Date().toISOString(),
+				last_active: new Date().toISOString()
 			};
 
 			// Add the role
 			if (!userData.roles) userData.roles = [];
 			if (!userData.roles.includes(params.title)) {
 				userData.roles.push(params.title);
+				console.log(`[QRActionService] Added role ${params.title} to user ${user.id}`);
 			}
+
+			// Update last active timestamp
+			userData.last_active = new Date().toISOString();
 
 			// Add action record
 			if (!userData.actions) userData.actions = [];
@@ -113,43 +121,100 @@ export class QRActionService {
 				type: 'role_assigned',
 				action: params.title,
 				timestamp: Date.now(),
-				description: params.desc || `Role assigned via QR code`
+				description: params.desc || `Role assigned via QR code`,
+				holonID: params.holonID,
+				deckId: params.deckId,
+				cardId: params.cardId
 			});
 
 			// Save user data
+			console.log(`[QRActionService] Saving user data for user ${user.id}`);
 			await this.holosphere.put(params.holonID, 'users', userData);
+			console.log(`[QRActionService] User data saved successfully`);
 
 			// Check if role exists, create it if it doesn't
 			let roleData = await this.holosphere.get(params.holonID, 'roles', params.title);
 			if (!roleData) {
-				// Create new role
+				// Create new role with enhanced structure
 				roleData = {
+					id: params.title, // Use title as ID for consistency
 					title: params.title,
 					description: params.desc || `Role created via QR code`,
 					created_at: new Date().toISOString(),
 					created_by: user.id.toString(),
+					created_via: 'qr_code',
 					participants: [],
 					permissions: [],
-					status: 'active'
+					status: 'active',
+					holonID: params.holonID,
+					deckId: params.deckId,
+					cardId: params.cardId,
+					metadata: {
+						qr_generated: true,
+						generation_timestamp: Date.now(),
+						generation_source: 'qr_code'
+					}
 				};
-				console.log(`Creating new role: ${params.title}`);
+				console.log(`[QRActionService] Creating new role: ${params.title}`);
+			} else {
+				console.log(`[QRActionService] Role ${params.title} already exists, updating participants`);
 			}
 
 			// Add user to role participants if not already there
 			if (!roleData.participants) roleData.participants = [];
-			if (!roleData.participants.some((p: any) => p.id === user.id.toString())) {
+			const existingParticipant = roleData.participants.find((p: any) => p.id === user.id.toString());
+			
+			if (!existingParticipant) {
 				roleData.participants.push({
 					id: user.id.toString(),
 					username: user.username || `user_${user.id}`,
 					first_name: user.first_name,
 					last_name: user.last_name || '',
 					assigned_at: new Date().toISOString(),
-					assigned_via: 'qr_code'
+					assigned_via: 'qr_code',
+					assigned_by: 'qr_code_system',
+					status: 'active'
 				});
+				console.log(`[QRActionService] Added user ${user.id} to role participants`);
 			}
 
+			// Update role metadata
+			roleData.last_modified = new Date().toISOString();
+			roleData.last_modified_by = user.id.toString();
+
 			// Save role data
+			console.log(`[QRActionService] Saving role data for role: ${params.title}`);
 			await this.holosphere.put(params.holonID, 'roles', roleData);
+			console.log(`[QRActionService] Role data saved successfully`);
+
+			// Create audit log entry
+			try {
+				const auditLog = {
+					id: `audit_${Date.now()}_${user.id}`,
+					timestamp: new Date().toISOString(),
+					action: 'role_assigned',
+					user_id: user.id.toString(),
+					username: user.username || `user_${user.id}`,
+					role_title: params.title,
+					holonID: params.holonID,
+					deckId: params.deckId,
+					cardId: params.cardId,
+					description: params.desc || `Role assigned via QR code`,
+					source: 'qr_code',
+					metadata: {
+						qr_params: params,
+						user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown'
+					}
+				};
+
+				await this.holosphere.put(params.holonID, 'audit_logs', auditLog);
+				console.log(`[QRActionService] Audit log created for role assignment`);
+			} catch (auditError) {
+				console.warn(`[QRActionService] Failed to create audit log:`, auditError);
+				// Don't fail the main operation if audit logging fails
+			}
+
+			console.log(`[QRActionService] Role assignment completed successfully for user ${user.id} to role ${params.title}`);
 
 			return {
 				success: true,
@@ -158,10 +223,10 @@ export class QRActionService {
 				redirectUrl: `/${params.holonID}/roles`
 			};
 		} catch (error) {
-			console.error('Error assigning role:', error);
+			console.error(`[QRActionService] Error assigning role:`, error);
 			return {
 				success: false,
-				message: 'Failed to assign role',
+				message: 'Failed to assign role. Please try again or contact support.',
 				error: error instanceof Error ? error.message : 'ROLE_ASSIGNMENT_ERROR'
 			};
 		}

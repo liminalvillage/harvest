@@ -44,6 +44,8 @@
 		actionResult = null;
 
 		try {
+			console.log(`[QR Page] Processing QR action for user ${currentUser.id}:`, { action, title, desc, holonID, deckId, cardId });
+			
 			const params = {
 				action,
 				title,
@@ -65,7 +67,10 @@
 			}
 
 			// Process the action
+			console.log(`[QR Page] Calling QRActionService.processQRAction with params:`, params);
 			const result = await qrActionService.processQRAction(params, currentUser);
+			console.log(`[QR Page] Action result:`, result);
+			
 			actionResult = result;
 			
 			// Show the result modal
@@ -73,15 +78,16 @@
 
 			// If successful and there's a redirect URL, navigate after a delay
 			if (result.success && result.redirectUrl) {
+				console.log(`[QR Page] Action successful, will redirect to: ${result.redirectUrl}`);
 				setTimeout(() => {
 					goto(result.redirectUrl!);
 				}, 3000);
 			}
 		} catch (error) {
-			console.error('Error processing QR action:', error);
+			console.error('[QR Page] Error processing QR action:', error);
 			actionResult = {
 				success: false,
-				message: 'An unexpected error occurred',
+				message: 'An unexpected error occurred while processing the action. Please try again.',
 				error: error instanceof Error ? error.message : 'UNEXPECTED_ERROR'
 			};
 		} finally {
@@ -138,7 +144,7 @@
 						<div class="space-y-3">
 							<div class="flex items-center gap-3">
 								<span class="text-gray-400">Action:</span>
-								<span class="text-white font-medium">{action}</span>
+								<span class="text-white font-medium capitalize">{action}</span>
 							</div>
 							<div class="flex items-center gap-3">
 								<span class="text-gray-400">Title:</span>
@@ -156,20 +162,35 @@
 							</div>
 						</div>
 						
-						<button 
-							on:click={handleManualAction}
-							class="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors"
-							disabled={isProcessingAction}
-						>
-							{#if isProcessingAction}
-								<div class="flex items-center justify-center gap-2">
-									<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-									Processing...
+						{#if isProcessingAction}
+							<div class="mt-4 p-4 bg-blue-900 bg-opacity-30 border border-blue-500 rounded-lg">
+								<div class="flex items-center justify-center gap-3 text-blue-300">
+									<div class="w-5 h-5 border-2 border-blue-300 border-t-transparent rounded-full animate-spin"></div>
+									<span>Processing {action} action...</span>
 								</div>
-							{:else}
-								🚀 Process Action
-							{/if}
-						</button>
+								<p class="text-sm text-blue-200 mt-2 text-center">
+									{#if action === 'role'}
+										Creating role and assigning it to you...
+									{:else if action === 'event'}
+										Joining event...
+									{:else if action === 'task'}
+										Assigning task...
+									{:else if action === 'badge'}
+										Awarding badge...
+									{:else if action === 'invite'}
+										Processing invitation...
+									{/if}
+								</p>
+							</div>
+						{:else}
+							<button 
+								on:click={handleManualAction}
+								class="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors"
+								disabled={isProcessingAction}
+							>
+								🚀 Process {action} Action
+							</button>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -244,17 +265,56 @@
 				{#if actionResult.success}
 					<div class="text-6xl mb-4">✅</div>
 					<h3 class="text-xl font-semibold text-white mb-2">Action Successful!</h3>
+					
+					{#if actionResult.assignedRole}
+						<div class="bg-green-900 bg-opacity-30 border border-green-500 rounded-lg p-3 mb-4">
+							<div class="text-green-400 font-semibold mb-1">Role Assigned</div>
+							<div class="text-white">{actionResult.assignedRole}</div>
+						</div>
+					{/if}
+					
+					<p class="text-gray-300 mb-4">{actionResult.message}</p>
+					
+					{#if action === 'role'}
+						<div class="bg-blue-900 bg-opacity-30 border border-blue-500 rounded-lg p-3 mb-4 text-left">
+							<div class="text-blue-400 font-semibold mb-2">What happened:</div>
+							<ul class="text-sm text-gray-300 space-y-1">
+								<li>• Role "{title}" was created (if it didn't exist)</li>
+								<li>• You were assigned to this role</li>
+								<li>• Your user profile was updated</li>
+								<li>• Action was logged for audit purposes</li>
+							</ul>
+						</div>
+					{/if}
+					
+					{#if actionResult.redirectUrl}
+						<div class="bg-gray-700 rounded-lg p-3 mb-4">
+							<p class="text-sm text-gray-400 mb-2">Redirecting to:</p>
+							<p class="text-white font-mono text-xs">{actionResult.redirectUrl}</p>
+						</div>
+					{/if}
 				{:else}
 					<div class="text-6xl mb-4">❌</div>
 					<h3 class="text-xl font-semibold text-red-400 mb-2">Action Failed</h3>
-				{/if}
-				
-				<p class="text-gray-300 mb-6">{actionResult.message}</p>
-				
-				{#if actionResult.redirectUrl}
-					<p class="text-sm text-gray-400 mb-4">
-						Redirecting to: {actionResult.redirectUrl}
-					</p>
+					
+					<p class="text-gray-300 mb-4">{actionResult.message}</p>
+					
+					{#if actionResult.error}
+						<div class="bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-3 mb-4">
+							<div class="text-red-400 font-semibold mb-1">Error Details</div>
+							<div class="text-white text-sm">{actionResult.error}</div>
+						</div>
+					{/if}
+					
+					<div class="bg-yellow-900 bg-opacity-30 border border-yellow-500 rounded-lg p-3 mb-4 text-left">
+						<div class="text-yellow-400 font-semibold mb-2">Troubleshooting:</div>
+						<ul class="text-sm text-gray-300 space-y-1">
+							<li>• Check that you're logged in with Telegram</li>
+							<li>• Verify the QR code parameters are correct</li>
+							<li>• Try refreshing the page and scanning again</li>
+							<li>• Contact support if the issue persists</li>
+						</ul>
+					</div>
 				{/if}
 				
 				<button 
