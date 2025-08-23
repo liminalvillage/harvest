@@ -200,6 +200,30 @@
 			</div>
 		</div>
 
+		<!-- Debug Mode Notice -->
+		<div class="bg-yellow-900 bg-opacity-30 border border-yellow-500 rounded-2xl p-8 mb-8">
+			<h2 class="text-2xl font-bold text-yellow-400 mb-6 text-center">🔧 Debug Mode</h2>
+			
+			<div class="text-center mb-6">
+				<p class="text-yellow-200 text-lg mb-4">
+					When running from localhost, the system automatically enters debug mode:
+				</p>
+				<ul class="text-yellow-100 text-sm space-y-2 text-left max-w-2xl mx-auto">
+					<li>• <strong>Telegram login is completely bypassed</strong></li>
+					<li>• <strong>Actions use hardcoded user ID:</strong> 235114395</li>
+					<li>• <strong>Original holon ID from QR code is preserved</strong></li>
+					<li>• <strong>Mock user is automatically created</strong> for testing</li>
+					<li>• <strong>Perfect for development and testing</strong> without external dependencies</li>
+				</ul>
+			</div>
+			
+			<div class="bg-yellow-800 bg-opacity-50 rounded-lg p-4 text-center">
+				<p class="text-yellow-100 text-sm">
+					<strong>To enable debug mode:</strong> Set <code class="bg-yellow-900 px-2 py-1 rounded">VITE_LOCAL_MODE=development</code> in your <code class="bg-yellow-900 px-2 py-1 rounded">.env</code> file
+				</p>
+			</div>
+		</div>
+
 		<!-- Use Cases -->
 		<div class="bg-gray-800 rounded-2xl p-8">
 			<h2 class="text-2xl font-bold text-white mb-6 text-center">Use Cases</h2>

@@ -80,17 +80,12 @@ export class QRActionService {
 		try {
 			console.log(`[QRActionService] Starting role assignment for user ${user.id} to role: ${params.title}`);
 			
-			// Check if user already has this role
+			// Check if user already has this role (but don't return early - we need to update the role too)
 			const existingUser = await this.holosphere.get(params.holonID, 'users', user.id.toString());
+			const userAlreadyHasRole = existingUser && existingUser.roles && existingUser.roles.includes(params.title);
 			
-			if (existingUser && existingUser.roles && existingUser.roles.includes(params.title)) {
-				console.log(`[QRActionService] User ${user.id} already has role: ${params.title}`);
-				return {
-					success: true,
-					message: `You already have the role: ${params.title}`,
-					assignedRole: params.title,
-					redirectUrl: `/${params.holonID}/roles`
-				};
+			if (userAlreadyHasRole) {
+				console.log(`[QRActionService] User ${user.id} already has role: ${params.title} - will update role participants for consistency`);
 			}
 
 			// Get or create user record
@@ -105,11 +100,13 @@ export class QRActionService {
 				last_active: new Date().toISOString()
 			};
 
-			// Add the role
+			// Add the role (if not already present)
 			if (!userData.roles) userData.roles = [];
 			if (!userData.roles.includes(params.title)) {
 				userData.roles.push(params.title);
 				console.log(`[QRActionService] Added role ${params.title} to user ${user.id}`);
+			} else {
+				console.log(`[QRActionService] User ${user.id} already has role ${params.title} in their roles array`);
 			}
 
 			// Update last active timestamp
@@ -135,8 +132,14 @@ export class QRActionService {
 			// Check if role exists, create it if it doesn't exist
 			const roleKey = params.title; // Use title as the consistent key
 			console.log(`[QRActionService] Looking for existing role with key: ${roleKey}`);
+			console.log(`[QRActionService] HolonID: ${params.holonID}, Collection: roles, Key: ${roleKey}`);
 			let roleData = await this.holosphere.get(params.holonID, 'roles', roleKey);
 			console.log(`[QRActionService] Retrieved role data:`, roleData);
+			console.log(`[QRActionService] Role data type:`, typeof roleData);
+			console.log(`[QRActionService] Role data keys:`, roleData ? Object.keys(roleData) : 'null');
+			
+			// Track whether this is a new role creation
+			const isNewRole = !roleData;
 			
 			if (!roleData) {
 				// Create new role with enhanced structure
@@ -161,43 +164,79 @@ export class QRActionService {
 				};
 				console.log(`[QRActionService] Creating new role: ${params.title} with data:`, roleData);
 			} else {
-				console.log(`[QRActionService] Role ${params.title} already exists, updating participants`);
+				console.log(`[QRActionService] Role ${params.title} already exists, clearing participants and adding current user`);
+				
+				// Clear existing participants and add only the current user
+				roleData.participants = [];
+				console.log(`[QRActionService] Cleared existing participants for role: ${params.title}`);
 			}
 
-			// Add user to role participants if not already there
+			// Add user to role participants (either as new participant or replacing cleared ones)
 			if (!roleData.participants) roleData.participants = [];
-			const existingParticipant = roleData.participants.find((p: any) => p.id === user.id.toString());
 			
-			if (!existingParticipant) {
-				roleData.participants.push({
-					id: user.id.toString(),
-					username: user.username || `user_${user.id}`,
-					first_name: user.first_name,
-					last_name: user.last_name || '',
-					assigned_at: new Date().toISOString(),
-					assigned_via: 'qr_code',
-					assigned_by: 'qr_code_system',
-					status: 'active'
-				});
-				console.log(`[QRActionService] Added user ${user.id} to role participants`);
-			}
+			// Always add the current user (either as new or replacing cleared participants)
+			const newParticipant = {
+				id: user.id.toString(),
+				username: user.username || `user_${user.id}`,
+				first_name: user.first_name,
+				last_name: user.last_name || '',
+				assigned_at: new Date().toISOString(),
+				assigned_via: 'qr_code',
+				assigned_by: 'qr_code_system',
+				status: 'active'
+			};
+			
+			roleData.participants.push(newParticipant);
+			console.log(`[QRActionService] Added user ${user.id} to role participants:`, newParticipant);
+			console.log(`[QRActionService] Role participants after adding user:`, roleData.participants);
 
 			// Update role metadata
 			roleData.last_modified = new Date().toISOString();
 			roleData.last_modified_by = user.id.toString();
 
 			// Save role data - Use the role's ID as the key for consistency
+			console.log(`[QRActionService] About to save role data:`, roleData);
+			console.log(`[QRActionService] Role participants before saving:`, roleData.participants);
+			console.log(`[QRActionService] Role participants length:`, roleData.participants?.length || 0);
 			console.log(`[QRActionService] Saving role data for role: ${roleData.title} with key: ${roleKey}`);
+			console.log(`[QRActionService] Put parameters - HolonID: ${params.holonID}, Collection: roles, Data:`, roleData);
 			await this.holosphere.put(params.holonID, 'roles', roleData);
 			console.log(`[QRActionService] Role data saved successfully with key: ${roleKey}`);
 			
 			// Verify the role was saved correctly by retrieving it
+			console.log(`[QRActionService] Verification - retrieving saved role with HolonID: ${params.holonID}, Collection: roles, Key: ${roleKey}`);
 			const savedRole = await this.holosphere.get(params.holonID, 'roles', roleKey);
 			console.log(`[QRActionService] Verification - retrieved saved role:`, savedRole);
 			if (savedRole) {
 				console.log(`[QRActionService] Role saved successfully and can be retrieved`);
+				console.log(`[QRActionService] Saved role participants:`, savedRole.participants);
+				console.log(`[QRActionService] Participants count:`, savedRole.participants?.length || 0);
+				console.log(`[QRActionService] Saved role keys:`, Object.keys(savedRole));
 			} else {
 				console.warn(`[QRActionService] Warning: Role was not saved correctly or cannot be retrieved`);
+			}
+			
+			// Try alternative keys to see if there's a storage key mismatch
+			console.log(`[QRActionService] Trying alternative retrieval keys...`);
+			const altKey1 = await this.holosphere.get(params.holonID, 'roles', roleData.id);
+			console.log(`[QRActionService] Retrieved with roleData.id (${roleData.id}):`, !!altKey1);
+			
+			const altKey2 = await this.holosphere.get(params.holonID, 'roles', roleData.title);
+			console.log(`[QRActionService] Retrieved with roleData.title (${roleData.title}):`, !!altKey2);
+			
+			// Try to get all roles to see what's actually stored
+			try {
+				const allRoles = await this.holosphere.getAll(params.holonID, 'roles');
+				console.log(`[QRActionService] All roles in collection:`, allRoles.length);
+				allRoles.forEach((role, index) => {
+					console.log(`[QRActionService] Role ${index + 1}:`, {
+						title: role.title,
+						id: role.id,
+						participants: role.participants?.length || 0
+					});
+				});
+			} catch (error) {
+				console.warn(`[QRActionService] Could not retrieve all roles:`, error);
 			}
 
 			// Create audit log entry
@@ -205,18 +244,22 @@ export class QRActionService {
 				const auditLog = {
 					id: `audit_${Date.now()}_${user.id}`,
 					timestamp: new Date().toISOString(),
-					action: 'role_assigned',
+					action: isNewRole ? 'role_assigned' : 'role_participant_replaced',
 					user_id: user.id.toString(),
 					username: user.username || `user_${user.id}`,
 					role_title: params.title,
 					holonID: params.holonID,
 					deckId: params.deckId,
 					cardId: params.cardId,
-					description: params.desc || `Role assigned via QR code`,
+					description: isNewRole ? 
+						`Role assigned via QR code` : 
+						`Role participant replaced via QR code - previous participants cleared`,
 					source: 'qr_code',
 					metadata: {
 						qr_params: params,
-						user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown'
+						user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+						operation_type: isNewRole ? 'new_role_creation' : 'participant_replacement',
+						previous_participants_count: isNewRole ? 0 : (roleData.participants?.length || 0)
 					}
 				};
 
@@ -231,7 +274,9 @@ export class QRActionService {
 
 			return {
 				success: true,
-				message: `Successfully assigned role: ${params.title}`,
+				message: userAlreadyHasRole ? 
+					`Role participants updated for: ${params.title}` : 
+					`Successfully assigned role: ${params.title}`,
 				assignedRole: params.title,
 				redirectUrl: `/${params.holonID}/roles`
 			};

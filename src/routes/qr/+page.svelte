@@ -1,5 +1,4 @@
 <script lang="ts">
-	import QRCode from '../../components/QRCode.svelte';
 	import TelegramAuth from '../../components/TelegramAuth.svelte';
 	import { QRActionService, type TelegramUser, type QRActionResult } from '../../utils/qr-action-service';
 	import { onMount, getContext } from 'svelte';
@@ -12,124 +11,179 @@
 
 	let holosphere: HoloSphere;
 	let qrActionService: QRActionService;
-	let currentUser: TelegramUser | null = null;
 	let isProcessingAction = false;
-	let actionResult: QRActionResult | null = null;
-	let showActionModal = false;
+	let errorMessage = '';
+	
+	// Debug mode detection
+	let isDebugMode = false;
+	let debugUserID = '235114395';
 
 	onMount(() => {
+		// Check if we're in debug mode (localhost) AND we're actually on a QR page with parameters
+		const isLocalhost = window.location.hostname === 'localhost' || 
+						   window.location.hostname === '127.0.0.1';
+		const isDevMode = import.meta.env.VITE_LOCAL_MODE === 'development';
+		
+		// Only activate debug mode if we're on localhost AND have valid QR parameters
+		isDebugMode = (isLocalhost || isDevMode) && hasValidParams;
+		
+		console.log(`[QR Page] Debug mode check:`, {
+			isLocalhost,
+			isDevMode,
+			hasValidParams,
+			isDebugMode,
+			url: window.location.href
+		});
+		
 		// Get holosphere context
 		holosphere = getContext('holosphere');
 		if (holosphere) {
 			qrActionService = new QRActionService(holosphere);
 		}
+		
+		// If in debug mode and we have valid params, automatically process the action
+		if (isDebugMode && hasValidParams && qrActionService) {
+			console.log(`[QR Page] Debug mode active - processing QR action automatically`);
+			// Keep original holon ID from QR, but use debug user
+			processQRAction(createDebugUser());
+		} else if (isLocalhost && !hasValidParams) {
+			console.log(`[QR Page] Running on localhost but no valid QR parameters - debug mode inactive`);
+		}
 	});
 
+	function createDebugUser(): TelegramUser {
+		// Create a mock user for debug mode
+		return {
+			id: parseInt(debugUserID),
+			first_name: 'Debug User',
+			last_name: 'Localhost',
+			username: 'debug_user',
+			photo_url: '',
+			auth_date: Math.floor(Date.now() / 1000),
+			hash: 'debug_hash_' + Date.now()
+		};
+	}
+
 	function handleAuthSuccess(userData: TelegramUser) {
-		currentUser = userData;
 		console.log('User authenticated:', userData);
 		
 		// If we have valid QR parameters, automatically process the action
 		if (hasValidParams && qrActionService) {
-			processQRAction();
+			processQRAction(userData);
 		}
 	}
 
-	async function processQRAction() {
-		if (!currentUser || !qrActionService || !hasValidParams) {
+	async function processQRAction(userData: TelegramUser) {
+		if (!qrActionService || !hasValidParams) {
 			return;
 		}
 
 		isProcessingAction = true;
-		actionResult = null;
+		errorMessage = '';
 
 		try {
-			console.log(`[QR Page] Processing QR action for user ${currentUser.id}:`, { action, title, desc, holonID, deckId, cardId });
+			// Keep original holon ID from QR code
+			const finalHolonID = holonID;
 			
-			const params = {
+			console.log(`[QR Page] Processing QR action for user ${userData.id}:`, { 
+				action, 
+				title, 
+				desc, 
+				holonID: finalHolonID, 
+				deckId, 
+				cardId,
+				isDebugMode 
+			});
+			
+			const finalParams = {
 				action,
 				title,
 				desc,
-				holonID,
+				holonID: finalHolonID,
 				deckId,
 				cardId
 			};
 
 			// Validate parameters
-			const validation = qrActionService.validateQRParams(params);
+			const validation = qrActionService.validateQRParams(finalParams);
 			if (!validation.isValid) {
-				actionResult = {
-					success: false,
-					message: `Invalid QR parameters: ${validation.errors.join(', ')}`,
-					error: 'VALIDATION_ERROR'
-				};
+				errorMessage = `Invalid QR parameters: ${validation.errors.join(', ')}`;
 				return;
 			}
 
 			// Process the action
-			console.log(`[QR Page] Calling QRActionService.processQRAction with params:`, params);
-			const result = await qrActionService.processQRAction(params, currentUser);
+			console.log(`[QR Page] Calling QRActionService.processQRAction with params:`, finalParams);
+			const result = await qrActionService.processQRAction(finalParams, userData);
 			console.log(`[QR Page] Action result:`, result);
 			
-			actionResult = result;
-			
-			// Show the result modal
-			showActionModal = true;
-
-			// If successful and there's a redirect URL, navigate after a delay
+			// If successful and there's a redirect URL, navigate immediately
 			if (result.success && result.redirectUrl) {
-				console.log(`[QR Page] Action successful, will redirect to: ${result.redirectUrl}`);
-				setTimeout(() => {
-					goto(result.redirectUrl!);
-				}, 3000);
+				console.log(`[QR Page] Action successful, redirecting to: ${result.redirectUrl}`);
+				goto(result.redirectUrl);
+			} else if (result.success) {
+				// If successful but no redirect, go to the holon dashboard
+				console.log(`[QR Page] Action successful, redirecting to holon dashboard`);
+				goto(`/${finalHolonID}`);
+			} else {
+				// If failed, show error
+				errorMessage = result.message || 'Action failed';
 			}
 		} catch (error) {
 			console.error('[QR Page] Error processing QR action:', error);
-			actionResult = {
-				success: false,
-				message: 'An unexpected error occurred while processing the action. Please try again.',
-				error: error instanceof Error ? error.message : 'UNEXPECTED_ERROR'
-			};
+			errorMessage = 'An unexpected error occurred while processing the action. Please try again.';
 		} finally {
 			isProcessingAction = false;
-		}
-	}
-
-	function closeActionModal() {
-		showActionModal = false;
-		actionResult = null;
-	}
-
-	function handleManualAction() {
-		// Trigger action processing manually
-		if (currentUser) {
-			processQRAction();
 		}
 	}
 </script>
 
 <svelte:head>
-	<title>QR Badge - {title}</title>
-	<meta name="description" content="QR Code for {title} badge" />
+	<title>QR Action - {title || 'Login'}</title>
+	<meta name="description" content="Login to execute QR code action" />
 </svelte:head>
 
 <div class="qr-page">
-	<div class="max-w-4xl mx-auto p-4">
+	<div class="max-w-md mx-auto p-4">
 		<!-- Header -->
-		<div class="text-center mb-8">
-			<h1 class="text-3xl font-bold text-white mb-2">QR Code Scanner</h1>
-			<p class="text-gray-300">
-				Scan this QR code to perform automated actions in the holon
+		<div class="text-center mb-6">
+			<h1 class="text-2xl font-bold text-white mb-2">QR Code Action</h1>
+			<p class="text-gray-400">
+				{isDebugMode ? '🔧 Debug Mode - Localhost' : 'Scan a QR code to perform an action'}
 			</p>
 		</div>
 
-		<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-			<!-- Left Column: Authentication -->
-			<div class="space-y-6">
+		<!-- Debug Mode Notice -->
+		{#if isDebugMode}
+			<div class="mb-6 bg-yellow-900 bg-opacity-30 border border-yellow-500 rounded-lg p-4">
+				<div class="text-yellow-400 font-semibold mb-2">🔧 Debug Mode Active</div>
+				<div class="text-yellow-200 text-sm">
+					<p>Running from localhost - Telegram login bypassed</p>
+					<p><strong>Debug User ID:</strong> {debugUserID}</p>
+					<p><strong>Action:</strong> {action}</p>
+					<p><strong>Title:</strong> {title}</p>
+					<p><strong>Holon ID:</strong> {holonID} (from QR code)</p>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Parameter Validation -->
+		{#if !hasValidParams}
+			<div class="bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4 mb-6">
+				<div class="text-red-400 font-semibold mb-2">Invalid QR Code</div>
+				<p class="text-red-200 text-sm">
+					Invalid QR code parameters
+				</p>
+			</div>
+		{/if}
+
+		<!-- Main Content -->
+		{#if hasValidParams}
+			<!-- Authentication Section - Only show if not in debug mode -->
+			{#if !isDebugMode}
 				<div class="bg-gray-800 rounded-2xl p-6">
-					<h2 class="text-xl font-semibold text-white mb-4">🔐 Authentication Required</h2>
-					<p class="text-gray-400 mb-4">
-						You need to login with Telegram to perform actions with this QR code.
+					<h2 class="text-xl font-semibold text-white mb-4 text-center">🔐 Login Required</h2>
+					<p class="text-gray-400 mb-6 text-center">
+						Login with Telegram to execute this action automatically.
 					</p>
 					
 					<TelegramAuth 
@@ -137,209 +191,74 @@
 						onAuthSuccess={handleAuthSuccess}
 					/>
 				</div>
+			{/if}
 
-				{#if currentUser && hasValidParams}
-					<div class="bg-gray-800 rounded-2xl p-6">
-						<h3 class="text-lg font-semibold text-white mb-4">🎯 Ready to Process</h3>
-						<div class="space-y-3">
-							<div class="flex items-center gap-3">
-								<span class="text-gray-400">Action:</span>
-								<span class="text-white font-medium capitalize">{action}</span>
-							</div>
-							<div class="flex items-center gap-3">
-								<span class="text-gray-400">Title:</span>
-								<span class="text-white font-medium">{title}</span>
-							</div>
-							{#if desc}
-								<div class="flex items-center gap-3">
-									<span class="text-gray-400">Description:</span>
-									<span class="text-white font-medium">{desc}</span>
-								</div>
-							{/if}
-							<div class="flex items-center gap-3">
-								<span class="text-gray-400">Holon ID:</span>
-								<span class="text-white font-medium">{holonID}</span>
-							</div>
+			<!-- Processing State -->
+			{#if isProcessingAction}
+				<div class="mt-6 bg-blue-900 bg-opacity-30 border border-blue-500 rounded-lg p-6">
+					<div class="text-center">
+						<div class="flex items-center justify-center gap-3 text-blue-300 mb-4">
+							<div class="w-6 h-6 border-2 border-blue-300 border-t-transparent rounded-full animate-spin"></div>
+							<span class="text-lg font-medium">Processing {action} action...</span>
 						</div>
-						
-						{#if isProcessingAction}
-							<div class="mt-4 p-4 bg-blue-900 bg-opacity-30 border border-blue-500 rounded-lg">
-								<div class="flex items-center justify-center gap-3 text-blue-300">
-									<div class="w-5 h-5 border-2 border-blue-300 border-t-transparent rounded-full animate-spin"></div>
-									<span>Processing {action} action...</span>
-								</div>
-								<p class="text-sm text-blue-200 mt-2 text-center">
-									{#if action === 'role'}
-										Creating role and assigning it to you...
-									{:else if action === 'event'}
-										Joining event...
-									{:else if action === 'task'}
-										Assigning task...
-									{:else if action === 'badge'}
-										Awarding badge...
-									{:else if action === 'invite'}
-										Processing invitation...
-									{/if}
-								</p>
-							</div>
-						{:else}
-							<button 
-								on:click={handleManualAction}
-								class="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-xl transition-colors"
-								disabled={isProcessingAction}
-							>
-								🚀 Process {action} Action
-							</button>
-						{/if}
-					</div>
-				{/if}
-			</div>
-
-			<!-- Right Column: QR Code Display -->
-			<div class="space-y-6">
-				{#if hasValidParams}
-					<QRCode {action} {title} {desc} {holonID} {deckId} {cardId} />
-				{:else}
-					<div class="bg-gray-800 rounded-3xl p-8 text-center">
-						<h1 class="text-2xl font-bold text-white mb-4">Invalid QR Parameters</h1>
-						<p class="text-gray-400 mb-4">
-							Missing required parameters: action, title, or holonID
+						<p class="text-sm text-blue-200 mb-4">
+							{#if action === 'role'}
+								Creating role and assigning it to you...
+							{:else if action === 'event'}
+								Joining event...
+							{:else if action === 'task'}
+								Assigning task...
+							{:else if action === 'badge'}
+								Awarding badge...
+							{:else if action === 'invite'}
+								Processing invitation...
+							{:else}
+								Processing action...
+							{/if}
 						</p>
-						<div class="text-sm text-gray-500">
-							<p>Expected URL format:</p>
-							<p class="font-mono text-xs mt-2">
-								/qr?action=role&title=Title&desc=Description&holonID=123&deckId=Deck&cardId=Card
-							</p>
-						</div>
+						<p class="text-xs text-blue-300">
+							You will be redirected automatically when complete.
+						</p>
 					</div>
-				{/if}
+				</div>
+			{/if}
 
-				<!-- Action Information -->
-				{#if hasValidParams}
-					<div class="bg-gray-800 rounded-2xl p-6">
-						<h3 class="text-lg font-semibold text-white mb-4">📋 Action Information</h3>
-						<div class="space-y-3 text-sm">
-							<div class="flex justify-between">
-								<span class="text-gray-400">Action Type:</span>
-								<span class="text-white capitalize">{action}</span>
-							</div>
-							<div class="flex justify-between">
-								<span class="text-gray-400">Target:</span>
-								<span class="text-white">{title}</span>
-							</div>
-							{#if desc}
-								<div class="flex justify-between">
-									<span class="text-gray-400">Description:</span>
-									<span class="text-white">{desc}</span>
-								</div>
-							{/if}
-							<div class="flex justify-between">
-								<span class="text-gray-400">Holon:</span>
-								<span class="text-white">{holonID}</span>
-							</div>
-							{#if deckId}
-								<div class="flex justify-between">
-									<span class="text-gray-400">Deck:</span>
-									<span class="text-white">{deckId}</span>
-								</div>
-							{/if}
-							{#if cardId}
-								<div class="flex justify-between">
-									<span class="text-gray-400">Card:</span>
-									<span class="text-white">{cardId}</span>
-								</div>
-							{/if}
-						</div>
+			<!-- Error Message -->
+			{#if errorMessage}
+				<div class="mt-6 bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-4">
+					<div class="text-red-400 font-semibold mb-2">Error</div>
+					<div class="text-red-200 text-sm">{errorMessage}</div>
+					<div class="mt-3">
+						<button 
+							on:click={() => errorMessage = ''}
+							class="bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-1 rounded transition-colors"
+						>
+							Dismiss
+						</button>
 					</div>
-				{/if}
+				</div>
+			{/if}
+		{:else}
+			<!-- Invalid Parameters -->
+			<div class="bg-gray-800 rounded-2xl p-6 text-center">
+				<div class="text-gray-400 mb-4">
+					<svg class="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+					</svg>
+				</div>
+				<h3 class="text-lg font-semibold text-white mb-2">Invalid QR Code</h3>
+				<p class="text-gray-400 text-sm">
+					This QR code doesn't contain valid action parameters.
+				</p>
 			</div>
-		</div>
+		{/if}
 	</div>
 </div>
-
-<!-- Action Result Modal -->
-{#if showActionModal && actionResult}
-	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-		<div class="bg-gray-800 rounded-2xl p-6 max-w-md w-full">
-			<div class="text-center">
-				{#if actionResult.success}
-					<div class="text-6xl mb-4">✅</div>
-					<h3 class="text-xl font-semibold text-white mb-2">Action Successful!</h3>
-					
-					{#if actionResult.assignedRole}
-						<div class="bg-green-900 bg-opacity-30 border border-green-500 rounded-lg p-3 mb-4">
-							<div class="text-green-400 font-semibold mb-1">Role Assigned</div>
-							<div class="text-white">{actionResult.assignedRole}</div>
-						</div>
-					{/if}
-					
-					<p class="text-gray-300 mb-4">{actionResult.message}</p>
-					
-					{#if action === 'role'}
-						<div class="bg-blue-900 bg-opacity-30 border border-blue-500 rounded-lg p-3 mb-4 text-left">
-							<div class="text-blue-400 font-semibold mb-2">What happened:</div>
-							<ul class="text-sm text-gray-300 space-y-1">
-								<li>• Role "{title}" was created (if it didn't exist)</li>
-								<li>• You were assigned to this role</li>
-								<li>• Your user profile was updated</li>
-								<li>• Action was logged for audit purposes</li>
-							</ul>
-						</div>
-					{/if}
-					
-					{#if actionResult.redirectUrl}
-						<div class="bg-gray-700 rounded-lg p-3 mb-4">
-							<p class="text-sm text-gray-400 mb-2">Redirecting to:</p>
-							<p class="text-white font-mono text-xs">{actionResult.redirectUrl}</p>
-						</div>
-					{/if}
-				{:else}
-					<div class="text-6xl mb-4">❌</div>
-					<h3 class="text-xl font-semibold text-red-400 mb-2">Action Failed</h3>
-					
-					<p class="text-gray-300 mb-4">{actionResult.message}</p>
-					
-					{#if actionResult.error}
-						<div class="bg-red-900 bg-opacity-30 border border-red-500 rounded-lg p-3 mb-4">
-							<div class="text-red-400 font-semibold mb-1">Error Details</div>
-							<div class="text-white text-sm">{actionResult.error}</div>
-						</div>
-					{/if}
-					
-					<div class="bg-yellow-900 bg-opacity-30 border border-yellow-500 rounded-lg p-3 mb-4 text-left">
-						<div class="text-yellow-400 font-semibold mb-2">Troubleshooting:</div>
-						<ul class="text-sm text-gray-300 space-y-1">
-							<li>• Check that you're logged in with Telegram</li>
-							<li>• Verify the QR code parameters are correct</li>
-							<li>• Try refreshing the page and scanning again</li>
-							<li>• Contact support if the issue persists</li>
-						</ul>
-					</div>
-				{/if}
-				
-				<button 
-					on:click={closeActionModal}
-					class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-xl transition-colors"
-				>
-					Close
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
 
 <style lang="scss">
 	.qr-page {
 		min-height: 100vh;
 		background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
 		padding: 2rem 0;
-	}
-
-	.grid {
-		grid-template-columns: 1fr;
-		
-		@media (min-width: 1024px) {
-			grid-template-columns: 1fr 1fr;
-		}
 	}
 </style> 

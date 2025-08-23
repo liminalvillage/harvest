@@ -19,7 +19,6 @@
 	
 	let isAuthenticated = false;
 	let currentUser: TelegramUser | null = null;
-	let isLoading = false;
 	let errorMessage = '';
 	let widgetContainer: HTMLDivElement;
 	let widgetLoaded = false;
@@ -170,34 +169,14 @@
 	}
 
 	function handleTelegramLogin() {
-		isLoading = true;
+		// Remove the fallback login logic - just retry the widget
 		errorMessage = '';
-		
-		// The widget should handle this, but just in case
-		const botUsername = 'ZeitCampBot';
-		const loginUrl = `https://t.me/${botUsername}?start=login_${holonID}`;
-		
-		// Open Telegram login in a new window/tab as fallback
-		window.open(loginUrl, '_blank');
-		
-		// Set up polling to check for authentication (as fallback)
-		pollForAuthentication();
+		initTelegramWidget();
 	}
 
 	function pollForAuthentication() {
-		const pollInterval = setInterval(() => {
-			// Check if user has completed authentication
-			// This would typically involve checking a backend endpoint
-			// For now, we'll simulate with a timeout
-			setTimeout(() => {
-				isLoading = false;
-				clearInterval(pollInterval);
-				
-				// In a real implementation, you would check an auth endpoint
-				// and verify the user's authentication status
-				console.log('Authentication polling completed');
-			}, 5000);
-		}, 1000);
+		// Remove polling logic since we're not using fallback login
+		console.log('Fallback authentication removed');
 	}
 
 	function logout() {
@@ -263,15 +242,6 @@
 				<div class="error-message">
 					<div class="error-title">⚠️ Authentication Error</div>
 					<div class="error-description">{errorMessage}</div>
-					<div class="error-help">
-						<strong>Need help?</strong>
-						<ul class="error-steps">
-							<li>Make sure you're using the correct domain</li>
-							<li>For local development, use 'localhost:5173' in BotFather</li>
-							<li>For production, use your actual domain</li>
-							<li>Try refreshing the page if the issue persists</li>
-						</ul>
-					</div>
 					<div class="error-actions">
 						<button 
 							on:click={() => {
@@ -295,19 +265,6 @@
 				{/if}
 				
 				<div bind:this={widgetContainer} class="telegram-widget-container mb-4"></div>
-				
-				<button 
-					on:click={handleTelegramLogin}
-					class="telegram-login-btn"
-					disabled={isLoading}
-				>
-					{#if isLoading}
-						<div class="loading-spinner"></div>
-						Connecting...
-					{:else}
-						🔐 Login with Telegram
-					{/if}
-				</button>
 			</div>
 			
 			<div class="login-info">
@@ -486,44 +443,6 @@
 		line-height: 1.4;
 	}
 
-	.error-help {
-		font-size: 0.8rem;
-		color: #fbbf24;
-		border-top: 1px solid rgba(239, 68, 68, 0.3);
-		padding-top: 0.75rem;
-	}
-
-	.error-help strong {
-		color: #fbbf24;
-		display: block;
-		margin-bottom: 0.5rem;
-	}
-
-	.error-steps {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-	}
-
-	.error-steps li {
-		position: relative;
-		padding-left: 1.25rem;
-		margin-bottom: 0.25rem;
-		line-height: 1.3;
-	}
-
-	.error-steps li:before {
-		content: "•";
-		position: absolute;
-		left: 0;
-		color: #fbbf24;
-		font-weight: bold;
-	}
-
-	.error-steps li:last-child {
-		margin-bottom: 0;
-	}
-
 	.error-actions {
 		margin-top: 1rem;
 	}
@@ -566,32 +485,6 @@
 		margin-bottom: 1rem;
 		color: rgba(255, 255, 255, 0.8);
 		font-size: 0.875rem;
-	}
-
-	.telegram-login-btn {
-		background: linear-gradient(135deg, #0088cc 0%, #0077b3 100%);
-		color: white;
-		border: none;
-		padding: 0.875rem 1.5rem;
-		border-radius: 0.5rem;
-		font-size: 1rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s ease;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.5rem;
-
-		&:hover:not(:disabled) {
-			transform: translateY(-1px);
-			box-shadow: 0 4px 15px rgba(0, 136, 204, 0.4);
-		}
-
-		&:disabled {
-			opacity: 0.7;
-			cursor: not-allowed;
-		}
 	}
 
 	.loading-spinner {

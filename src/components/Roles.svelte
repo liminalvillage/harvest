@@ -76,6 +76,20 @@
 			let initialRolesData = await holosphere.getAll(holonIdToLoad, "roles");
 			console.log(`[Roles.svelte] Initial roles data:`, initialRolesData);
 			
+			// Log detailed role information to see what's actually stored
+			if (Array.isArray(initialRolesData)) {
+				initialRolesData.forEach((role, index) => {
+					console.log(`[Roles.svelte] Role ${index}:`, {
+						id: role.id,
+						title: role.title,
+						participants: role.participants,
+						participantCount: role.participants?.length || 0,
+						created_at: role.created_at,
+						created_via: role.created_via
+					});
+				});
+			}
+			
 			if (Array.isArray(initialRolesData)) {
 				// Try to use role ID if available, otherwise use title
 				store = initialRolesData.reduce((acc, role) => {
@@ -135,6 +149,18 @@
 		try {
 			const initialUsers = await holosphere.getAll(holonIdToLoad, "users");
 			console.log(`[Roles.svelte] Initial users data:`, initialUsers);
+			
+			// Log detailed user information to see what's actually stored
+			if (Array.isArray(initialUsers)) {
+				initialUsers.forEach((user, index) => {
+					console.log(`[Roles.svelte] User ${index}:`, {
+						id: user.id,
+						username: user.username,
+						first_name: user.first_name,
+						last_name: user.last_name
+					});
+				});
+			}
 			
 			if (Array.isArray(initialUsers)) {
 				// Convert array to object map using user.id as the canonical key
