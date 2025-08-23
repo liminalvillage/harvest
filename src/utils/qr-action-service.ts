@@ -80,51 +80,21 @@ export class QRActionService {
 		try {
 			console.log(`[QRActionService] Starting role assignment for user ${user.id} to role: ${params.title}`);
 			
-			// Check if user already has this role (but don't return early - we need to update the role too)
+			// Get or create user record (roles are stored in roles collection only, not in user table)
 			const existingUser = await this.holosphere.get(params.holonID, 'users', user.id.toString());
-			const userAlreadyHasRole = existingUser && existingUser.roles && existingUser.roles.includes(params.title);
-			
-			if (userAlreadyHasRole) {
-				console.log(`[QRActionService] User ${user.id} already has role: ${params.title} - will update role participants for consistency`);
-			}
-
-			// Get or create user record
 			const userData = existingUser || {
 				id: user.id.toString(),
 				username: user.username || `user_${user.id}`,
 				first_name: user.first_name,
 				last_name: user.last_name || '',
-				roles: [],
-				actions: [],
 				joined_at: new Date().toISOString(),
 				last_active: new Date().toISOString()
 			};
 
-			// Add the role (if not already present)
-			if (!userData.roles) userData.roles = [];
-			if (!userData.roles.includes(params.title)) {
-				userData.roles.push(params.title);
-				console.log(`[QRActionService] Added role ${params.title} to user ${user.id}`);
-			} else {
-				console.log(`[QRActionService] User ${user.id} already has role ${params.title} in their roles array`);
-			}
-
 			// Update last active timestamp
 			userData.last_active = new Date().toISOString();
 
-			// Add action record
-			if (!userData.actions) userData.actions = [];
-			userData.actions.push({
-				type: 'role_assigned',
-				action: params.title,
-				timestamp: Date.now(),
-				description: params.desc || `Role assigned via QR code`,
-				holonID: params.holonID,
-				deckId: params.deckId,
-				cardId: params.cardId
-			});
-
-			// Save user data
+			// Save user data (without roles - roles are managed separately in roles collection)
 			console.log(`[QRActionService] Saving user data for user ${user.id}`);
 			await this.holosphere.put(params.holonID, 'users', userData);
 			console.log(`[QRActionService] User data saved successfully`);
@@ -274,9 +244,9 @@ export class QRActionService {
 
 			return {
 				success: true,
-				message: userAlreadyHasRole ? 
-					`Role participants updated for: ${params.title}` : 
-					`Successfully assigned role: ${params.title}`,
+				message: isNewRole ? 
+					`Successfully assigned role: ${params.title}` : 
+					`Role participants updated for: ${params.title}`,
 				assignedRole: params.title,
 				redirectUrl: `/${params.holonID}/roles`
 			};
