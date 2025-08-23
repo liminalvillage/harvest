@@ -132,8 +132,12 @@ export class QRActionService {
 			await this.holosphere.put(params.holonID, 'users', userData);
 			console.log(`[QRActionService] User data saved successfully`);
 
-			// Check if role exists, create it if it doesn't
-			let roleData = await this.holosphere.get(params.holonID, 'roles', params.title);
+			// Check if role exists, create it if it doesn't exist
+			const roleKey = params.title; // Use title as the consistent key
+			console.log(`[QRActionService] Looking for existing role with key: ${roleKey}`);
+			let roleData = await this.holosphere.get(params.holonID, 'roles', roleKey);
+			console.log(`[QRActionService] Retrieved role data:`, roleData);
+			
 			if (!roleData) {
 				// Create new role with enhanced structure
 				roleData = {
@@ -155,7 +159,7 @@ export class QRActionService {
 						generation_source: 'qr_code'
 					}
 				};
-				console.log(`[QRActionService] Creating new role: ${params.title}`);
+				console.log(`[QRActionService] Creating new role: ${params.title} with data:`, roleData);
 			} else {
 				console.log(`[QRActionService] Role ${params.title} already exists, updating participants`);
 			}
@@ -182,10 +186,19 @@ export class QRActionService {
 			roleData.last_modified = new Date().toISOString();
 			roleData.last_modified_by = user.id.toString();
 
-			// Save role data
-			console.log(`[QRActionService] Saving role data for role: ${params.title}`);
+			// Save role data - Use the role's ID as the key for consistency
+			console.log(`[QRActionService] Saving role data for role: ${roleData.title} with key: ${roleKey}`);
 			await this.holosphere.put(params.holonID, 'roles', roleData);
-			console.log(`[QRActionService] Role data saved successfully`);
+			console.log(`[QRActionService] Role data saved successfully with key: ${roleKey}`);
+			
+			// Verify the role was saved correctly by retrieving it
+			const savedRole = await this.holosphere.get(params.holonID, 'roles', roleKey);
+			console.log(`[QRActionService] Verification - retrieved saved role:`, savedRole);
+			if (savedRole) {
+				console.log(`[QRActionService] Role saved successfully and can be retrieved`);
+			} else {
+				console.warn(`[QRActionService] Warning: Role was not saved correctly or cannot be retrieved`);
+			}
 
 			// Create audit log entry
 			try {

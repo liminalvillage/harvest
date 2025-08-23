@@ -79,7 +79,16 @@
 			if (Array.isArray(initialRolesData)) {
 				// Try to use role ID if available, otherwise use title
 				store = initialRolesData.reduce((acc, role) => {
-					const roleKey = role.id || role.title;
+					// For QR-generated roles, ensure we use a consistent key
+					let roleKey;
+					if (role.id && role.id !== role.title) {
+						roleKey = role.id;
+					} else if (role.title) {
+						roleKey = role.title;
+					} else {
+						roleKey = `role_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+					}
+					
 					if (roleKey) {
 						acc[roleKey] = role;
 						console.log(`[Roles.svelte] Added role with key '${roleKey}' (ID: ${role.id}, title: '${role.title}')`);
@@ -87,8 +96,30 @@
 					return acc;
 				}, {});
 			} else if (typeof initialRolesData === 'object' && initialRolesData !== null) {
-                store = initialRolesData;
-                console.log(`[Roles.svelte] Store initialized with object data, keys:`, Object.keys(initialRolesData));
+				// If it's already an object, normalize the keys to ensure consistency
+				let normalizedRoleStore = {};
+				Object.entries(initialRolesData).forEach(([key, role]) => {
+					if (role && (role.id || role.title)) {
+						// For QR-generated roles, prefer title as key if id equals title
+						let roleKey;
+						if (role.id && role.id !== role.title) {
+							roleKey = role.id;
+						} else if (role.title) {
+							roleKey = role.title;
+						} else {
+							roleKey = key; // Fallback to original key
+						}
+						
+						normalizedRoleStore[roleKey] = role;
+						console.log(`[Roles.svelte] Normalized role with key '${roleKey}' from original key '${key}'`);
+					} else if (role) {
+						// Keep original key if no id or title
+						normalizedRoleStore[key] = role;
+						console.log(`[Roles.svelte] Kept role with original key '${key}' (no ID/title found)`);
+					}
+				});
+				store = normalizedRoleStore;
+                console.log(`[Roles.svelte] Store initialized with normalized object data, keys:`, Object.keys(store));
             } else {
 				store = {};
 				console.log(`[Roles.svelte] Store initialized as empty object`);
@@ -153,36 +184,56 @@
 			console.log(`[Roles.svelte] Store before update:`, store);
 
 			if (newRole) {
-				// Check if we already have this role by ID or title
+				// Normalize the role key using the same logic as initialization
+				let normalizedKey;
+				if (newRole.id && newRole.id !== newRole.title) {
+					normalizedKey = newRole.id;
+				} else if (newRole.title) {
+					normalizedKey = newRole.title;
+				} else {
+					normalizedKey = key; // Fallback to subscription key
+				}
+
+				// Check if we already have this role by normalized key
 				const existingKey = Object.keys(store).find(storeKey => 
 					store[storeKey].id === newRole.id || store[storeKey].title === newRole.title
 				);
 
-				if (existingKey && existingKey !== key) {
+				if (existingKey && existingKey !== normalizedKey) {
 					// We have this role but with a different key, update the existing key
-					console.log(`[Roles.svelte] Role exists with different key '${existingKey}', updating it instead of '${key}'`);
+					console.log(`[Roles.svelte] Role exists with different key '${existingKey}', updating it instead of '${normalizedKey}'`);
 					store = { ...store, [existingKey]: newRole };
 					// Remove the old key if it's different
-					if (existingKey !== key) {
-						const { [key]: _, ...rest } = store;
+					if (existingKey !== normalizedKey) {
+						const { [normalizedKey]: _, ...rest } = store;
 						store = rest;
 					}
 				} else {
-					// Use the subscription key directly for updates
-					const oldRole = store[key];
+					// Use the normalized key for updates
+					const oldRole = store[normalizedKey];
 					if (oldRole) {
-						console.log(`[Roles.svelte] Updating existing role with key '${key}' (title: '${newRole.title}')`);
+						console.log(`[Roles.svelte] Updating existing role with key '${normalizedKey}' (title: '${newRole.title}')`);
 					} else {
-						console.log(`[Roles.svelte] Adding new role with key '${key}' (title: '${newRole.title}')`);
+						console.log(`[Roles.svelte] Adding new role with key '${normalizedKey}' (title: '${newRole.title}')`);
 					}
-					store = { ...store, [key]: newRole };
+					store = { ...store, [normalizedKey]: newRole };
 				}
 				console.log(`[Roles.svelte] Store after update:`, store);
 			} else {
-				// Remove the role
-				console.log(`[Roles.svelte] Removing role with key '${key}'`);
-				const { [key]: _, ...rest } = store;
-				store = rest;
+				// Remove the role - try to find it by the subscription key or normalized key
+				const roleToRemove = store[key] || store[newRole?.title] || store[newRole?.id];
+				if (roleToRemove) {
+					const keyToRemove = Object.keys(store).find(storeKey => store[storeKey] === roleToRemove);
+					if (keyToRemove) {
+						console.log(`[Roles.svelte] Removing role with key '${keyToRemove}'`);
+						const { [keyToRemove]: _, ...rest } = store;
+						store = rest;
+					}
+				} else {
+					console.log(`[Roles.svelte] Removing role with subscription key '${key}'`);
+					const { [key]: _, ...rest } = store;
+					store = rest;
+				}
 			}
 		});
 
