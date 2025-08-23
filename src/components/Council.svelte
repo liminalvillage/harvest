@@ -80,11 +80,7 @@ let showCreateInPicker = false;
 	let showRitual = false;
 	let showDesignStreams = false;
 	let ritualStage = 0; // 0-5 for the 6 stages
-	let metatronAdvisors: Array<{
-		name: string;
-		type: 'real' | 'mythic' | 'archetype';
-		lens: string;
-	}> = [];
+	let metatronAdvisors: CouncilAdvisorExtended[] = []; // ✅ Use the proper type
 	let ritualSession = {
 		session_id: '',
 		initiator: { name: '', intention: '' },
@@ -1780,34 +1776,30 @@ function selectSeatAdvisor(a: CouncilAdvisorExtended) {
 				console.log('🚀 Started Design Streams session:', session.id);
 			}
 		
-		// HOLONIC: Build metatron advisors list from advisor IDs
-		metatronAdvisors = [];
-		const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
-		
-		for (const position of outerPositions) {
-			const advisorId = circleInputs[position];
-			if (advisorId && advisorService) {
-				console.log(`🔍 Looking up advisor by ID: "${advisorId}"`);
-				try {
-					const fullAdvisor = await advisorService.getAdvisor(advisorId);
-				if (fullAdvisor) {
-						console.log(`✅ Found advisor: "${fullAdvisor.name}" (${fullAdvisor.id})`);
-					metatronAdvisors.push({
-							name: fullAdvisor.name,
-						type: fullAdvisor.type,
-						lens: fullAdvisor.lens
-					});
-				} else {
-						console.error(`❌ Advisor lookup failed for ID "${advisorId}"`);
-						alert(`Error: Could not find advisor with ID "${advisorId}" in the advisor library. The advisor may have been deleted or there may be a sync issue.`);
-					return;
-				}
-				} catch (error) {
-					console.error(`❌ Error looking up advisor ${advisorId}:`, error);
-					alert(`Error loading advisor: ${error instanceof Error ? error.message : 'Unknown error'}`);
-					return;
+		// HOLONIC: Get full advisors with character specs from AdvisorService
+		if (advisorService) {
+			const allAdvisors = await advisorService.getAllAdvisors();
+			const outerPositions = ['outer-top', 'outer-top-right', 'outer-bottom-right', 'outer-bottom', 'outer-bottom-left', 'outer-top-left'];
+			
+			metatronAdvisors = [];
+			for (const position of outerPositions) {
+				const advisorId = circleInputs[position];
+				if (advisorId) {
+					const fullAdvisor = allAdvisors.find(a => a.id === advisorId);
+					if (fullAdvisor && fullAdvisor.id) { // ✅ Safety check for ID
+						console.log(`✅ Found seated advisor: "${fullAdvisor.name}" (${fullAdvisor.id}) with characterSpec:`, !!fullAdvisor.characterSpec);
+						metatronAdvisors.push(fullAdvisor); // ✅ Use the complete advisor object
+					} else {
+						console.error(`❌ Advisor not found in AdvisorService for ID "${advisorId}"`);
+						alert(`Error: Could not find advisor with ID "${advisorId}" in the advisor service. The advisor may have been deleted or there may be a sync issue.`);
+						return;
+					}
 				}
 			}
+		} else {
+			console.error('❌ AdvisorService not available for Design Streams');
+			alert('Error: Advisor service not available. Please try again.');
+			return;
 		}
 			
 			// Only show Design Streams if all advisors were found successfully
@@ -2237,23 +2229,46 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 	}
 
 	async function addImmediateAdvisorIntroduction(advisor: CouncilAdvisorExtended) {
+		// Debug: Log the raw advisor data to see what we're working with
+		console.log('🔍 Raw advisor data for introduction:', {
+			name: advisor.name,
+			type: advisor.type,
+			lens: advisor.lens,
+			characterSpec: advisor.characterSpec,
+			characterSpecType: typeof advisor.characterSpec,
+			characterSpecKeys: advisor.characterSpec ? Object.keys(advisor.characterSpec) : 'no keys'
+		});
+		
 		// Generate immediate introduction based on advisor type and characteristics
 		let stageDirections = '';
 		let introduction = '';
 		
-		// Generate stage directions based on advisor type
-		if (advisor.type === 'archetype') {
-			const archetypeSpec = advisor.characterSpec as any;
-			stageDirections = `[${archetypeSpec.appearance || 'appears with a commanding presence'}]`;
-		} else if (advisor.type === 'real') {
-			const realSpec = advisor.characterSpec as any;
-			stageDirections = `[${realSpec.speaking_style || 'steps forward with measured grace'}]`;
-		} else if (advisor.type === 'mythic') {
-			const mythicSpec = advisor.characterSpec as any;
-			stageDirections = `[${mythicSpec.speaking_style || 'materializes with ethereal grace'}]`;
-		} else {
+		// Generate stage directions based on advisor type with safe property access
+		try {
+			if (advisor.type === 'archetype') {
+				const archetypeSpec = advisor.characterSpec as any;
+				const appearance = archetypeSpec?.appearance;
+				console.log('🔍 Archetype appearance:', appearance, 'type:', typeof appearance);
+				stageDirections = `[${typeof appearance === 'string' ? appearance : 'appears with a commanding presence'}]`;
+			} else if (advisor.type === 'real') {
+				const realSpec = advisor.characterSpec as any;
+				const speakingStyle = realSpec?.speaking_style;
+				console.log('🔍 Real speaking style:', speakingStyle, 'type:', typeof speakingStyle);
+				stageDirections = `[${typeof speakingStyle === 'string' ? speakingStyle : 'steps forward with measured grace'}]`;
+			} else if (advisor.type === 'mythic') {
+				const mythicSpec = advisor.characterSpec as any;
+				const speakingStyle = mythicSpec?.speaking_style;
+				console.log('🔍 Mythic speaking style:', speakingStyle, 'type:', typeof speakingStyle);
+				stageDirections = `[${typeof speakingStyle === 'string' ? speakingStyle : 'materializes with ethereal grace'}]`;
+			} else {
+				stageDirections = '[appears with a gentle presence]';
+			}
+		} catch (error) {
+			console.warn('Error generating stage directions, using fallback:', error);
 			stageDirections = '[appears with a gentle presence]';
 		}
+		
+		console.log('🔍 Generated stage directions:', stageDirections);
 		
 		// Generate introduction based on advisor characteristics
 		const cleanName = advisor.name.split(',')[0].trim();
@@ -2268,6 +2283,8 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 			advisor: advisor.name
 		};
 
+		console.log('🔍 Final intro message content:', introMessage.content);
+		
 		advisorChatMessages = [...advisorChatMessages, introMessage];
 		await typeMessage(introMessage, 'advisor');
 	}
@@ -2458,6 +2475,18 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 		
 		if (fullAdvisor) {
 					console.log(`✅ Found advisor for chat: ${fullAdvisor.name} (${fullAdvisor.id})`);
+					
+					// Debug: Log the full advisor object to see its structure
+					console.log('🔍 Full advisor object loaded:', {
+						id: fullAdvisor.id,
+						name: fullAdvisor.name,
+						type: fullAdvisor.type,
+						lens: fullAdvisor.lens,
+						characterSpec: fullAdvisor.characterSpec,
+						characterSpecType: typeof fullAdvisor.characterSpec,
+						characterSpecKeys: fullAdvisor.characterSpec && typeof fullAdvisor.characterSpec === 'object' ? Object.keys(fullAdvisor.characterSpec) : 'no keys'
+					});
+					
 			selectedAdvisorForChat = fullAdvisor;
 			advisorChatSource = 'main-council';
 			showAdvisorChat = true;
@@ -2639,7 +2668,14 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 					displayContent: '',
 					isTyping: true,
 					timestamp: new Date(),
-                speaker: `${respondingAdvisor.name}${(respondingAdvisor.characterSpec as any).title ? ' — ' + (respondingAdvisor.characterSpec as any).title : ''}`,
+                speaker: (() => {
+                  try {
+                    const title = (respondingAdvisor.characterSpec as any)?.title;
+                    return title && typeof title === 'string' ? `${respondingAdvisor.name} — ${title}` : respondingAdvisor.name;
+                  } catch (error) {
+                    return respondingAdvisor.name;
+                  }
+                })(),
 					speakerColor: getAdvisorColor(0)
 				};
 				
@@ -2943,6 +2979,16 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 		}
 		
 		if (fullAdvisor) {
+			console.log('🔍 DesignStreams advisor chat - Full advisor loaded:', {
+				id: fullAdvisor.id,
+				name: fullAdvisor.name,
+				type: fullAdvisor.type,
+				lens: fullAdvisor.lens,
+				characterSpec: fullAdvisor.characterSpec,
+				characterSpecType: typeof fullAdvisor.characterSpec,
+				characterSpecKeys: fullAdvisor.characterSpec && typeof fullAdvisor.characterSpec === 'object' ? Object.keys(fullAdvisor.characterSpec) : 'no keys'
+			});
+			
 			selectedAdvisorForChat = fullAdvisor;
 			advisorChatSource = 'design-streams';
 			showDesignStreams = false; // Close Design Streams page

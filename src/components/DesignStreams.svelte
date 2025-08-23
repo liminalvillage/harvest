@@ -8,8 +8,17 @@
     import LLMService from '../utils/llm-service';
     import HoloSphere from 'holosphere';
     import { ID } from '../dashboard/store';
-    import { createTasksFromQuestTree, saveTasksToHolon } from '../utils/holonCreator';
-    import type { CouncilAdvisorExtended } from '../types/advisor-schema';
+    	import { createTasksFromQuestTree, saveTasksToHolon } from '../utils/holonCreator';
+	import type { CouncilAdvisorExtended } from '../types/advisor-schema';
+	import { VisionClarificationService, addResponseToSession } from '../utils/visionClarificationService';
+	import { getAvailablePatterns } from '../utils/interactionPatterns';
+	import type { 
+		VisionClarificationSession, 
+		AdvisorQuestion, 
+		UserResponse,
+		SMARTObjective,
+		InteractionPatternType 
+	} from '../types/visionClarification';
 
 	interface Props {
 		advisors: CouncilAdvisorExtended[];
@@ -31,10 +40,11 @@
 	let selectedElement = '';
 	let showElementModal = false;
 	let showBackcastModal = false;
-	let editingWish = false;
-	let editingValues = false;
+
+
 	let tempWishStatement = '';
 	let tempValues: string[] = [];
+	let newValueInput = '';
 
 	// Backcast from the Future state
 	let showTimelineMapping = false;
@@ -53,6 +63,26 @@
 	
     // User chat input state
     let userChatInput = '';
+
+	// Vision Clarification state
+	let showVisionClarification = false;
+	let visionClarificationSession: VisionClarificationSession | null = null;
+	let currentQuestionIndex = 0;
+	let isProcessingVisionClarification = false;
+	let enhancedVision: SMARTObjective | null = null;
+	let selectedInteractionPattern: InteractionPatternType = 'celebrity_interview';
+	let userResponseInput = '';
+	let visionClarificationService: VisionClarificationService | null = null;
+	let showCouncilDeliberation = false;
+	let councilDeliberations: string[] = [];
+	let isDeliberating = false;
+	let deliberationMessages: Array<{
+		content: string;
+		displayContent?: string;
+		isTyping?: boolean;
+		advisor: string;
+		timestamp: Date;
+	}> = [];
 
     // Holosphere context
     let holosphere = (typeof window !== 'undefined' ? (getContext && getContext('holosphere')) : null) as HoloSphere | null;
@@ -75,6 +105,10 @@
 					console.log('🔁 Resumed Design Streams session:', current.id);
 				}
 			}
+			
+			// Debug advisors prop
+			console.log('🔮 DesignStreams mounted with advisors:', advisors);
+			console.log('🔮 Advisor IDs on mount:', advisors?.map(a => ({ name: a.name, id: a.id })) || []);
 		} catch (e) {
 			console.warn('Unable to start/resume Design Streams session:', e);
 		}
@@ -149,6 +183,10 @@
 
             if (count > 0) {
                 addTimelineMappingMessage('system', `✅ Saved ${count} quest${count === 1 ? '' : 's'} to ${target === 'current' ? 'this holon' : 'a new holon'} (${targetHolonId}).`);
+                
+                // ✅ AUTOMATICALLY SAVE SESSION after publishing quests
+                completeSession();
+                
                 // Clear local draft after successful save
                 clearQuestTreeDraft();
                 if (target === 'new') {
@@ -238,15 +276,9 @@
 
 	function closeBackcastModal() {
 		showBackcastModal = false;
-		editingWish = false;
-		editingValues = false;
 		tempWishStatement = '';
 		tempValues = [];
-	}
-
-	function startEditingWish() {
-		editingWish = true;
-		tempWishStatement = ritualSession?.wish_statement || '';
+		newValueInput = '';
 	}
 
 	function saveWishStatement() {
@@ -255,24 +287,9 @@
 			type: 'wish_statement',
 			value: tempWishStatement
 		});
-		editingWish = false;
 	}
 
-	function startEditingValues() {
-		editingValues = true;
-		tempValues = ritualSession?.declared_values ? [...ritualSession.declared_values] : [];
-	}
 
-	function addValue() {
-		// Limit to 6 values to match metatron cube capacity
-		if (tempValues.length < 6) {
-			tempValues = [...tempValues, ''];
-		}
-	}
-
-	function removeValue(index: number) {
-		tempValues = tempValues.filter((_, i) => i !== index);
-	}
 
 	function saveValues() {
 		// Filter out empty values and limit to 6
@@ -285,7 +302,20 @@
 		if (holosphere && holonID) {
 			try { holosphere.put(holonID, 'council_values', { values: cleanValues }); } catch {}
 		}
-		editingValues = false;
+
+	}
+
+	function addValueDirect() {
+		if (newValueInput.trim() && tempValues.length < 6) {
+			tempValues = [...tempValues, newValueInput.trim()];
+			newValueInput = '';
+			saveValues(); // Auto-save
+		}
+	}
+
+	function removeValueDirect(index: number) {
+		tempValues = tempValues.filter((_, i) => i !== index);
+		saveValues(); // Auto-save
 	}
 
 	// Holonic pattern: Get element data in consistent format
@@ -307,13 +337,7 @@
 
 	// Backcast from the Future functions
 	function openBackcastFromFuture() {
-		showTimelineMapping = true;
 		showBackcastModal = false; // Close the backcast modal
-		
-        // Ensure 6 generations as default
-		currentGenerations = 6;
-		// Clear any previous user chat input
-		userChatInput = '';
 		
 		if (!ritualSession?.wish_statement) {
 			addTimelineMappingMessage('system', 'Please set your wish statement first before starting backcasting from the future.');
@@ -321,8 +345,8 @@
 		}
 		
 		// Check if we have advisors available
-		if (!advisors || advisors.length === 0) {
-			addTimelineMappingMessage('system', 'Please add at least one advisor to your council before starting backcasting from the future.');
+		if (!advisors || advisors.length < 6) {
+			addTimelineMappingMessage('system', 'Please ensure you have at least 6 advisors in your council for vision clarification.');
 			return;
 		}
 
@@ -331,9 +355,20 @@
 			llmService = new LLMService();
 		}
 
-        // If a local draft exists, load it and skip re-initialization
+		// Initialize vision clarification service
+		console.log('🔮 Initializing VisionClarificationService with advisors:', advisors);
+		console.log('🔮 Advisor count:', advisors?.length || 0);
+		console.log('🔮 Advisor names:', advisors?.map(a => a.name) || []);
+		console.log('🔮 Full advisor objects:', advisors?.map(a => ({ id: a.id, name: a.name, type: a.type, lens: a.lens })) || []);
+		visionClarificationService = new VisionClarificationService(llmService, advisors);
+
+        // Check for existing quest tree draft
         const restored = loadQuestTreeDraftFromLocal();
         if (restored) {
+			// If we have a restored quest tree, skip vision clarification and go directly to timeline mapping
+			showTimelineMapping = true;
+			currentGenerations = 6;
+			userChatInput = '';
             addTimelineMappingMessage('system', '🗂️ Restored your previous quest tree draft from this device.');
             if (questTree && questTree.maxGenerations === 6) {
                 addTimelineMappingMessage('system', '🔄 Quest tree has been upgraded to support 6 generations! You can now expand quests beyond generation 3.');
@@ -341,15 +376,187 @@
             return;
         }
 
-        // Get head advisor (first advisor in the list, or default)
+		// Start vision clarification process
+		showVisionClarification = true;
+	}
+
+	// Vision Clarification functions
+	async function startVisionClarification() {
+		if (!visionClarificationService || !ritualSession?.wish_statement) return;
+		
+		try {
+			isProcessingVisionClarification = true;
+			
+			// Start clarification session
+			visionClarificationSession = await visionClarificationService.startClarificationSession(
+				ritualSession.wish_statement,
+				ritualSession.declared_values || [],
+				selectedInteractionPattern
+			);
+			
+			// Generate interview questions
+			const phase = await visionClarificationService.generateInterviewQuestions(visionClarificationSession);
+			visionClarificationSession.phases = [phase];
+			
+			// Reset state
+			currentQuestionIndex = 0;
+			
+		} catch (error) {
+			console.error('Failed to start vision clarification:', error);
+		} finally {
+			isProcessingVisionClarification = false;
+		}
+	}
+
+	async function submitResponse() {
+		if (!visionClarificationSession || !userResponseInput.trim()) return;
+		
+		const currentPhaseData = visionClarificationSession.phases[0];
+		const currentQuestion = currentPhaseData?.questions[currentQuestionIndex];
+		
+		if (!currentQuestion) return;
+		
+		try {
+			isProcessingVisionClarification = true;
+			
+			// Add response to session
+			visionClarificationSession = addResponseToSession(
+				visionClarificationSession,
+				currentQuestion.id,
+				userResponseInput.trim()
+			);
+			
+			// Clear input
+			userResponseInput = '';
+			
+			// Move to next question or start council deliberation
+			if (currentQuestionIndex < currentPhaseData.questions.length - 1) {
+				// More questions remaining
+				currentQuestionIndex++;
+			} else {
+				// All questions completed - start council deliberation
+				await startCouncilDeliberation();
+			}
+			
+		} catch (error) {
+			console.error('Failed to submit response:', error);
+		} finally {
+			isProcessingVisionClarification = false;
+		}
+	}
+
+	async function startCouncilDeliberation() {
+		if (!visionClarificationService || !visionClarificationSession) return;
+		
+		try {
+			isDeliberating = true;
+			showCouncilDeliberation = true;
+			deliberationMessages = []; // Reset messages
+			
+			// Get all user responses
+			const allResponses = visionClarificationSession.phases.flatMap(p => p.responses);
+			
+			// Conduct council deliberation
+			const rawDeliberations = await visionClarificationService.conductCouncilDeliberation(
+				visionClarificationSession,
+				allResponses
+			);
+			
+			// Convert to typing messages and type them one by one
+			for (const deliberation of rawDeliberations) {
+				// Extract advisor name from "**Name:** content" format
+				const match = deliberation.match(/\*\*(.*?):\*\*\s*(.*)/);
+				const advisorName = match ? match[1] : 'Council Member';
+				const content = match ? match[2] : deliberation;
+				
+				const message = {
+					content,
+					displayContent: '',
+					isTyping: true,
+					advisor: advisorName,
+					timestamp: new Date()
+				};
+				
+				deliberationMessages = [...deliberationMessages, message];
+				await typeDeliberationMessage(message);
+				
+				// Brief pause between advisor messages
+				await new Promise(resolve => setTimeout(resolve, 1000));
+			}
+			
+			// Deliberation complete - user can now proceed manually with Next button
+			
+		} catch (error) {
+			console.error('Failed to conduct council deliberation:', error);
+		} finally {
+			isDeliberating = false;
+		}
+	}
+
+	async function synthesizeEnhancedVision() {
+		if (!visionClarificationService || !visionClarificationSession) return;
+		
+		try {
+			isProcessingVisionClarification = true;
+			
+			// Synthesize S.M.A.R.T. objective
+			enhancedVision = await visionClarificationService.synthesizeVision(visionClarificationSession);
+			
+			// Mark session as completed
+			visionClarificationSession.finalSMARTObjective = enhancedVision;
+			visionClarificationSession.completed = new Date().toISOString();
+			
+		} catch (error) {
+			console.error('Failed to synthesize enhanced vision:', error);
+		} finally {
+			isProcessingVisionClarification = false;
+		}
+	}
+
+	function skipVisionClarification() {
+		showVisionClarification = false;
+		startQuestGeneration();
+	}
+
+	function proceedWithEnhancedVision() {
+		showVisionClarification = false;
+		startQuestGeneration();
+	}
+
+	// Typing simulation for deliberation messages
+	async function typeDeliberationMessage(message: any, delayMs: number = 3.75) {
+		message.isTyping = true;
+		message.displayContent = '';
+		deliberationMessages = [...deliberationMessages]; // Trigger reactivity
+		
+		for (let i = 0; i < message.content.length; i++) {
+			message.displayContent += message.content[i];
+			deliberationMessages = [...deliberationMessages]; // Trigger reactivity
+			await new Promise(resolve => setTimeout(resolve, delayMs));
+		}
+		
+		message.isTyping = false;
+		deliberationMessages = [...deliberationMessages]; // Trigger reactivity
+	}
+
+	function startQuestGeneration() {
+		showTimelineMapping = true;
+		currentGenerations = 6;
+		userChatInput = '';
+		
+		// Get head advisor (first advisor in the list, or default)
 		const headAdvisorName = advisors.length > 0 ? advisors[0].name : 'The Sage';
 		
-		// Create initial quest tree
+		// Create initial quest tree with enhanced vision if available
 		const config: GenerationConfig = {
 			number: currentGenerations,
 			branchingFactor: branchingFactor,
 			inquiryDepth: 'medium'
 		};
+
+		// Use enhanced vision if available, otherwise use original
+		const visionStatement = enhancedVision?.specific || ritualSession?.wish_statement || '';
+		const visionPrinciples = ritualSession?.declared_values || [];
 
 		// Create a proper RitualSession object
 		const fullRitualSession = {
@@ -363,17 +570,15 @@
 				ascii_glyph: ''
 			},
 			...ritualSession,
-			wish_statement: ritualSession.wish_statement,
-			declared_values: ritualSession.declared_values || []
+			wish_statement: visionStatement,
+			declared_values: visionPrinciples
 		};
 		
 		questTree = createQuestTreeFromRitual(fullRitualSession, headAdvisorName, config);
 		
-		// Debug: Quest tree created with 6 generations
-		
 		addTimelineMappingMessage('system', buildActivationMessage({
-			wish: ritualSession.wish_statement,
-			values: ritualSession.declared_values || [],
+			wish: visionStatement,
+			values: visionPrinciples,
 			generations: currentGenerations,
 			branchingFactor,
 			headAdvisorName
@@ -955,52 +1160,17 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 
 				<!-- Wish Statement Section -->
 				<div class="bg-gray-700 rounded-xl p-6 border border-gray-600">
-					<div class="flex items-center justify-between mb-4">
-						<h4 class="text-lg font-bold text-white flex items-center gap-2">
-							✨ Your Wish Statement
-						</h4>
-						{#if !editingWish}
-							<button
-								on:click={startEditingWish}
-								class="text-purple-400 hover:text-purple-300 text-sm flex items-center gap-1 transition-colors"
-							>
-								📝 {ritualSession?.wish_statement ? 'Edit' : 'Add'}
-							</button>
-						{/if}
-					</div>
+					<h4 class="text-lg font-bold text-white flex items-center gap-2 mb-4">
+						✨ Your Wish Statement
+					</h4>
 					
-					{#if editingWish}
-						<div class="space-y-3">
-							<textarea
-								bind:value={tempWishStatement}
-								placeholder="Describe your ideal future state in detail..."
-								class="w-full bg-gray-600 border border-gray-500 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
-								rows="4"
-							></textarea>
-							<div class="flex gap-2">
-								<button
-									on:click={saveWishStatement}
-									class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-								>
-									Save
-								</button>
-								<button
-									on:click={() => editingWish = false}
-									class="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-								>
-									Cancel
-								</button>
-							</div>
-						</div>
-					{:else if ritualSession?.wish_statement}
-						<div class="bg-gray-600 rounded-lg p-4 border-l-4 border-purple-500">
-							<p class="text-gray-200 leading-relaxed">{ritualSession.wish_statement}</p>
-						</div>
-					{:else}
-						<div class="bg-gray-600 rounded-lg p-4 border-l-4 border-gray-500 border-dashed">
-							<p class="text-gray-400 italic">No wish statement defined. Click 'Add' to create one.</p>
-						</div>
-					{/if}
+					<textarea
+						bind:value={tempWishStatement}
+						placeholder="What do you seek to bring into being?"
+						class="w-full bg-gray-600 border border-gray-500 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+						rows="4"
+						on:blur={saveWishStatement}
+					></textarea>
 				</div>
 
 				<!-- Values Section -->
@@ -1012,70 +1182,49 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 						<div class="text-sm text-gray-400">
 							{tempValues.length}/6 values
 						</div>
-						{#if !editingValues}
-							<button
-								on:click={startEditingValues}
-								class="text-purple-400 hover:text-purple-300 text-sm flex items-center gap-1 transition-colors"
-							>
-								📝 {ritualSession?.declared_values?.length ? 'Edit' : 'Add'}
-							</button>
-						{/if}
 					</div>
 					
-					{#if editingValues}
-						<div class="space-y-3">
-							<div class="space-y-2">
+					<!-- Direct Value Input -->
+					<div class="space-y-4">
+						<!-- Input field for new value -->
+						<div class="flex gap-3">
+							<input
+								bind:value={newValueInput}
+								placeholder="Enter a core value..."
+								class="flex-1 bg-gray-600 border border-gray-500 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+								on:keydown={(e) => {
+									if (e.key === 'Enter' && !e.shiftKey) {
+										e.preventDefault();
+										addValueDirect();
+									}
+								}}
+							/>
+							<button
+								on:click={addValueDirect}
+								disabled={!newValueInput.trim() || tempValues.length >= 6}
+								class="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg transition-colors disabled:cursor-not-allowed font-medium"
+							>
+								Add Value
+							</button>
+						</div>
+						
+						<!-- Display existing values as chips -->
+						{#if tempValues.length > 0}
+							<div class="flex flex-wrap gap-2">
 								{#each tempValues as value, index}
-									<div class="flex gap-2 items-center">
-										<input
-											bind:value={tempValues[index]}
-											placeholder="Enter a core value..."
-											class="flex-1 bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-										/>
+									<div class="bg-purple-600 text-white px-4 py-2 rounded-full text-sm border border-purple-500 flex items-center gap-2">
+										<span>✦ {value}</span>
 										<button
-											on:click={() => removeValue(index)}
-											class="text-red-400 hover:text-red-300 p-2 transition-colors"
+											on:click={() => removeValueDirect(index)}
+											class="text-purple-200 hover:text-white transition-colors"
 										>
-											❌
+											✕
 										</button>
 									</div>
 								{/each}
 							</div>
-							<button
-								on:click={addValue}
-								disabled={tempValues.length >= 6}
-								class="text-purple-400 hover:text-purple-300 disabled:text-gray-500 disabled:hover:text-gray-500 text-sm flex items-center gap-1 transition-colors"
-							>
-								➕ Add Value {tempValues.length >= 6 ? '(Max 6)' : ''}
-							</button>
-							<div class="flex gap-2">
-								<button
-									on:click={saveValues}
-									class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-								>
-									Save
-								</button>
-								<button
-									on:click={() => editingValues = false}
-									class="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-								>
-									Cancel
-								</button>
-							</div>
-						</div>
-					{:else if ritualSession?.declared_values?.length}
-						<div class="flex flex-wrap gap-2">
-							{#each ritualSession.declared_values as value}
-								<span class="bg-purple-600 text-white px-3 py-1 rounded-full text-sm border border-purple-500">
-									{value}
-								</span>
-							{/each}
-						</div>
-					{:else}
-						<div class="bg-gray-600 rounded-lg p-4 border-l-4 border-gray-500 border-dashed">
-							<p class="text-gray-400 italic">No values declared. Click 'Add' to define your core values.</p>
-						</div>
-					{/if}
+						{/if}
+					</div>
 				</div>
 
 				<!-- Back-casting Actions -->
@@ -1162,7 +1311,26 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 			</div>
 			
 			<!-- Content -->
-			<div class="flex-1 overflow-hidden flex">
+			<div class="flex-1 overflow-hidden flex relative">
+				<!-- Loading Overlay -->
+				{#if isGeneratingQuests}
+					<div class="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+						<div class="bg-gray-800 border border-purple-500 rounded-xl p-8 text-center shadow-2xl">
+							<div class="w-16 h-16 mx-auto mb-4 rounded-full bg-purple-600 flex items-center justify-center animate-pulse">
+								<div class="text-2xl">🧙‍♂️</div>
+							</div>
+							<div class="text-white text-lg font-semibold mb-2">LLM Processing...</div>
+							<div class="text-purple-300 text-sm mb-4">Your advisor is generating quests</div>
+							<div class="flex justify-center">
+								<div class="flex space-x-1">
+									<div class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 0ms;"></div>
+									<div class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 150ms;"></div>
+									<div class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 300ms;"></div>
+								</div>
+							</div>
+						</div>
+					</div>
+				{/if}
 				<!-- Chat/Messages Section -->
 				<div class="w-2/3 flex flex-col border-r border-gray-700">
 					<div class="flex-1 overflow-y-auto p-4 space-y-4">
@@ -1193,8 +1361,15 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 									🧙‍♂️
 								</div>
 								<div class="flex-1">
-									<div class="bg-gray-700 rounded-lg p-3 text-white text-sm">
-										Generating quests...
+									<div class="bg-purple-900/50 border border-purple-500 rounded-lg p-3 text-white text-sm animate-pulse">
+										<div class="flex items-center gap-2">
+											<span>🔮 LLM Processing...</span>
+											<div class="flex space-x-1">
+												<div class="w-1 h-1 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 0ms;"></div>
+												<div class="w-1 h-1 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 150ms;"></div>
+												<div class="w-1 h-1 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 300ms;"></div>
+											</div>
+										</div>
 									</div>
 								</div>
 							</div>
@@ -1206,8 +1381,9 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 						<div class="flex gap-3">
 							<input
 								bind:value={userChatInput}
-								placeholder="Ask questions or provide guidance to the backcasting process..."
-								class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+								placeholder={isGeneratingQuests ? "Please wait - LLM is processing..." : "Ask questions or provide guidance to the backcasting process..."}
+								disabled={isGeneratingQuests}
+								class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
 								on:keydown={(e) => {
 									if (e.key === 'Enter' && !e.shiftKey) {
 										e.preventDefault();
@@ -1238,10 +1414,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 					</div>
 					<div class="flex-1 overflow-y-auto p-4">
 						{#if questTree}
-							<!-- Debug info -->
-							<div class="mb-3 text-xs text-gray-500 text-center">
-								Debug: {questTree.rootNodeIds.length} root quests, {Object.keys(questTree.nodes).length} total nodes
-							</div>
+
 							
 							{#if pendingNewHolonId}
 								<div class="mb-3 p-3 bg-gray-700 border border-gray-600 rounded-lg text-xs text-white">
@@ -1267,7 +1440,8 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 											<div class="quest-node" style="margin-left: {depth * 16}px;">
 												<button
 													on:click={() => expandQuest(nodeId)}
-													class={getQuestNodeStyling(node.generation, node.childIds?.length > 0)}
+													disabled={isGeneratingQuests}
+													class="{getQuestNodeStyling(node.generation, node.childIds?.length > 0)} {isGeneratingQuests ? 'opacity-50 cursor-not-allowed' : ''}"
 												>
 													<div class="font-semibold">{node.title}</div>
 													
@@ -1287,7 +1461,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 													</div>
 
 													<!-- Holonic Quest Details -->
-													{#if node.generation > 1}
+													{#if node.generation >= 1}
 														<div class="mt-2 space-y-1 text-xs">
 															{#if node.skillsRequired && node.skillsRequired.length > 0}
 																<div class="text-blue-300">
@@ -1326,12 +1500,23 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 									{/each}
 								</div>
 							{:else if isGeneratingQuests}
-								<div class="text-gray-400 text-xs text-center p-4">
-									🔄 Generating seed quests... Please wait.
+								<div class="text-center p-8">
+									<div class="w-12 h-12 mx-auto mb-4 rounded-full bg-purple-600 flex items-center justify-center animate-pulse">
+										<div class="text-xl">🧙‍♂️</div>
+									</div>
+									<div class="text-white text-sm font-semibold mb-2">LLM Processing</div>
+									<div class="text-purple-300 text-xs mb-3">Generating seed quests...</div>
+									<div class="flex justify-center">
+										<div class="flex space-x-1">
+											<div class="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 0ms;"></div>
+											<div class="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 150ms;"></div>
+											<div class="w-1.5 h-1.5 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 300ms;"></div>
+										</div>
+									</div>
 								</div>
 							{:else}
 								<div class="text-gray-400 text-xs text-center p-4">
-									🎯 Click "Generate Quests" to begin backcasting from the future
+									🎯 Click "Publish Quests" to begin backcasting from the future
 								</div>
 							{/if}
 						{:else}
@@ -1344,15 +1529,20 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 					<!-- Action Buttons - Fixed at Bottom -->
 					{#if questTree}
 						<div class="border-t border-gray-700 p-4 space-y-3">
-							<!-- Main Generate Quests Button -->
+							<!-- Main Publish Quests Button -->
 							<button
 								on:click={() => showSaveMenu = !showSaveMenu}
 								disabled={isSavingQuests}
 								class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:from-gray-600 disabled:to-gray-600 text-white p-3 rounded-lg text-sm font-semibold text-center transition-all duration-200 disabled:cursor-not-allowed shadow-lg"
-								aria-label="Generate Quests"
+								aria-label="Publish Quests"
 							>
-								{isSavingQuests ? '🔄 Saving…' : '🎯 Generate Quests'}
+								{isSavingQuests ? '🔄 Saving…' : '🎯 Publish Quests'}
 							</button>
+							
+							<!-- Auto-save notice -->
+							<div class="text-xs text-gray-400 text-center -mt-2">
+								💾 Automatically saves session after publishing
+							</div>
 							
 							<!-- Save Menu -->
 							{#if showSaveMenu}
@@ -1392,14 +1582,405 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 								🗑️ Delete & Start New
 							</button>
 							
-							<!-- Complete Session Button -->
+							<!-- Save Session Button -->
 							<button
 								on:click={completeSession}
 								class="w-full bg-green-600 hover:bg-green-700 text-white p-2 rounded-lg text-sm font-medium transition-colors border border-green-500 shadow-sm"
-								title="Complete this Design Streams session and save to Previous Rituals"
+								title="Save this Design Streams session to Previous Rituals"
 							>
-								✅ Complete Session
+								✅ Save Session
 							</button>
+						</div>
+					{/if}
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Vision Clarification Modal -->
+{#if showVisionClarification}
+	<div class="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden">
+			<!-- Header -->
+			<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-purple-700 to-indigo-700 rounded-t-2xl">
+				<div class="flex items-center gap-3">
+					<div class="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-2xl">
+						🎤
+					</div>
+					<div>
+						<h3 class="text-white text-xl font-bold">Vision Clarification</h3>
+						<p class="text-white/80 text-sm">Council Interview - Celebrity Style</p>
+					</div>
+				</div>
+				<button
+					on:click={() => showVisionClarification = false}
+					class="text-white hover:text-white/80 transition-colors p-2 rounded-lg hover:bg-white/10"
+				>
+					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+					</svg>
+				</button>
+			</div>
+
+			<!-- Content -->
+			<div class="flex-1 overflow-hidden relative">
+				<!-- Loading Overlay -->
+				{#if isProcessingVisionClarification}
+					<div class="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+						<div class="bg-gray-800 border border-purple-500 rounded-xl p-8 text-center shadow-2xl">
+							<div class="w-16 h-16 mx-auto mb-4 rounded-full bg-purple-600 flex items-center justify-center animate-pulse">
+								<div class="text-2xl">🎤</div>
+							</div>
+							<div class="text-white text-lg font-semibold mb-2">Processing...</div>
+							<div class="text-purple-300 text-sm mb-4">Your council is preparing thoughtful questions</div>
+							<div class="flex justify-center">
+								<div class="flex space-x-1">
+									<div class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 0ms;"></div>
+									<div class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 150ms;"></div>
+									<div class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 300ms;"></div>
+								</div>
+							</div>
+						</div>
+					</div>
+				{/if}
+
+				<div class="h-full overflow-y-auto p-6">
+					{#if !visionClarificationSession}
+						<!-- Introduction Screen -->
+						<div class="text-center space-y-6 py-8">
+							<div class="w-20 h-20 mx-auto rounded-full bg-purple-600 flex items-center justify-center text-3xl mb-6">
+								🎤
+							</div>
+							<h2 class="text-2xl font-bold text-white">Welcome to Vision Clarification</h2>
+							<p class="text-gray-300 max-w-2xl mx-auto leading-relaxed">
+								Your council is ready to conduct a thoughtful interview to help clarify and enhance your vision. 
+								Through their unique perspectives and expertise, they'll ask probing questions to help you create a more specific, actionable S.M.A.R.T. objective.
+							</p>
+							
+							<!-- Current Vision Display -->
+							<div class="bg-gray-700 rounded-xl p-6 border border-gray-600 max-w-2xl mx-auto text-left">
+								<h3 class="text-lg font-semibold text-white mb-3">Your Current Vision:</h3>
+								<p class="text-gray-200 mb-4 italic">"{ritualSession?.wish_statement}"</p>
+								<h4 class="text-md font-semibold text-white mb-2">Your Values:</h4>
+								<div class="flex flex-wrap gap-2">
+									{#each (ritualSession?.declared_values || []) as value}
+										<span class="bg-purple-600 text-white px-3 py-1 rounded-full text-sm">✦ {value}</span>
+									{/each}
+								</div>
+							</div>
+
+							<!-- Action Buttons -->
+							<div class="flex gap-4 justify-center">
+								<button
+									on:click={startVisionClarification}
+									disabled={isProcessingVisionClarification}
+									class="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-8 py-3 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed"
+								>
+									Begin Council Interview
+								</button>
+								<button
+									on:click={skipVisionClarification}
+									class="bg-gray-600 hover:bg-gray-500 text-white px-8 py-3 rounded-lg font-semibold transition-colors"
+								>
+									Skip Interview
+								</button>
+							</div>
+						</div>
+
+					{:else if enhancedVision}
+						<!-- Enhanced Vision Results -->
+						<div class="space-y-6 pb-20">
+							<div class="text-center mb-8">
+								<div class="w-16 h-16 mx-auto rounded-full bg-green-600 flex items-center justify-center text-2xl mb-4">
+									✨
+								</div>
+								<h2 class="text-2xl font-bold text-white">Enhanced S.M.A.R.T. Vision</h2>
+								<p class="text-gray-300">Your council has helped clarify your vision into a structured, actionable objective.</p>
+							</div>
+
+							<div class="bg-gray-700 rounded-xl p-6 border border-gray-600 space-y-6 max-h-[60vh] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+								<!-- S.M.A.R.T. Breakdown -->
+								<div class="grid md:grid-cols-2 gap-6">
+									<div>
+										<h3 class="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+											<span class="text-green-400">S</span> Specific
+										</h3>
+										<p class="text-gray-200 text-sm">{enhancedVision.specific}</p>
+									</div>
+									<div>
+										<h3 class="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+											<span class="text-blue-400">M</span> Measurable
+										</h3>
+										<ul class="text-gray-200 text-sm space-y-1">
+											{#each enhancedVision.measurable as measure}
+												<li>• {measure}</li>
+											{/each}
+										</ul>
+									</div>
+									<div>
+										<h3 class="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+											<span class="text-yellow-400">A</span> Achievable
+										</h3>
+										<p class="text-gray-200 text-sm">{enhancedVision.achievable}</p>
+									</div>
+									<div>
+										<h3 class="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+											<span class="text-purple-400">R</span> Relevant
+										</h3>
+										<p class="text-gray-200 text-sm">{enhancedVision.relevant}</p>
+									</div>
+									<div class="md:col-span-2">
+										<h3 class="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+											<span class="text-red-400">T</span> Time-bound
+										</h3>
+										<p class="text-gray-200 text-sm">{enhancedVision.timeBound}</p>
+									</div>
+								</div>
+
+								<!-- Additional Context -->
+								<div class="border-t border-gray-600 pt-6 grid md:grid-cols-2 gap-6">
+									<div>
+										<h4 class="font-semibold text-white mb-2">Success Metrics</h4>
+										<ul class="text-gray-200 text-sm space-y-1">
+											{#each enhancedVision.successMetrics as metric}
+												<li>• {metric}</li>
+											{/each}
+										</ul>
+									</div>
+									<div>
+										<h4 class="font-semibold text-white mb-2">Key Assumptions</h4>
+										<ul class="text-gray-200 text-sm space-y-1">
+											{#each enhancedVision.assumptions as assumption}
+												<li>• {assumption}</li>
+											{/each}
+										</ul>
+									</div>
+								</div>
+
+								<div>
+									<h4 class="font-semibold text-white mb-2">Future State Vision</h4>
+									<p class="text-gray-200 text-sm italic">"{enhancedVision.futureState}"</p>
+								</div>
+							</div>
+
+							<!-- Action Buttons - Fixed at Bottom -->
+							<div class="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 p-6 z-10">
+								<div class="flex gap-4 justify-center max-w-5xl mx-auto">
+									<button
+										on:click={proceedWithEnhancedVision}
+										class="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-semibold transition-colors shadow-lg"
+									>
+										Proceed with Enhanced Vision
+									</button>
+									<button
+										on:click={() => {
+											enhancedVision = null;
+											visionClarificationSession = null;
+											currentQuestionIndex = 0;
+											showCouncilDeliberation = false;
+											councilDeliberations = [];
+											deliberationMessages = [];
+										}}
+										class="bg-gray-600 hover:bg-gray-500 text-white px-6 py-3 rounded-lg font-semibold transition-colors shadow-lg"
+									>
+										Start Over
+									</button>
+								</div>
+							</div>
+						</div>
+
+					{:else}
+						<!-- Interview in Progress or Council Deliberation -->
+						{@const currentPhaseData = visionClarificationSession.phases[0]}
+						{@const currentQuestion = currentPhaseData?.questions[currentQuestionIndex]}
+						{@const advisor = advisors.find(a => a.id === currentQuestion?.advisorId)}
+						
+						<!-- Debug info -->
+						{#if currentQuestion}
+							<div class="text-xs text-gray-400 mb-2 p-2 bg-gray-800 rounded">
+								Debug: Question advisorId="{currentQuestion.advisorId}", 
+								Found advisor: {advisor?.name || 'NOT FOUND'}, 
+								Available advisor IDs: {advisors.map(a => a.id).join(', ')}, 
+								Advisor count: {advisors.length}, 
+								Advisor names: {advisors.map(a => a.name).join(', ')}
+							</div>
+						{/if}
+						
+						<div class="space-y-6">
+							<!-- Progress Indicator -->
+							<div class="bg-gray-700 rounded-lg p-4 border border-gray-600">
+								<div class="flex items-center justify-between mb-2">
+									<span class="text-white font-semibold">
+										{#if showCouncilDeliberation}
+											Council Deliberation
+										{:else}
+											Interview Questions
+										{/if}
+									</span>
+									<span class="text-gray-300 text-sm">
+										{#if showCouncilDeliberation}
+											Synthesizing insights...
+										{:else}
+											Question {currentQuestionIndex + 1} of {currentPhaseData?.questions.length || 0}
+										{/if}
+									</span>
+								</div>
+								<div class="w-full bg-gray-600 rounded-full h-2">
+									<div 
+										class="bg-purple-600 h-2 rounded-full transition-all duration-300" 
+										style="width: {showCouncilDeliberation ? '100%' : ((currentQuestionIndex + 1) / (currentPhaseData?.questions.length || 1)) * 80}%"
+									></div>
+								</div>
+							</div>
+
+							{#if showCouncilDeliberation}
+								<!-- Council Deliberation -->
+								<div class="bg-gray-700 rounded-xl p-6 border border-gray-600">
+									<div class="flex items-center gap-4 mb-6">
+										<div class="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-xl">
+											💭
+										</div>
+										<div>
+											<h3 class="text-white font-semibold">Council Deliberation</h3>
+											<p class="text-gray-300 text-sm">Your council shares their insights about your responses</p>
+										</div>
+									</div>
+
+									{#if deliberationMessages.length > 0}
+										<div class="space-y-4">
+											{#each deliberationMessages as message}
+												<div class="bg-gray-800 rounded-lg p-4 border-l-4 border-indigo-500">
+													<div class="flex items-center gap-2 mb-2">
+														<div class="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white">
+															{message.advisor.charAt(0)}
+														</div>
+														<span class="text-indigo-300 font-medium text-sm">{message.advisor}</span>
+													</div>
+													<p class="text-white text-sm">
+														{message.displayContent || message.content}
+														{#if message.isTyping}
+															<span class="animate-pulse">|</span>
+														{/if}
+													</p>
+												</div>
+											{/each}
+										</div>
+
+										<!-- Next Button - Show after all typing is complete -->
+										{#if !isDeliberating && deliberationMessages.every(msg => !msg.isTyping)}
+											<div class="flex justify-center mt-6 pt-4 border-t border-gray-600">
+												<button
+													on:click={synthesizeEnhancedVision}
+													disabled={isProcessingVisionClarification}
+													class="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-8 py-3 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed shadow-lg flex items-center gap-2"
+												>
+													<span>✨</span>
+													Create S.M.A.R.T. Vision
+													<span>→</span>
+												</button>
+											</div>
+										{:else}
+											<!-- Debug info -->
+											<div class="text-center mt-4 text-gray-400 text-xs">
+												Debug: isDeliberating={isDeliberating}, 
+												typingCount={deliberationMessages.filter(msg => msg.isTyping).length}
+											</div>
+										{/if}
+									{:else if isDeliberating}
+										<div class="bg-gray-800 rounded-lg p-4 border-l-4 border-indigo-500 text-center">
+											<div class="flex items-center justify-center gap-2">
+												<div class="w-4 h-4 rounded-full bg-indigo-500 animate-pulse"></div>
+												<span class="text-white text-sm">Council is deliberating...</span>
+											</div>
+										</div>
+									{:else if deliberationMessages.length > 0}
+										<!-- Fallback Next Button - Show if deliberations exist but button didn't show above -->
+										<div class="flex justify-center mt-6 pt-4 border-t border-gray-600">
+											<button
+												on:click={synthesizeEnhancedVision}
+												disabled={isProcessingVisionClarification}
+												class="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-8 py-3 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed shadow-lg flex items-center gap-2"
+											>
+												<span>✨</span>
+												Create S.M.A.R.T. Vision
+												<span>→</span>
+											</button>
+										</div>
+									{/if}
+								</div>
+
+							{:else if currentQuestion && advisor}
+								<!-- Current Question -->
+								<div class="bg-gray-700 rounded-xl p-6 border border-gray-600">
+									<!-- Advisor Info -->
+									<div class="flex items-center gap-4 mb-6">
+										<div class="w-12 h-12 rounded-full bg-purple-600 flex items-center justify-center text-xl">
+											🧙‍♂️
+										</div>
+										<div>
+											<h3 class="text-white font-semibold">{advisor.name}</h3>
+											<p class="text-gray-300 text-sm capitalize">{advisor.type} • {advisor.lens}</p>
+										</div>
+									</div>
+
+									<!-- Question -->
+									<div class="bg-gray-800 rounded-lg p-4 border-l-4 border-purple-500 mb-6">
+										<p class="text-white leading-relaxed">{currentQuestion.question}</p>
+									</div>
+
+									<!-- Response Input -->
+									<div class="space-y-4">
+										<label class="block text-white font-medium">Your Response:</label>
+										<textarea
+											bind:value={userResponseInput}
+											placeholder="Share your thoughts and insights..."
+											class="w-full bg-gray-600 border border-gray-500 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+											rows="4"
+										></textarea>
+										
+										<div class="flex gap-3">
+											<button
+												on:click={submitResponse}
+												disabled={!userResponseInput.trim() || isProcessingVisionClarification}
+												class="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed"
+											>
+												{currentQuestionIndex < (currentPhaseData?.questions.length || 0) - 1 ? 'Next Question' : 'Begin Council Deliberation'}
+											</button>
+											<button
+												on:click={skipVisionClarification}
+												class="bg-gray-600 hover:bg-gray-500 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+											>
+												Skip Interview
+											</button>
+										</div>
+									</div>
+								</div>
+
+								<!-- Previous Questions & Responses -->
+								{#if currentQuestionIndex > 0}
+									<div class="bg-gray-700/50 rounded-xl p-6 border border-gray-600">
+										<h4 class="text-white font-semibold mb-4">Previous Conversation</h4>
+										<div class="space-y-4 max-h-60 overflow-y-auto">
+											{#each visionClarificationSession.phases[0].questions as question, questionIndex}
+												{@const questionAdvisor = advisors.find(a => a.id === question.advisorId)}
+												{@const response = visionClarificationSession.phases[0].responses.find(r => r.questionId === question.id)}
+												
+												{#if response && questionIndex < currentQuestionIndex}
+													<div class="border-l-2 border-gray-600 pl-4">
+														<div class="text-sm text-gray-300 mb-1">
+														<strong>{questionAdvisor?.name}:</strong> {question.question}
+														</div>
+														<div class="text-sm text-white bg-gray-800 rounded p-2">
+														<strong>You:</strong> {response.response}
+														</div>
+													</div>
+												{/if}
+											{/each}
+										</div>
+									</div>
+								{/if}
+							{/if}
 						</div>
 					{/if}
 				</div>
