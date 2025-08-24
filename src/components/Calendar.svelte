@@ -1221,7 +1221,7 @@
 />
 
 <div class="bg-gray-800 rounded-3xl p-6">
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
         <div class="flex items-center gap-4">
             <div class="flex gap-2">
                 <!-- svelte-ignore a11y_consider_explicit_label -->
@@ -1243,7 +1243,7 @@
                     </svg>
                 </button>
             </div>
-            <h2 class="text-2xl font-bold text-white">
+            <h2 class="text-xl sm:text-2xl font-bold text-white">
                 {#if viewMode === 'month'}
                     {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
                 {:else if viewMode === 'week'}
@@ -1254,27 +1254,27 @@
                 {/if}
             </h2>
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 flex-wrap">
             <button 
-                class="px-4 py-2 rounded-lg {viewMode === 'day' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors"
+                class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'day' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
                 on:click={() => handleViewModeChange('day')}
             >
                 Day
             </button>
             <button 
-                class="px-4 py-2 rounded-lg {viewMode === 'week' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors"
+                class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'week' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
                 on:click={() => handleViewModeChange('week')}
             >
                 Week
             </button>
             <button 
-                class="px-4 py-2 rounded-lg {viewMode === 'month' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors"
+                class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'month' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
                 on:click={() => handleViewModeChange('month')}
             >
                 Month
             </button>
             <button 
-                class="px-4 py-2 rounded-lg {viewMode === 'orbits' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors"
+                class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'orbits' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
                 on:click={() => handleViewModeChange('orbits')}
             >
                 Orbits

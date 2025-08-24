@@ -13,8 +13,7 @@
 	import Sidebar from './sidebar/Sidebar.svelte';
 	import MyHolons from '../components/MyHolons.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
-	import ClockOverlay from '../components/ClockOverlay.svelte';
-import ZeitcampDashboard from '../components/ZeitcampDashboard.svelte';
+	import ZeitcampDashboard from '../components/ZeitcampDashboard.svelte';
 
 	const style = {
 		container: `bg-gray-900 h-screen overflow-hidden relative`,
@@ -27,7 +26,6 @@ import ZeitcampDashboard from '../components/ZeitcampDashboard.svelte';
 	let lastMouseMove = Date.now();
 	let currentRouteIndex = 0;
 	let showMyHolons = false;
-	let showClockOverlay = false;
 	let showZeitcampDashboard = false;
 
 	// Check if we're on the root route
@@ -48,11 +46,6 @@ import ZeitcampDashboard from '../components/ZeitcampDashboard.svelte';
 
 	// Handle global keyboard shortcuts
 	function handleGlobalKeydown(event: KeyboardEvent) {
-		// Toggle clock overlay with Ctrl+Shift+C or Cmd+Shift+C
-		if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'C') {
-			event.preventDefault();
-			toggleClockOverlay();
-		}
 		// Toggle zeitcamp dashboard with Ctrl+Shift+Z or Cmd+Shift+Z
 		if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Z') {
 			event.preventDefault();
@@ -62,10 +55,6 @@ import ZeitcampDashboard from '../components/ZeitcampDashboard.svelte';
 
 	function toggleMyHolons() {
 		showMyHolons = !showMyHolons;
-	}
-
-	function toggleClockOverlay() {
-		showClockOverlay = !showClockOverlay;
 	}
 
 	function toggleZeitcampDashboard() {
@@ -128,7 +117,7 @@ import ZeitcampDashboard from '../components/ZeitcampDashboard.svelte';
 			<Overlay />
 			<Sidebar mobileOrientation="start" />
 			<div class={style.mainContainer}>
-				<TopBar {toggleMyHolons} {toggleClockOverlay} />
+				<TopBar {toggleMyHolons} />
 				<main class={style.main}>
 					<RouteTransition pathname={$page.url.pathname}>
 						<slot />
@@ -151,9 +140,6 @@ import ZeitcampDashboard from '../components/ZeitcampDashboard.svelte';
 				</div>
 			</div>
 		{/if}
-
-		<!-- Clock Overlay -->
-		<ClockOverlay bind:isVisible={showClockOverlay} />
 
 		<!-- Zeitcamp Dashboard Overlay -->
 		<ZeitcampDashboard bind:isVisible={showZeitcampDashboard} />

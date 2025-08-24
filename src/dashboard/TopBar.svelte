@@ -1,67 +1,16 @@
-<script context="module" lang="ts">
-	// Extend Window interface for MetaMask
-	interface MetaMaskWindow extends Window {
-		ethereum?: any; // You can use a more specific type if you have one for ethers provider
-	}
-
-	declare let window: MetaMaskWindow;
-</script>
-
 <script lang="ts">
-	import { openSidebar, ID, autoTransitionEnabled, walletAddress } from './store';
-	import { onMount, onDestroy, getContext } from 'svelte';
+	import { openSidebar, ID } from './store';
+	import { onMount, getContext } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import HoloSphere from 'holosphere';
-	import { ethers } from 'ethers';
 	import { addVisitedHolon, getWalletAddress } from "../utils/localStorage";
 	import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
 
 	export let toggleMyHolons: () => void;
-	export let toggleClockOverlay: () => void;
-
-	// Add a function to refresh visited holon names
-	async function refreshVisitedHolonNames() {
-		if (browser && $walletAddress) {
-			try {
-				// Dispatch a custom event to trigger refresh in MyHolons component
-				const refreshEvent = new CustomEvent('refreshVisitedHolonNames', {
-					detail: { walletAddress: $walletAddress }
-				});
-				window.dispatchEvent(refreshEvent);
-				
-				// Also refresh the current holon name if we have one
-				if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '') {
-					await updateCurrentHolonName($ID);
-				}
-			} catch (err) {
-				console.error('Error dispatching refresh event:', err);
-			}
-		}
-	}
-
-	// Add a function to refresh personal holon names
-	async function refreshPersonalHolonNames() {
-		if (browser) {
-			try {
-				// Dispatch a custom event to trigger refresh in MyHolons component
-				const refreshEvent = new CustomEvent('refreshPersonalHolonNames', {
-					detail: { timestamp: Date.now() }
-				});
-				window.dispatchEvent(refreshEvent);
-				
-				// Also refresh the current holon name if we have one
-				if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '') {
-					await updateCurrentHolonName($ID);
-				}
-			} catch (err) {
-				console.error('Error dispatching refresh event:', err);
-			}
-		}
-	}
 
 	// Add a function to refresh ALL holon names comprehensively
 	async function refreshAllHolonNames() {
@@ -97,27 +46,6 @@
 	let holonID: string = '';
 	let showToast = false;
 
-	// API Key Configuration Modal - MOVED TO COUNCIL COMPONENT
-
-	// Ethereum wallet connection
-	async function connectWallet() {
-		if (browser && typeof window.ethereum !== 'undefined') {
-			try {
-				const provider = new ethers.BrowserProvider(window.ethereum);
-				await provider.send("eth_requestAccounts", []);
-				const signer = await provider.getSigner();
-				const address = await signer.getAddress();
-				walletAddress.set(address);
-			} catch (error) {
-				console.error('Error connecting to wallet:', error);
-				// Handle error (e.g., show a message to the user)
-			}
-		} else {
-			console.log('MetaMask is not installed!');
-			// Handle case where MetaMask (or other provider) is not available
-		}
-	}
-
 	// Function to save visited holon
 	async function saveVisitedHolon(holonId: string, holonName: string) {
 		const walletAddr = getWalletAddress();
@@ -137,17 +65,6 @@
 
 	// Initialize on mount
 	onMount(async () => {
-		// Ensure auto-transition is off by default when TopBar loads
-		autoTransitionEnabled.set(false);
-
-		// Add event listeners only in browser environment
-		if (browser) {
-			window.addEventListener('mousemove', handleActivity);
-			window.addEventListener('touchstart', handleActivity);
-			window.addEventListener('touchmove', handleActivity);
-			window.addEventListener('scroll', handleActivity);
-		}
-
 		// Set up initial state
 		isInitialized = true;
 		
@@ -162,23 +79,6 @@
 			updateCurrentHolonName(initialId);
 		}
 	});
-
-	onDestroy(() => {
-		if (browser) {
-			window.removeEventListener('mousemove', handleActivity);
-			window.removeEventListener('touchstart', handleActivity);
-			window.removeEventListener('touchmove', handleActivity);
-			window.removeEventListener('scroll', handleActivity);
-		}
-	});
-
-	// Function to disconnect wallet
-	function disconnectWallet() {
-		walletAddress.set(null);
-		// Potentially clear other related stored data if needed
-	}
-
-	// API Key Modal Functions - MOVED TO COUNCIL COMPONENT
 
 	// Use centralized holon name service with proper reactivity
 	async function updateCurrentHolonName(id: string, retryCount = 0) {
@@ -305,23 +205,6 @@
 
 	// Check if we're on a primary page (standalone routes)
 	$: isPrimaryPage = $page.url.pathname === '/';
-	
-	// Reactive statement for walletAddress changes
-	$: if ($walletAddress) {
-		// You can add logic here if something needs to happen when the wallet connects,
-		// e.g., fetching user-specific data based on wallet address.
-	}
-
-	function toggleAutoTransition() {
-		autoTransitionEnabled.update(value => !value);
-	}
-
-	// Pause on any mouse or touch activity
-	function handleActivity() {
-		if ($autoTransitionEnabled) {
-			autoTransitionEnabled.set(false);
-		}
-	}
 
 
 </script>
@@ -350,40 +233,7 @@
 		border-radius: 0.5rem;
 		margin-right: 1rem;
 	}
-	.wallet-button {
-		background-color: #4a5568; /* gray-700 */
-		color: white;
-		padding: 0.5rem 1rem;
-		border-radius: 0.375rem; /* rounded-md */
-		font-weight: 500; /* font-medium */
-		margin-left: 1rem; /* ml-4 */
-		transition: background-color 0.2s;
-	}
-	.wallet-button:hover {
-		background-color: #2d3748; /* gray-800 */
-	}
-	.wallet-info {
-		color: white;
-		margin-left: 1rem; /* ml-4 */
-		font-size: 0.875rem; /* text-sm */
-		display: flex;
-		align-items: center;
-	}
-	.disconnect-button {
-		background-color: transparent;
-		color: #cbd5e0; /* gray-400 */
-		border: 1px solid #cbd5e0; /* gray-400 */
-		padding: 0.25rem 0.5rem;
-		border-radius: 0.375rem; /* rounded-md */
-		margin-left: 0.5rem; /* ml-2 */
-		font-size: 0.75rem; /* text-xs */
-		cursor: pointer;
-	}
-	.disconnect-button:hover {
-		background-color: #ef4444; /* red-500 */
-		color: white;
-		border-color: #ef4444; /* red-500 */
-	}
+
 </style>
 
 <div class="top-bar-container w-full px-4 py-2 flex items-center gap-4 relative">
@@ -417,31 +267,13 @@
                     
                     <!-- Title and ID -->
                     <div class="text-left">
-                        <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight flex items-center gap-2">
-                            <span>
-                                {#if currentHolonName && currentHolonName !== `Holon ${$ID}`}
-                                    {currentHolonName}
-                                {:else if $ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== ''}
-                                    {currentHolonName || 'Loading...'}
-                                {:else}
-                                    Loading...
-                                {/if}
-                            </span>
-                            {#if $ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== ''}
-                                <button
-                                    on:click|stopPropagation={async () => {
-                                        if ($ID) {
-                                            await updateCurrentHolonName($ID);
-                                        }
-                                    }}
-                                    class="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-                                    title="Refresh holon name"
-                                    aria-label="Refresh holon name"
-                                >
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                </button>
+                        <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
+                            {#if currentHolonName && currentHolonName !== `Holon ${$ID}`}
+                                {currentHolonName}
+                            {:else if $ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== ''}
+                                {currentHolonName || 'Loading...'}
+                            {:else}
+                                Loading...
                             {/if}
                         </div>
                         <div class="text-xs sm:text-sm text-gray-400 font-mono mt-1">
@@ -452,19 +284,7 @@
             </button>
             
             <!-- Controls row - only visible on small screens -->
-            <div class="flex sm:hidden flex-row items-center justify-center gap-3">
-                <!-- Clock Overlay Button -->
-                <button 
-                    on:click={toggleClockOverlay}
-                    class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
-                    title="Show System Overview (Ctrl+Shift+C)"
-                    aria-label="Show System Overview"
-                >
-                    <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                </button>
-
+            <div class="flex sm:hidden flex-row items-center justify-center">
                 <!-- Zeitcamp Dashboard Button -->
                 <button 
                     on:click={() => window.dispatchEvent(new CustomEvent('toggleZeitcampDashboard'))}
@@ -476,25 +296,6 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                     </svg>
                 </button>
-
-
-
-                <!-- Wallet and API Keys - Horizontal Layout -->
-                <div class="flex flex-row gap-2">
-                    <!-- Wallet -->
-                    {#if $walletAddress}
-                        <div class="wallet-info">
-                            <span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
-                            <button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
-                        </div>
-                    {:else}
-                        <button on:click={connectWallet} class="wallet-button">
-                            Connect Wallet
-                        </button>
-                    {/if}
-                    
-                    <!-- API Key Configuration Button - MOVED TO COUNCIL COMPONENT -->
-                </div>
             </div>
         </div>
     {:else}
@@ -509,21 +310,9 @@
     {/if}
 
     <!-- Right side controls - only visible on larger screens -->
-    <div class="z-10 ml-auto hidden sm:flex flex-col items-center gap-3">
-        <!-- Clock Overlay Button (only on dashboard pages) -->
+    <div class="z-10 ml-auto hidden sm:flex flex-col items-center">
+        <!-- Zeitcamp Dashboard Button (only on dashboard pages) -->
         {#if !isPrimaryPage}
-            <button 
-                on:click={toggleClockOverlay}
-                class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
-                title="Show System Overview (Ctrl+Shift+C)"
-                aria-label="Show System Overview"
-            >
-                <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-            </button>
-
-            <!-- Zeitcamp Dashboard Button (only on dashboard pages) -->
             <button 
                 on:click={() => window.dispatchEvent(new CustomEvent('toggleZeitcampDashboard'))}
                 class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
@@ -535,23 +324,6 @@
                 </svg>
             </button>
         {/if}
-
-        <!-- Wallet and API Keys - Vertical Layout on larger screens -->
-        <div class="flex flex-col gap-2">
-            <!-- Wallet -->
-            {#if $walletAddress}
-                <div class="wallet-info">
-                    <span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
-                    <button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
-                </div>
-            {:else}
-                <button on:click={connectWallet} class="wallet-button">
-                    Connect Wallet
-                </button>
-            {/if}
-            
-            <!-- API Key Configuration Button - MOVED TO COUNCIL COMPONENT -->
-        </div>
     </div>
 </div>
 

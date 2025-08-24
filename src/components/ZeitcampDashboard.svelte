@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy, getContext } from "svelte";
-import { fade, slide } from "svelte/transition";
+import { fade, slide, scale, fly } from "svelte/transition";
+import { elasticOut, bounceOut } from "svelte/easing";
 import { ID } from "../dashboard/store";
 import HoloSphere from "holosphere";
 import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
@@ -98,6 +99,16 @@ import ItemModal from "./ItemModal.svelte";
     let showEventModal = false;
     let showBadgeModal = false;
     let selectedItem: any = null;
+
+    // Game-like animations and effects
+    let particles: Array<{id: number, x: number, y: number, vx: number, vy: number, size: number, opacity: number}> = [];
+    let animationFrame: number;
+    let scoreMultiplier = 1;
+    let experiencePoints = 0;
+    let levelProgress = 0;
+    let achievements: string[] = [];
+    let pulseAnimation = false;
+    let celebrationMode = false;
 
     // Time formatting
     function formatTime(date: Date) {
@@ -337,24 +348,40 @@ import ItemModal from "./ItemModal.svelte";
     }
 
     // Handle item clicks to show modals
-    function handleRoleClick(role: any) {
+    function handleRoleClick(role: any, event?: MouseEvent) {
         selectedItem = role;
         showRoleModal = true;
+        gainExperience(10);
+        if (event) {
+            createParticle(event.clientX, event.clientY);
+        }
     }
 
-    function handleTaskClick(task: any) {
+    function handleTaskClick(task: any, event?: MouseEvent) {
         selectedItem = task;
         showTaskModal = true;
+        gainExperience(15);
+        if (event) {
+            createParticle(event.clientX, event.clientY);
+        }
     }
 
-    function handleEventClick(event: any) {
-        selectedItem = event;
+    function handleEventClick(eventItem: any, event?: MouseEvent) {
+        selectedItem = eventItem;
         showEventModal = true;
+        gainExperience(12);
+        if (event) {
+            createParticle(event.clientX, event.clientY);
+        }
     }
 
-    function handleBadgeClick(badge: any) {
+    function handleBadgeClick(badge: any, event?: MouseEvent) {
         selectedItem = badge;
         showBadgeModal = true;
+        gainExperience(20);
+        if (event) {
+            createParticle(event.clientX, event.clientY);
+        }
     }
 
     // Close all modals
@@ -387,6 +414,65 @@ import ItemModal from "./ItemModal.svelte";
     $: assignedRoles = roles.filter(role => role.participants && role.participants.length > 0).length;
     $: unassignedRoles = totalRoles - assignedRoles;
     $: totalParticipants = roles.reduce((sum, role) => sum + (role.participants?.length || 0), 0);
+
+    // Game mechanics functions
+    function createParticle(x: number, y: number) {
+        const particle = {
+            id: Math.random(),
+            x: x,
+            y: y,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4,
+            size: Math.random() * 6 + 2,
+            opacity: 1
+        };
+        particles = [...particles, particle];
+        
+        setTimeout(() => {
+            particles = particles.filter(p => p.id !== particle.id);
+        }, 2000);
+    }
+
+    function triggerCelebration() {
+        celebrationMode = true;
+        pulseAnimation = true;
+        
+        // Create multiple particles
+        for (let i = 0; i < 20; i++) {
+            setTimeout(() => {
+                createParticle(
+                    Math.random() * window.innerWidth,
+                    Math.random() * window.innerHeight
+                );
+            }, i * 50);
+        }
+        
+        setTimeout(() => {
+            celebrationMode = false;
+            pulseAnimation = false;
+        }, 3000);
+    }
+
+    function gainExperience(amount: number) {
+        experiencePoints += amount;
+        levelProgress = (experiencePoints % 100) / 100;
+        
+        if (experiencePoints % 100 === 0) {
+            triggerCelebration();
+            achievements.push(`Level ${Math.floor(experiencePoints / 100)} Reached!`);
+        }
+    }
+
+    function animateParticles() {
+        particles = particles.map(particle => ({
+            ...particle,
+            x: particle.x + particle.vx,
+            y: particle.y + particle.vy,
+            opacity: particle.opacity - 0.01
+        })).filter(particle => particle.opacity > 0);
+        
+        animationFrame = requestAnimationFrame(animateParticles);
+    }
 
     // Inactivity detection functions
     function resetInactivityTimer() {
@@ -437,6 +523,9 @@ import ItemModal from "./ItemModal.svelte";
             }
         }
 
+        // Start particle animation
+        animateParticles();
+
         // Set up inactivity detection
         resetInactivityTimer();
         
@@ -460,6 +549,9 @@ import ItemModal from "./ItemModal.svelte";
         if (inactivityTimer) {
             clearTimeout(inactivityTimer);
         }
+        if (animationFrame) {
+            cancelAnimationFrame(animationFrame);
+        }
     });
 
     // Close overlay on escape key
@@ -481,7 +573,7 @@ import ItemModal from "./ItemModal.svelte";
 
 {#if isVisible}
     <div 
-        class="fixed inset-0 z-50 bg-gradient-to-br from-gray-800 via-gray-700 to-indigo-900 flex items-center justify-center p-4"
+        class="fixed inset-0 z-50 bg-gradient-to-br from-gray-800 via-gray-700 to-indigo-900 flex items-center justify-center p-4 overflow-hidden {celebrationMode ? 'bg-gradient-to-br from-purple-800 via-pink-700 to-yellow-900' : ''}"
         on:click|self={() => isVisible = false}
         on:keydown={handleKeydown}
         transition:fade={{ duration: 300 }}
@@ -490,25 +582,57 @@ import ItemModal from "./ItemModal.svelte";
         aria-labelledby="zeitcamp-title"
         tabindex="0"
     >
+        <!-- Animated Background Particles -->
+        {#each particles as particle (particle.id)}
+            <div 
+                class="absolute rounded-full bg-gradient-to-r from-blue-400 to-purple-500 pointer-events-none animate-pulse"
+                style="left: {particle.x}px; top: {particle.y}px; width: {particle.size}px; height: {particle.size}px; opacity: {particle.opacity};"
+                in:scale="{{ duration: 500, easing: bounceOut }}"
+                out:fade="{{ duration: 1000 }}"
+            ></div>
+        {/each}
+
+        <!-- Floating Achievement Notifications -->
+        {#if achievements.length > 0}
+            {#each achievements.slice(-3) as achievement, index (achievement)}
+                <div 
+                    class="absolute top-20 right-20 bg-gradient-to-r from-yellow-400 to-orange-500 text-black px-4 py-2 rounded-lg font-bold text-sm shadow-lg z-60"
+                    style="transform: translateY({index * 60}px);"
+                    in:fly="{{ x: 100, duration: 500, easing: bounceOut }}"
+                    out:fly="{{ x: 100, duration: 300 }}"
+                >
+                    🏆 {achievement}
+                </div>
+            {/each}
+        {/if}
         <div 
             class="w-full max-w-6xl h-full max-h-[95vh] bg-black/30 backdrop-blur-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden relative z-40"
             transition:slide={{ duration: 400, axis: 'y' }}
         >
-            <!-- Clock and Close Button -->
+            <!-- Clock, XP Bar and Close Button -->
             <div class="absolute top-6 right-6 z-50 flex items-center space-x-4">
+                <!-- XP Progress Bar -->
+                <div class="text-center">
+                    <div class="text-xs text-white/60 mb-1">Level {Math.floor(experiencePoints / 100)}</div>
+                    <div class="w-24 h-2 bg-white/20 rounded-full overflow-hidden">
+                        <div 
+                            class="h-full bg-gradient-to-r from-blue-400 to-purple-500 transition-all duration-500 ease-out {pulseAnimation ? 'animate-pulse' : ''}"
+                            style="width: {levelProgress * 100}%"
+                        ></div>
+                    </div>
+                    <div class="text-xs text-white/40 mt-1">{experiencePoints % 100}/100 XP</div>
+                </div>
+
                 <!-- Clock -->
                 <div class="text-right text-white/70">
-                    <div class="text-xl font-light">
+                    <div class="text-3xl font-light {pulseAnimation ? 'animate-pulse text-yellow-300' : ''}">
                         {formatTime(currentTime)}
-                    </div>
-                    <div class="text-xs text-white/40">
-                        Current Time
                     </div>
                 </div>
                 
                 <!-- Close Button -->
                 <button 
-                    class="text-white/60 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
+                    class="text-white/60 hover:text-white transition-all duration-300 p-2 rounded-lg hover:bg-white/10 hover:scale-110 hover:rotate-90 transform"
                     on:click={() => isVisible = false}
                     aria-label="Close zeitcamp dashboard"
                 >
@@ -534,13 +658,13 @@ import ItemModal from "./ItemModal.svelte";
 
                     <!-- Holons Logo and Name - Centered -->
                     <div class="absolute left-1/2 transform -translate-x-1/2 text-center">
-                        <div class="w-12 h-12 sm:w-50 sm:h-50 mx-auto mb-0">
+                        <div class="w-12 h-12 sm:w-50 sm:h-50 mx-auto mb-0 transform transition-all duration-500 hover:scale-110 hover:rotate-12 {celebrationMode ? 'animate-bounce' : ''}">
                             <MyHolonsIcon />
                         </div>
                         {#if isLoadingHolonName}
-                            <div class="text-white/60 text-sm">Loading...</div>
+                            <div class="text-white/60 text-sm animate-pulse">Loading...</div>
                         {:else if holonName}
-                            <div class="text-white/80 text-lg font-medium truncate max-w-48">
+                            <div class="text-white/80 text-lg font-medium truncate max-w-48 {celebrationMode ? 'animate-pulse text-yellow-300' : ''}">
                                 {holonName}
                             </div>
                         {:else}
@@ -554,7 +678,8 @@ import ItemModal from "./ItemModal.svelte";
                     <!-- Four Main Sections Grid -->
                     <div class="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-full">
                         <!-- Ruoli (Roles) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-white/35 transition-all duration-300 min-h-[280px]">
+                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-indigo-400/50 hover:shadow-indigo-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group"
+                            in:fly="{{ x: -100, duration: 600, delay: 100, easing: elasticOut }}">
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -563,7 +688,7 @@ import ItemModal from "./ItemModal.svelte";
                                     Ruoli
                                 </h3>
                                 <button 
-                                    class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-xl"
+                                    class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all duration-300 text-sm font-medium shadow-lg hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 transform group-hover:animate-pulse"
                                     on:click={navigateToRoles}
                                 >
                                     View All
@@ -579,12 +704,13 @@ import ItemModal from "./ItemModal.svelte";
                                 <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
                                     {#each roles.slice(0, rolesToShow) as role (role.id)}
                                         <div 
-                                            class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
-                                                                                         on:click={() => handleRoleClick(role)}
+                                            class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-indigo-500/20 hover:border-indigo-400/50 cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-lg transform"
+                                            on:click={(e) => handleRoleClick(role, e)}
                                             on:keydown={(e) => e.key === 'Enter' && handleRoleClick(role)}
                                             role="button"
                                             tabindex="0"
                                             aria-label="View role details for {role.title}"
+                                            in:scale="{{ duration: 300, delay: 50 * roles.indexOf(role), easing: bounceOut }}"
                                         >
                                             <div class="flex-1 min-w-0">
                                                 <h4 class="font-medium text-white text-sm truncate">
@@ -652,7 +778,8 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Eventi (Events) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-white/35 transition-all duration-300 min-h-[280px]">
+                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-green-400/50 hover:shadow-green-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group"
+                            in:fly="{{ x: 100, duration: 600, delay: 200, easing: elasticOut }}">
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -782,7 +909,8 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Compiti (Tasks) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-white/35 transition-all duration-300 min-h-[280px]">
+                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-amber-400/50 hover:shadow-amber-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group"
+                            in:fly="{{ x: -100, duration: 600, delay: 300, easing: elasticOut }}">
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -888,7 +1016,8 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Medaglie (Badges) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-white/35 transition-all duration-300 min-h-[280px]">
+                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-yellow-400/50 hover:shadow-yellow-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group"
+                            in:fly="{{ x: 100, duration: 600, delay: 400, easing: elasticOut }}">
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1046,31 +1175,98 @@ import ItemModal from "./ItemModal.svelte";
     kbd {
         box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.1);
     }
+
+    @keyframes gameGlow {
+        0%, 100% { 
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+            transform: scale(1);
+        }
+        50% { 
+            box-shadow: 0 0 40px rgba(147, 51, 234, 0.7);
+            transform: scale(1.05);
+        }
+    }
+
+    @keyframes floatUp {
+        0% {
+            opacity: 1;
+            transform: translateY(0px);
+        }
+        100% {
+            opacity: 0;
+            transform: translateY(-100px);
+        }
+    }
+
+    @keyframes sparkle {
+        0%, 100% { opacity: 0; transform: scale(0) rotate(0deg); }
+        50% { opacity: 1; transform: scale(1) rotate(180deg); }
+    }
+
+    .game-glow {
+        animation: gameGlow 2s ease-in-out infinite;
+    }
+
+    .float-up {
+        animation: floatUp 2s ease-out forwards;
+    }
+
+    .sparkle {
+        animation: sparkle 1.5s ease-in-out infinite;
+    }
     
-            /* Custom scrollbar styles */
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 6px;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 3px;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.3);
-            border-radius: 3px;
-        }
-        
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.5);
-        }
-        
-        /* Firefox scrollbar */
-        .custom-scrollbar {
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
-        }
+    /* Custom scrollbar styles */
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+    }
     
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: linear-gradient(45deg, rgba(59, 130, 246, 0.5), rgba(147, 51, 234, 0.5));
+        border-radius: 3px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(45deg, rgba(59, 130, 246, 0.8), rgba(147, 51, 234, 0.8));
+    }
+    
+    /* Firefox scrollbar */
+    .custom-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(59, 130, 246, 0.5) rgba(255, 255, 255, 0.1);
+    }
+
+    /* Game-like pulsing background */
+    .game-background {
+        background: linear-gradient(-45deg, #1a1a2e, #16213e, #0f3460, #533483);
+        background-size: 400% 400%;
+        animation: gradientShift 15s ease infinite;
+    }
+
+    @keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    /* Interactive hover effects */
+    .game-card:hover {
+        filter: brightness(1.1) contrast(1.05);
+    }
+
+    /* XP gain animation */
+    .xp-gain {
+        animation: floatUp 1s ease-out forwards;
+        pointer-events: none;
+        position: absolute;
+        z-index: 1000;
+        color: #fbbf24;
+        font-weight: bold;
+        text-shadow: 0 0 10px rgba(251, 191, 36, 0.8);
+    }
 
 </style>
