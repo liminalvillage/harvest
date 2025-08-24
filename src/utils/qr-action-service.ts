@@ -261,13 +261,15 @@ export class QRActionService {
 	}
 
 	/**
-	 * Join an event, creating it if it doesn't exist
+	 * Join an event, creating it as a scheduled Quest in the quests collection
 	 */
 	private async joinEvent(
 		params: QRActionParams,
 		user: TelegramUser
 	): Promise<QRActionResult> {
 		try {
+			console.log(`[QRActionService] Starting event creation for user ${user.id} to event: ${params.title}`);
+			
 			// Get or create user record
 			const existingUser = await this.holosphere.get(params.holonID, 'users', user.id.toString());
 			
@@ -276,85 +278,98 @@ export class QRActionService {
 				username: user.username || `user_${user.id}`,
 				first_name: user.first_name,
 				last_name: user.last_name || '',
-				events: [],
-				actions: [],
-				joined_at: new Date().toISOString()
+				joined_at: new Date().toISOString(),
+				last_active: new Date().toISOString()
 			};
 
-			// Add event participation
-			if (!userData.events) userData.events = [];
-			if (!userData.events.includes(params.title)) {
-				userData.events.push(params.title);
-			}
-
-			// Add action record
-			if (!userData.actions) userData.actions = [];
-			userData.actions.push({
-				type: 'event_joined',
-				action: params.title,
-				timestamp: Date.now(),
-				description: params.desc || `Joined event via QR code`
-			});
+			// Update last active timestamp
+			userData.last_active = new Date().toISOString();
 
 			// Save user data
 			await this.holosphere.put(params.holonID, 'users', userData);
 
-			// Check if event exists, create it if it doesn't
-			let eventData = await this.holosphere.get(params.holonID, 'events', params.title);
-			if (!eventData) {
-				// Create new event
-				eventData = {
-					title: params.title,
-					description: params.desc || `Event created via QR code`,
-					created_at: new Date().toISOString(),
-					created_by: user.id.toString(),
-					participants: [],
-					status: 'active',
-					start_date: new Date().toISOString(),
-					end_date: null
-				};
-				console.log(`Creating new event: ${params.title}`);
-			}
+			// Calculate event time - 12 hours from now
+			const eventTime = new Date();
+			eventTime.setHours(eventTime.getHours() + 12);
 
-			// Add user to event participants if not already there
-			if (!eventData.participants) eventData.participants = [];
-			if (!eventData.participants.some((p: any) => p.id === user.id.toString())) {
-				eventData.participants.push({
+			// Generate a unique event ID
+			const eventId = `event_${params.title.replace(/\s+/g, '_').toLowerCase()}_${Date.now()}`;
+
+			// Create event as a scheduled Quest object in the quests collection
+			const questData = {
+				id: eventId,
+				title: params.title,
+				description: params.desc || `Event created via QR code`,
+				status: 'pending' as const,
+				type: 'event' as const,
+				category: 'QR Generated',
+				when: eventTime.toISOString(), // Schedule for 12 hours from now
+				participants: [{
 					id: user.id.toString(),
 					username: user.username || `user_${user.id}`,
 					first_name: user.first_name,
 					last_name: user.last_name || '',
 					joined_at: new Date().toISOString(),
 					joined_via: 'qr_code'
-				});
-			}
+				}],
+				appreciation: [],
+				created: new Date().toISOString(),
+				orderIndex: Date.now(), // Use timestamp for ordering
+				initiator: {
+					id: user.id.toString(),
+					username: user.username || `user_${user.id}`,
+					firstName: user.first_name,
+					lastName: user.last_name || ''
+				},
+				_meta: {
+					source: 'qr_code',
+					qr_params: params,
+					created_via: 'qr_action_service',
+					scheduled_for: eventTime.toISOString()
+				}
+			};
 
-			// Save event data
-			await this.holosphere.put(params.holonID, 'events', eventData);
+			console.log(`[QRActionService] Creating new scheduled Quest for event: ${params.title} at ${eventTime.toISOString()}`);
+
+			// Save quest data using the event ID as key
+			await this.holosphere.put(params.holonID, 'quests', questData);
+
+			console.log(`[QRActionService] Event Quest created successfully for user ${user.id} to event ${params.title}`);
+
+			// Format the scheduled time for the success message
+			const formattedTime = eventTime.toLocaleString('en-US', {
+				month: 'short',
+				day: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit',
+				hour12: true
+			});
 
 			return {
 				success: true,
-				message: `Successfully joined event: ${params.title}`,
-				redirectUrl: `/${params.holonID}/events`
+				message: `Successfully created and scheduled event: ${params.title} for ${formattedTime}`,
+				redirectUrl: `/${params.holonID}/tasks`
 			};
 		} catch (error) {
-			console.error('Error joining event:', error);
+			console.error(`[QRActionService] Error creating event:`, error);
 			return {
 				success: false,
-				message: 'Failed to join event',
-				error: error instanceof Error ? error.message : 'EVENT_JOIN_ERROR'
+				message: 'Failed to create event. Please try again.',
+				error: error instanceof Error ? error.message : 'EVENT_CREATION_ERROR'
 			};
 		}
 	}
 
 	/**
-	 * Assign a task, creating it if it doesn't exist
+	 * Assign a task, creating it as a proper Quest in the quests collection
 	 */
 	private async assignTask(
 		params: QRActionParams,
 		user: TelegramUser
 	): Promise<QRActionResult> {
 		try {
+			console.log(`[QRActionService] Starting task assignment for user ${user.id} to task: ${params.title}`);
+			
 			// Get or create user record
 			const existingUser = await this.holosphere.get(params.holonID, 'users', user.id.toString());
 			
@@ -363,86 +378,83 @@ export class QRActionService {
 				username: user.username || `user_${user.id}`,
 				first_name: user.first_name,
 				last_name: user.last_name || '',
-				tasks: [],
-				actions: [],
-				joined_at: new Date().toISOString()
+				joined_at: new Date().toISOString(),
+				last_active: new Date().toISOString()
 			};
 
-			// Add task assignment
-			if (!userData.tasks) userData.tasks = [];
-			if (!userData.tasks.includes(params.title)) {
-				userData.tasks.push(params.title);
-			}
-
-			// Add action record
-			if (!userData.actions) userData.actions = [];
-			userData.actions.push({
-				type: 'task_assigned',
-				action: params.title,
-				timestamp: Date.now(),
-				description: params.desc || `Task assigned via QR code`
-			});
+			// Update last active timestamp
+			userData.last_active = new Date().toISOString();
 
 			// Save user data
 			await this.holosphere.put(params.holonID, 'users', userData);
 
-			// Check if task exists, create it if it doesn't
-			let taskData = await this.holosphere.get(params.holonID, 'tasks', params.title);
-			if (!taskData) {
-				// Create new task
-				taskData = {
-					title: params.title,
-					description: params.desc || `Task created via QR code`,
-					created_at: new Date().toISOString(),
-					created_by: user.id.toString(),
-					participants: [],
-					status: 'assigned',
-					priority: 'medium',
-					due_date: null,
-					completed_at: null
-				};
-				console.log(`Creating new task: ${params.title}`);
-			}
+			// Generate a unique task ID
+			const taskId = `task_${params.title.replace(/\s+/g, '_').toLowerCase()}_${Date.now()}`;
 
-			// Add user to task participants if not already there
-			if (!taskData.participants) taskData.participants = [];
-			if (!taskData.participants.some((p: any) => p.id === user.id.toString())) {
-				taskData.participants.push({
+			// Create task as a Quest object in the quests collection
+			const questData = {
+				id: taskId,
+				title: params.title,
+				description: params.desc || `Task created via QR code`,
+				status: 'pending' as const,
+				type: 'task' as const,
+				category: 'QR Generated',
+				participants: [{
 					id: user.id.toString(),
 					username: user.username || `user_${user.id}`,
 					first_name: user.first_name,
 					last_name: user.last_name || '',
 					assigned_at: new Date().toISOString(),
 					assigned_via: 'qr_code'
-				});
-			}
+				}],
+				appreciation: [],
+				created: new Date().toISOString(),
+				orderIndex: Date.now(), // Use timestamp for ordering
+				initiator: {
+					id: user.id.toString(),
+					username: user.username || `user_${user.id}`,
+					firstName: user.first_name,
+					lastName: user.last_name || ''
+				},
+				_meta: {
+					source: 'qr_code',
+					qr_params: params,
+					created_via: 'qr_action_service'
+				}
+			};
 
-			// Save task data
-			await this.holosphere.put(params.holonID, 'tasks', taskData);
+			console.log(`[QRActionService] Creating new Quest for task: ${params.title} with data:`, questData);
+
+			// Save quest data using the task ID as key
+			await this.holosphere.put(params.holonID, 'quests', questData);
+
+			console.log(`[QRActionService] Task Quest created successfully for user ${user.id} to task ${params.title}`);
 
 			return {
 				success: true,
-				message: `Successfully assigned task: ${params.title}`,
+				message: `Successfully created and assigned task: ${params.title}`,
 				redirectUrl: `/${params.holonID}/tasks`
 			};
 		} catch (error) {
-			console.error('Error assigning task:', error);
+			console.error(`[QRActionService] Error assigning task:`, error);
 			return {
 				success: false,
-				message: 'Failed to assign task',
+				message: 'Failed to assign task. Please try again.',
 				error: error instanceof Error ? error.message : 'TASK_ASSIGNMENT_ERROR'
 			};
 		}
 	}
 
 	/**
-	 * Award a badge, creating it if it doesn't exist
+	 * Award a badge, creating it if it doesn't exist and automatically assigning to user
 	 */
 	private async awardBadge(
 		params: QRActionParams,
 		user: TelegramUser
 	): Promise<QRActionResult> {
 		try {
+			console.log(`[QRActionService] Starting badge award for user ${user.id} to badge: ${params.title}`);
+			
 			// Get or create user record
 			const existingUser = await this.holosphere.get(params.holonID, 'users', user.id.toString());
 			
@@ -451,43 +463,44 @@ export class QRActionService {
 				username: user.username || `user_${user.id}`,
 				first_name: user.first_name,
 				last_name: user.last_name || '',
-				badges: [],
-				actions: [],
-				joined_at: new Date().toISOString()
+				joined_at: new Date().toISOString(),
+				last_active: new Date().toISOString()
 			};
 
-			// Add badge
-			if (!userData.badges) userData.badges = [];
-			if (!userData.badges.includes(params.title)) {
-				userData.badges.push(params.title);
-			}
-
-			// Add action record
-			if (!userData.actions) userData.actions = [];
-			userData.actions.push({
-				type: 'badge_awarded',
-				action: params.title,
-				timestamp: Date.now(),
-				description: params.desc || `Badge awarded via QR code`
-			});
+			// Update last active timestamp
+			userData.last_active = new Date().toISOString();
 
 			// Save user data
 			await this.holosphere.put(params.holonID, 'users', userData);
 
 			// Check if badge exists, create it if it doesn't
-			let badgeData = await this.holosphere.get(params.holonID, 'badges', params.title);
+			const badgeKey = params.title; // Use title as consistent key
+			let badgeData = await this.holosphere.get(params.holonID, 'badges', badgeKey);
+			
+			const isNewBadge = !badgeData;
+			
 			if (!badgeData) {
 				// Create new badge
 				badgeData = {
+					id: params.title,
 					title: params.title,
 					description: params.desc || `Badge created via QR code`,
 					created_at: new Date().toISOString(),
 					created_by: user.id.toString(),
+					created_via: 'qr_code',
 					awarded_to: [],
 					icon: '🏆',
-					rarity: 'common'
+					rarity: 'common',
+					holonID: params.holonID,
+					deckId: params.deckId,
+					cardId: params.cardId,
+					metadata: {
+						qr_generated: true,
+						generation_timestamp: Date.now(),
+						generation_source: 'qr_code'
+					}
 				};
-				console.log(`Creating new badge: ${params.title}`);
+				console.log(`[QRActionService] Creating new badge: ${params.title}`);
 			}
 
 			// Add user to badge recipients if not already there
@@ -503,19 +516,27 @@ export class QRActionService {
 				});
 			}
 
+			// Update badge metadata
+			badgeData.last_modified = new Date().toISOString();
+			badgeData.last_modified_by = user.id.toString();
+
 			// Save badge data
 			await this.holosphere.put(params.holonID, 'badges', badgeData);
 
+			console.log(`[QRActionService] Badge award completed successfully for user ${user.id} to badge ${params.title}`);
+
 			return {
 				success: true,
-				message: `Successfully awarded badge: ${params.title}`,
-				redirectUrl: `/${params.holonID}/profile`
+				message: isNewBadge ? 
+					`Successfully created and awarded badge: ${params.title}` : 
+					`Successfully awarded badge: ${params.title}`,
+				redirectUrl: `/${params.holonID}/badges`
 			};
 		} catch (error) {
-			console.error('Error awarding badge:', error);
+			console.error(`[QRActionService] Error awarding badge:`, error);
 			return {
 				success: false,
-				message: 'Failed to award badge',
+				message: 'Failed to award badge. Please try again.',
 				error: error instanceof Error ? error.message : 'BADGE_AWARD_ERROR'
 			};
 		}

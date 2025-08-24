@@ -5,14 +5,12 @@
 	/**
 	 * TelegramAuth Component
 	 * 
-	 * Handles Telegram authentication with automatic redirect after successful auth.
+	 * Handles Telegram authentication and stays on the current page after successful auth.
 	 * 
 	 * Props:
 	 * - holonID: The ID of the holon for context
 	 * - onAuthSuccess: Callback function when authentication succeeds
-	 * - redirectAfterAuth: Whether to redirect after successful auth (default: true)
-	 * - redirectUrl: Custom redirect URL (optional, overrides default behavior)
-	 * - showSuccessMessage: Whether to show success message before redirect (default: true)
+	 * - redirectAfterAuth: Whether to perform post-auth actions like closing modals (default: true)
 	 * 
 	 * Events:
 	 * - authSuccess: Dispatched when authentication succeeds
@@ -24,9 +22,7 @@
 	// Component props
 	export let holonID: string = '';
 	export let onAuthSuccess: (userData: TelegramUser) => void = () => {};
-	export let redirectAfterAuth: boolean = true; // Whether to redirect after successful auth
-	export let redirectUrl: string = ''; // Custom redirect URL (optional)
-	export let showSuccessMessage: boolean = true; // Whether to show success message before redirect
+	export let redirectAfterAuth: boolean = true; // Whether to perform post-auth actions like closing modals
 
 	interface TelegramUser {
 		id: number;
@@ -45,13 +41,9 @@
 	let errorMessage = '';
 	let widgetContainer: HTMLDivElement;
 	let widgetLoaded = false;
-	let originalUrl = '';
-	let showRedirectMessage = false;
+
 
 	onMount(() => {
-		// Store the original URL when component mounts
-		originalUrl = window.location.href;
-		
 		// Check if user is already authenticated via localStorage
 		checkStoredAuth();
 		
@@ -195,32 +187,21 @@
 		localStorage.setItem('telegramUser', JSON.stringify(userData));
 		localStorage.setItem('telegramAuthDate', userData.auth_date.toString());
 
-		// Handle redirect after successful authentication
+		// Handle post-authentication actions
 		if (redirectAfterAuth) {
-			if (showSuccessMessage) {
-				showRedirectMessage = true;
-			}
+			// Just close any modals and let the user continue with their intended action
 			setTimeout(() => {
 				performRedirect();
-			}, showSuccessMessage ? 2000 : 500); // Show success message for 2 seconds, or quick redirect
+			}, 500); // Quick action to close modals if present
 		}
 	}
 
 	function performRedirect() {
 		try {
-			let targetUrl = '';
+			// Get the current URL and its parameters
+			const currentUrl = window.location.href;
+			const urlParams = new URLSearchParams(window.location.search);
 			
-			// Priority: 1. Use provided redirectUrl, 2. Use original URL, 3. Go to holon dashboard
-			if (redirectUrl) {
-				targetUrl = redirectUrl;
-			} else if (originalUrl && originalUrl !== window.location.href) {
-				targetUrl = originalUrl;
-			} else if (holonID) {
-				targetUrl = `/${holonID}/dashboard`;
-			} else {
-				targetUrl = '/';
-			}
-
 			// Check if we're in a modal or overlay context
 			const modalElements = document.querySelectorAll('.modal, .overlay, [data-modal], .popup, .dialog');
 			let modalFound = false;
@@ -252,18 +233,14 @@
 				}
 			}
 			
-			// If no modal was found or closed, navigate to the target URL
-			if (targetUrl && targetUrl !== window.location.href) {
-				window.location.href = targetUrl;
-			}
+			// If we're not in a modal, stay on the current page
+			// The user should now be able to perform the action they were trying to do
+			// No need to redirect - just let them continue with their intended action
+			console.log('Authentication successful - user can now perform their intended action');
+			
 		} catch (error) {
 			console.error('Error during redirect:', error);
-			// Fallback: just go to the holon dashboard or home
-			if (holonID) {
-				window.location.href = `/${holonID}/dashboard`;
-			} else {
-				window.location.href = '/';
-			}
+			// No fallback redirect needed - stay on current page
 		}
 	}
 
@@ -315,38 +292,18 @@
 					{#if currentUser.username}
 						<div class="user-username">@{currentUser.username}</div>
 					{/if}
-					<div class="auth-status" class:redirecting={showRedirectMessage && redirectAfterAuth}>
-						{#if showRedirectMessage && redirectAfterAuth}
-							Redirecting in a moment...
-						{:else}
-							Successfully authenticated
-						{/if}
+					<div class="auth-status">
+						Successfully authenticated
 					</div>
 				</div>
 			</div>
-			{#if showRedirectMessage && redirectAfterAuth}
-				<button 
-					on:click={() => {
-						showRedirectMessage = false;
-						// Cancel the redirect
-						setTimeout(() => {
-							showRedirectMessage = false;
-						}, 100);
-					}}
-					class="cancel-redirect-btn"
-					title="Cancel redirect"
-				>
-					❌
-				</button>
-			{:else}
-				<button 
-					on:click={logout}
-					class="logout-btn"
-					title="Logout"
-				>
-					🚪
-				</button>
-			{/if}
+			<button 
+				on:click={logout}
+				class="logout-btn"
+				title="Logout"
+			>
+				🚪
+			</button>
 		</div>
 	{:else}
 		<!-- Login Section - Only shown when not authenticated -->
@@ -355,7 +312,7 @@
 				<div class="telegram-icon">📱</div>
 				<h3>Login with Telegram</h3>
 				<p class="login-description">
-					Connect your Telegram account to access this holon and perform automated actions.
+					Connect your Telegram account to access this holon and perform your intended action.
 				</p>
 			</div>
 			
@@ -390,7 +347,7 @@
 			
 			<div class="login-info">
 				<p class="info-text">
-					<strong>Why Telegram?</strong> This ensures secure authentication and allows the system to know which user is performing actions.
+					<strong>Why Telegram?</strong> This ensures secure authentication and allows the system to know which user is performing actions. After login, you'll be able to continue with your intended action.
 				</p>
 			</div>
 		</div>
@@ -494,18 +451,10 @@
 		font-style: italic;
 	}
 
-	.auth-status.redirecting {
-		animation: pulse 1.5s ease-in-out infinite;
+
 	}
 
-	@keyframes pulse {
-		0%, 100% { opacity: 0.8; }
-		50% { opacity: 1; }
-	}
-	}
-
-	.logout-btn,
-	.cancel-redirect-btn {
+	.logout-btn {
 		background: rgba(255, 255, 255, 0.2);
 		border: 1px solid rgba(255, 255, 255, 0.3);
 		color: white;
@@ -521,14 +470,7 @@
 		}
 	}
 
-	.cancel-redirect-btn {
-		background: rgba(239, 68, 68, 0.3);
-		border-color: rgba(239, 68, 68, 0.5);
-		
-		&:hover {
-			background: rgba(239, 68, 68, 0.4);
-		}
-	}
+
 
 	.login-section {
 		background: rgba(255, 255, 255, 0.05);

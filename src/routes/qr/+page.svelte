@@ -49,7 +49,36 @@
 		} else if (isLocalhost && !hasValidParams) {
 			console.log(`[QR Page] Running on localhost but no valid QR parameters - debug mode inactive`);
 		}
+		
+		// Check if user is already authenticated (for smooth UX)
+		if (!isDebugMode && hasValidParams && qrActionService) {
+			checkExistingAuth();
+		}
 	});
+
+	async function checkExistingAuth() {
+		try {
+			// Check localStorage for existing Telegram authentication
+			const storedUser = localStorage.getItem('telegramUser');
+			const storedAuthDate = localStorage.getItem('telegramAuthDate');
+			
+			if (storedUser && storedAuthDate) {
+				const userData = JSON.parse(storedUser);
+				const authDate = parseInt(storedAuthDate);
+				const currentTime = Math.floor(Date.now() / 1000);
+				
+				// Check if auth is still valid (24 hours)
+				if (currentTime - authDate < 24 * 60 * 60) {
+					console.log(`[QR Page] Found valid existing authentication for user ${userData.id}, processing action automatically`);
+					// User is already authenticated, process action immediately
+					await processQRAction(userData);
+				}
+			}
+		} catch (error) {
+			console.warn('[QR Page] Error checking existing authentication:', error);
+			// Continue with normal flow
+		}
+	}
 
 	function createDebugUser(): TelegramUser {
 		// Create a mock user for debug mode
@@ -183,12 +212,26 @@
 				<div class="bg-gray-800 rounded-2xl p-6">
 					<h2 class="text-xl font-semibold text-white mb-4 text-center">🔐 Login Required</h2>
 					<p class="text-gray-400 mb-6 text-center">
-						Login with Telegram to execute this action automatically.
+						Login with Telegram to automatically perform your action:
+						<span class="block mt-2 text-blue-300 font-medium">
+							{#if action === 'task'}
+								Create and assign task "{title}"
+							{:else if action === 'event'}
+								Schedule event "{title}" for 12 hours from now
+							{:else if action === 'badge'}
+								Award badge "{title}"
+							{:else if action === 'role'}
+								Assign role "{title}"
+							{:else}
+								Execute "{title}"
+							{/if}
+						</span>
 					</p>
 					
 					<TelegramAuth 
 						{holonID} 
 						onAuthSuccess={handleAuthSuccess}
+						redirectAfterAuth={false}
 					/>
 				</div>
 			{/if}
@@ -205,11 +248,11 @@
 							{#if action === 'role'}
 								Creating role and assigning it to you...
 							{:else if action === 'event'}
-								Joining event...
+								Creating and scheduling event for 12 hours from now...
 							{:else if action === 'task'}
-								Assigning task...
+								Creating task and adding you as participant...
 							{:else if action === 'badge'}
-								Awarding badge...
+								Creating and awarding badge to you...
 							{:else if action === 'invite'}
 								Processing invitation...
 							{:else}
