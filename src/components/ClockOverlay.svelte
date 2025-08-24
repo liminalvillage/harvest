@@ -1,3 +1,4 @@
+
 <script lang="ts">
     import { onMount, onDestroy, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
@@ -692,8 +693,19 @@
                                     
                 
 
-                <!-- Bottom Right: ESC hint -->
-                <div class="absolute bottom-6 right-6">
+                <!-- Bottom Right: ESC hint and Badges button -->
+                <div class="absolute bottom-6 right-6 flex items-center space-x-4">
+                    <!-- Badges Button -->
+                    <button 
+                        class="bg-indigo-600/80 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105 flex items-center space-x-2 shadow-lg"
+                        on:click={() => window.location.href = `/${holonID}/badges`}
+                        aria-label="View community badges"
+                    >
+                        <span class="text-lg">🏆</span>
+                        <span class="text-sm font-medium">Badges</span>
+                    </button>
+                    
+                    <!-- ESC hint -->
                     <p class="text-white/40 text-sm flex items-center">
                         Press <kbd class="mx-2 px-2 py-1 bg-white/10 rounded text-xs border border-white/20">Esc</kbd> to close
                     </p>

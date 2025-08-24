@@ -7,8 +7,6 @@
     import { browser } from "$app/environment";
     import HoloSphere from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
-    import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
-    import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
     import { 
         savePersonalHolons, 
         loadPersonalHolons, 
@@ -19,6 +17,8 @@
         type PersonalHolon,
         type VisitedHolon
     } from "../utils/localStorage";
+    import { fetchHolonName, clearHolonNameCache, clearFallbackNames, forceRefreshHolonName } from "../utils/holonNames";
+    import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
     import QRScanner from "./QRScanner.svelte";
 
     // Initialize holosphere
@@ -87,6 +87,13 @@
     let activeTab: 'personal' | 'visited' = 'personal';
     let showSplashScreen = false;
     let showHolonIdInfo = false;
+    
+    // Progress tracking for name fetching
+    let nameFetchProgress = {
+        total: 0,
+        completed: 0,
+        current: ''
+    };
 
     // Add a function to refresh visited holon names that can be called externally
     async function refreshVisitedHolonNames() {
@@ -97,10 +104,9 @@
             const freshVisitedHolons = loadVisitedHolons($walletAddress);
             visitedHolons = freshVisitedHolons;
             
-            // Update the names (cache clearing is handled in updateVisitedHolonDetails)
+            // Update the names synchronously - wait for ALL names to be fetched
             await updateVisitedHolonDetails();
             
-            console.log('Refreshed visited holon names:', visitedHolons);
         } catch (err) {
             console.error('Error refreshing visited holon names:', err);
         }
@@ -111,12 +117,49 @@
         if (!holosphere || !connectionReady) return;
         
         try {
-            // Re-fetch names for all personal holons (cache clearing is handled in updateNamesSync)
-            await updateHolonDetails();
-            
-            console.log('Refreshed personal holon names:', myHolons);
+            // Re-fetch names for all personal holons synchronously - wait for ALL names to be fetched
+            await updateNamesSync();
         } catch (err) {
             console.error('Error refreshing personal holon names:', err);
+        }
+    }
+
+    // Add a comprehensive refresh function that updates ALL names before displaying
+    async function refreshAllHolonNames() {
+        if (!holosphere || !connectionReady) return;
+        
+        try {
+            // Reset progress tracking
+            nameFetchProgress = {
+                total: 0,
+                completed: 0,
+                current: ''
+            };
+            
+            // Clear ALL fallback names from cache to force re-fetching
+            clearFallbackNames();
+            
+            // Load fresh data from localStorage
+            loadPersonalHolonsFromStorage();
+            const freshVisitedHolons = loadVisitedHolons($walletAddress);
+            visitedHolons = freshVisitedHolons;
+            
+            // Update ALL names synchronously using Promise.all to wait for completion
+            const updatePromises = [
+                updateNamesSync(),
+                updateVisitedHolonDetails()
+            ];
+            
+            // Wait for ALL name updates to complete before continuing
+            await Promise.all(updatePromises);
+            
+            // Save the updated data
+            savePersonalHolonsToStorage();
+            if ($walletAddress) {
+                saveVisitedHolons($walletAddress, visitedHolons);
+            }
+        } catch (err) {
+            console.error('Error in comprehensive refresh of holon names:', err);
         }
     }
 
@@ -127,6 +170,11 @@
 
     function handleRefreshPersonalRequest() {
         refreshPersonalHolonNames();
+    }
+
+    // Add handler for comprehensive refresh
+    function handleRefreshAllRequest() {
+        refreshAllHolonNames();
     }
 
     // Filtered holons
@@ -168,8 +216,15 @@
             if (holosphere) {
                 // Wait a bit for holosphere to initialize
                 await new Promise(resolve => setTimeout(resolve, 1000));
-                connectionReady = true;
-                console.log('Holosphere connection ready');
+                
+                // Test the connection by trying to access a simple property
+                try {
+                    // Try to access a simple property to test connection
+                    const testResult = await holosphere.get('test', 'test', 'test').catch(() => null);
+                    connectionReady = true;
+                } catch (connErr) {
+                    connectionReady = true; // Still mark as ready to avoid blocking
+                }
             } else {
                 throw new Error('Holosphere not available');
             }
@@ -193,6 +248,7 @@
         if (browser) {
             window.addEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
             window.addEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
+            window.addEventListener('refreshAllHolonNames', handleRefreshAllRequest);
         }
     });
 
@@ -205,6 +261,7 @@
         if (browser) {
             window.removeEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
             window.removeEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
+            window.removeEventListener('refreshAllHolonNames', handleRefreshAllRequest);
         }
     });
 
@@ -214,6 +271,13 @@
         isLoading = true;
         loadingMessage = 'Loading holons...';
         error = '';
+        
+        // Reset progress tracking
+        nameFetchProgress = {
+            total: 0,
+            completed: 0,
+            current: ''
+        };
         
         try {
             // Load personal holons from localStorage
@@ -233,20 +297,27 @@
             });
             await Promise.race([federatedPromise, federatedTimeout]);
             
-            // Update holon names FIRST and immediately
-            loadingMessage = 'Updating holon names...';
-            const updatePromise = updateHolonDetails();
-            const updateVisitedPromise = updateVisitedHolonDetails();
+            // Update ALL holon names comprehensively - wait for ALL names to be fetched
+            loadingMessage = 'Updating ALL holon names...';
+            const updatePromises = [
+                updateNamesSync(),
+                updateVisitedHolonDetails()
+            ];
+            
+            // Wait for ALL name updates to complete before continuing
             const updateTimeout = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('Update details timeout')), 10000);
+                setTimeout(() => reject(new Error('Update details timeout')), 15000); // Increased timeout
             });
-            await Promise.race([Promise.all([updatePromise, updateVisitedPromise]), updateTimeout]);
+            await Promise.race([Promise.all(updatePromises), updateTimeout]);
             
             // Note: Removed the duplicate call to addVisitedHolonToSeparateList here
             // as it's already handled by TopBar component
             
             // Save once at the end of all loading and updates
             savePersonalHolonsToStorage();
+            if ($walletAddress) {
+                saveVisitedHolons($walletAddress, visitedHolons);
+            }
             
         } catch (err) {
             console.error('Error loading data:', err);
@@ -324,29 +395,41 @@
 
     async function updateNamesSync() {
         // Update names synchronously in the same pattern as stats
-        const namePromises = myHolons.map(async (holon) => {
+        const totalHolons = myHolons.length;
+        nameFetchProgress.total = totalHolons;
+        nameFetchProgress.completed = 0;
+        nameFetchProgress.current = '';
+        
+        const namePromises = myHolons.map(async (holon, index) => {
             try {
-                // Clear cache for this specific holon to ensure fresh data
-                clearHolonNameCache(holon.id);
+                // Update progress
+                nameFetchProgress.current = `Fetching name for ${holon.id}...`;
                 
-                const name = await fetchHolonName(holosphere, holon.id);
+                // Use force refresh to ensure we get fresh data
+                const name = await forceRefreshHolonName(holosphere, holon.id);
                 
                 // Update the specific holon with new name (same pattern as stats)
                 const updatedHolon = { ...holon, name };
-                const index = myHolons.findIndex(h => h.id === holon.id);
-                if (index !== -1) {
-                    myHolons[index] = updatedHolon;
+                const holonIndex = myHolons.findIndex(h => h.id === holon.id);
+                if (holonIndex !== -1) {
+                    myHolons[holonIndex] = updatedHolon;
                 }
                 
-                console.log(`Updated name for holon ${holon.id}: ${name}`);
+                // Update progress
+                nameFetchProgress.completed++;
+                nameFetchProgress.current = `Updated ${holon.id}: ${name}`;
             } catch (err) {
                 console.warn(`Failed to update name for holon ${holon.id}:`, err);
+                // Still count as completed even if it failed
+                nameFetchProgress.completed++;
             }
         });
         
         // Await all name updates to complete before continuing
         await Promise.allSettled(namePromises);
-        console.log('All name updates completed');
+        
+        // Reset progress
+        nameFetchProgress.current = 'All names updated successfully!';
         
         // Trigger reactivity
         myHolons = [...myHolons];
@@ -356,12 +439,16 @@
         if (!visitedHolons || visitedHolons.length === 0) return;
 
         // Update visited holon names using the same pattern as personal holons
+        const totalVisited = visitedHolons.length;
+        nameFetchProgress.total += totalVisited;
+        
         const namePromises = visitedHolons.map(async (holon) => {
             try {
-                // Clear cache for this specific holon to ensure fresh data
-                clearHolonNameCache(holon.id);
+                // Update progress
+                nameFetchProgress.current = `Fetching name for visited holon ${holon.id}...`;
                 
-                const name = await fetchHolonName(holosphere, holon.id);
+                // Use force refresh to ensure we get fresh data
+                const name = await forceRefreshHolonName(holosphere, holon.id);
                 
                 // Update the specific holon with new name (same pattern as stats)
                 const updatedHolon = { ...holon, name };
@@ -370,15 +457,18 @@
                     visitedHolons[index] = updatedHolon;
                 }
                 
-                console.log(`Updated name for visited holon ${holon.id}: ${name}`);
+                // Update progress
+                nameFetchProgress.completed++;
+                nameFetchProgress.current = `Updated visited ${holon.id}: ${name}`;
             } catch (err) {
                 console.warn(`Failed to update name for visited holon ${holon.id}:`, err);
+                // Still count as completed even if it failed
+                nameFetchProgress.completed++;
             }
         });
         
         // Await all name updates to complete before continuing
         await Promise.allSettled(namePromises);
-        console.log('All visited holon name updates completed');
         
         // Trigger reactivity and save
         visitedHolons = [...visitedHolons];
@@ -821,7 +911,7 @@
     <!-- Main MyHolons Interface -->
     <div class="p-6">
         <!-- Header -->
-        <div class="flex justify-end items-center mb-6">
+        <div class="flex justify-end items-center mb-6 gap-2">
             <button
                 on:click={() => showAddDialog = true}
                 class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
@@ -894,7 +984,33 @@
         {#if isLoading}
             <div class="flex flex-col items-center justify-center py-12">
                 <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mb-4"></div>
-                <p class="text-gray-400 text-center">{loadingMessage}</p>
+                <p class="text-gray-400 text-center mb-2">{loadingMessage}</p>
+                
+                <!-- Show additional progress info when updating names -->
+                {#if loadingMessage.includes('Updating')}
+                    <div class="text-center text-sm text-gray-500 mb-4">
+                        <p>Fetching holon names from the network...</p>
+                        <p class="mt-1">This ensures all holons display with proper names instead of IDs</p>
+                        
+                        <!-- Progress bar for name fetching -->
+                        {#if nameFetchProgress.total > 0}
+                            <div class="mt-4 w-64">
+                                <div class="flex justify-between text-xs text-gray-400 mb-1">
+                                    <span>Progress: {nameFetchProgress.completed}/{nameFetchProgress.total}</span>
+                                    <span>{Math.round((nameFetchProgress.completed / nameFetchProgress.total) * 100)}%</span>
+                                </div>
+                                <div class="w-full bg-gray-700 rounded-full h-2">
+                                    <div 
+                                        class="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                                        style="width: {(nameFetchProgress.completed / nameFetchProgress.total) * 100}%"
+                                    ></div>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-2 text-center">{nameFetchProgress.current}</p>
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+                
                 <button 
                     on:click={loadData}
                     class="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"

@@ -14,6 +14,7 @@
 	import MyHolons from '../components/MyHolons.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
 	import ClockOverlay from '../components/ClockOverlay.svelte';
+import ZeitcampDashboard from '../components/ZeitcampDashboard.svelte';
 
 	const style = {
 		container: `bg-gray-900 h-screen overflow-hidden relative`,
@@ -27,6 +28,7 @@
 	let currentRouteIndex = 0;
 	let showMyHolons = false;
 	let showClockOverlay = false;
+	let showZeitcampDashboard = false;
 
 	// Check if we're on the root route
 	$: isRootRoute = $page.url.pathname === '/';
@@ -51,6 +53,11 @@
 			event.preventDefault();
 			toggleClockOverlay();
 		}
+		// Toggle zeitcamp dashboard with Ctrl+Shift+Z or Cmd+Shift+Z
+		if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Z') {
+			event.preventDefault();
+			toggleZeitcampDashboard();
+		}
 	}
 
 	function toggleMyHolons() {
@@ -61,10 +68,19 @@
 		showClockOverlay = !showClockOverlay;
 	}
 
+	function toggleZeitcampDashboard() {
+		showZeitcampDashboard = !showZeitcampDashboard;
+	}
+
 	// Set up auto-switching if in browser
 	if (browser) {
 		// Set up mouse move listener
 		window.addEventListener('mousemove', handleMouseMove);
+
+		// Set up custom event listener for Zeitcamp dashboard
+		window.addEventListener('toggleZeitcampDashboard', () => {
+			toggleZeitcampDashboard();
+		});
 
 		// Auto-switching is disabled by default - removed timer logic
 		// Users can manually enable it if needed through the store
@@ -72,6 +88,9 @@
 		// Cleanup on component destroy
 		onDestroy(() => {
 			window.removeEventListener('mousemove', handleMouseMove);
+			window.removeEventListener('toggleZeitcampDashboard', () => {
+				toggleZeitcampDashboard();
+			});
 		});
 	}
 
@@ -135,5 +154,8 @@
 
 		<!-- Clock Overlay -->
 		<ClockOverlay bind:isVisible={showClockOverlay} />
+
+		<!-- Zeitcamp Dashboard Overlay -->
+		<ZeitcampDashboard bind:isVisible={showZeitcampDashboard} />
 	</div>
 {/if}

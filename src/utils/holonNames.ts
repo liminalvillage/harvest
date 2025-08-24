@@ -10,9 +10,10 @@ const fetchPromises = new Map<string, Promise<string>>();
  * Fetch holon name from settings with caching
  */
 export async function fetchHolonName(holosphere: HoloSphere, holonId: string): Promise<string> {
-	// Return cached name if available
-	if (holonNameCache.has(holonId)) {
-		return holonNameCache.get(holonId)!;
+	// Return cached name if available (but only if it's not a fallback)
+	const cachedName = holonNameCache.get(holonId);
+	if (cachedName && cachedName !== `Holon ${holonId}`) {
+		return cachedName;
 	}
 
 	// Return existing promise if already fetching
@@ -23,11 +24,22 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 	// Create new fetch promise
 	const fetchPromise = (async () => {
 		try {
+			// Check if holosphere is available
+			if (!holosphere) {
+				return `Holon ${holonId}`;
+			}
+			
 			const settings = await holosphere.get(holonId, "settings", holonId);
+			
+			// Check if settings exists and has the expected structure
+			if (!settings) {
+				return `Holon ${holonId}`;
+			}
+			
 			const holonName = settings?.name;
 			
-			// Only cache if we actually got a real name
-			if (holonName && holonName.trim() !== '') {
+			// Only cache if we actually got a real name (not empty, not undefined, not the fallback)
+			if (holonName && holonName.trim() !== '' && holonName !== `Holon ${holonId}`) {
 				holonNameCache.set(holonId, holonName);
 				return holonName;
 			} else {
@@ -130,6 +142,30 @@ export function clearHolonNameCache(holonId?: string): void {
 		holonNameCache.clear();
 		fetchPromises.clear();
 	}
+}
+
+/**
+ * Clear fallback names from cache to force re-fetching
+ */
+export function clearFallbackNames(): void {
+	const holonIds = Array.from(holonNameCache.keys());
+	let clearedCount = 0;
+	
+	for (const id of holonIds) {
+		const cachedName = holonNameCache.get(id);
+		if (cachedName === `Holon ${id}`) {
+			holonNameCache.delete(id);
+			clearedCount++;
+		}
+	}
+}
+
+/**
+ * Force refresh of a specific holon name by clearing cache and re-fetching
+ */
+export async function forceRefreshHolonName(holosphere: HoloSphere, holonId: string): Promise<string> {
+	clearHolonNameCache(holonId);
+	return await fetchHolonName(holosphere, holonId);
 }
 
 /**

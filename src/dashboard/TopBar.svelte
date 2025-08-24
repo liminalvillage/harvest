@@ -16,6 +16,7 @@
 	import HoloSphere from 'holosphere';
 	import { ethers } from 'ethers';
 	import { addVisitedHolon, getWalletAddress } from "../utils/localStorage";
+	import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
 
@@ -31,17 +32,61 @@
 					detail: { walletAddress: $walletAddress }
 				});
 				window.dispatchEvent(refreshEvent);
-				console.log('Dispatched refresh event for visited holon names');
+				
+				// Also refresh the current holon name if we have one
+				if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '') {
+					await updateCurrentHolonName($ID);
+				}
 			} catch (err) {
 				console.error('Error dispatching refresh event:', err);
 			}
 		}
 	}
 
-	// Enhanced toggle function that refreshes names
+	// Add a function to refresh personal holon names
+	async function refreshPersonalHolonNames() {
+		if (browser) {
+			try {
+				// Dispatch a custom event to trigger refresh in MyHolons component
+				const refreshEvent = new CustomEvent('refreshPersonalHolonNames', {
+					detail: { timestamp: Date.now() }
+				});
+				window.dispatchEvent(refreshEvent);
+				
+				// Also refresh the current holon name if we have one
+				if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '') {
+					await updateCurrentHolonName($ID);
+				}
+			} catch (err) {
+				console.error('Error dispatching refresh event:', err);
+			}
+		}
+	}
+
+	// Add a function to refresh ALL holon names comprehensively
+	async function refreshAllHolonNames() {
+		if (browser) {
+			try {
+				// Dispatch a custom event to trigger comprehensive refresh in MyHolons component
+				const refreshEvent = new CustomEvent('refreshAllHolonNames', {
+					detail: { timestamp: Date.now() }
+				});
+				window.dispatchEvent(refreshEvent);
+				
+				// Also refresh the current holon name if we have one
+				if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '') {
+					await updateCurrentHolonName($ID);
+				}
+			} catch (err) {
+				console.error('Error dispatching comprehensive refresh event:', err);
+			}
+		}
+	}
+
+	// Enhanced toggle function that refreshes names comprehensively
 	function handleToggleMyHolons() {
-		// First refresh the visited holon names
-		refreshVisitedHolonNames();
+		// First refresh ALL types of holon names comprehensively
+		refreshAllHolonNames();
 		// Then call the original toggle function
 		toggleMyHolons();
 	}
@@ -52,14 +97,7 @@
 	let holonID: string = '';
 	let showToast = false;
 
-	// API Key Configuration Modal
-	// NOTE: This is a placeholder UI - keys are collected but not stored/used yet
-	let showApiModal = false;
-	let apiKeys = {
-		openai: '',
-		anthropic: '',
-		groq: ''
-	};
+	// API Key Configuration Modal - MOVED TO COUNCIL COMPONENT
 
 	// Ethereum wallet connection
 	async function connectWallet() {
@@ -98,7 +136,7 @@
 	let isInitialized = false;
 
 	// Initialize on mount
-	onMount(() => {
+	onMount(async () => {
 		// Ensure auto-transition is off by default when TopBar loads
 		autoTransitionEnabled.set(false);
 
@@ -112,6 +150,9 @@
 
 		// Set up initial state
 		isInitialized = true;
+		
+		// Wait for holosphere to be ready (similar to layout.svelte)
+		await new Promise(resolve => setTimeout(resolve, 1000));
 		
 		// Process initial ID if available
 		const initialId = $page.params.id;
@@ -137,60 +178,46 @@
 		// Potentially clear other related stored data if needed
 	}
 
-	// API Key Modal Functions
-	// NOTE: This is a placeholder implementation for future secure API key management
-	// Currently, the modal collects keys but does NOT save or use them anywhere
-	
-	function openApiModal() {
-		showApiModal = true;
-	}
+	// API Key Modal Functions - MOVED TO COUNCIL COMPONENT
 
-	function closeApiModal() {
-		showApiModal = false;
-		// Clear the input fields when closing (since we're not saving)
-		// This ensures keys don't remain in memory
-		apiKeys = {
-			openai: '',
-			anthropic: '',
-			groq: ''
-		};
-	}
-
-	function handleApiSubmit() {
-		// CURRENT BEHAVIOR: Keys are logged (redacted) but immediately discarded
-		// The LLMService still uses environment variables only (src/utils/llm-service.ts)
-		// 
-		// TODO FOR FUTURE IMPLEMENTATION:
-		// 1. Implement secure storage (encrypted localStorage or secure session storage)
-		// 2. Update LLMService to accept runtime API keys instead of just env vars
-		// 3. Add API key validation (format checking, test API calls)
-		// 4. Add key management UI (show which keys are set, allow individual clearing)
-		// 5. Consider key expiration/refresh mechanisms
-		
-		console.log('API Keys entered (not saved for security):', {
-			openai: apiKeys.openai ? '***' : 'empty',
-			anthropic: apiKeys.anthropic ? '***' : 'empty', 
-			groq: apiKeys.groq ? '***' : 'empty'
-		});
-		
-		// Keys are immediately discarded for security
-		closeApiModal();
-	}
-
-	// Use centralized holon name service
-	async function updateCurrentHolonName(id: string) {
+	// Use centralized holon name service with proper reactivity
+	async function updateCurrentHolonName(id: string, retryCount = 0) {
 		if (!id || id === '') {
 			currentHolonName = undefined;
 			return;
 		}
 		
+		// Check if holosphere is available
+		if (!holosphere) {
+			currentHolonName = `Holon ${id}`;
+			return;
+		}
+		
+		// Check if we should wait for connection
+		if (retryCount === 0) {
+			// On first attempt, wait a bit for connection to be ready
+			await new Promise(resolve => setTimeout(resolve, 500));
+		}
+		
 		try {
-			// Fetch name directly from holosphere like in MyHolons
-			const settings = await holosphere.get(id, "settings", id);
-			currentHolonName = settings?.name || id;
+			// Clear cache to ensure fresh data
+			clearHolonNameCache(id);
+			
+			// Use centralized fetchHolonName function like MyHolons does
+			const name = await fetchHolonName(holosphere, id);
+			
+			// Update the name and trigger reactivity
+			currentHolonName = name;
 		} catch (error) {
-			console.error(`Error fetching name for holon ${id}:`, error);
-			currentHolonName = id; // Fallback to ID on error
+			// Retry logic - try up to 3 times with exponential backoff
+			if (retryCount < 3) {
+				const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+				setTimeout(() => {
+					updateCurrentHolonName(id, retryCount + 1);
+				}, delay);
+			} else {
+				currentHolonName = `Holon ${id}`; // Fallback to ID on error
+			}
 		}
 	}
 
@@ -281,7 +308,6 @@
 	
 	// Reactive statement for walletAddress changes
 	$: if ($walletAddress) {
-		console.log('Wallet connected:', $walletAddress);
 		// You can add logic here if something needs to happen when the wallet connects,
 		// e.g., fetching user-specific data based on wallet address.
 	}
@@ -391,8 +417,32 @@
                     
                     <!-- Title and ID -->
                     <div class="text-left">
-                        <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
-                            {currentHolonName || 'Loading...'}
+                        <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight flex items-center gap-2">
+                            <span>
+                                {#if currentHolonName && currentHolonName !== `Holon ${$ID}`}
+                                    {currentHolonName}
+                                {:else if $ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== ''}
+                                    {currentHolonName || 'Loading...'}
+                                {:else}
+                                    Loading...
+                                {/if}
+                            </span>
+                            {#if $ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== ''}
+                                <button
+                                    on:click|stopPropagation={async () => {
+                                        if ($ID) {
+                                            await updateCurrentHolonName($ID);
+                                        }
+                                    }}
+                                    class="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+                                    title="Refresh holon name"
+                                    aria-label="Refresh holon name"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                </button>
+                            {/if}
                         </div>
                         <div class="text-xs sm:text-sm text-gray-400 font-mono mt-1">
                             {$ID || '...'}
@@ -415,6 +465,20 @@
                     </svg>
                 </button>
 
+                <!-- Zeitcamp Dashboard Button -->
+                <button 
+                    on:click={() => window.dispatchEvent(new CustomEvent('toggleZeitcampDashboard'))}
+                    class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
+                    title="Show Zeitcamp Dashboard (Ctrl+Shift+Z)"
+                    aria-label="Show Zeitcamp Dashboard"
+                >
+                    <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                </button>
+
+
+
                 <!-- Wallet and API Keys - Horizontal Layout -->
                 <div class="flex flex-row gap-2">
                     <!-- Wallet -->
@@ -429,10 +493,7 @@
                         </button>
                     {/if}
                     
-                    <!-- API Key Configuration Button -->
-                    <button on:click={openApiModal} class="wallet-button">
-                        🔐 API Keys
-                    </button>
+                    <!-- API Key Configuration Button - MOVED TO COUNCIL COMPONENT -->
                 </div>
             </div>
         </div>
@@ -461,6 +522,18 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
             </button>
+
+            <!-- Zeitcamp Dashboard Button (only on dashboard pages) -->
+            <button 
+                on:click={() => window.dispatchEvent(new CustomEvent('toggleZeitcampDashboard'))}
+                class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
+                title="Show Zeitcamp Dashboard (Ctrl+Shift+Z)"
+                aria-label="Show Zeitcamp Dashboard"
+            >
+                <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+            </button>
         {/if}
 
         <!-- Wallet and API Keys - Vertical Layout on larger screens -->
@@ -477,10 +550,7 @@
                 </button>
             {/if}
             
-            <!-- API Key Configuration Button -->
-            <button on:click={openApiModal} class="wallet-button">
-                🔐 API Keys
-            </button>
+            <!-- API Key Configuration Button - MOVED TO COUNCIL COMPONENT -->
         </div>
     </div>
 </div>
@@ -495,80 +565,4 @@
 	</button>
 {/if}
 
-<!-- API Key Configuration Modal -->
-{#if showApiModal}
-	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" role="dialog" aria-modal="true" tabindex="-1" on:keydown={(e) => e.key === 'Escape' && closeApiModal()}>
-		<button 
-			class="absolute inset-0 w-full h-full" 
-			on:click={closeApiModal}
-			aria-label="Close modal backdrop"
-		></button>
-		<div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4" role="document">
-			<div class="flex justify-between items-center mb-4">
-				<h2 class="text-xl font-bold text-white">🔐 API Key Configuration</h2>
-				<button on:click={closeApiModal} class="text-gray-400 hover:text-white" aria-label="Close modal">
-					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-					</svg>
-				</button>
-			</div>
-			
-			<form on:submit|preventDefault={handleApiSubmit} class="space-y-4">
-				<div>
-					<label for="openai-key" class="block text-sm font-medium text-gray-300 mb-2">OpenAI API Key</label>
-					<input
-						type="password"
-						id="openai-key"
-						bind:value={apiKeys.openai}
-						placeholder="sk-..."
-						class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-					/>
-				</div>
-				
-				<div>
-					<label for="anthropic-key" class="block text-sm font-medium text-gray-300 mb-2">Anthropic API Key</label>
-					<input
-						type="password"
-						id="anthropic-key"
-						bind:value={apiKeys.anthropic}
-						placeholder="sk-ant-..."
-						class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-					/>
-				</div>
-				
-				<div>
-					<label for="groq-key" class="block text-sm font-medium text-gray-300 mb-2">Groq API Key</label>
-					<input
-						type="password"
-						id="groq-key"
-						bind:value={apiKeys.groq}
-						placeholder="gsk_..."
-						class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-					/>
-				</div>
-				
-				<div class="bg-yellow-900 border border-yellow-600 rounded-md p-3 mb-4">
-					<p class="text-sm text-yellow-200">
-						⚠️ <strong>Security Notice:</strong> API keys are not saved for security reasons. You'll need to re-enter them each session until secure storage is implemented.
-					</p>
-				</div>
-				
-				<div class="flex justify-end space-x-3">
-					<button
-						type="button"
-						on:click={closeApiModal}
-						class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
-					>
-						Cancel
-					</button>
-					<button
-						type="submit"
-						class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-					>
-						Apply
-					</button>
-				</div>
-			</form>
-		</div>
-	</div>
-{/if}
+<!-- API Key Configuration Modal - MOVED TO COUNCIL COMPONENT -->
