@@ -22,9 +22,12 @@
 			return;
 		}
 
+		// Normalize action type - treat 'action' as 'task'
+		const normalizedAction = action.toLowerCase() === 'action' ? 'task' : action;
+
 		// Create the URL that the QR code should point to
 		// Using the new URL structure with holonID, deckId, and cardId
-		const qrUrl = `https://dashboard.holons.io/qr?action=${encodeURIComponent(action)}&title=${encodeURIComponent(title)}&desc=${encodeURIComponent(desc)}&holonID=${encodeURIComponent(holonID)}&deckId=${encodeURIComponent(deckId)}&cardId=${encodeURIComponent(cardId)}`;
+		const qrUrl = `https://dashboard.holons.io/qr?action=${encodeURIComponent(normalizedAction)}&title=${encodeURIComponent(title)}&desc=${encodeURIComponent(desc)}&holonID=${encodeURIComponent(holonID)}&deckId=${encodeURIComponent(deckId)}&cardId=${encodeURIComponent(cardId)}`;
 		
 		// Generate SVG QR code using a reliable service
 		// SVG format provides better quality and scalability
@@ -56,7 +59,7 @@
 <div class="role-card">
 	<!-- Title Section -->
 	<div class="card-title">
-		<span class="title-text">{action.toUpperCase()}</span>
+		<span class="title-text">{(action.toLowerCase() === 'action' ? 'TASK' : action.toUpperCase())}</span>
 	</div>
 	
 	<!-- Icon/QR Code Section -->
@@ -86,7 +89,7 @@
 		
 		<!-- Action Info -->
 		<div class="action-info">
-			<p><strong>Action:</strong> {action}</p>
+			<p><strong>Action:</strong> {action.toLowerCase() === 'action' ? 'task' : action}</p>
 			<p><strong>Holon ID:</strong> {holonID}</p>
 			{#if deckId}
 				<p><strong>Deck ID:</strong> {deckId}</p>

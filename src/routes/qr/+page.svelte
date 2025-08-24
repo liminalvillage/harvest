@@ -214,7 +214,7 @@
 					<p class="text-gray-400 mb-6 text-center">
 						Login with Telegram to automatically perform your action:
 						<span class="block mt-2 text-blue-300 font-medium">
-							{#if action === 'task'}
+							{#if action === 'task' || action === 'action'}
 								Create and assign task "{title}"
 							{:else if action === 'event'}
 								Schedule event "{title}" for 12 hours from now
@@ -249,7 +249,7 @@
 								Creating role and assigning it to you...
 							{:else if action === 'event'}
 								Creating and scheduling event for 12 hours from now...
-							{:else if action === 'task'}
+							{:else if action === 'task' || action === 'action'}
 								Creating task and adding you as participant...
 							{:else if action === 'badge'}
 								Creating and awarding badge to you...

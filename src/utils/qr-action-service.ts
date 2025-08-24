@@ -42,12 +42,14 @@ export class QRActionService {
 		user: TelegramUser
 	): Promise<QRActionResult> {
 		try {
-			switch (params.action.toLowerCase()) {
+			const normalizedAction = params.action.toLowerCase();
+			switch (normalizedAction) {
 				case 'role':
 					return await this.assignRole(params, user);
 				case 'event':
 					return await this.joinEvent(params, user);
 				case 'task':
+				case 'action': // Treat 'action' as an alias for 'task'
 					return await this.assignTask(params, user);
 				case 'badge':
 					return await this.awardBadge(params, user);
@@ -645,8 +647,8 @@ export class QRActionService {
 		if (!params.title) errors.push('Title is required');
 		if (!params.holonID) errors.push('Holon ID is required');
 
-		// Validate action types
-		const validActions = ['role', 'event', 'task', 'badge', 'invite'];
+		// Validate action types (including 'action' as alias for 'task')
+		const validActions = ['role', 'event', 'task', 'action', 'badge', 'invite'];
 		if (params.action && !validActions.includes(params.action.toLowerCase())) {
 			errors.push(`Invalid action type. Must be one of: ${validActions.join(', ')}`);
 		}

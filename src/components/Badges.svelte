@@ -437,14 +437,45 @@
                                 {badge.description || 'No description available'}
                             </p>
 
-                            <!-- Badge Stats -->
-                            <div class="text-center">
-                                <div class="text-2xl font-bold text-indigo-300 mb-1">
-                                    {badge.awarded_to?.length || 0}
+                            <!-- Badge Recipients -->
+                            <div class="space-y-3">
+                                <div class="text-center">
+                                    <div class="text-lg font-bold text-indigo-300 mb-2">
+                                        {badge.awarded_to?.length || 0} {badge.awarded_to?.length === 1 ? 'recipient' : 'recipients'}
+                                    </div>
                                 </div>
-                                <div class="text-xs text-white/50">
-                                    {badge.awarded_to?.length === 1 ? 'recipient' : 'recipients'}
-                                </div>
+                                
+                                {#if badge.awarded_to && badge.awarded_to.length > 0}
+                                    <div class="space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
+                                        {#each badge.awarded_to.slice(0, 4) as recipient}
+                                            <div class="flex items-center space-x-2 bg-white/5 rounded-lg p-2">
+                                                <div class="w-6 h-6 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                                                    {(recipient.first_name?.[0] || recipient.username?.[0] || '?').toUpperCase()}
+                                                </div>
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="text-xs text-white font-medium truncate">
+                                                        {recipient.first_name ? `${recipient.first_name} ${recipient.last_name || ''}`.trim() : recipient.username}
+                                                    </div>
+                                                    <div class="text-xs text-white/50">
+                                                        {formatDate(recipient.awarded_at)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {/each}
+                                        {#if badge.awarded_to.length > 4}
+                                            <div class="text-center">
+                                                <div class="text-xs text-white/60">
+                                                    +{badge.awarded_to.length - 4} more
+                                                </div>
+                                            </div>
+                                        {/if}
+                                    </div>
+                                {:else}
+                                    <div class="text-center py-2">
+                                        <div class="text-2xl mb-1">🎯</div>
+                                        <p class="text-white/60 text-xs">No recipients yet</p>
+                                    </div>
+                                {/if}
                             </div>
 
                             <!-- Hover Effect -->
