@@ -350,7 +350,7 @@ export class QRActionService {
 			return {
 				success: true,
 				message: `Successfully created and scheduled event: ${params.title} for ${formattedTime}`,
-				redirectUrl: `/${params.holonID}/tasks`
+				redirectUrl: `/${params.holonID}/events`
 			};
 		} catch (error) {
 			console.error(`[QRActionService] Error creating event:`, error);
