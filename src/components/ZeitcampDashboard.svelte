@@ -6,6 +6,9 @@ import HoloSphere from "holosphere";
 import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
 import { goto } from "$app/navigation";
 import { fetchHolonName } from "../utils/holonNames";
+import RoleModal from "./RoleModal.svelte";
+import TaskModal from "./TaskModal.svelte";
+import ItemModal from "./ItemModal.svelte";
 
     // Props
     export let isVisible = false;
@@ -82,6 +85,19 @@ import { fetchHolonName } from "../utils/holonNames";
         recipients?: Array<{id: string}>;
     }> = [];
     let isLoadingBadges = false;
+
+    // Pagination state
+    let rolesToShow = 8;
+    let eventsToShow = 8;
+    let tasksToShow = 8;
+    let badgesToShow = 8;
+
+    // Modal states
+    let showRoleModal = false;
+    let showTaskModal = false;
+    let showEventModal = false;
+    let showBadgeModal = false;
+    let selectedItem: any = null;
 
     // Time formatting
     function formatTime(date: Date) {
@@ -223,23 +239,7 @@ import { fetchHolonName } from "../utils/holonNames";
                 };
             }).sort((a, b) => a.sortTime - b.sortTime);
             
-            // Debug logging
-            console.log('ZeitcampDashboard Events Debug:', {
-                todayStr,
-                totalEvents: events.length,
-                eventsWithWhen: events.filter(e => e.when).length,
-                todayEvents: todaysEvents.length,
-                sampleEvents: events.slice(0, 3).map(e => ({
-                    title: e.title,
-                    when: e.when,
-                    status: e.status
-                })),
-                filteredEvents: todaysEvents.map(e => ({
-                    title: e.title,
-                    time: e.time,
-                    date: e.date
-                }))
-            });
+
             
         } catch (error) {
             console.error("ZeitcampDashboard: Error loading events:", error);
@@ -336,11 +336,34 @@ import { fetchHolonName } from "../utils/holonNames";
         }
     }
 
-    // Navigate to specific role (if needed)
+    // Handle item clicks to show modals
     function handleRoleClick(role: any) {
-        // For now, just navigate to the main roles page
-        // Could be enhanced to show role details or edit modal
-        navigateToRoles();
+        selectedItem = role;
+        showRoleModal = true;
+    }
+
+    function handleTaskClick(task: any) {
+        selectedItem = task;
+        showTaskModal = true;
+    }
+
+    function handleEventClick(event: any) {
+        selectedItem = event;
+        showEventModal = true;
+    }
+
+    function handleBadgeClick(badge: any) {
+        selectedItem = badge;
+        showBadgeModal = true;
+    }
+
+    // Close all modals
+    function closeAllModals() {
+        showRoleModal = false;
+        showTaskModal = false;
+        showEventModal = false;
+        showBadgeModal = false;
+        selectedItem = null;
     }
 
     // Get user display name
@@ -554,8 +577,15 @@ import { fetchHolonName } from "../utils/holonNames";
                                 </div>
                             {:else if roles.length > 0}
                                 <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
-                                    {#each roles.slice(0, 8) as role (role.id)}
-                                        <div class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+                                    {#each roles.slice(0, rolesToShow) as role (role.id)}
+                                        <div 
+                                            class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
+                                                                                         on:click={() => handleRoleClick(role)}
+                                            on:keydown={(e) => e.key === 'Enter' && handleRoleClick(role)}
+                                            role="button"
+                                            tabindex="0"
+                                            aria-label="View role details for {role.title}"
+                                        >
                                             <div class="flex-1 min-w-0">
                                                 <h4 class="font-medium text-white text-sm truncate">
                                                     {role.title}
@@ -601,7 +631,16 @@ import { fetchHolonName } from "../utils/holonNames";
                                     {/each}
                                     {#if roles.length > 8}
                                         <div class="text-center py-2">
-                                            <span class="text-white/40 text-xs">+{roles.length - 8} more roles</span>
+                                            {#if rolesToShow < roles.length}
+                                                <button 
+                                                    class="text-indigo-400 hover:text-indigo-300 text-xs font-medium hover:underline transition-colors"
+                                                    on:click={() => rolesToShow = Math.min(rolesToShow + 8, roles.length)}
+                                                >
+                                                    Load More (+{Math.min(8, roles.length - rolesToShow)})
+                                                </button>
+                                            {:else}
+                                                <span class="text-white/40 text-xs">All {roles.length} roles shown</span>
+                                            {/if}
                                         </div>
                                     {/if}
                                 </div>
@@ -641,8 +680,15 @@ import { fetchHolonName } from "../utils/holonNames";
                                 </div>
                             {:else if todaysEvents.length > 0}
                                 <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
-                                    {#each todaysEvents as event}
-                                        <div class="flex items-center p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors">
+                                    {#each todaysEvents.slice(0, eventsToShow) as event}
+                                        <div 
+                                            class="flex items-center p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
+                                            on:click={() => handleEventClick(event)}
+                                            on:keydown={(e) => e.key === 'Enter' && handleEventClick(event)}
+                                            role="button"
+                                            tabindex="0"
+                                            aria-label="View event details for {event.title}"
+                                        >
                                             <!-- Time -->
                                             <div class="flex-shrink-0 w-16 text-center mr-3">
                                                 <div class="text-xs font-medium text-green-400">
@@ -713,6 +759,19 @@ import { fetchHolonName } from "../utils/holonNames";
                                         <div class="text-center py-4">
                                             <div class="text-white/40 text-sm">No scheduled items for today</div>
                                         </div>
+                                    {:else if todaysEvents.length > 8}
+                                        <div class="text-center py-2">
+                                            {#if eventsToShow < todaysEvents.length}
+                                                <button 
+                                                    class="text-green-400 hover:text-green-300 text-xs font-medium hover:underline transition-colors"
+                                                    on:click={() => eventsToShow = Math.min(eventsToShow + 8, todaysEvents.length)}
+                                                >
+                                                    Load More (+{Math.min(8, todaysEvents.length - eventsToShow)})
+                                                </button>
+                                            {:else}
+                                                <span class="text-white/40 text-xs">All {todaysEvents.length} events shown</span>
+                                            {/if}
+                                        </div>
                                     {/if}
                                 </div>
                             {:else}
@@ -751,8 +810,15 @@ import { fetchHolonName } from "../utils/holonNames";
                                 </div>
                             {:else if topTasks.length > 0}
                                 <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
-                                    {#each topTasks.slice(0, 8) as task}
-                                        <div class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+                                    {#each topTasks.slice(0, tasksToShow) as task}
+                                        <div 
+                                            class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
+                                            on:click={() => handleTaskClick(task)}
+                                            on:keydown={(e) => e.key === 'Enter' && handleTaskClick(task)}
+                                            role="button"
+                                            tabindex="0"
+                                            aria-label="View task details for {task.title}"
+                                        >
                                             <div class="flex-1 min-w-0">
                                                 <h4 class="font-medium text-white text-sm truncate">
                                                     {task.title}
@@ -801,7 +867,16 @@ import { fetchHolonName } from "../utils/holonNames";
                                     {/each}
                                     {#if topTasks.length > 8}
                                         <div class="text-center py-2">
-                                            <span class="text-white/40 text-xs">+{topTasks.length - 8} more tasks</span>
+                                            {#if tasksToShow < topTasks.length}
+                                                <button 
+                                                    class="text-amber-400 hover:text-amber-300 text-xs font-medium hover:underline transition-colors"
+                                                    on:click={() => tasksToShow = Math.min(tasksToShow + 8, topTasks.length)}
+                                                >
+                                                    Load More (+{Math.min(8, topTasks.length - tasksToShow)})
+                                                </button>
+                                            {:else}
+                                                <span class="text-white/40 text-xs">All {topTasks.length} tasks shown</span>
+                                            {/if}
                                         </div>
                                     {/if}
                                 </div>
@@ -841,8 +916,15 @@ import { fetchHolonName } from "../utils/holonNames";
                                 </div>
                             {:else if badges.length > 0}
                                 <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
-                                    {#each badges.slice(0, 8) as badge}
-                                        <div class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10">
+                                    {#each badges.slice(0, badgesToShow) as badge}
+                                        <div 
+                                            class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
+                                            on:click={() => handleBadgeClick(badge)}
+                                            on:keydown={(e) => e.key === 'Enter' && handleBadgeClick(badge)}
+                                            role="button"
+                                            tabindex="0"
+                                            aria-label="View badge details for {badge.title}"
+                                        >
                                             <div class="flex-1 min-w-0">
                                                 <h4 class="font-medium text-white text-sm truncate">
                                                     {badge.title}
@@ -891,7 +973,16 @@ import { fetchHolonName } from "../utils/holonNames";
                                     {/each}
                                     {#if badges.length > 8}
                                         <div class="text-center py-2">
-                                            <span class="text-white/40 text-xs">+{badges.length - 8} more badges</span>
+                                            {#if badgesToShow < badges.length}
+                                                <button 
+                                                    class="text-yellow-400 hover:text-yellow-300 text-xs font-medium hover:underline transition-colors"
+                                                    on:click={() => badgesToShow = Math.min(badgesToShow + 8, badges.length)}
+                                                >
+                                                    Load More (+{Math.min(8, badges.length - badgesToShow)})
+                                                </button>
+                                            {:else}
+                                                <span class="text-white/40 text-xs">All {badges.length} badges shown</span>
+                                            {/if}
                                         </div>
                                     {/if}
                                 </div>
@@ -910,9 +1001,45 @@ import { fetchHolonName } from "../utils/holonNames";
                         Press <kbd class="mx-2 px-2 py-1 bg-white/10 rounded text-xs border border-white/20">Esc</kbd> to close
                     </p>
                 </div>
+
+                
             </div>
         </div>
     </div>
+
+    <!-- Role Modal -->
+    {#if showRoleModal && selectedItem && holonID}
+        <RoleModal 
+            role={selectedItem}
+            roleId={selectedItem.id}
+            userStore={users}
+            holosphere={holosphere}
+            holonId={holonID}
+            on:close={() => closeAllModals()}
+            on:deleted={() => closeAllModals()}
+        />
+    {/if}
+
+    <!-- Task Modal -->
+    {#if showTaskModal && selectedItem && holonID}
+        <TaskModal 
+            quest={selectedItem}
+            questId={selectedItem.id}
+            holonId={holonID}
+            on:close={() => closeAllModals()}
+        />
+    {/if}
+
+    <!-- Event Modal (using ItemModal) -->
+    {#if showEventModal && selectedItem && holonID}
+        <ItemModal 
+            quest={selectedItem}
+            questId={selectedItem.id}
+            holonId={holonID}
+            on:close={() => closeAllModals()}
+        />
+    {/if}
+
 {/if}
 
 <style>
