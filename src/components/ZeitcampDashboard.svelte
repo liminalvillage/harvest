@@ -26,6 +26,9 @@ import ItemModal from "./ItemModal.svelte";
     let currentTime = new Date();
     let timeInterval: ReturnType<typeof setInterval>;
     
+    // Track current date to detect midnight transitions
+    let currentDate = new Date().toDateString();
+    
     // Holon data state
     $: holonID = $ID;
     
@@ -93,6 +96,21 @@ import ItemModal from "./ItemModal.svelte";
     let tasksToShow = 8;
     let badgesToShow = 8;
 
+    // Subscription cleanup functions
+    let rolesUnsubscribe: (() => void) | null = null;
+    let usersUnsubscribe: (() => void) | null = null;
+    let eventsUnsubscribe: (() => void) | null = null;
+    let tasksUnsubscribe: (() => void) | null = null;
+    let badgesUnsubscribe: (() => void) | null = null;
+    let holonNameUnsubscribe: (() => void) | null = null;
+
+    // Debounce timers for batch updates
+    let rolesUpdateTimeout: ReturnType<typeof setTimeout> | null = null;
+    let usersUpdateTimeout: ReturnType<typeof setTimeout> | null = null;
+    let eventsUpdateTimeout: ReturnType<typeof setTimeout> | null = null;
+    let tasksUpdateTimeout: ReturnType<typeof setTimeout> | null = null;
+    let badgesUpdateTimeout: ReturnType<typeof setTimeout> | null = null;
+
     // Modal states
     let showRoleModal = false;
     let showTaskModal = false;
@@ -142,165 +160,326 @@ import ItemModal from "./ItemModal.svelte";
         });
     }
 
-    // Load roles data
-    async function loadRoles() {
+    // Cleanup existing subscriptions
+    function cleanupSubscriptions() {
+        if (rolesUnsubscribe) {
+            rolesUnsubscribe();
+            rolesUnsubscribe = null;
+        }
+        if (usersUnsubscribe) {
+            usersUnsubscribe();
+            usersUnsubscribe = null;
+        }
+        if (eventsUnsubscribe) {
+            eventsUnsubscribe();
+            eventsUnsubscribe = null;
+        }
+        if (tasksUnsubscribe) {
+            tasksUnsubscribe();
+            tasksUnsubscribe = null;
+        }
+        if (badgesUnsubscribe) {
+            badgesUnsubscribe();
+            badgesUnsubscribe = null;
+        }
+        if (holonNameUnsubscribe) {
+            holonNameUnsubscribe();
+            holonNameUnsubscribe = null;
+        }
+        
+        // Clear timeouts
+        [rolesUpdateTimeout, usersUpdateTimeout, eventsUpdateTimeout, 
+         tasksUpdateTimeout, badgesUpdateTimeout].forEach(timeout => {
+            if (timeout) clearTimeout(timeout);
+        });
+    }
+
+    // Debounced update functions
+    function debounceRolesUpdate(updateFn: () => void) {
+        if (rolesUpdateTimeout) clearTimeout(rolesUpdateTimeout);
+        rolesUpdateTimeout = setTimeout(updateFn, 50);
+    }
+
+    function debounceUsersUpdate(updateFn: () => void) {
+        if (usersUpdateTimeout) clearTimeout(usersUpdateTimeout);
+        usersUpdateTimeout = setTimeout(updateFn, 50);
+    }
+
+    function debounceEventsUpdate(updateFn: () => void) {
+        if (eventsUpdateTimeout) clearTimeout(eventsUpdateTimeout);
+        eventsUpdateTimeout = setTimeout(updateFn, 50);
+    }
+
+    function debounceTasksUpdate(updateFn: () => void) {
+        if (tasksUpdateTimeout) clearTimeout(tasksUpdateTimeout);
+        tasksUpdateTimeout = setTimeout(updateFn, 50);
+    }
+
+    function debounceBadgesUpdate(updateFn: () => void) {
+        if (badgesUpdateTimeout) clearTimeout(badgesUpdateTimeout);
+        badgesUpdateTimeout = setTimeout(updateFn, 50);
+    }
+
+    // Subscribe to roles data with real-time updates
+    async function subscribeToRoles() {
         if (!holosphere || !holonID) return;
+        
+        // Cleanup existing subscription
+        if (rolesUnsubscribe) {
+            rolesUnsubscribe();
+            rolesUnsubscribe = null;
+        }
         
         isLoadingRoles = true;
         try {
+            // Load initial data
             const rolesData = await holosphere.getAll(holonID, "roles");
-            let rolesArray: any[] = [];
+            let rolesStore: Record<string, any> = {};
             
             if (Array.isArray(rolesData)) {
-                rolesArray = rolesData;
+                rolesData.forEach((role, index) => {
+                    const key = role.id || role.title || index.toString();
+                    rolesStore[key] = role;
+                });
             } else if (rolesData && typeof rolesData === 'object') {
-                rolesArray = Object.values(rolesData);
+                rolesStore = rolesData;
             }
             
-            // Process and normalize roles
-            roles = rolesArray.map((role: any) => ({
-                id: role.id || role.title || Math.random().toString(),
-                title: role.title || 'Untitled Role',
-                description: role.description,
-                participants: role.participants || [],
-                created_at: role.created_at,
-                status: role.status || 'active'
-            }));
+            // Process and normalize roles from store
+            const updateRolesFromStore = () => {
+                roles = Object.values(rolesStore).map((role: any) => ({
+                    id: role.id || role.title || Math.random().toString(),
+                    title: role.title || 'Untitled Role',
+                    description: role.description,
+                    participants: role.participants || [],
+                    created_at: role.created_at,
+                    status: role.status || 'active'
+                }));
+            };
+            
+            updateRolesFromStore();
+            
+            // Set up real-time subscription
+            const subscription = await holosphere.subscribe(holonID, "roles", (newRole: any, key?: string) => {
+                debounceRolesUpdate(() => {
+                    if (newRole && key) {
+                        rolesStore[key] = newRole;
+                    } else if (key) {
+                        delete rolesStore[key];
+                    }
+                    updateRolesFromStore();
+                });
+            });
+            
+            if (typeof subscription === 'function') {
+                rolesUnsubscribe = subscription;
+            } else if (subscription && typeof subscription.unsubscribe === 'function') {
+                rolesUnsubscribe = subscription.unsubscribe;
+            }
             
         } catch (error) {
-            console.error("ZeitcampDashboard: Error loading roles:", error);
+            console.error("ZeitcampDashboard: Error subscribing to roles:", error);
         } finally {
             isLoadingRoles = false;
         }
     }
 
-    // Load users data
-    async function loadUsers() {
+    // Subscribe to users data with real-time updates
+    async function subscribeToUsers() {
         if (!holosphere || !holonID) return;
+        
+        // Cleanup existing subscription
+        if (usersUnsubscribe) {
+            usersUnsubscribe();
+            usersUnsubscribe = null;
+        }
         
         isLoadingUsers = true;
         try {
+            // Load initial data
             const usersData = await holosphere.getAll(holonID, "users");
+            let usersStore: Record<string, any> = {};
             
             if (Array.isArray(usersData)) {
                 // Convert array to object with user ID as key
-                users = usersData.reduce((acc: Record<string, any>, user: any) => {
+                usersData.forEach(user => {
                     if (user && user.id) {
-                        acc[user.id] = user;
+                        usersStore[user.id] = user;
                     }
-                    return acc;
-                }, {});
+                });
             } else if (usersData && typeof usersData === 'object') {
-                users = usersData;
+                usersStore = usersData;
+            }
+            
+            users = usersStore;
+            
+            // Set up real-time subscription
+            const subscription = await holosphere.subscribe(holonID, "users", (newUser: any, key?: string) => {
+                debounceUsersUpdate(() => {
+                    if (newUser && key) {
+                        // Use user.id as canonical key if available
+                        const canonicalKey = newUser.id || key;
+                        if (newUser.id && key !== newUser.id) {
+                            // Remove old key if different
+                            delete usersStore[key];
+                        }
+                        usersStore[canonicalKey] = newUser;
+                    } else if (key) {
+                        delete usersStore[key];
+                    }
+                    users = { ...usersStore };
+                });
+            });
+            
+            if (typeof subscription === 'function') {
+                usersUnsubscribe = subscription;
+            } else if (subscription && typeof subscription.unsubscribe === 'function') {
+                usersUnsubscribe = subscription.unsubscribe;
             }
             
         } catch (error) {
-            console.error("ZeitcampDashboard: Error loading users:", error);
+            console.error("ZeitcampDashboard: Error subscribing to users:", error);
         } finally {
             isLoadingUsers = false;
         }
     }
 
-  
-    // Load events data 
-    async function loadEvents() {
+    // Shared quest store for both events and tasks
+    let questsStore: Record<string, any> = {};
+
+    // Subscribe to quests data with real-time updates (handles both events and tasks)
+    async function subscribeToQuests() {
         if (!holosphere || !holonID) return;
+        
+        // Cleanup existing subscription
+        if (eventsUnsubscribe) {
+            eventsUnsubscribe();
+            eventsUnsubscribe = null;
+        }
         
         isLoadingEvents = true;
-        try {
-            const eventsData = await holosphere.getAll(holonID, "quests");
-            let events: any[] = [];
-            
-            if (Array.isArray(eventsData)) {
-                events = eventsData;
-            } else if (eventsData && typeof eventsData === 'object') {
-                events = Object.values(eventsData);
-            }
-            
-            // Filter for today's scheduled events (upcoming only)
-            const today = new Date();
-            const todayStr = today.toISOString().split('T')[0];
-            const nowMs = Date.now();
-            
-            todaysEvents = events.filter((event: any) => {
-                if (!event.when || event.status === 'completed' || event.status === 'cancelled') return false;
-                const whenDate = new Date(event.when);
-                const isToday = whenDate.toISOString().split('T')[0] === todayStr;
-                return isToday;
-            }).map((event: any) => {
-                const whenDate = new Date(event.when);
-                return {
-                    id: event.id || Math.random().toString(),
-                    title: event.title || event.name || 'Untitled Event',
-                    time: whenDate.toLocaleTimeString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                    }),
-                    date: whenDate.toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric'
-                    }),
-                    sortTime: whenDate.getTime(),
-                    type: 'event',
-                    icon: '📅',
-                    participants: event.participants || [],
-                    priority: event.priority,
-                    status: event.status
-                };
-            }).sort((a, b) => a.sortTime - b.sortTime);
-            
-
-            
-        } catch (error) {
-            console.error("ZeitcampDashboard: Error loading events:", error);
-        } finally {
-            isLoadingEvents = false;
-        }
-    }
-
-
-    // Load tasks data 
-    async function loadTasks() {
-        if (!holosphere || !holonID) return;
-        
         isLoadingTasks = true;
         try {
-            const tasksData = await holosphere.getAll(holonID, "quests");
-            let tasks: any[] = [];
+            // Load initial data
+            const questsData = await holosphere.getAll(holonID, "quests");
+            questsStore = {};
             
-            if (Array.isArray(tasksData)) {
-                tasks = tasksData;
-            } else if (tasksData && typeof tasksData === 'object') {
-                tasks = Object.values(tasksData);
+            if (Array.isArray(questsData)) {
+                questsData.forEach((quest, index) => {
+                    const key = quest.id || index.toString();
+                    questsStore[key] = quest;
+                });
+            } else if (questsData && typeof questsData === 'object') {
+                questsStore = questsData;
             }
             
-            // Filter active tasks
-            topTasks = tasks.filter((task: any) => 
-                task.status !== 'completed' && task.status !== 'cancelled'
-            ).map((task: any) => ({
-                id: task.id || Math.random().toString(),
-                title: task.title || task.name || 'Untitled Task',
-                priority: task.priority,
-                dueDate: task.dueDate,
-                status: task.status || 'pending',
-                participants: task.participants || []
-            }));
+            // Process events to filter for today's scheduled items
+            const updateEventsFromStore = () => {
+                const quests = Object.values(questsStore);
+                const today = new Date();
+                const todayStr = today.toISOString().split('T')[0];
+                
+                todaysEvents = quests.filter((quest: any) => {
+                    // Include any item that has a 'when' field (is scheduled), regardless of type
+                    if (!quest.when || quest.status === 'completed' || quest.status === 'cancelled') return false;
+                    const whenDate = new Date(quest.when);
+                    const isToday = whenDate.toISOString().split('T')[0] === todayStr;
+                    return isToday;
+                }).map((quest: any) => {
+                    const whenDate = new Date(quest.when);
+                    return {
+                        id: quest.id || Math.random().toString(),
+                        title: quest.title || quest.name || 'Untitled Event',
+                        time: whenDate.toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true
+                        }),
+                        date: whenDate.toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric'
+                        }),
+                        sortTime: whenDate.getTime(),
+                        type: quest.type || 'event',
+                        icon: quest.type === 'task' ? '✓' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' ? '🔄' : '📅',
+                        participants: quest.participants || [],
+                        priority: quest.priority,
+                        status: quest.status
+                    };
+                }).sort((a, b) => a.sortTime - b.sortTime);
+            };
+            
+            // Process tasks to filter active ones
+            const updateTasksFromStore = () => {
+                const quests = Object.values(questsStore);
+                
+                topTasks = quests.filter((quest: any) => 
+                    quest.status !== 'completed' && quest.status !== 'cancelled'
+                ).map((quest: any) => ({
+                    id: quest.id || Math.random().toString(),
+                    title: quest.title || quest.name || 'Untitled Task',
+                    priority: quest.priority,
+                    dueDate: quest.dueDate,
+                    status: quest.status || 'pending',
+                    participants: quest.participants || []
+                }));
+            };
+            
+            // Combined update function for both events and tasks
+            const updateFromStore = () => {
+                updateEventsFromStore();
+                updateTasksFromStore();
+            };
+            
+            updateFromStore();
+            
+            // Set up real-time subscription
+            const subscription = await holosphere.subscribe(holonID, "quests", (newQuest: any, key?: string) => {
+                // Debounce both events and tasks updates together
+                if (eventsUpdateTimeout) clearTimeout(eventsUpdateTimeout);
+                if (tasksUpdateTimeout) clearTimeout(tasksUpdateTimeout);
+                
+                eventsUpdateTimeout = setTimeout(() => {
+                    if (newQuest && key) {
+                        questsStore[key] = newQuest;
+                    } else if (key) {
+                        delete questsStore[key];
+                    }
+                    updateFromStore();
+                }, 50);
+            });
+            
+            if (typeof subscription === 'function') {
+                eventsUnsubscribe = subscription;
+            } else if (subscription && typeof subscription.unsubscribe === 'function') {
+                eventsUnsubscribe = subscription.unsubscribe;
+            }
             
         } catch (error) {
-            console.error("ZeitcampDashboard: Error loading tasks:", error);
+            console.error("ZeitcampDashboard: Error subscribing to quests:", error);
         } finally {
+            isLoadingEvents = false;
             isLoadingTasks = false;
         }
     }
 
-    // Load holon name
-    async function loadHolonName() {
+    // Subscribe to holon name with real-time updates
+    async function subscribeToHolonName() {
         if (!holosphere || !holonID) return;
+        
+        // Cleanup existing subscription
+        if (holonNameUnsubscribe) {
+            holonNameUnsubscribe();
+            holonNameUnsubscribe = null;
+        }
         
         isLoadingHolonName = true;
         try {
             holonName = await fetchHolonName(holosphere, holonID);
+            
+            // Note: Holon metadata subscriptions may not be available in all holosphere implementations
+            // This is kept for future compatibility
+            
         } catch (error) {
             console.error("ZeitcampDashboard: Error loading holon name:", error);
             holonName = `Holon ${holonID}`;
@@ -309,30 +488,63 @@ import ItemModal from "./ItemModal.svelte";
         }
     }
 
-    // Load badges data
-    async function loadBadges() {
+    // Subscribe to badges data with real-time updates
+    async function subscribeToBadges() {
         if (!holosphere || !holonID) return;
+        
+        // Cleanup existing subscription
+        if (badgesUnsubscribe) {
+            badgesUnsubscribe();
+            badgesUnsubscribe = null;
+        }
         
         isLoadingBadges = true;
         try {
+            // Load initial data
             const badgesData = await holosphere.getAll(holonID, "badges");
-            let badgesArray: any[] = [];
+            let badgesStore: Record<string, any> = {};
             
             if (Array.isArray(badgesData)) {
-                badgesArray = badgesData;
+                badgesData.forEach((badge, index) => {
+                    const key = badge.id || index.toString();
+                    badgesStore[key] = badge;
+                });
             } else if (badgesData && typeof badgesData === 'object') {
-                badgesArray = Object.values(badgesData);
+                badgesStore = badgesData;
             }
             
-            badges = badgesArray.map((badge: any) => ({
-                id: badge.id || Math.random().toString(),
-                title: badge.title || badge.name || 'Untitled Badge',
-                description: badge.description || badge.details,
-                recipients: badge.recipients || badge.owners || []
-            }));
+            // Process badges from store
+            const updateBadgesFromStore = () => {
+                badges = Object.values(badgesStore).map((badge: any) => ({
+                    id: badge.id || Math.random().toString(),
+                    title: badge.title || badge.name || 'Untitled Badge',
+                    description: badge.description || badge.details,
+                    recipients: badge.recipients || badge.owners || []
+                }));
+            };
+            
+            updateBadgesFromStore();
+            
+            // Set up real-time subscription
+            const subscription = await holosphere.subscribe(holonID, "badges", (newBadge: any, key?: string) => {
+                debounceBadgesUpdate(() => {
+                    if (newBadge && key) {
+                        badgesStore[key] = newBadge;
+                    } else if (key) {
+                        delete badgesStore[key];
+                    }
+                    updateBadgesFromStore();
+                });
+            });
+            
+            if (typeof subscription === 'function') {
+                badgesUnsubscribe = subscription;
+            } else if (subscription && typeof subscription.unsubscribe === 'function') {
+                badgesUnsubscribe = subscription.unsubscribe;
+            }
             
         } catch (error) {
-            console.error("ZeitcampDashboard: Error loading badges:", error);
+            console.error("ZeitcampDashboard: Error subscribing to badges:", error);
         } finally {
             isLoadingBadges = false;
         }
@@ -495,32 +707,77 @@ import ItemModal from "./ItemModal.svelte";
         resetInactivityTimer();
     }
 
-    // Watch for holon ID changes
+    // Watch for holon ID changes and set up real-time subscriptions
     $: if (holonID && isVisible) {
-        loadHolonName();
-        loadRoles();
-        loadUsers();
-        loadEvents();
-        loadTasks();
-        loadBadges();
+        // Cleanup previous subscriptions for this holon
+        cleanupSubscriptions();
+        
+        // Set up new subscriptions
+        subscribeToHolonName();
+        subscribeToRoles();
+        subscribeToUsers();
+        subscribeToQuests(); // Handles both events and tasks
+        subscribeToBadges();
     }
 
     onMount(() => {
-        // Update time every second
+        // Update time every second and check for date changes
         timeInterval = setInterval(() => {
-            currentTime = new Date();
+            const newTime = new Date();
+            const newDate = newTime.toDateString();
+            
+            // Check if date changed (midnight transition)
+            if (newDate !== currentDate) {
+                currentDate = newDate;
+                // Refresh events for the new day if we have quest data
+                if (questsStore && Object.keys(questsStore).length > 0) {
+                    const updateEventsFromStore = () => {
+                        const quests = Object.values(questsStore);
+                        const today = new Date();
+                        const todayStr = today.toISOString().split('T')[0];
+                        
+                        todaysEvents = quests.filter((quest: any) => {
+                            if (!quest.when || quest.status === 'completed' || quest.status === 'cancelled') return false;
+                            const whenDate = new Date(quest.when);
+                            const isToday = whenDate.toISOString().split('T')[0] === todayStr;
+                            return isToday;
+                        }).map((quest: any) => {
+                            const whenDate = new Date(quest.when);
+                            return {
+                                id: quest.id || Math.random().toString(),
+                                title: quest.title || quest.name || 'Untitled Event',
+                                time: whenDate.toLocaleTimeString('en-US', {
+                                    hour: 'numeric',
+                                    minute: '2-digit',
+                                    hour12: true
+                                }),
+                                date: whenDate.toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric'
+                                }),
+                                sortTime: whenDate.getTime(),
+                                type: quest.type || 'event',
+                                icon: quest.type === 'task' ? '✓' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' ? '🔄' : '📅',
+                                participants: quest.participants || [],
+                                priority: quest.priority,
+                                status: quest.status
+                            };
+                        }).sort((a, b) => a.sortTime - b.sortTime);
+                    };
+                    updateEventsFromStore();
+                }
+            }
+            
+            currentTime = newTime;
         }, 1000);
 
-        // Load initial data if visible
-        if (isVisible) {
-            if (holonID) {
-                loadHolonName();
-                loadRoles();
-                loadUsers();
-                loadEvents();
-                loadTasks();
-                loadBadges();
-            }
+        // Set up initial subscriptions if visible and holon is available
+        if (isVisible && holonID) {
+            subscribeToHolonName();
+            subscribeToRoles();
+            subscribeToUsers();
+            subscribeToQuests(); // Handles both events and tasks
+            subscribeToBadges();
         }
 
         // Start particle animation
@@ -543,6 +800,7 @@ import ItemModal from "./ItemModal.svelte";
     });
 
     onDestroy(() => {
+        // Clean up timers
         if (timeInterval) {
             clearInterval(timeInterval);
         }
@@ -552,6 +810,9 @@ import ItemModal from "./ItemModal.svelte";
         if (animationFrame) {
             cancelAnimationFrame(animationFrame);
         }
+        
+        // Clean up all subscriptions
+        cleanupSubscriptions();
     });
 
     // Close overlay on escape key
@@ -582,6 +843,11 @@ import ItemModal from "./ItemModal.svelte";
         aria-labelledby="zeitcamp-title"
         tabindex="0"
     >
+        <!-- Hexagon Pattern Background -->
+        <div class="absolute inset-0 opacity-30 pointer-events-none overflow-hidden">
+            <div class="hexagon-pattern {celebrationMode ? 'celebration' : ''}"></div>
+        </div>
+
         <!-- Animated Background Particles -->
         {#each particles as particle (particle.id)}
             <div 
@@ -678,8 +944,12 @@ import ItemModal from "./ItemModal.svelte";
                     <!-- Four Main Sections Grid -->
                     <div class="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-full">
                         <!-- Ruoli (Roles) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-indigo-400/50 hover:shadow-indigo-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group"
+                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-indigo-400/50 hover:shadow-indigo-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
                             in:fly="{{ x: -100, duration: 600, delay: 100, easing: elasticOut }}">
+                            <!-- Section Hexagon Background -->
+                            <div class="absolute inset-0 opacity-10 pointer-events-none">
+                                <div class="section-hexagon-pattern indigo-theme"></div>
+                            </div>
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -778,14 +1048,18 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Eventi (Events) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-green-400/50 hover:shadow-green-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group"
+                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-green-400/50 hover:shadow-green-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
                             in:fly="{{ x: 100, duration: 600, delay: 200, easing: elasticOut }}">
+                            <!-- Section Hexagon Background -->
+                            <div class="absolute inset-0 opacity-10 pointer-events-none">
+                                <div class="section-hexagon-pattern green-theme"></div>
+                            </div>
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
-                                    Eventi
+                                    Eventi & Programmati
                                 </h3>
                                 <button 
                                     class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-xl"
@@ -909,8 +1183,12 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Compiti (Tasks) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-amber-400/50 hover:shadow-amber-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group"
+                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-amber-400/50 hover:shadow-amber-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
                             in:fly="{{ x: -100, duration: 600, delay: 300, easing: elasticOut }}">
+                            <!-- Section Hexagon Background -->
+                            <div class="absolute inset-0 opacity-10 pointer-events-none">
+                                <div class="section-hexagon-pattern amber-theme"></div>
+                            </div>
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1016,8 +1294,12 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Medaglie (Badges) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-yellow-400/50 hover:shadow-yellow-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group"
+                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-yellow-400/50 hover:shadow-yellow-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
                             in:fly="{{ x: 100, duration: 600, delay: 400, easing: elasticOut }}">
+                            <!-- Section Hexagon Background -->
+                            <div class="absolute inset-0 opacity-10 pointer-events-none">
+                                <div class="section-hexagon-pattern yellow-theme"></div>
+                            </div>
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1267,6 +1549,125 @@ import ItemModal from "./ItemModal.svelte";
         color: #fbbf24;
         font-weight: bold;
         text-shadow: 0 0 10px rgba(251, 191, 36, 0.8);
+    }
+
+    /* Hexagon Pattern Background */
+    .hexagon-pattern {
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background-image: 
+            linear-gradient(30deg, transparent 24%, rgba(59, 130, 246, 0.3) 25%, rgba(59, 130, 246, 0.3) 26%, transparent 27%, transparent 74%, rgba(147, 51, 234, 0.3) 75%, rgba(147, 51, 234, 0.3) 76%, transparent 77%),
+            linear-gradient(-30deg, transparent 24%, rgba(16, 185, 129, 0.3) 25%, rgba(16, 185, 129, 0.3) 26%, transparent 27%, transparent 74%, rgba(245, 158, 11, 0.3) 75%, rgba(245, 158, 11, 0.3) 76%, transparent 77%),
+            linear-gradient(90deg, transparent 24%, rgba(236, 72, 153, 0.2) 25%, rgba(236, 72, 153, 0.2) 26%, transparent 27%, transparent 74%, rgba(99, 102, 241, 0.2) 75%, rgba(99, 102, 241, 0.2) 76%, transparent 77%);
+        background-size: 40px 70px, 40px 70px, 40px 70px;
+        background-position: 0 0, 20px 35px, 0 0;
+        transform: rotate(10deg) scale(1.5);
+        animation: hexagonFloat 20s ease-in-out infinite;
+    }
+
+    @keyframes hexagonFloat {
+        0%, 100% {
+            transform: rotate(10deg) scale(1.5) translateY(0px);
+        }
+        50% {
+            transform: rotate(10deg) scale(1.5) translateY(-20px);
+        }
+    }
+
+    /* Enhanced hexagon pattern for celebration mode */
+    .hexagon-pattern.celebration {
+        background-image: 
+            radial-gradient(circle at 50% 50%, rgba(255, 215, 0, 0.3) 1px, transparent 1px),
+            linear-gradient(30deg, transparent 24%, rgba(255, 215, 0, 0.2) 25%, rgba(255, 215, 0, 0.2) 26%, transparent 27%, transparent 74%, rgba(255, 105, 180, 0.2) 75%, rgba(255, 105, 180, 0.2) 76%, transparent 77%),
+            linear-gradient(-30deg, transparent 24%, rgba(50, 205, 50, 0.2) 25%, rgba(50, 205, 50, 0.2) 26%, transparent 27%, transparent 74%, rgba(255, 69, 0, 0.2) 75%, rgba(255, 69, 0, 0.2) 76%, transparent 77%);
+        animation: hexagonCelebration 2s ease-in-out infinite;
+    }
+
+    @keyframes hexagonCelebration {
+        0%, 100% {
+            transform: rotate(10deg) scale(1.2) translateY(0px);
+            opacity: 0.1;
+        }
+        25% {
+            transform: rotate(15deg) scale(1.3) translateY(-10px);
+            opacity: 0.3;
+        }
+        50% {
+            transform: rotate(5deg) scale(1.1) translateY(-20px);
+            opacity: 0.2;
+        }
+        75% {
+            transform: rotate(12deg) scale(1.25) translateY(-5px);
+            opacity: 0.25;
+        }
+    }
+
+    /* Section-specific hexagon patterns */
+    .section-hexagon-pattern {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-size: 30px 52px, 30px 52px;
+        background-position: 0 0, 15px 26px;
+        transform: rotate(10deg) scale(1.1);
+        border-radius: 24px;
+    }
+
+    .section-hexagon-pattern.indigo-theme {
+        background-image: 
+            linear-gradient(30deg, transparent 24%, rgba(99, 102, 241, 0.2) 25%, rgba(99, 102, 241, 0.2) 26%, transparent 27%, transparent 74%, rgba(59, 130, 246, 0.2) 75%, rgba(59, 130, 246, 0.2) 76%, transparent 77%),
+            linear-gradient(-30deg, transparent 24%, rgba(147, 51, 234, 0.15) 25%, rgba(147, 51, 234, 0.15) 26%, transparent 27%, transparent 74%, rgba(79, 70, 229, 0.15) 75%, rgba(79, 70, 229, 0.15) 76%, transparent 77%);
+    }
+
+    .section-hexagon-pattern.green-theme {
+        background-image: 
+            linear-gradient(30deg, transparent 24%, rgba(16, 185, 129, 0.2) 25%, rgba(16, 185, 129, 0.2) 26%, transparent 27%, transparent 74%, rgba(34, 197, 94, 0.2) 75%, rgba(34, 197, 94, 0.2) 76%, transparent 77%),
+            linear-gradient(-30deg, transparent 24%, rgba(5, 150, 105, 0.15) 25%, rgba(5, 150, 105, 0.15) 26%, transparent 27%, transparent 74%, rgba(21, 128, 61, 0.15) 75%, rgba(21, 128, 61, 0.15) 76%, transparent 77%);
+    }
+
+    .section-hexagon-pattern.amber-theme {
+        background-image: 
+            linear-gradient(30deg, transparent 24%, rgba(245, 158, 11, 0.2) 25%, rgba(245, 158, 11, 0.2) 26%, transparent 27%, transparent 74%, rgba(251, 191, 36, 0.2) 75%, rgba(251, 191, 36, 0.2) 76%, transparent 77%),
+            linear-gradient(-30deg, transparent 24%, rgba(217, 119, 6, 0.15) 25%, rgba(217, 119, 6, 0.15) 26%, transparent 27%, transparent 74%, rgba(180, 83, 9, 0.15) 75%, rgba(180, 83, 9, 0.15) 76%, transparent 77%);
+    }
+
+    .section-hexagon-pattern.yellow-theme {
+        background-image: 
+            linear-gradient(30deg, transparent 24%, rgba(234, 179, 8, 0.2) 25%, rgba(234, 179, 8, 0.2) 26%, transparent 27%, transparent 74%, rgba(250, 204, 21, 0.2) 75%, rgba(250, 204, 21, 0.2) 76%, transparent 77%),
+            linear-gradient(-30deg, transparent 24%, rgba(202, 138, 4, 0.15) 25%, rgba(202, 138, 4, 0.15) 26%, transparent 27%, transparent 74%, rgba(161, 98, 7, 0.15) 75%, rgba(161, 98, 7, 0.15) 76%, transparent 77%);
+    }
+
+    /* Hover effects for section hexagons */
+    .group:hover .section-hexagon-pattern {
+        opacity: 0.2 !important;
+        transform: rotate(15deg) scale(1.15);
+        transition: all 0.5s ease-in-out;
+    }
+
+    /* Enhanced hexagon visibility during celebration */
+    .section-hexagon-pattern.celebration-enhanced {
+        opacity: 0.4 !important;
+        animation: sectionHexagonCelebration 1s ease-in-out;
+    }
+
+    @keyframes sectionHexagonCelebration {
+        0%, 100% {
+            transform: rotate(10deg) scale(1.1);
+        }
+        25% {
+            transform: rotate(20deg) scale(1.2);
+        }
+        50% {
+            transform: rotate(5deg) scale(1.3);
+        }
+        75% {
+            transform: rotate(15deg) scale(1.15);
+        }
     }
 
 </style>

@@ -196,14 +196,23 @@
 
 			// Apply type filtering based on filterType prop
 			if (filterType !== 'all') {
-				const type = quest.type || 'task';
-				if (type !== filterType) {
-					return false;
+				if (filterType === 'event') {
+					// For events filter, include both type='event' and any item with a 'when' field (scheduled items)
+					const type = quest.type || 'task';
+					const isScheduled = quest.when && quest.when.trim() !== '';
+					if (type !== 'event' && !isScheduled) {
+						return false;
+					}
+				} else {
+					const type = quest.type || 'task';
+					if (type !== filterType) {
+						return false;
+					}
 				}
 			} else {
-				// Show tasks, quests, and recurring items (default to 'task' if type is missing)
+				// Show all quest types when filterType is 'all' (default to 'task' if type is missing)
 				const type = quest.type || 'task'; 
-				if (type !== 'task' && type !== 'recurring' && type !== 'quest') {
+				if (type !== 'task' && type !== 'recurring' && type !== 'quest' && type !== 'event') {
 					return false;
 				}
 			}
@@ -1300,7 +1309,7 @@
 		<div class="flex flex-col sm:flex-row justify-between items-center sm:gap-0 gap-2">
 			<div class="text-center sm:text-left mb-2 sm:mb-0 flex-1 min-w-0">
 				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">
-					{filterType === 'event' ? 'Events' : filterType === 'task' ? 'Tasks' : 'Tasks & Quests'}
+					{filterType === 'event' ? 'Events & Scheduled Items' : filterType === 'task' ? 'Tasks' : 'Tasks & Quests'}
 				</h1>
 			</div>
 			<!-- Hide date on xs screens -->
@@ -1320,11 +1329,17 @@
 							{quests.filter(
 								([_, quest]) => {
 									// Apply type filtering
-									if (filterType !== 'all') {
+																	if (filterType !== 'all') {
+									if (filterType === 'event') {
+										const type = quest.type || 'task';
+										const isScheduled = quest.when && quest.when.trim() !== '';
+										if (type !== 'event' && !isScheduled) return false;
+									} else {
 										const type = quest.type || 'task';
 										if (type !== filterType) return false;
+									}
 									} else {
-										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
 											// Continue with other filters
 										} else {
 											return false;
@@ -1341,11 +1356,17 @@
 							{quests.filter(
 								([_, quest]) => {
 									// Apply type filtering
-									if (filterType !== 'all') {
+																	if (filterType !== 'all') {
+									if (filterType === 'event') {
+										const type = quest.type || 'task';
+										const isScheduled = quest.when && quest.when.trim() !== '';
+										if (type !== 'event' && !isScheduled) return false;
+									} else {
 										const type = quest.type || 'task';
 										if (type !== filterType) return false;
+									}
 									} else {
-										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
 											// Continue with other filters
 										} else {
 											return false;
@@ -1362,11 +1383,17 @@
 							{quests.filter(
 								([_, quest]) => {
 									// Apply type filtering
-									if (filterType !== 'all') {
+																	if (filterType !== 'all') {
+									if (filterType === 'event') {
+										const type = quest.type || 'task';
+										const isScheduled = quest.when && quest.when.trim() !== '';
+										if (type !== 'event' && !isScheduled) return false;
+									} else {
 										const type = quest.type || 'task';
 										if (type !== filterType) return false;
+									}
 									} else {
-										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
 											// Continue with other filters
 										} else {
 											return false;
@@ -1383,11 +1410,17 @@
 							{quests.filter(
 								([_, quest]) => {
 									// Apply type filtering
-									if (filterType !== 'all') {
+																	if (filterType !== 'all') {
+									if (filterType === 'event') {
+										const type = quest.type || 'task';
+										const isScheduled = quest.when && quest.when.trim() !== '';
+										if (type !== 'event' && !isScheduled) return false;
+									} else {
 										const type = quest.type || 'task';
 										if (type !== filterType) return false;
+									}
 									} else {
-										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
 											// Continue with other filters
 										} else {
 											return false;
@@ -1403,13 +1436,19 @@
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(([_, quest]) => {
 								if (filterType !== 'all') {
-									const type = quest.type || 'task';
-									return type === filterType;
+									if (filterType === 'event') {
+										const type = quest.type || 'task';
+										const isScheduled = quest.when && quest.when.trim() !== '';
+										return type === 'event' || isScheduled;
+									} else {
+										const type = quest.type || 'task';
+										return type === filterType;
+									}
 								}
 								return quest.type === "quest";
 							}).length}
 						</div>
-						<div class="text-sm text-gray-400">{filterType === 'event' ? 'Events' : filterType === 'task' ? 'Tasks' : 'Quests'}</div>
+						<div class="text-sm text-gray-400">{filterType === 'event' ? 'Scheduled' : filterType === 'task' ? 'Tasks' : 'Quests'}</div>
 					</div>
 				</div>
 
@@ -1630,7 +1669,7 @@
 									<div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
 										<!-- Task Icon -->
 										<div class="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-black/20 flex items-center justify-center text-xs sm:text-sm">
-											{quest.status === 'completed' ? '✅' : quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : '✓'}
+											{quest.status === 'completed' ? '✅' : quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : (filterType === 'event' && quest.when) ? '📅' : '✓'}
 										</div>
 										
 										<!-- Main Content -->
