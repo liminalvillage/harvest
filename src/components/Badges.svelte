@@ -4,17 +4,15 @@
     import { ID } from "../dashboard/store";
     import HoloSphere from "holosphere";
 
-    // Props
-    export let isVisible = false;
-    
     // Initialize holosphere
     const holosphere = getContext("holosphere") as HoloSphere;
     
     // Holon data state
     $: holonID = $ID;
     
-    // Badge data state
-    let badges: Array<{
+    // Data structures
+    interface Badge {
+        id: string;
         title: string;
         description: string;
         icon: string;
@@ -29,41 +27,147 @@
             awarded_at: string;
             awarded_via: string;
         }>;
-    }> = [];
-    
-    let isLoading = false;
-    let selectedBadge: typeof badges[0] | null = null;
-    let showBadgeModal = false;
+    }
 
-    // Load badges data
-    async function loadBadges() {
+    interface User {
+        id: string;
+        username: string;
+        first_name: string;
+        last_name?: string;
+        joined_at?: string;
+        last_active?: string;
+    }
+
+    interface UserWithBadges {
+        user: User;
+        badges: Array<{
+            badge: Badge;
+            awarded_at: string;
+            awarded_via: string;
+        }>;
+    }
+    
+    // State
+    let users: Record<string, User> = {};
+    let badges: Record<string, Badge> = {};
+    let badgesArray: Badge[] = [];
+    let usersWithBadges: UserWithBadges[] = [];
+    let isLoading = false;
+    let selectedBadge: Badge | null = null;
+    let showBadgeModal = false;
+    
+    // View toggle state
+    let currentView: 'badges' | 'users' = 'users';
+
+    // Load users and badges data
+    async function loadData() {
         if (!holosphere || !holonID) return;
         
         isLoading = true;
         try {
+            // Load users
+            const usersData = await holosphere.getAll(holonID, "users");
+            if (Array.isArray(usersData)) {
+                users = usersData.reduce((acc, user) => {
+                    if (user && user.id) {
+                        acc[user.id] = user;
+                    }
+                    return acc;
+                }, {});
+            } else if (usersData && typeof usersData === 'object') {
+                users = usersData;
+            }
+
+            // Load badges
             const badgesData = await holosphere.getAll(holonID, "badges");
-            let badgesArray: any[] = [];
+            let badgesDataArray: any[] = [];
             
             if (Array.isArray(badgesData)) {
-                badgesArray = badgesData;
+                badgesDataArray = badgesData;
             } else if (badgesData && typeof badgesData === 'object') {
-                badgesArray = Object.values(badgesData);
+                badgesDataArray = Object.values(badgesData);
             }
             
-            // Sort badges by creation date (newest first)
-            badges = badgesArray
+            badges = badgesDataArray
+                .filter(badge => badge && badge.title)
+                .reduce((acc, badge) => {
+                    acc[badge.id || badge.title] = badge;
+                    return acc;
+                }, {});
+
+            // Sort badges by creation date (newest first) for badges view
+            badgesArray = badgesDataArray
                 .filter(badge => badge && badge.title)
                 .sort((a, b) => {
                     const dateA = new Date(a.created_at || 0).getTime();
                     const dateB = new Date(b.created_at || 0).getTime();
                     return dateB - dateA;
                 });
+
+            // Process users with their badges
+            processUsersWithBadges();
                 
         } catch (error) {
-            console.error("Badges: Error loading badges:", error);
+            console.error("Badges: Error loading data:", error);
         } finally {
             isLoading = false;
         }
+    }
+
+    // Process users and their badges
+    function processUsersWithBadges() {
+        const userBadgeMap: Record<string, UserWithBadges> = {};
+
+        // Initialize all users
+        Object.values(users).forEach(user => {
+            userBadgeMap[user.id] = {
+                user,
+                badges: []
+            };
+        });
+
+        // Add badges to users
+        Object.values(badges).forEach(badge => {
+            if (badge.awarded_to && Array.isArray(badge.awarded_to)) {
+                badge.awarded_to.forEach(recipient => {
+                    if (userBadgeMap[recipient.id]) {
+                        userBadgeMap[recipient.id].badges.push({
+                            badge,
+                            awarded_at: recipient.awarded_at,
+                            awarded_via: recipient.awarded_via
+                        });
+                    } else {
+                        // User not in users collection but has badges - create minimal user record
+                        userBadgeMap[recipient.id] = {
+                            user: {
+                                id: recipient.id,
+                                username: recipient.username,
+                                first_name: recipient.first_name,
+                                last_name: recipient.last_name
+                            },
+                            badges: [{
+                                badge,
+                                awarded_at: recipient.awarded_at,
+                                awarded_via: recipient.awarded_via
+                            }]
+                        };
+                    }
+                });
+            }
+        });
+
+        // Convert to array and sort
+        usersWithBadges = Object.values(userBadgeMap)
+            .filter(userWithBadges => userWithBadges.user)
+            .sort((a, b) => {
+                // Sort by badge count (descending), then by name
+                const badgeCountDiff = b.badges.length - a.badges.length;
+                if (badgeCountDiff !== 0) return badgeCountDiff;
+                
+                const nameA = a.user.first_name || a.user.username || '';
+                const nameB = b.user.first_name || b.user.username || '';
+                return nameA.localeCompare(nameB);
+            });
     }
 
     // Get rarity color
@@ -107,10 +211,10 @@
             const date = new Date(dateString);
             return date.toLocaleDateString('en-US', {
                 year: 'numeric',
-                month: 'long',
+                month: currentView === 'users' ? 'short' : 'long',
                 day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
+                hour: currentView === 'badges' ? '2-digit' : undefined,
+                minute: currentView === 'badges' ? '2-digit' : undefined
             });
         } catch {
             return 'Invalid date';
@@ -118,7 +222,7 @@
     }
 
     // Show badge details modal
-    function showBadgeDetails(badge: typeof badges[0]) {
+    function showBadgeDetails(badge: Badge) {
         selectedBadge = badge;
         showBadgeModal = true;
     }
@@ -129,137 +233,245 @@
         selectedBadge = null;
     }
 
+    // Switch view function
+    function switchView(view: 'badges' | 'users') {
+        currentView = view;
+    }
+
+    // Get user display name
+    function getUserDisplayName(user: User): string {
+        if (user.first_name && user.last_name) {
+            return `${user.first_name} ${user.last_name}`;
+        } else if (user.first_name) {
+            return user.first_name;
+        } else if (user.username) {
+            return user.username;
+        } else {
+            return 'Unknown User';
+        }
+    }
+
+    // Get user initials for avatar
+    function getUserInitials(user: User): string {
+        if (user.first_name) {
+            const firstInitial = user.first_name.charAt(0).toUpperCase();
+            const lastInitial = user.last_name ? user.last_name.charAt(0).toUpperCase() : '';
+            return firstInitial + lastInitial;
+        } else if (user.username) {
+            return user.username.charAt(0).toUpperCase();
+        } else {
+            return '?';
+        }
+    }
+
     // Watch for holon ID changes
-    $: if (holonID && isVisible) {
-        loadBadges();
+    $: if (holonID) {
+        loadData();
     }
 
     onMount(() => {
-        if (isVisible && holonID) {
-            loadBadges();
+        if (holonID) {
+            loadData();
         }
     });
 </script>
 
-{#if isVisible}
-    <div 
-        class="fixed inset-0 z-50 bg-gradient-to-br from-gray-800 via-gray-700 to-indigo-900 flex items-center justify-center p-4"
-        on:click|self={() => isVisible = false}
-        transition:fade={{ duration: 300 }}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="badges-title"
-        tabindex="0"
-    >
-        <div 
-            class="w-full max-w-6xl h-full max-h-[95vh] bg-black/30 backdrop-blur-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
-            transition:slide={{ duration: 400, axis: 'y' }}
-        >
-            <!-- Close Button -->
-            <button 
-                class="absolute top-6 right-6 z-10 text-white/60 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
-                on:click={() => isVisible = false}
-                aria-label="Close badges"
+<div class="min-h-screen bg-gray-900 p-6">
+    <!-- View Toggle Controls -->
+    <div class="flex justify-center mb-8">
+        <div class="flex gap-2 bg-white/10 backdrop-blur-sm rounded-xl p-2 border border-white/20">
+            <button
+                class="px-6 py-3 rounded-lg font-medium transition-colors {currentView === 'users' 
+                    ? 'bg-indigo-600 text-white shadow-lg' 
+                    : 'text-white/70 hover:text-white hover:bg-white/10'}"
+                on:click={() => switchView('users')}
             >
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                👥 By Users
             </button>
-
-            <!-- Main Content -->
-            <div class="h-full p-8 pb-16 flex flex-col">
-                <!-- Header -->
-                <div class="text-center mb-8">
-                    <h1 id="badges-title" class="text-4xl font-bold text-white mb-2">
-                        🏆 Community Badges
-                    </h1>
-                    <p class="text-white/60 text-lg">
-                        Celebrate achievements and contributions
-                    </p>
-                </div>
-
-                <!-- Badges Grid -->
-                <div class="flex-1 overflow-hidden">
-                    {#if isLoading}
-                        <div class="flex items-center justify-center h-full">
-                            <div class="text-center">
-                                <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-white/50 mx-auto mb-4"></div>
-                                <p class="text-white/60 text-lg">Loading badges...</p>
-                            </div>
-                        </div>
-                    {:else if badges.length === 0}
-                        <div class="text-center py-12">
-                            <div class="text-8xl mb-6">🏆</div>
-                            <h3 class="text-2xl font-semibold text-white mb-3">No Badges Yet</h3>
-                            <p class="text-white/60 text-lg max-w-md mx-auto">
-                                Badges will appear here as community members earn them through their contributions and achievements.
-                            </p>
-                        </div>
-                    {:else}
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-h-full overflow-y-auto pr-2 custom-scrollbar">
-                            {#each badges as badge}
-                                <div 
-                                    class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 hover:border-white/30 transition-all duration-200 hover:bg-white/15 cursor-pointer group"
-                                    on:click={() => showBadgeDetails(badge)}
-                                    on:keydown={(e) => e.key === 'Enter' && showBadgeDetails(badge)}
-                                    tabindex="0"
-                                    role="button"
-                                    aria-label="View {badge.title} badge details"
-                                >
-                                    <!-- Badge Header -->
-                                    <div class="text-center mb-4">
-                                        <div class="text-6xl mb-3 group-hover:scale-110 transition-transform duration-200">
-                                            {badge.icon || '🏆'}
-                                        </div>
-                                        <h3 class="text-xl font-semibold text-white mb-2 group-hover:text-indigo-300 transition-colors">
-                                            {badge.title}
-                                        </h3>
-                                        <div class="flex items-center justify-center space-x-2 mb-3">
-                                            <span class="text-sm {getRarityColor(badge.rarity)} px-3 py-1 rounded-full border">
-                                                {getRarityIcon(badge.rarity)} {badge.rarity || 'common'}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <!-- Badge Description -->
-                                    <p class="text-white/70 text-sm text-center mb-4 line-clamp-3">
-                                        {badge.description || 'No description available'}
-                                    </p>
-
-                                    <!-- Badge Stats -->
-                                    <div class="text-center">
-                                        <div class="text-2xl font-bold text-indigo-300 mb-1">
-                                            {badge.awarded_to?.length || 0}
-                                        </div>
-                                        <div class="text-xs text-white/50">
-                                            {badge.awarded_to?.length === 1 ? 'recipient' : 'recipients'}
-                                        </div>
-                                    </div>
-
-                                    <!-- Hover Effect -->
-                                    <div class="absolute inset-0 rounded-2xl border-2 border-transparent group-hover:border-indigo-400/30 transition-all duration-200 pointer-events-none"></div>
-                                </div>
-                            {/each}
-                        </div>
-                    {/if}
-                </div>
-
-                <!-- Footer -->
-                <div class="text-center mt-8">
-                    <p class="text-white/40 text-sm">
-                        Click on any badge to see who has earned it and when
-                    </p>
-                </div>
-            </div>
+            <button
+                class="px-6 py-3 rounded-lg font-medium transition-colors {currentView === 'badges' 
+                    ? 'bg-indigo-600 text-white shadow-lg' 
+                    : 'text-white/70 hover:text-white hover:bg-white/10'}"
+                on:click={() => switchView('badges')}
+            >
+                🏆 By Badges
+            </button>
         </div>
     </div>
-{/if}
+
+    <!-- Header -->
+    <div class="text-center mb-8">
+        <h1 id="badges-title" class="text-4xl font-bold text-white mb-2">
+            {currentView === 'users' ? '👥 User Badges' : '🏆 Community Badges'}
+        </h1>
+        <p class="text-white/60 text-lg">
+            {currentView === 'users' 
+                ? 'See what badges each community member has earned' 
+                : 'Celebrate achievements and contributions'}
+        </p>
+    </div>
+
+    <!-- Content Grid -->
+    <div class="max-w-7xl mx-auto">
+        {#if isLoading}
+            <div class="flex items-center justify-center h-64">
+                <div class="text-center">
+                    <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-white/50 mx-auto mb-4"></div>
+                    <p class="text-white/60 text-lg">Loading {currentView === 'users' ? 'users and badges' : 'badges'}...</p>
+                </div>
+            </div>
+        {:else if currentView === 'users'}
+            <!-- Users View -->
+            {#if usersWithBadges.length === 0}
+                <div class="text-center py-12">
+                    <div class="text-8xl mb-6">👥</div>
+                    <h3 class="text-2xl font-semibold text-white mb-3">No Users Found</h3>
+                    <p class="text-white/60 text-lg max-w-md mx-auto">
+                        Users will appear here once they join the community and start earning badges.
+                    </p>
+                </div>
+            {:else}
+                <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {#each usersWithBadges as userWithBadges}
+                        <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 hover:border-white/30 transition-all duration-200">
+                            <!-- User Header -->
+                            <div class="flex items-center space-x-4 mb-6">
+                                <div class="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xl">
+                                    {getUserInitials(userWithBadges.user)}
+                                </div>
+                                <div class="flex-1">
+                                    <h3 class="text-xl font-semibold text-white">
+                                        {getUserDisplayName(userWithBadges.user)}
+                                    </h3>
+                                    {#if userWithBadges.user.username}
+                                        <p class="text-white/60 text-sm">@{userWithBadges.user.username}</p>
+                                    {/if}
+                                    <div class="flex items-center space-x-2 mt-2">
+                                        <div class="text-sm text-indigo-300 font-medium">
+                                            {userWithBadges.badges.length} {userWithBadges.badges.length === 1 ? 'badge' : 'badges'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- User Badges -->
+                            {#if userWithBadges.badges.length > 0}
+                                <div class="space-y-3">
+                                    <h4 class="text-sm font-medium text-white/80 mb-3">Earned Badges:</h4>
+                                    <div class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                                        {#each userWithBadges.badges as userBadge}
+                                            <button
+                                                class="w-full bg-white/5 hover:bg-white/10 rounded-lg p-3 border border-white/10 hover:border-white/20 transition-all duration-200 text-left group"
+                                                on:click={() => showBadgeDetails(userBadge.badge)}
+                                            >
+                                                <div class="flex items-center space-x-3">
+                                                    <div class="text-2xl group-hover:scale-110 transition-transform">
+                                                        {userBadge.badge.icon || '🏆'}
+                                                    </div>
+                                                    <div class="flex-1 min-w-0">
+                                                        <div class="font-medium text-white group-hover:text-indigo-300 transition-colors truncate">
+                                                            {userBadge.badge.title}
+                                                        </div>
+                                                        <div class="flex items-center space-x-2 mt-1">
+                                                            <span class="text-xs {getRarityColor(userBadge.badge.rarity)} px-2 py-0.5 rounded-full border">
+                                                                {getRarityIcon(userBadge.badge.rarity)} {userBadge.badge.rarity || 'common'}
+                                                            </span>
+                                                            <span class="text-xs text-white/50">
+                                                                {formatDate(userBadge.awarded_at)}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        {/each}
+                                    </div>
+                                </div>
+                            {:else}
+                                <div class="text-center py-6">
+                                    <div class="text-3xl mb-2">🎯</div>
+                                    <p class="text-white/60 text-sm">No badges earned yet</p>
+                                </div>
+                            {/if}
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+        {:else}
+            <!-- Badges View -->
+            {#if badgesArray.length === 0}
+                <div class="text-center py-12">
+                    <div class="text-8xl mb-6">🏆</div>
+                    <h3 class="text-2xl font-semibold text-white mb-3">No Badges Yet</h3>
+                    <p class="text-white/60 text-lg max-w-md mx-auto">
+                        Badges will appear here as community members earn them through their contributions and achievements.
+                    </p>
+                </div>
+            {:else}
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {#each badgesArray as badge}
+                        <div 
+                            class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 hover:border-white/30 transition-all duration-200 hover:bg-white/15 cursor-pointer group"
+                            on:click={() => showBadgeDetails(badge)}
+                            on:keydown={(e) => e.key === 'Enter' && showBadgeDetails(badge)}
+                            tabindex="0"
+                            role="button"
+                            aria-label="View {badge.title} badge details"
+                        >
+                            <!-- Badge Header -->
+                            <div class="text-center mb-4">
+                                <div class="text-6xl mb-3 group-hover:scale-110 transition-transform duration-200">
+                                    {badge.icon || '🏆'}
+                                </div>
+                                <h3 class="text-xl font-semibold text-white mb-2 group-hover:text-indigo-300 transition-colors">
+                                    {badge.title}
+                                </h3>
+                                <div class="flex items-center justify-center space-x-2 mb-3">
+                                    <span class="text-sm {getRarityColor(badge.rarity)} px-3 py-1 rounded-full border">
+                                        {getRarityIcon(badge.rarity)} {badge.rarity || 'common'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Badge Description -->
+                            <p class="text-white/70 text-sm text-center mb-4 line-clamp-3">
+                                {badge.description || 'No description available'}
+                            </p>
+
+                            <!-- Badge Stats -->
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-indigo-300 mb-1">
+                                    {badge.awarded_to?.length || 0}
+                                </div>
+                                <div class="text-xs text-white/50">
+                                    {badge.awarded_to?.length === 1 ? 'recipient' : 'recipients'}
+                                </div>
+                            </div>
+
+                            <!-- Hover Effect -->
+                            <div class="absolute inset-0 rounded-2xl border-2 border-transparent group-hover:border-indigo-400/30 transition-all duration-200 pointer-events-none"></div>
+                        </div>
+                    {/each}
+                </div>
+            {/if}
+        {/if}
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center mt-8">
+        <p class="text-white/40 text-sm">
+            Click on any badge to see detailed information and all recipients
+        </p>
+    </div>
+</div>
 
 <!-- Badge Details Modal -->
 {#if showBadgeModal && selectedBadge}
     <div 
         class="fixed inset-0 z-60 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
         on:click|self={closeBadgeModal}
+        on:keydown={(e) => e.key === 'Escape' && closeBadgeModal()}
+        role="button"
+        tabindex="0"
         transition:fade={{ duration: 200 }}
     >
         <div 
@@ -380,6 +592,7 @@
         display: -webkit-box;
         -webkit-line-clamp: 3;
         -webkit-box-orient: vertical;
+        line-clamp: 3;
         overflow: hidden;
     }
 </style>

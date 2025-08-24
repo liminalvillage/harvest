@@ -449,6 +449,10 @@
                 if (task.when) {
                     tasks[key] = task;
                     tasks = tasks;
+                } else {
+                    // If task exists but has no 'when' field, remove it from calendar display
+                    delete tasks[key];
+                    tasks = tasks;
                 }
             } else {
                 delete tasks[key];
@@ -523,11 +527,16 @@
         if (!selectedTask || !$ID) return;
 
         try {
+            const taskKey = selectedTask.id;
             const updatedTask = {
                 ...selectedTask.task,
                 when: null,
                 status: 'ongoing'
             };
+            
+            // Immediately remove from local state for instant UI update
+            delete tasks[taskKey];
+            tasks = tasks; // Trigger reactivity
             
             showModal = false;
             selectedTask = null;
@@ -535,6 +544,7 @@
             holosphere.put($ID, 'quests', updatedTask);
         } catch (error) {
             console.error('Error removing schedule:', error);
+            // On error, we might want to restore the task, but for now just log
         }
     }
 

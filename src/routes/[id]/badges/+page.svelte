@@ -21,4 +21,4 @@
 	<title>Badges</title>
 </svelte:head>
 
-<Badges isVisible={true} />
+<Badges />
