@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy, getContext } from "svelte";
 import { fade, slide, scale, fly } from "svelte/transition";
-import { elasticOut, bounceOut } from "svelte/easing";
+import { elasticOut } from "svelte/easing";
 import { ID } from "../dashboard/store";
 import HoloSphere from "holosphere";
 import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
@@ -55,7 +55,7 @@ import ItemModal from "./ItemModal.svelte";
     let isLoadingUsers = false;
 
     // Events data state
-    let todaysEvents: Array<{
+    let upcomingEvents: Array<{
         id: string;
         title: string;
         time: string;
@@ -90,11 +90,7 @@ import ItemModal from "./ItemModal.svelte";
     }> = [];
     let isLoadingBadges = false;
 
-    // Pagination state
-    let rolesToShow = 8;
-    let eventsToShow = 8;
-    let tasksToShow = 8;
-    let badgesToShow = 8;
+
 
     // Subscription cleanup functions
     let rolesUnsubscribe: (() => void) | null = null;
@@ -118,15 +114,7 @@ import ItemModal from "./ItemModal.svelte";
     let showBadgeModal = false;
     let selectedItem: any = null;
 
-    // Game-like animations and effects
-    let particles: Array<{id: number, x: number, y: number, vx: number, vy: number, size: number, opacity: number}> = [];
-    let animationFrame: number;
-    let scoreMultiplier = 1;
-    let experiencePoints = 0;
-    let levelProgress = 0;
-    let achievements: string[] = [];
-    let pulseAnimation = false;
-    let celebrationMode = false;
+
 
     // Time formatting
     function formatTime(date: Date) {
@@ -373,18 +361,19 @@ import ItemModal from "./ItemModal.svelte";
                 questsStore = questsData;
             }
             
-            // Process events to filter for today's scheduled items
+            // Process events to filter for upcoming scheduled items (from today onwards)
             const updateEventsFromStore = () => {
                 const quests = Object.values(questsStore);
                 const today = new Date();
                 const todayStr = today.toISOString().split('T')[0];
                 
-                todaysEvents = quests.filter((quest: any) => {
+                upcomingEvents = quests.filter((quest: any) => {
                     // Include any item that has a 'when' field (is scheduled), regardless of type
                     if (!quest.when || quest.status === 'completed' || quest.status === 'cancelled') return false;
                     const whenDate = new Date(quest.when);
-                    const isToday = whenDate.toISOString().split('T')[0] === todayStr;
-                    return isToday;
+                    const eventDateStr = whenDate.toISOString().split('T')[0];
+                    // Include events from today onwards (not just today)
+                    return eventDateStr >= todayStr;
                 }).map((quest: any) => {
                     const whenDate = new Date(quest.when);
                     return {
@@ -563,37 +552,21 @@ import ItemModal from "./ItemModal.svelte";
     function handleRoleClick(role: any, event?: MouseEvent) {
         selectedItem = role;
         showRoleModal = true;
-        gainExperience(10);
-        if (event) {
-            createParticle(event.clientX, event.clientY);
-        }
     }
 
     function handleTaskClick(task: any, event?: MouseEvent) {
         selectedItem = task;
         showTaskModal = true;
-        gainExperience(15);
-        if (event) {
-            createParticle(event.clientX, event.clientY);
-        }
     }
 
     function handleEventClick(eventItem: any, event?: MouseEvent) {
         selectedItem = eventItem;
         showEventModal = true;
-        gainExperience(12);
-        if (event) {
-            createParticle(event.clientX, event.clientY);
-        }
     }
 
     function handleBadgeClick(badge: any, event?: MouseEvent) {
         selectedItem = badge;
         showBadgeModal = true;
-        gainExperience(20);
-        if (event) {
-            createParticle(event.clientX, event.clientY);
-        }
     }
 
     // Close all modals
@@ -627,64 +600,7 @@ import ItemModal from "./ItemModal.svelte";
     $: unassignedRoles = totalRoles - assignedRoles;
     $: totalParticipants = roles.reduce((sum, role) => sum + (role.participants?.length || 0), 0);
 
-    // Game mechanics functions
-    function createParticle(x: number, y: number) {
-        const particle = {
-            id: Math.random(),
-            x: x,
-            y: y,
-            vx: (Math.random() - 0.5) * 4,
-            vy: (Math.random() - 0.5) * 4,
-            size: Math.random() * 6 + 2,
-            opacity: 1
-        };
-        particles = [...particles, particle];
-        
-        setTimeout(() => {
-            particles = particles.filter(p => p.id !== particle.id);
-        }, 2000);
-    }
 
-    function triggerCelebration() {
-        celebrationMode = true;
-        pulseAnimation = true;
-        
-        // Create multiple particles
-        for (let i = 0; i < 20; i++) {
-            setTimeout(() => {
-                createParticle(
-                    Math.random() * window.innerWidth,
-                    Math.random() * window.innerHeight
-                );
-            }, i * 50);
-        }
-        
-        setTimeout(() => {
-            celebrationMode = false;
-            pulseAnimation = false;
-        }, 3000);
-    }
-
-    function gainExperience(amount: number) {
-        experiencePoints += amount;
-        levelProgress = (experiencePoints % 100) / 100;
-        
-        if (experiencePoints % 100 === 0) {
-            triggerCelebration();
-            achievements.push(`Level ${Math.floor(experiencePoints / 100)} Reached!`);
-        }
-    }
-
-    function animateParticles() {
-        particles = particles.map(particle => ({
-            ...particle,
-            x: particle.x + particle.vx,
-            y: particle.y + particle.vy,
-            opacity: particle.opacity - 0.01
-        })).filter(particle => particle.opacity > 0);
-        
-        animationFrame = requestAnimationFrame(animateParticles);
-    }
 
     // Inactivity detection functions
     function resetInactivityTimer() {
@@ -736,11 +652,12 @@ import ItemModal from "./ItemModal.svelte";
                         const today = new Date();
                         const todayStr = today.toISOString().split('T')[0];
                         
-                        todaysEvents = quests.filter((quest: any) => {
+                        upcomingEvents = quests.filter((quest: any) => {
                             if (!quest.when || quest.status === 'completed' || quest.status === 'cancelled') return false;
                             const whenDate = new Date(quest.when);
-                            const isToday = whenDate.toISOString().split('T')[0] === todayStr;
-                            return isToday;
+                            const eventDateStr = whenDate.toISOString().split('T')[0];
+                            // Include events from today onwards (not just today)
+                            return eventDateStr >= todayStr;
                         }).map((quest: any) => {
                             const whenDate = new Date(quest.when);
                             return {
@@ -780,8 +697,7 @@ import ItemModal from "./ItemModal.svelte";
             subscribeToBadges();
         }
 
-        // Start particle animation
-        animateParticles();
+
 
         // Set up inactivity detection
         resetInactivityTimer();
@@ -807,9 +723,7 @@ import ItemModal from "./ItemModal.svelte";
         if (inactivityTimer) {
             clearTimeout(inactivityTimer);
         }
-        if (animationFrame) {
-            cancelAnimationFrame(animationFrame);
-        }
+
         
         // Clean up all subscriptions
         cleanupSubscriptions();
@@ -834,7 +748,7 @@ import ItemModal from "./ItemModal.svelte";
 
 {#if isVisible}
     <div 
-        class="fixed inset-0 z-50 bg-gradient-to-br from-gray-800 via-gray-700 to-indigo-900 flex items-center justify-center p-4 overflow-hidden {celebrationMode ? 'bg-gradient-to-br from-purple-800 via-pink-700 to-yellow-900' : ''}"
+        class="fixed inset-0 z-50 bg-gradient-to-br from-gray-800 via-gray-700 to-indigo-900 flex items-center justify-center p-4 overflow-hidden"
         on:click|self={() => isVisible = false}
         on:keydown={handleKeydown}
         transition:fade={{ duration: 300 }}
@@ -843,113 +757,71 @@ import ItemModal from "./ItemModal.svelte";
         aria-labelledby="zeitcamp-title"
         tabindex="0"
     >
-        <!-- Hexagon Pattern Background -->
-        <div class="absolute inset-0 opacity-30 pointer-events-none overflow-hidden">
-            <div class="hexagon-pattern {celebrationMode ? 'celebration' : ''}"></div>
-        </div>
 
-        <!-- Animated Background Particles -->
-        {#each particles as particle (particle.id)}
-            <div 
-                class="absolute rounded-full bg-gradient-to-r from-blue-400 to-purple-500 pointer-events-none animate-pulse"
-                style="left: {particle.x}px; top: {particle.y}px; width: {particle.size}px; height: {particle.size}px; opacity: {particle.opacity};"
-                in:scale="{{ duration: 500, easing: bounceOut }}"
-                out:fade="{{ duration: 1000 }}"
-            ></div>
-        {/each}
-
-        <!-- Floating Achievement Notifications -->
-        {#if achievements.length > 0}
-            {#each achievements.slice(-3) as achievement, index (achievement)}
-                <div 
-                    class="absolute top-20 right-20 bg-gradient-to-r from-yellow-400 to-orange-500 text-black px-4 py-2 rounded-lg font-bold text-sm shadow-lg z-60"
-                    style="transform: translateY({index * 60}px);"
-                    in:fly="{{ x: 100, duration: 500, easing: bounceOut }}"
-                    out:fly="{{ x: 100, duration: 300 }}"
-                >
-                    🏆 {achievement}
-                </div>
-            {/each}
-        {/if}
         <div 
             class="w-full max-w-6xl h-full max-h-[95vh] bg-black/30 backdrop-blur-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden relative z-40"
             transition:slide={{ duration: 400, axis: 'y' }}
         >
-            <!-- Clock, XP Bar and Close Button -->
-            <div class="absolute top-6 right-6 z-50 flex items-center space-x-4">
-                <!-- XP Progress Bar -->
-                <div class="text-center">
-                    <div class="text-xs text-white/60 mb-1">Level {Math.floor(experiencePoints / 100)}</div>
-                    <div class="w-24 h-2 bg-white/20 rounded-full overflow-hidden">
-                        <div 
-                            class="h-full bg-gradient-to-r from-blue-400 to-purple-500 transition-all duration-500 ease-out {pulseAnimation ? 'animate-pulse' : ''}"
-                            style="width: {levelProgress * 100}%"
-                        ></div>
+            <!-- Top Header: Date, Logo, Clock, and Close Button -->
+            <div class="absolute top-6 left-6 right-6 z-50 flex justify-between items-center">
+                <!-- Date Section -->
+                <div class="text-left">
+                    <div class="text-2xl font-light text-white/70 mb-1">
+                        {formatDay(currentTime)}
                     </div>
-                    <div class="text-xs text-white/40 mt-1">{experiencePoints % 100}/100 XP</div>
+                    <div class="text-sm text-white/50 font-light">
+                        {formatDateShort(currentTime)}
+                    </div>
                 </div>
 
-                <!-- Clock -->
-                <div class="text-right text-white/70">
-                    <div class="text-3xl font-light {pulseAnimation ? 'animate-pulse text-yellow-300' : ''}">
-                        {formatTime(currentTime)}
+                <!-- Holons Logo and Name - Centered (hidden on small screens) -->
+                <div class="hidden md:flex items-center space-x-3">
+                    <div class="w-12 h-12">
+                        <MyHolonsIcon />
                     </div>
+                    {#if isLoadingHolonName}
+                        <div class="text-white/60 text-sm animate-pulse">Loading...</div>
+                    {:else if holonName}
+                        <div class="text-white/80 text-lg font-medium truncate max-w-48">
+                            {holonName}
+                        </div>
+                    {:else}
+                        <div class="text-white/40 text-sm">Unknown Holon</div>
+                    {/if}
                 </div>
-                
-                <!-- Close Button -->
-                <button 
-                    class="text-white/60 hover:text-white transition-all duration-300 p-2 rounded-lg hover:bg-white/10 hover:scale-110 hover:rotate-90 transform"
-                    on:click={() => isVisible = false}
-                    aria-label="Close zeitcamp dashboard"
-                >
-                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                </button>
+
+                <!-- Clock and Close Button -->
+                <div class="flex items-center space-x-4">
+                    <!-- Clock -->
+                    <div class="text-right text-white/70">
+                        <div class="text-3xl font-light">
+                            {formatTime(currentTime)}
+                        </div>
+                    </div>
+                    
+                    <!-- Close Button -->
+                    <button 
+                        class="text-white/60 hover:text-white transition-all duration-300 p-2 rounded-lg hover:bg-white/10 hover:scale-110 hover:rotate-90 transform"
+                        on:click={() => isVisible = false}
+                        aria-label="Close zeitcamp dashboard"
+                    >
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
             </div>
 
             <!-- Main Dashboard Content -->
             <div class="h-full flex flex-col overflow-hidden">
-                <!-- Top Section: Date and Holons Logo -->
-                <div class="flex justify-between items-start mb-4 p-6 pb-2 flex-shrink-0">
-                    <!-- Date Section -->
-                    <div class="text-left">
-                        <div class="text-2xl font-light text-white/70 mb-1">
-                            {formatDay(currentTime)}
-                        </div>
-                        <div class="text-sm text-white/50 font-light">
-                            {formatDateShort(currentTime)}
-                        </div>
-                    </div>
-
-                    <!-- Holons Logo and Name - Centered -->
-                    <div class="absolute left-1/2 transform -translate-x-1/2 text-center">
-                        <div class="w-12 h-12 sm:w-50 sm:h-50 mx-auto mb-0 transform transition-all duration-500 hover:scale-110 hover:rotate-12 {celebrationMode ? 'animate-bounce' : ''}">
-                            <MyHolonsIcon />
-                        </div>
-                        {#if isLoadingHolonName}
-                            <div class="text-white/60 text-sm animate-pulse">Loading...</div>
-                        {:else if holonName}
-                            <div class="text-white/80 text-lg font-medium truncate max-w-48 {celebrationMode ? 'animate-pulse text-yellow-300' : ''}">
-                                {holonName}
-                            </div>
-                        {:else}
-                            <div class="text-white/40 text-sm">Unknown Holon</div>
-                        {/if}
-                    </div>
-                </div>
-
                 <!-- Center Section: Four Main Sections -->
-                <div class="flex-1 overflow-y-auto custom-scrollbar px-6 pb-12">
+                <div class="flex-1 overflow-y-auto custom-scrollbar px-6 pb-12 pt-24">
                     <!-- Four Main Sections Grid -->
                     <div class="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-full">
                         <!-- Ruoli (Roles) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-indigo-400/50 hover:shadow-indigo-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
+                        <div class="bg-indigo-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-indigo-400/25 flex flex-col shadow-2xl hover:border-indigo-400/50 hover:shadow-indigo-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
                             in:fly="{{ x: -100, duration: 600, delay: 100, easing: elasticOut }}">
-                            <!-- Section Hexagon Background -->
-                            <div class="absolute inset-0 opacity-10 pointer-events-none">
-                                <div class="section-hexagon-pattern indigo-theme"></div>
-                            </div>
+
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -958,7 +830,7 @@ import ItemModal from "./ItemModal.svelte";
                                     Ruoli
                                 </h3>
                                 <button 
-                                    class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all duration-300 text-sm font-medium shadow-lg hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 transform group-hover:animate-pulse"
+                                    class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all duration-300 text-sm font-medium shadow-lg hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 transform"
                                     on:click={navigateToRoles}
                                 >
                                     View All
@@ -972,7 +844,7 @@ import ItemModal from "./ItemModal.svelte";
                                 </div>
                             {:else if roles.length > 0}
                                 <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
-                                    {#each roles.slice(0, rolesToShow) as role (role.id)}
+                                    {#each roles as role (role.id)}
                                         <div 
                                             class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-indigo-500/20 hover:border-indigo-400/50 cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-lg transform"
                                             on:click={(e) => handleRoleClick(role, e)}
@@ -980,7 +852,7 @@ import ItemModal from "./ItemModal.svelte";
                                             role="button"
                                             tabindex="0"
                                             aria-label="View role details for {role.title}"
-                                            in:scale="{{ duration: 300, delay: 50 * roles.indexOf(role), easing: bounceOut }}"
+                                            in:scale="{{ duration: 300, delay: 50 * roles.indexOf(role) }}"
                                         >
                                             <div class="flex-1 min-w-0">
                                                 <h4 class="font-medium text-white text-sm truncate">
@@ -1025,20 +897,7 @@ import ItemModal from "./ItemModal.svelte";
                                             </div>
                                         </div>
                                     {/each}
-                                    {#if roles.length > 8}
-                                        <div class="text-center py-2">
-                                            {#if rolesToShow < roles.length}
-                                                <button 
-                                                    class="text-indigo-400 hover:text-indigo-300 text-xs font-medium hover:underline transition-colors"
-                                                    on:click={() => rolesToShow = Math.min(rolesToShow + 8, roles.length)}
-                                                >
-                                                    Load More (+{Math.min(8, roles.length - rolesToShow)})
-                                                </button>
-                                            {:else}
-                                                <span class="text-white/40 text-xs">All {roles.length} roles shown</span>
-                                            {/if}
-                                        </div>
-                                    {/if}
+
                                 </div>
                             {:else}
                                 <div class="text-center py-8 flex-1 flex items-center justify-center">
@@ -1048,18 +907,15 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Eventi (Events) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-green-400/50 hover:shadow-green-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
+                        <div class="bg-green-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-green-400/25 flex flex-col shadow-2xl hover:border-green-400/50 hover:shadow-green-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
                             in:fly="{{ x: 100, duration: 600, delay: 200, easing: elasticOut }}">
-                            <!-- Section Hexagon Background -->
-                            <div class="absolute inset-0 opacity-10 pointer-events-none">
-                                <div class="section-hexagon-pattern green-theme"></div>
-                            </div>
+
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
-                                    Eventi & Programmati
+                                    Prossimi Eventi
                                 </h3>
                                 <button 
                                     class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-xl"
@@ -1079,9 +935,9 @@ import ItemModal from "./ItemModal.svelte";
                                     <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-white/50 mr-2"></div>
                                     <span class="text-white/60 text-sm">Loading...</span>
                                 </div>
-                            {:else if todaysEvents.length > 0}
+                            {:else if upcomingEvents.length > 0}
                                 <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
-                                    {#each todaysEvents.slice(0, eventsToShow) as event}
+                                    {#each upcomingEvents as event}
                                         <div 
                                             class="flex items-center p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
                                             on:click={() => handleEventClick(event)}
@@ -1156,39 +1012,23 @@ import ItemModal from "./ItemModal.svelte";
                                         </div>
                                     {/each}
                                     
-                                    {#if todaysEvents.length === 0}
+                                    {#if upcomingEvents.length === 0}
                                         <div class="text-center py-4">
-                                            <div class="text-white/40 text-sm">No scheduled items for today</div>
-                                        </div>
-                                    {:else if todaysEvents.length > 8}
-                                        <div class="text-center py-2">
-                                            {#if eventsToShow < todaysEvents.length}
-                                                <button 
-                                                    class="text-green-400 hover:text-green-300 text-xs font-medium hover:underline transition-colors"
-                                                    on:click={() => eventsToShow = Math.min(eventsToShow + 8, todaysEvents.length)}
-                                                >
-                                                    Load More (+{Math.min(8, todaysEvents.length - eventsToShow)})
-                                                </button>
-                                            {:else}
-                                                <span class="text-white/40 text-xs">All {todaysEvents.length} events shown</span>
-                                            {/if}
+                                            <div class="text-white/40 text-sm">No upcoming scheduled items</div>
                                         </div>
                                     {/if}
                                 </div>
                             {:else}
                                 <div class="text-center py-8 flex-1 flex items-center justify-center">
-                                    <span class="text-white/50 text-sm">No scheduled items today</span>
+                                    <span class="text-white/50 text-sm">No upcoming scheduled items</span>
                                 </div>
                             {/if}
                         </div>
 
                         <!-- Compiti (Tasks) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-amber-400/50 hover:shadow-amber-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
+                        <div class="bg-amber-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-amber-400/25 flex flex-col shadow-2xl hover:border-amber-400/50 hover:shadow-amber-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
                             in:fly="{{ x: -100, duration: 600, delay: 300, easing: elasticOut }}">
-                            <!-- Section Hexagon Background -->
-                            <div class="absolute inset-0 opacity-10 pointer-events-none">
-                                <div class="section-hexagon-pattern amber-theme"></div>
-                            </div>
+
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1216,7 +1056,7 @@ import ItemModal from "./ItemModal.svelte";
                                 </div>
                             {:else if topTasks.length > 0}
                                 <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
-                                    {#each topTasks.slice(0, tasksToShow) as task}
+                                    {#each topTasks as task}
                                         <div 
                                             class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
                                             on:click={() => handleTaskClick(task)}
@@ -1271,20 +1111,7 @@ import ItemModal from "./ItemModal.svelte";
                                             </div>
                                         </div>
                                     {/each}
-                                    {#if topTasks.length > 8}
-                                        <div class="text-center py-2">
-                                            {#if tasksToShow < topTasks.length}
-                                                <button 
-                                                    class="text-amber-400 hover:text-amber-300 text-xs font-medium hover:underline transition-colors"
-                                                    on:click={() => tasksToShow = Math.min(tasksToShow + 8, topTasks.length)}
-                                                >
-                                                    Load More (+{Math.min(8, topTasks.length - tasksToShow)})
-                                                </button>
-                                            {:else}
-                                                <span class="text-white/40 text-xs">All {topTasks.length} tasks shown</span>
-                                            {/if}
-                                        </div>
-                                    {/if}
+
                                 </div>
                             {:else}
                                 <div class="text-center py-8 flex-1 flex items-center justify-center">
@@ -1294,12 +1121,9 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Medaglie (Badges) Section -->
-                        <div class="bg-white/15 backdrop-blur-md rounded-3xl p-6 border-2 border-white/25 flex flex-col shadow-2xl hover:border-yellow-400/50 hover:shadow-yellow-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
+                        <div class="bg-yellow-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-yellow-400/25 flex flex-col shadow-2xl hover:border-yellow-400/50 hover:shadow-yellow-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
                             in:fly="{{ x: 100, duration: 600, delay: 400, easing: elasticOut }}">
-                            <!-- Section Hexagon Background -->
-                            <div class="absolute inset-0 opacity-10 pointer-events-none">
-                                <div class="section-hexagon-pattern yellow-theme"></div>
-                            </div>
+
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
                                 <h3 class="text-2xl font-bold text-white flex items-center">
                                     <svg class="w-8 h-8 mr-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1327,7 +1151,7 @@ import ItemModal from "./ItemModal.svelte";
                                 </div>
                             {:else if badges.length > 0}
                                 <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
-                                    {#each badges.slice(0, badgesToShow) as badge}
+                                    {#each badges as badge}
                                         <div 
                                             class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
                                             on:click={() => handleBadgeClick(badge)}
@@ -1382,20 +1206,7 @@ import ItemModal from "./ItemModal.svelte";
                                             </div>
                                         </div>
                                     {/each}
-                                    {#if badges.length > 8}
-                                        <div class="text-center py-2">
-                                            {#if badgesToShow < badges.length}
-                                                <button 
-                                                    class="text-yellow-400 hover:text-yellow-300 text-xs font-medium hover:underline transition-colors"
-                                                    on:click={() => badgesToShow = Math.min(badgesToShow + 8, badges.length)}
-                                                >
-                                                    Load More (+{Math.min(8, badges.length - badgesToShow)})
-                                                </button>
-                                            {:else}
-                                                <span class="text-white/40 text-xs">All {badges.length} badges shown</span>
-                                            {/if}
-                                        </div>
-                                    {/if}
+
                                 </div>
                             {:else}
                                 <div class="text-center py-8 flex-1 flex items-center justify-center">
@@ -1458,44 +1269,7 @@ import ItemModal from "./ItemModal.svelte";
         box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.1);
     }
 
-    @keyframes gameGlow {
-        0%, 100% { 
-            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
-            transform: scale(1);
-        }
-        50% { 
-            box-shadow: 0 0 40px rgba(147, 51, 234, 0.7);
-            transform: scale(1.05);
-        }
-    }
 
-    @keyframes floatUp {
-        0% {
-            opacity: 1;
-            transform: translateY(0px);
-        }
-        100% {
-            opacity: 0;
-            transform: translateY(-100px);
-        }
-    }
-
-    @keyframes sparkle {
-        0%, 100% { opacity: 0; transform: scale(0) rotate(0deg); }
-        50% { opacity: 1; transform: scale(1) rotate(180deg); }
-    }
-
-    .game-glow {
-        animation: gameGlow 2s ease-in-out infinite;
-    }
-
-    .float-up {
-        animation: floatUp 2s ease-out forwards;
-    }
-
-    .sparkle {
-        animation: sparkle 1.5s ease-in-out infinite;
-    }
     
     /* Custom scrollbar styles */
     .custom-scrollbar::-webkit-scrollbar {
@@ -1522,152 +1296,14 @@ import ItemModal from "./ItemModal.svelte";
         scrollbar-color: rgba(59, 130, 246, 0.5) rgba(255, 255, 255, 0.1);
     }
 
-    /* Game-like pulsing background */
-    .game-background {
-        background: linear-gradient(-45deg, #1a1a2e, #16213e, #0f3460, #533483);
-        background-size: 400% 400%;
-        animation: gradientShift 15s ease infinite;
-    }
 
-    @keyframes gradientShift {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
 
-    /* Interactive hover effects */
-    .game-card:hover {
-        filter: brightness(1.1) contrast(1.05);
-    }
 
-    /* XP gain animation */
-    .xp-gain {
-        animation: floatUp 1s ease-out forwards;
-        pointer-events: none;
-        position: absolute;
-        z-index: 1000;
-        color: #fbbf24;
-        font-weight: bold;
-        text-shadow: 0 0 10px rgba(251, 191, 36, 0.8);
-    }
 
-    /* Hexagon Pattern Background */
-    .hexagon-pattern {
-        position: absolute;
-        top: -50%;
-        left: -50%;
-        width: 200%;
-        height: 200%;
-        background-image: 
-            linear-gradient(30deg, transparent 24%, rgba(59, 130, 246, 0.3) 25%, rgba(59, 130, 246, 0.3) 26%, transparent 27%, transparent 74%, rgba(147, 51, 234, 0.3) 75%, rgba(147, 51, 234, 0.3) 76%, transparent 77%),
-            linear-gradient(-30deg, transparent 24%, rgba(16, 185, 129, 0.3) 25%, rgba(16, 185, 129, 0.3) 26%, transparent 27%, transparent 74%, rgba(245, 158, 11, 0.3) 75%, rgba(245, 158, 11, 0.3) 76%, transparent 77%),
-            linear-gradient(90deg, transparent 24%, rgba(236, 72, 153, 0.2) 25%, rgba(236, 72, 153, 0.2) 26%, transparent 27%, transparent 74%, rgba(99, 102, 241, 0.2) 75%, rgba(99, 102, 241, 0.2) 76%, transparent 77%);
-        background-size: 40px 70px, 40px 70px, 40px 70px;
-        background-position: 0 0, 20px 35px, 0 0;
-        transform: rotate(10deg) scale(1.5);
-        animation: hexagonFloat 20s ease-in-out infinite;
-    }
 
-    @keyframes hexagonFloat {
-        0%, 100% {
-            transform: rotate(10deg) scale(1.5) translateY(0px);
-        }
-        50% {
-            transform: rotate(10deg) scale(1.5) translateY(-20px);
-        }
-    }
 
-    /* Enhanced hexagon pattern for celebration mode */
-    .hexagon-pattern.celebration {
-        background-image: 
-            radial-gradient(circle at 50% 50%, rgba(255, 215, 0, 0.3) 1px, transparent 1px),
-            linear-gradient(30deg, transparent 24%, rgba(255, 215, 0, 0.2) 25%, rgba(255, 215, 0, 0.2) 26%, transparent 27%, transparent 74%, rgba(255, 105, 180, 0.2) 75%, rgba(255, 105, 180, 0.2) 76%, transparent 77%),
-            linear-gradient(-30deg, transparent 24%, rgba(50, 205, 50, 0.2) 25%, rgba(50, 205, 50, 0.2) 26%, transparent 27%, transparent 74%, rgba(255, 69, 0, 0.2) 75%, rgba(255, 69, 0, 0.2) 76%, transparent 77%);
-        animation: hexagonCelebration 2s ease-in-out infinite;
-    }
 
-    @keyframes hexagonCelebration {
-        0%, 100% {
-            transform: rotate(10deg) scale(1.2) translateY(0px);
-            opacity: 0.1;
-        }
-        25% {
-            transform: rotate(15deg) scale(1.3) translateY(-10px);
-            opacity: 0.3;
-        }
-        50% {
-            transform: rotate(5deg) scale(1.1) translateY(-20px);
-            opacity: 0.2;
-        }
-        75% {
-            transform: rotate(12deg) scale(1.25) translateY(-5px);
-            opacity: 0.25;
-        }
-    }
 
-    /* Section-specific hexagon patterns */
-    .section-hexagon-pattern {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-size: 30px 52px, 30px 52px;
-        background-position: 0 0, 15px 26px;
-        transform: rotate(10deg) scale(1.1);
-        border-radius: 24px;
-    }
 
-    .section-hexagon-pattern.indigo-theme {
-        background-image: 
-            linear-gradient(30deg, transparent 24%, rgba(99, 102, 241, 0.2) 25%, rgba(99, 102, 241, 0.2) 26%, transparent 27%, transparent 74%, rgba(59, 130, 246, 0.2) 75%, rgba(59, 130, 246, 0.2) 76%, transparent 77%),
-            linear-gradient(-30deg, transparent 24%, rgba(147, 51, 234, 0.15) 25%, rgba(147, 51, 234, 0.15) 26%, transparent 27%, transparent 74%, rgba(79, 70, 229, 0.15) 75%, rgba(79, 70, 229, 0.15) 76%, transparent 77%);
-    }
-
-    .section-hexagon-pattern.green-theme {
-        background-image: 
-            linear-gradient(30deg, transparent 24%, rgba(16, 185, 129, 0.2) 25%, rgba(16, 185, 129, 0.2) 26%, transparent 27%, transparent 74%, rgba(34, 197, 94, 0.2) 75%, rgba(34, 197, 94, 0.2) 76%, transparent 77%),
-            linear-gradient(-30deg, transparent 24%, rgba(5, 150, 105, 0.15) 25%, rgba(5, 150, 105, 0.15) 26%, transparent 27%, transparent 74%, rgba(21, 128, 61, 0.15) 75%, rgba(21, 128, 61, 0.15) 76%, transparent 77%);
-    }
-
-    .section-hexagon-pattern.amber-theme {
-        background-image: 
-            linear-gradient(30deg, transparent 24%, rgba(245, 158, 11, 0.2) 25%, rgba(245, 158, 11, 0.2) 26%, transparent 27%, transparent 74%, rgba(251, 191, 36, 0.2) 75%, rgba(251, 191, 36, 0.2) 76%, transparent 77%),
-            linear-gradient(-30deg, transparent 24%, rgba(217, 119, 6, 0.15) 25%, rgba(217, 119, 6, 0.15) 26%, transparent 27%, transparent 74%, rgba(180, 83, 9, 0.15) 75%, rgba(180, 83, 9, 0.15) 76%, transparent 77%);
-    }
-
-    .section-hexagon-pattern.yellow-theme {
-        background-image: 
-            linear-gradient(30deg, transparent 24%, rgba(234, 179, 8, 0.2) 25%, rgba(234, 179, 8, 0.2) 26%, transparent 27%, transparent 74%, rgba(250, 204, 21, 0.2) 75%, rgba(250, 204, 21, 0.2) 76%, transparent 77%),
-            linear-gradient(-30deg, transparent 24%, rgba(202, 138, 4, 0.15) 25%, rgba(202, 138, 4, 0.15) 26%, transparent 27%, transparent 74%, rgba(161, 98, 7, 0.15) 75%, rgba(161, 98, 7, 0.15) 76%, transparent 77%);
-    }
-
-    /* Hover effects for section hexagons */
-    .group:hover .section-hexagon-pattern {
-        opacity: 0.2 !important;
-        transform: rotate(15deg) scale(1.15);
-        transition: all 0.5s ease-in-out;
-    }
-
-    /* Enhanced hexagon visibility during celebration */
-    .section-hexagon-pattern.celebration-enhanced {
-        opacity: 0.4 !important;
-        animation: sectionHexagonCelebration 1s ease-in-out;
-    }
-
-    @keyframes sectionHexagonCelebration {
-        0%, 100% {
-            transform: rotate(10deg) scale(1.1);
-        }
-        25% {
-            transform: rotate(20deg) scale(1.2);
-        }
-        50% {
-            transform: rotate(5deg) scale(1.3);
-        }
-        75% {
-            transform: rotate(15deg) scale(1.15);
-        }
-    }
 
 </style>
