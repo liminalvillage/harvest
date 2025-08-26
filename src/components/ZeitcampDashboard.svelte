@@ -815,11 +815,11 @@ import ItemModal from "./ItemModal.svelte";
             <!-- Main Dashboard Content -->
             <div class="h-full flex flex-col overflow-hidden">
                 <!-- Center Section: Four Main Sections -->
-                <div class="flex-1 overflow-y-auto custom-scrollbar px-6 pb-12 pt-24">
+                <div class="flex-1 overflow-hidden px-6 pb-12 pt-24">
                     <!-- Four Main Sections Grid -->
-                    <div class="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-full">
+                    <div class="w-full h-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <!-- Ruoli (Roles) Section -->
-                        <div class="bg-indigo-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-indigo-400/25 flex flex-col shadow-2xl hover:border-indigo-400/50 hover:shadow-indigo-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
+                        <div class="bg-indigo-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-indigo-400/25 flex flex-col shadow-2xl hover:border-indigo-400/50 hover:shadow-indigo-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
                             in:fly="{{ x: -100, duration: 600, delay: 100, easing: elasticOut }}">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
@@ -843,7 +843,7 @@ import ItemModal from "./ItemModal.svelte";
                                     <span class="text-white/60 text-sm">Loading...</span>
                                 </div>
                             {:else if roles.length > 0}
-                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
+                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
                                     {#each roles as role (role.id)}
                                         <div 
                                             class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-indigo-500/20 hover:border-indigo-400/50 cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-lg transform"
@@ -907,7 +907,7 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Eventi (Events) Section -->
-                        <div class="bg-green-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-green-400/25 flex flex-col shadow-2xl hover:border-green-400/50 hover:shadow-green-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
+                        <div class="bg-green-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-green-400/25 flex flex-col shadow-2xl hover:border-green-400/50 hover:shadow-green-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
                             in:fly="{{ x: 100, duration: 600, delay: 200, easing: elasticOut }}">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
@@ -936,7 +936,7 @@ import ItemModal from "./ItemModal.svelte";
                                     <span class="text-white/60 text-sm">Loading...</span>
                                 </div>
                             {:else if upcomingEvents.length > 0}
-                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
+                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
                                     {#each upcomingEvents as event}
                                         <div 
                                             class="flex items-center p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
@@ -1026,7 +1026,7 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Compiti (Tasks) Section -->
-                        <div class="bg-amber-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-amber-400/25 flex flex-col shadow-2xl hover:border-amber-400/50 hover:shadow-amber-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
+                        <div class="bg-amber-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-amber-400/25 flex flex-col shadow-2xl hover:border-amber-400/50 hover:shadow-amber-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
                             in:fly="{{ x: -100, duration: 600, delay: 300, easing: elasticOut }}">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
@@ -1055,7 +1055,7 @@ import ItemModal from "./ItemModal.svelte";
                                     <span class="text-white/60 text-sm">Loading...</span>
                                 </div>
                             {:else if topTasks.length > 0}
-                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
+                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
                                     {#each topTasks as task}
                                         <div 
                                             class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
@@ -1121,7 +1121,7 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Medaglie (Badges) Section -->
-                        <div class="bg-yellow-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-yellow-400/25 flex flex-col shadow-2xl hover:border-yellow-400/50 hover:shadow-yellow-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 min-h-[280px] group relative overflow-hidden"
+                        <div class="bg-yellow-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-yellow-400/25 flex flex-col shadow-2xl hover:border-yellow-400/50 hover:shadow-yellow-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
                             in:fly="{{ x: 100, duration: 600, delay: 400, easing: elasticOut }}">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
@@ -1150,7 +1150,7 @@ import ItemModal from "./ItemModal.svelte";
                                     <span class="text-white/60 text-sm">Loading...</span>
                                 </div>
                             {:else if badges.length > 0}
-                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar max-h-48">
+                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
                                     {#each badges as badge}
                                         <div 
                                             class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
