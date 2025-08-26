@@ -184,7 +184,7 @@
             if (count > 0) {
                 addTimelineMappingMessage('system', `✅ Saved ${count} quest${count === 1 ? '' : 's'} to ${target === 'current' ? 'this holon' : 'a new holon'} (${targetHolonId}).`);
                 
-                // ✅ AUTOMATICALLY SAVE SESSION after publishing quests
+                // ✅ SAVE SESSION after publishing quests (but don't exit)
                 completeSession();
                 
                 // Clear local draft after successful save
@@ -860,15 +860,15 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 			dispatch('sessionComplete');
 			console.log('🏁 Design Streams session completed');
 			
-			// Add completion message to chat
-			addTimelineMappingMessage('system', '✅ **Session Completed**\n\nYour Design Streams session has been saved to Previous Rituals. You can return to this quest tree anytime by opening the saved ritual.');
+			// Add completion message to chat - but don't exit
+			addTimelineMappingMessage('system', '✅ **Session Data Saved**\n\nYour Design Streams session has been saved to Previous Rituals. **Please publish quests to save those too.**\n\nYou can continue working on your quest tree or publish quests when ready.');
 			
-			// Close after a short delay to let user read the message
-			setTimeout(() => {
-				if (onClose) {
-					onClose();
-				}
-			}, 2000);
+			// Don't close the session - keep it open for continued work
+			// setTimeout(() => {
+			// 	if (onClose) {
+			// 		onClose();
+			// 	}
+			// }, 2000);
 		}
 	}
 
@@ -905,9 +905,16 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 </script>
 
 <!-- Modal Backdrop -->
-<div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+<div 
+	class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+	on:click={() => onClose && onClose()}
+	on:keydown={(e) => e.key === 'Escape' && onClose && onClose()}
+>
 	<!-- Modal Container -->
-	<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden">
+	<div 
+		class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden"
+		on:click|stopPropagation={() => {}}
+	>
 		<!-- Header with Close Button -->
 		<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-gray-700 to-gray-600 rounded-t-2xl">
 			<div class="flex items-center gap-3">
@@ -999,9 +1006,16 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 	{@const elementAdvisors = getElementAdvisors(selectedElement)}
 	
 	<!-- Modal Backdrop -->
-	<div class="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+	<div 
+		class="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+		on:click={closeElementModal}
+		on:keydown={(e) => e.key === 'Escape' && closeElementModal()}
+	>
 		<!-- Modal Container -->
-		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] relative border border-gray-700 flex flex-col overflow-hidden">
+		<div 
+			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] relative border border-gray-700 flex flex-col overflow-hidden"
+			on:click|stopPropagation={() => {}}
+		>
 			<!-- Header with Close Button -->
 			<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r {elementData.color} rounded-t-2xl">
 				<div class="flex items-center gap-3">
@@ -1123,9 +1137,16 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 <!-- Back-cast from Future Modal -->
 {#if showBackcastModal}
 	<!-- Modal Backdrop -->
-	<div class="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+	<div 
+		class="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+		on:click={closeBackcastModal}
+		on:keydown={(e) => e.key === 'Escape' && closeBackcastModal()}
+	>
 		<!-- Modal Container -->
-		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] relative border border-gray-700 flex flex-col overflow-hidden">
+		<div 
+			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] relative border border-gray-700 flex flex-col overflow-hidden"
+			on:click|stopPropagation={() => {}}
+		>
 			<!-- Header with Close Button -->
 			<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-purple-700 to-indigo-700 rounded-t-2xl">
 				<div class="flex items-center gap-3">
@@ -1276,8 +1297,15 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 
 <!-- Backcast from the Future Modal -->
 {#if showTimelineMapping}
-	<div class="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden">
+	<div 
+		class="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+		on:click={closeTimelineMapping}
+		on:keydown={(e) => e.key === 'Escape' && closeTimelineMapping()}
+	>
+		<div 
+			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden"
+			on:click|stopPropagation={() => {}}
+		>
 			<!-- Header -->
 			<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-purple-700 to-indigo-700 rounded-t-2xl">
 				<div class="flex items-center gap-3">
@@ -1600,8 +1628,16 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 
 <!-- Vision Clarification Modal -->
 {#if showVisionClarification}
-	<div class="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden">
+	<div 
+		class="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+		on:click={() => showVisionClarification = false}
+		on:keydown={(e) => e.key === 'Escape' && (showVisionClarification = false)}
+	>
+		<div 
+			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden"
+			on:click|stopPropagation={() => {}}
+			style="height: 90vh;"
+		>
 			<!-- Header -->
 			<div class="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-purple-700 to-indigo-700 rounded-t-2xl">
 				<div class="flex items-center gap-3">
@@ -1645,7 +1681,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 					</div>
 				{/if}
 
-				<div class="h-full overflow-y-auto p-6">
+				<div class="absolute inset-0 top-0 left-0 right-0 bottom-0 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800" style="margin-top: 88px;">
 					{#if !visionClarificationSession}
 						<!-- Introduction Screen -->
 						<div class="text-center space-y-6 py-8">
@@ -1690,7 +1726,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 
 					{:else if enhancedVision}
 						<!-- Enhanced Vision Results -->
-						<div class="space-y-6 pb-20">
+						<div class="space-y-6">
 							<div class="text-center mb-8">
 								<div class="w-16 h-16 mx-auto rounded-full bg-green-600 flex items-center justify-center text-2xl mb-4">
 									✨
@@ -1765,7 +1801,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 							</div>
 
 							<!-- Action Buttons - Fixed at Bottom -->
-							<div class="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 p-6 z-10">
+							<div class="bg-gray-800 border-t border-gray-700 p-6">
 								<div class="flex gap-4 justify-center max-w-5xl mx-auto">
 									<button
 										on:click={proceedWithEnhancedVision}
@@ -1848,7 +1884,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 									</div>
 
 									{#if deliberationMessages.length > 0}
-										<div class="space-y-4">
+										<div class="space-y-4 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800 pr-2 pb-4">
 											{#each deliberationMessages as message}
 												<div class="bg-gray-800 rounded-lg p-4 border-l-4 border-indigo-500">
 													<div class="flex items-center gap-2 mb-2">
@@ -1857,7 +1893,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 														</div>
 														<span class="text-indigo-300 font-medium text-sm">{message.advisor}</span>
 													</div>
-													<p class="text-white text-sm">
+													<p class="text-white text-sm leading-relaxed">
 														{message.displayContent || message.content}
 														{#if message.isTyping}
 															<span class="animate-pulse">|</span>
@@ -1961,7 +1997,7 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 								{#if currentQuestionIndex > 0}
 									<div class="bg-gray-700/50 rounded-xl p-6 border border-gray-600">
 										<h4 class="text-white font-semibold mb-4">Previous Conversation</h4>
-										<div class="space-y-4 max-h-60 overflow-y-auto">
+										<div class="space-y-4 max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800 pr-2 pb-4">
 											{#each visionClarificationSession.phases[0].questions as question, questionIndex}
 												{@const questionAdvisor = advisors.find(a => a.id === question.advisorId)}
 												{@const response = visionClarificationSession.phases[0].responses.find(r => r.questionId === question.id)}
@@ -1973,13 +2009,13 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 														</div>
 														<div class="text-sm text-white bg-gray-800 rounded p-2">
 														<strong>You:</strong> {response.response}
-														</div>
 													</div>
-												{/if}
-											{/each}
-										</div>
+												</div>
+											{/if}
+										{/each}
 									</div>
-								{/if}
+								</div>
+							{/if}
 							{/if}
 						</div>
 					{/if}
@@ -1987,4 +2023,31 @@ Respond as ${headAdvisorName}. ALWAYS begin with objective stage directions in [
 			</div>
 		</div>
 	</div>
-{/if} 
+{/if}
+
+<style>
+	/* Custom scrollbar styling for vision clarification modal */
+	.scrollbar-thin::-webkit-scrollbar {
+		width: 6px;
+	}
+
+	.scrollbar-thin::-webkit-scrollbar-track {
+		background: #374151;
+		border-radius: 3px;
+	}
+
+	.scrollbar-thin::-webkit-scrollbar-thumb {
+		background: #4B5563;
+		border-radius: 3px;
+	}
+
+	.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+		background: #6B7280;
+	}
+
+	/* Firefox scrollbar styling */
+	.scrollbar-thin {
+		scrollbar-width: thin;
+		scrollbar-color: #4B5563 #374151;
+	}
+</style> 

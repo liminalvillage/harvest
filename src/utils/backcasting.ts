@@ -110,6 +110,7 @@ export async function generateSeedQuests(
   console.log('🔮 Creating holonic seed generation prompt...');
   const prompt = createHolonicLLMPrompt(holonicInput);
   console.log('🔮 Seed prompt preview (first 300 chars):', prompt.substring(0, 300));
+  console.log('🔮 FULL SEED GENERATION PROMPT:', prompt);
 
   console.log('🔮 Sending holonic seed generation request...');
   let response;
@@ -213,7 +214,7 @@ export async function expandQuestNode(
 
   console.log('🔮 Creating holonic prompt...');
   const prompt = createHolonicLLMPrompt(holonicInput);
-  console.log('🔮 Prompt preview (first 300 chars):', prompt.substring(0, 300));
+  console.log('🔮 FULL LLM PROMPT:', prompt);
 
   console.log('🔮 Sending holonic LLM request...');
   let response;

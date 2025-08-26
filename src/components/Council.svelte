@@ -137,9 +137,84 @@ let showCreateInPicker = false;
   let showWishModal = false;
   let tempWishStatement = '';
   
+  // Value editing modal for inner circles
+  let showValueModal = false;
+  let selectedValueCircle = '';
+  let tempValueText = '';
+  let isSavingValue = false;
+  let showValueSavedToast = false;
+  
   function openWishModal() {
     showWishModal = true;
     tempWishStatement = ritualSession.wish_statement || '';
+  }
+  
+  function openValueModal(circleId: string) {
+    // Only allow editing inner circle values
+    const innerPositions = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left'];
+    if (!innerPositions.includes(circleId)) {
+      return;
+    }
+    
+    selectedValueCircle = circleId;
+    // Get current value for this circle position
+    const circleIndex = innerPositions.indexOf(circleId);
+    tempValueText = ritualSession.declared_values[circleIndex] || '';
+    showValueModal = true;
+  }
+  
+  function closeValueModal() {
+    showValueModal = false;
+    selectedValueCircle = '';
+    tempValueText = '';
+  }
+  
+  function saveValueText() {
+    if (tempValueText.trim() && selectedValueCircle) {
+      isSavingValue = true;
+      const innerPositions = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left'];
+      const circleIndex = innerPositions.indexOf(selectedValueCircle);
+      
+      if (circleIndex !== -1) {
+        // Ensure declared_values array has enough elements
+        while (ritualSession.declared_values.length <= circleIndex) {
+          ritualSession.declared_values.push('');
+        }
+        
+        // Update the value at the specific position
+        ritualSession.declared_values[circleIndex] = tempValueText.trim();
+        
+        // Update metatron immediately (holonic behavior)
+        updateMetatronFromSession();
+        
+        // Save unified session data
+        saveRitualSession();
+      }
+      
+      // Small delay to show loading state
+      setTimeout(() => {
+        isSavingValue = false;
+        closeValueModal();
+        // Show success toast
+        showValueSavedToast = true;
+        setTimeout(() => {
+          showValueSavedToast = false;
+        }, 3000);
+      }, 500);
+    }
+  }
+  
+  // Helper function to get user-friendly names for inner circle positions
+  function getInnerCircleDisplayName(circleId: string): string {
+    const positionNames: Record<string, string> = {
+      'inner-top': 'Top',
+      'inner-top-right': 'Top Right',
+      'inner-bottom-right': 'Bottom Right',
+      'inner-bottom': 'Bottom',
+      'inner-bottom-left': 'Bottom Left',
+      'inner-top-left': 'Top Left'
+    };
+    return positionNames[circleId] || circleId;
   }
   
 	// HOLONIC DISPLAY RESOLVER: Convert advisor IDs to display names
@@ -537,6 +612,13 @@ What matter brings you before the council today?`;
 		// Special handling for center circle - opens wish statement modal
 		if (circleId === 'center') {
 			openWishModal();
+			return;
+		}
+		
+		// Check if this is an inner circle - open value editing modal
+		const innerPositions = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left'];
+		if (innerPositions.includes(circleId)) {
+			openValueModal(circleId);
 			return;
 		}
 		
@@ -3163,15 +3245,30 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 								{/each}
 							</svg>
 							{#each metatronCircles as circle}
+								{@const innerPositions = ['inner-top', 'inner-top-right', 'inner-bottom-right', 'inner-bottom', 'inner-bottom-left', 'inner-top-left']}
 								<div
 									class="metatron-circle interactive-circle"
 									class:editing={editingCircle === circle.id}
+									class:has-value={innerPositions.includes(circle.id) && circleInputs[circle.id]}
 									style="left:{circle.x}%; top:{circle.y}%; width:{circleRadiusPercent * 2}%; height:{circleRadiusPercent * 2}%;"
 									data-circle-id={circle.id}
 									on:click={() => startEditingCircle(circle.id)}
 									on:keydown={(e) => e.key === 'Enter' && startEditingCircle(circle.id)}
 									role="button"
 									tabindex="0"
+									title={innerPositions.includes(circle.id) ? 
+										(circleInputs[circle.id] ? 
+											`Click to edit value: ${circleInputs[circle.id]}` : 
+											`Click to add value for ${getInnerCircleDisplayName(circle.id)} position`
+										) : 
+										(circle.id.startsWith('outer') ? 
+											(circleInputs[circle.id] ? 
+												`Click to manage advisor: ${getAdvisorDisplayName(circleInputs[circle.id])}` : 
+												'Click to add advisor'
+											) : 
+											'Click to add advisor'
+										)
+									}
 								>
 									{#if circle.id === 'center'}
 										<span class="label-text select-none text-center leading-tight">
@@ -3185,9 +3282,26 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 												<div class="text-xs opacity-60">Wish</div>
 											{/if}
 										</span>
+									{:else if innerPositions.includes(circle.id)}
+										<!-- Inner circle - show value or placeholder -->
+										<span class="label-text select-none text-center leading-tight">
+											{#if circleInputs[circle.id]}
+												<div class="text-xs font-medium">{circleInputs[circle.id]}</div>
+											{:else}
+												<div class="text-xs opacity-60">Click to</div>
+												<div class="text-xs opacity-60">add value</div>
+											{/if}
+										</span>
 									{:else if circleInputs[circle.id]}
+										<!-- Outer circle - show advisor name -->
 										<span class="label-text select-none">
 											{getAdvisorDisplayName(circleInputs[circle.id])}
+										</span>
+									{:else}
+										<!-- Empty outer circle - show placeholder -->
+										<span class="label-text select-none text-center leading-tight">
+											<div class="text-xs opacity-60">Click to</div>
+											<div class="text-xs opacity-60">add advisor</div>
 										</span>
 									{/if}
 								</div>
@@ -3261,9 +3375,9 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 						<!-- Interactive Circle Input Overlay -->
 						{#if editingCircle}
 							<div class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-								<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700">
-									<div class="p-6">
-										<div class="flex items-center justify-between mb-6">
+								<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden">
+									<div class="p-6 border-b border-gray-700">
+										<div class="flex items-center justify-between">
 											<h3 class="text-white text-xl font-bold">Edit Advisor: {editingCircle}</h3>
 											<!-- svelte-ignore a11y_consider_explicit_label -->
 											<button
@@ -3275,7 +3389,9 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 												</svg>
 											</button>
 										</div>
-										
+									</div>
+									
+									<div class="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
 										<div class="space-y-4">
 											<div>
 												<!-- svelte-ignore a11y_label_has_associated_control -->
@@ -3297,22 +3413,21 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 													use:focusOnMount
 												/>
 											</div>
-											
-											<div class="flex gap-3">
-												<button
-													on:click={() => editingCircle && saveCircleInput(editingCircle)}
-													class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-xl transition-colors"
-												>
-													Save
-												</button>
-												<button
-													on:click={cancelCircleInput}
-													class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-xl transition-colors"
-												>
-													Cancel
-												</button>
-											</div>
 										</div>
+									</div>
+									<div class="p-6 border-t border-gray-700 flex gap-3">
+										<button
+											on:click={() => editingCircle && saveCircleInput(editingCircle)}
+											class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-xl transition-colors"
+										>
+											Save
+										</button>
+										<button
+											on:click={cancelCircleInput}
+											class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-xl transition-colors"
+										>
+											Cancel
+										</button>
 									</div>
 								</div>
 							</div>
@@ -3396,9 +3511,9 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 		class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
 		on:keydown={(e) => e.key === 'Escape' && closeMemberModal()}
 	>
-		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700">
-			<div class="p-6">
-				<div class="flex items-center justify-between mb-6">
+		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden">
+			<div class="p-6 border-b border-gray-700">
+				<div class="flex items-center justify-between">
 					<h3 class="text-white text-xl font-bold">Member Details</h3>
 					<!-- svelte-ignore a11y_consider_explicit_label -->
 					<button
@@ -3410,7 +3525,9 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 						</svg>
 					</button>
 				</div>
-				
+			</div>
+			
+			<div class="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
 				<div class="space-y-4">
 					<div class="flex items-center gap-4">
 						<div class="w-16 h-16 rounded-full bg-gray-700 border-2 border-gray-600 flex items-center justify-center text-white font-bold text-xl">
@@ -3453,7 +3570,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 		class="fixed inset-0 z-50 overflow-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
 		on:keydown={(e) => e.key === 'Escape' && closeCircleSelectionModal()}
 	>
-		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700">
+		<div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden">
 			<div class="p-6">
 				<div class="flex items-center justify-between mb-6">
 					<h3 class="text-white text-xl font-bold">Choose Action</h3>
@@ -3468,7 +3585,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 					</button>
 				</div>
 				
-				<div class="space-y-4">
+				<div class="flex-1 overflow-y-auto space-y-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
 					<div class="text-center mb-6">
 						<div class="w-16 h-16 rounded-full bg-indigo-600 flex items-center justify-center text-2xl mx-auto mb-3">
 							🧙‍♀️
@@ -3506,7 +3623,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 <!-- Seat Picker Modal -->
 {#if showSeatPicker}
     <div class="fixed inset-0 z-50 overflow-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl relative border border-gray-700">
+        <div class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden">
             <div class="p-6 border-b border-gray-700 flex items-center justify-between">
                 <h3 class="text-white text-xl font-bold">Select an Advisor</h3>
                 <button class="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-700" on:click={() => { showSeatPicker = false; showCreateInPicker = false; }} aria-label="Close">
@@ -3515,7 +3632,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
                     </svg>
                 </button>
             </div>
-            <div class="p-6 space-y-4">
+            <div class="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
                 <!-- Create new advisor inline toggle -->
                 {#if !showCreateInPicker}
                     <button
@@ -3622,7 +3739,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 			}
 		}}
 	>
-		<div class="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl relative border border-gray-700">
+		<div class="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden">
 			<!-- Ritual Header -->
 			<div class="p-6 border-b border-gray-700">
 				<div class="flex items-center justify-between">
@@ -3659,7 +3776,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 			</div>
 
 			<!-- Ritual Content -->
-			<div class="p-8 min-h-[400px] max-h-[70vh] overflow-y-auto">
+			<div class="flex-1 overflow-y-auto p-8 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
 				{#if ritualStage === 0}
                     <!-- Stage 0: Welcome — Choose council mode -->
 					<div class="text-center space-y-6">
@@ -3838,6 +3955,31 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 		overflow: hidden;
 	}
 
+	/* Custom scrollbar styling */
+	.scrollbar-thin::-webkit-scrollbar {
+		width: 6px;
+	}
+
+	.scrollbar-thin::-webkit-scrollbar-track {
+		background: #374151;
+		border-radius: 3px;
+	}
+
+	.scrollbar-thin::-webkit-scrollbar-thumb {
+		background: #4B5563;
+		border-radius: 3px;
+	}
+
+	.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+		background: #6B7280;
+	}
+
+	/* Firefox scrollbar styling */
+	.scrollbar-thin {
+		scrollbar-width: thin;
+		scrollbar-color: #4B5563 #374151;
+	}
+
 	.metatron-container {
 		position: relative;
 		width: 100%;
@@ -3893,6 +4035,34 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 		background: rgba(59, 130, 246, 0.6);
 		border-color: rgba(59, 130, 246, 0.8);
 		box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+	}
+
+	.metatron-circle.has-value {
+		background: rgba(147, 51, 234, 0.4);
+		border-color: rgba(147, 51, 234, 0.6);
+		box-shadow: 0 0 10px rgba(147, 51, 234, 0.3);
+	}
+
+	.metatron-circle.has-value:hover {
+		background: rgba(147, 51, 234, 0.6);
+		border-color: rgba(147, 51, 234, 0.8);
+		box-shadow: 0 0 15px rgba(147, 51, 234, 0.5);
+	}
+
+	/* Toast animation */
+	@keyframes slide-in-from-right {
+		from {
+			transform: translateX(100%);
+			opacity: 0;
+		}
+		to {
+			transform: translateX(0);
+			opacity: 1;
+		}
+	}
+
+	.animate-in {
+		animation: slide-in-from-right 0.3s ease-out;
 	}
 
 	/* Center circle */
@@ -4090,7 +4260,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 <!-- Speak Your Wish Modal -->
 {#if showWishModal}
 	<div class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-		<div class="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl relative border border-gray-700">
+		<div class="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] relative border border-gray-700 flex flex-col overflow-hidden">
 			<div class="p-6 border-b border-gray-700 flex items-center justify-between">
 				<div class="flex items-center gap-3">
 					<div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-xl">
@@ -4100,7 +4270,7 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 				</div>
 				<button class="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-700" on:click={cancelWishModal} aria-label="Close">✕</button>
 			</div>
-			<div class="p-8">
+			<div class="flex-1 overflow-y-auto p-8 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
 				<div class="text-center mb-8">
 					<div class="text-5xl mb-4">🗣️</div>
 					<h3 class="text-3xl font-bold text-white mb-4">Speak Your Wish</h3>
@@ -4112,21 +4282,80 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 					class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent min-h-[120px] resize-none"
 					use:focusOnMount
 				></textarea>
-				<div class="flex justify-between items-center mt-6">
-					<button
-						on:click={cancelWishModal}
-						class="px-6 py-3 text-gray-400 hover:text-white transition-colors"
-					>
-						Cancel
-					</button>
-					<button
-						on:click={saveWishStatement}
-						disabled={!tempWishStatement.trim()}
-						class="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-xl transition-colors font-semibold"
-					>
-						Save Wish
-					</button>
+			</div>
+			<div class="p-6 border-t border-gray-700 flex justify-between items-center">
+				<button
+					on:click={cancelWishModal}
+					class="px-6 py-3 text-gray-400 hover:text-white transition-colors"
+				>
+					Cancel
+				</button>
+				<button
+					on:click={saveWishStatement}
+					disabled={!tempWishStatement.trim()}
+					class="px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-xl transition-colors font-semibold"
+				>
+					Save Wish
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Value Editing Modal -->
+{#if showValueModal}
+	<div 
+		class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+		on:click={() => closeValueModal()}
+		on:keydown={(e) => e.key === 'Escape' && closeValueModal()}
+	>
+		<div 
+			class="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md relative border border-gray-700 max-h-[90vh] overflow-hidden flex flex-col"
+			on:click|stopPropagation={() => {}}
+		>
+			<div class="p-4 border-b border-gray-700 flex items-center justify-between">
+				<h3 class="text-white text-lg font-semibold">Add Value</h3>
+				<button class="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-gray-700" on:click={closeValueModal} aria-label="Close">✕</button>
+			</div>
+			<div class="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+				<div class="text-center mb-4">
+					<p class="text-gray-400 text-sm mb-3">Values Set: {ritualSession.declared_values.filter(v => v.trim()).length}/6</p>
 				</div>
+				<textarea
+					bind:value={tempValueText}
+					placeholder="Enter a core value..."
+					class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent min-h-[60px] resize-none"
+					use:focusOnMount
+					on:keydown={(e) => {
+						if (e.key === 'Enter' && e.ctrlKey) {
+							e.preventDefault();
+							saveValueText();
+						}
+					}}
+				></textarea>
+				<div class="text-center mt-2 mb-4">
+					<p class="text-xs text-gray-400">Press Ctrl+Enter to save quickly</p>
+				</div>
+			</div>
+			<div class="p-4 border-t border-gray-700 flex justify-between items-center">
+				<button
+					on:click={closeValueModal}
+					class="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+				>
+					Cancel
+				</button>
+				<button
+					on:click={saveValueText}
+					disabled={!tempValueText.trim() || isSavingValue}
+					class="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+				>
+					{#if isSavingValue}
+						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+						Saving...
+					{:else}
+						Save
+					{/if}
+				</button>
 			</div>
 		</div>
 	</div>
@@ -4171,4 +4400,21 @@ userContext.session_context.council_members_present = councilMembers.map(m => m.
 	</div>
 {/if}
 -->
+
+<!-- Value Saved Toast Notification -->
+{#if showValueSavedToast}
+	<div class="fixed top-4 right-4 z-60 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg border border-green-500 flex items-center gap-3 animate-in slide-in-from-right duration-300">
+		<div class="text-xl">✅</div>
+		<div>
+			<div class="font-semibold">Value Saved!</div>
+			<div class="text-sm text-green-100">Your value has been updated successfully.</div>
+		</div>
+		<button 
+			on:click={() => showValueSavedToast = false}
+			class="text-green-200 hover:text-white transition-colors ml-4"
+		>
+			✕
+		</button>
+	</div>
+{/if}
 
