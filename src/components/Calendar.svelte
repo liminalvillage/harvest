@@ -29,6 +29,11 @@
     // View options: 'month', 'week', 'day', 'orbits'
     let viewMode: 'grid' | 'list' | 'canvas' | 'month' | 'week' | 'day' | 'orbits' = 'week';
     
+    // Drag and drop state
+    let draggedTask: { key: string; task: any } | null = null;
+    let dragOverDate: Date | null = null;
+    let dragOverTime: number | null = null; // Hour of day (0-23)
+    
     // Get calendar data for current month
     $: monthData = getMonthData(currentDate);
     $: weekData = getWeekData(currentDate);
@@ -548,6 +553,127 @@
         }
     }
 
+    // Drag and drop handlers
+    function handleDragStart(event: DragEvent, key: string, task: any) {
+        if (!event.dataTransfer) return;
+        
+        draggedTask = { key, task };
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', ''); // Required for some browsers
+        
+        // Add visual feedback
+        if (event.target instanceof HTMLElement) {
+            event.target.style.opacity = '0.5';
+        }
+    }
+
+    function handleDragEnd(event: DragEvent) {
+        // Reset visual state
+        if (event.target instanceof HTMLElement) {
+            event.target.style.opacity = '1';
+        }
+        
+        // Clear drag state if not dropped successfully
+        setTimeout(() => {
+            if (draggedTask) {
+                draggedTask = null;
+                dragOverDate = null;
+                dragOverTime = null;
+            }
+        }, 100);
+    }
+
+    function handleDragOver(event: DragEvent, date: Date, hour?: number) {
+        event.preventDefault();
+        if (!draggedTask) return;
+        
+        event.dataTransfer!.dropEffect = 'move';
+        dragOverDate = date;
+        dragOverTime = hour !== undefined ? hour : null;
+    }
+
+    function handleDragLeave() {
+        dragOverDate = null;
+        dragOverTime = null;
+    }
+
+    async function handleDrop(event: DragEvent, date: Date, hour?: number) {
+        event.preventDefault();
+        
+        if (!draggedTask || !$ID) {
+            draggedTask = null;
+            dragOverDate = null;
+            dragOverTime = null;
+            return;
+        }
+
+        try {
+            // Calculate new date and time
+            const newDate = new Date(date);
+            
+            // If hour is specified (week/day view), set specific time
+            if (hour !== undefined) {
+                newDate.setHours(hour, 0, 0, 0);
+            } else {
+                // For month view, keep original time or set to current time
+                const originalDate = new Date(draggedTask.task.when);
+                if (isNaN(originalDate.getTime())) {
+                    // If no valid original time, set to current time
+                    const now = new Date();
+                    newDate.setHours(now.getHours(), now.getMinutes(), 0, 0);
+                } else {
+                    // Keep original time
+                    newDate.setHours(originalDate.getHours(), originalDate.getMinutes(), 0, 0);
+                }
+            }
+
+            // Calculate end time (preserve duration if exists)
+            let endDate = new Date(newDate);
+            if (draggedTask.task.ends) {
+                const originalStart = new Date(draggedTask.task.when);
+                const originalEnd = new Date(draggedTask.task.ends);
+                const duration = originalEnd.getTime() - originalStart.getTime();
+                endDate = new Date(newDate.getTime() + duration);
+            } else {
+                // Default 1 hour duration
+                endDate.setHours(endDate.getHours() + 1);
+            }
+
+            // Update the task
+            const updatedTask = {
+                ...draggedTask.task,
+                when: newDate.toISOString(),
+                ends: endDate.toISOString()
+            };
+
+            // Update local state immediately for better UX
+            tasks[draggedTask.key] = updatedTask;
+            tasks = tasks; // Trigger reactivity
+
+            // Update in holosphere
+            await holosphere.put($ID, 'quests', updatedTask);
+            
+            console.log('Task moved successfully:', {
+                task: draggedTask.task.title,
+                from: draggedTask.task.when,
+                to: newDate.toISOString()
+            });
+
+        } catch (error) {
+            console.error('Error moving task:', error);
+            // Revert local state on error
+            if (draggedTask) {
+                tasks[draggedTask.key] = draggedTask.task;
+                tasks = tasks;
+            }
+        } finally {
+            // Clear drag state
+            draggedTask = null;
+            dragOverDate = null;
+            dragOverTime = null;
+        }
+    }
+
     // Add this helper function to calculate grid positions
     function getTaskPosition(task: any) {
         const startTime = new Date(task.when);
@@ -567,6 +693,82 @@
             startTime: `${startTime.getHours().toString().padStart(2, '0')}:${startTime.getMinutes().toString().padStart(2, '0')}`,
             endTime: `${endTime.getHours().toString().padStart(2, '0')}:${endTime.getMinutes().toString().padStart(2, '0')}`
         };
+    }
+
+    // Function to detect overlapping events and calculate column layout
+    function calculateEventColumns(tasksForDay: Array<{key: string, task: any}>) {
+        // Sort events by start time, then by duration (longer events first)
+        const sortedTasks = tasksForDay.sort((a, b) => {
+            const aStart = new Date(a.task.when).getTime();
+            const bStart = new Date(b.task.when).getTime();
+            if (aStart !== bStart) return aStart - bStart;
+            
+            // If same start time, longer events first
+            const aDuration = a.task.ends ? new Date(a.task.ends).getTime() - aStart : 60*60*1000;
+            const bDuration = b.task.ends ? new Date(b.task.ends).getTime() - bStart : 60*60*1000;
+            return bDuration - aDuration;
+        });
+
+        const columns: Array<{key: string, task: any, column: number, totalColumns: number}> = [];
+        const activeEvents: Array<{key: string, task: any, column: number, endTime: number}> = [];
+
+        for (const taskItem of sortedTasks) {
+            const startTime = new Date(taskItem.task.when).getTime();
+            const endTime = taskItem.task.ends ? new Date(taskItem.task.ends).getTime() : startTime + 60*60*1000;
+
+            // Remove events that have ended
+            for (let i = activeEvents.length - 1; i >= 0; i--) {
+                if (activeEvents[i].endTime <= startTime) {
+                    activeEvents.splice(i, 1);
+                }
+            }
+
+            // Find the first available column
+            let column = 0;
+            const usedColumns = activeEvents.map(e => e.column).sort((a, b) => a - b);
+            for (const usedColumn of usedColumns) {
+                if (column === usedColumn) {
+                    column++;
+                } else {
+                    break;
+                }
+            }
+
+            // Add to active events
+            activeEvents.push({
+                key: taskItem.key,
+                task: taskItem.task,
+                column,
+                endTime
+            });
+
+            // Calculate total columns for all overlapping events
+            const totalColumns = Math.max(1, activeEvents.length);
+
+            // Update total columns for all active events
+            for (let i = 0; i < columns.length; i++) {
+                const existingEvent = columns[i];
+                const existingEndTime = existingEvent.task.ends ? new Date(existingEvent.task.ends).getTime() : new Date(existingEvent.task.when).getTime() + 60*60*1000;
+                
+                // If this existing event overlaps with current time range, update its total columns
+                if (existingEndTime > startTime) {
+                    const activeAtThisTime = activeEvents.filter(ae => {
+                        const aeStart = new Date(ae.task.when).getTime();
+                        return aeStart <= startTime && ae.endTime > startTime;
+                    });
+                    existingEvent.totalColumns = Math.max(existingEvent.totalColumns, activeAtThisTime.length);
+                }
+            }
+
+            columns.push({
+                key: taskItem.key,
+                task: taskItem.task,
+                column,
+                totalColumns
+            });
+        }
+
+        return columns;
     }
 
     // Add to script section at the top
@@ -1298,7 +1500,12 @@
                     class:opacity-50={!isCurrentMonth(date)}
                     class:ring-2={isSelected(date)}
                     class:ring-white={isSelected(date)}
+                    class:bg-indigo-900={dragOverDate?.toDateString() === date.toDateString()}
+                    class:bg-opacity-50={dragOverDate?.toDateString() === date.toDateString()}
                     on:click={() => handleDateClick(date)}
+                    on:dragover={(e) => handleDragOver(e, date)}
+                    on:dragleave={handleDragLeave}
+                    on:drop={(e) => handleDrop(e, date)}
                 >
                     <span 
                         class="inline-flex w-8 h-8 items-center justify-center rounded-full text-white
@@ -1328,12 +1535,27 @@
                         {/each}
                         
                         {#each dateEvents.slice(0, 3) as event}
-                            <div 
-                                class="text-xs p-1 rounded bg-opacity-90 truncate"
-                                style="background-color: {event.color || '#4B5563'}"
-                            >
-                                {event.title}
-                            </div>
+                            {#if event.id && tasks[event.id]}
+                                <!-- This is a task, make it draggable -->
+                                <div 
+                                    class="text-xs p-1 rounded bg-opacity-90 truncate cursor-move"
+                                    class:opacity-50={draggedTask?.key === event.id}
+                                    style="background-color: {event.color || '#4B5563'}"
+                                    draggable="true"
+                                    on:dragstart={(e) => handleDragStart(e, event.id, event)}
+                                    on:dragend={handleDragEnd}
+                                >
+                                    {event.title}
+                                </div>
+                            {:else}
+                                <!-- Regular event, not draggable -->
+                                <div 
+                                    class="text-xs p-1 rounded bg-opacity-90 truncate"
+                                    style="background-color: {event.color || '#4B5563'}"
+                                >
+                                    {event.title}
+                                </div>
+                            {/if}
                         {/each}
                         {#if dateEvents.length > 3}
                             <div class="text-xs text-gray-400">
@@ -1363,37 +1585,75 @@
                     <div class="relative">
                         <div class="divide-y divide-gray-700">
                             {#each Array(18) as _, i}
+                                {@const hour = i + 6}
                                 <div 
                                     class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
+                                    class:bg-indigo-100={dragOverDate?.toDateString() === date.toDateString() && dragOverTime === hour}
+                                    class:bg-opacity-10={dragOverDate?.toDateString() === date.toDateString() && dragOverTime === hour}
+                                    on:dragover={(e) => handleDragOver(e, date, hour)}
+                                    on:dragleave={handleDragLeave}
+                                    on:drop={(e) => handleDrop(e, date, hour)}
                                 >
                                     <div class="text-xs text-gray-500 group-hover:text-gray-400">
-                                        {(i + 6).toString().padStart(2, '0')}:00
+                                        {hour.toString().padStart(2, '0')}:00
                                     </div>
                                 </div>
                             {/each}
                         </div>
 
                         <!-- Tasks for this day -->
-                        {#each Object.entries(tasks) as [key, task]}
-                            {#if task.when && new Date(task.when).toDateString() === date.toDateString()}
-                                {@const position = getTaskPosition(task)}
-                                <div 
-                                    class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-pointer hover:bg-indigo-400 transition-colors absolute left-1 right-1 z-10"
-                                    on:click|stopPropagation={() => handleTaskClick(key, task)}
-                                    on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
-                                    role="button"
-                                    tabindex="0"
-                                    style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px;"
-                                >
-                                    <div class="font-bold truncate">{task.title}</div>
-                                    <div class="text-xs opacity-75">
-                                        {position.startTime} - {position.endTime}
-                                    </div>
-                                    {#if task.location}
-                                        <div class="text-xs opacity-75 truncate">{task.location}</div>
+                        {#each calculateEventColumns(Object.entries(tasks).filter(([key, task]) => task.when && new Date(task.when).toDateString() === date.toDateString()).map(([key, task]) => ({key, task}))) as {key, task, column, totalColumns}}
+                            {@const position = getTaskPosition(task)}
+                            {@const columnWidth = totalColumns > 1 ? `calc((100% - ${totalColumns * 2}px) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
+                            {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * ((100% - ${totalColumns * 2}px) / ${totalColumns}) + ${column * 2}px)` : '0.25rem'}
+                            {@const startHour = new Date(task.when).getHours()}
+                            {@const endHour = task.ends ? new Date(task.ends).getHours() : startHour + 1}
+                            {@const isShortEvent = (position.gridRowEnd - position.gridRowStart) <= 2}
+                            <div 
+                                class="rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden"
+                                class:opacity-50={draggedTask?.key === key}
+                                class:text-xs={!isShortEvent}
+                                class:text-[10px]={isShortEvent}
+                                class:p-1={isShortEvent}
+                                class:p-2={!isShortEvent}
+                                draggable="true"
+                                on:dragstart={(e) => handleDragStart(e, key, task)}
+                                on:dragend={handleDragEnd}
+                                on:click|stopPropagation={() => handleTaskClick(key, task)}
+                                on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
+                                role="button"
+                                tabindex="0"
+                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
+                            >
+                                <div class="font-bold truncate leading-tight">
+                                    {#if totalColumns > 2 && task.title.length > 15}
+                                        {task.title.substring(0, 12)}...
+                                    {:else if totalColumns > 1 && task.title.length > 20}
+                                        {task.title.substring(0, 17)}...
+                                    {:else}
+                                        {task.title}
                                     {/if}
                                 </div>
-                            {/if}
+                                {#if !isShortEvent}
+                                    <div class="opacity-75 leading-tight" class:text-[9px]={totalColumns > 2}>
+                                        {startHour}:00{endHour !== startHour ? ` - ${endHour}:00` : ''}
+                                    </div>
+                                    {#if task.location && !isShortEvent && totalColumns <= 2}
+                                        <div class="opacity-75 truncate leading-tight" class:text-[9px]={totalColumns > 1}>
+                                            📍 {task.location.length > 15 ? task.location.substring(0, 12) + '...' : task.location}
+                                        </div>
+                                    {/if}
+                                {:else}
+                                    <!-- For short events, show only time on the same line -->
+                                    <div class="opacity-75 text-[9px] leading-none">
+                                        {startHour}:00
+                                    </div>
+                                {/if}
+                                {#if totalColumns > 3}
+                                    <!-- For very crowded layouts, add a subtle indicator -->
+                                    <div class="absolute top-0 right-0 w-2 h-2 bg-white bg-opacity-30 rounded-bl-md"></div>
+                                {/if}
+                            </div>
                         {/each}
 
                         {#if now.toDateString() === date.toDateString()}
@@ -1445,57 +1705,67 @@
             <div class="relative">
                 <div class="divide-y divide-gray-700">
                     {#each Array(18) as _, i}
+                        {@const hour = i + 6}
                         <div 
                             class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
+                            class:bg-indigo-100={dragOverDate?.toDateString() === currentDate.toDateString() && dragOverTime === hour}
+                            class:bg-opacity-10={dragOverDate?.toDateString() === currentDate.toDateString() && dragOverTime === hour}
                             on:click={() => {
                                 const eventDate = new Date(currentDate);
-                                eventDate.setHours(i + 6);
+                                eventDate.setHours(hour);
                                 handleDateClick(eventDate);
                             }}
                             on:keydown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault();
                                     const eventDate = new Date(currentDate);
-                                    eventDate.setHours(i + 6);
+                                    eventDate.setHours(hour);
                                     handleDateClick(eventDate);
                                 }
                             }}
+                            on:dragover={(e) => handleDragOver(e, currentDate, hour)}
+                            on:dragleave={handleDragLeave}
+                            on:drop={(e) => handleDrop(e, currentDate, hour)}
                             role="button"
                             tabindex="0"
                         >
                             <div class="text-xs text-gray-500 group-hover:text-gray-400">
-                                {(i + 6).toString().padStart(2, '0')}:00
+                                {hour.toString().padStart(2, '0')}:00
                             </div>
                         </div>
                     {/each}
                 </div>
 
                 <!-- Tasks for this day -->
-                {#each Object.entries(tasks) as [key, task]}
-                    {#if task.when && new Date(task.when).toDateString() === currentDate.toDateString()}
-                        {@const position = getTaskPosition(task)}
-                        <div
-                            class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-pointer hover:bg-indigo-400 transition-colors absolute left-1 right-1 z-10"
-                            on:click|stopPropagation={() => handleTaskClick(key, task)}
-                            on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
-                            role="button"
-                            tabindex="0"
-                            style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px;"
-                        >
-                            <div class="font-bold truncate">{task.title}</div>
-                            <div class="text-xs opacity-75">
-                                {position.startTime} - {position.endTime}
-                            </div>
-                            {#if task.location}
-                                <div class="text-xs opacity-75 truncate">{task.location}</div>
-                            {/if}
-                            {#if task.participants?.length}
-                                <div class="text-xs mt-1">
-                                    🙋‍♂️ {task.participants.length}
-                                </div>
-                            {/if}
+                {#each calculateEventColumns(Object.entries(tasks).filter(([key, task]) => task.when && new Date(task.when).toDateString() === currentDate.toDateString()).map(([key, task]) => ({key, task}))) as {key, task, column, totalColumns}}
+                    {@const position = getTaskPosition(task)}
+                    {@const columnWidth = totalColumns > 1 ? `calc((100% - 0.5rem) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
+                    {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * (100% - 0.5rem) / ${totalColumns})` : '0.25rem'}
+                    <div
+                        class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10"
+                        class:opacity-50={draggedTask?.key === key}
+                        draggable="true"
+                        on:dragstart={(e) => handleDragStart(e, key, task)}
+                        on:dragend={handleDragEnd}
+                        on:click|stopPropagation={() => handleTaskClick(key, task)}
+                        on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
+                        role="button"
+                        tabindex="0"
+                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
+                    >
+                        <div class="font-bold truncate">{task.title}</div>
+                        <div class="text-xs opacity-75">
+                            {position.startTime} - {position.endTime}
                         </div>
-                    {/if}
+                        {#if task.location}
+                            <div class="text-xs opacity-75 truncate">{task.location}</div>
+                        {/if}
+                        {#if task.participants?.length}
+                            <div class="text-xs mt-1">
+                                🙋‍♂️ {task.participants.length}
+                            </div>
+                        {/if}
+                    </div>
                 {/each}
 
                 <!-- Show arrivals/departures at noon -->
@@ -1658,8 +1928,13 @@
                 aria-labelledby="modal-title"
                 aria-describedby="modal-description"
             >
-                <div class="flex justify-between items-center mb-6">
-                    <h3 id="modal-title" class="text-white text-lg font-medium">Update Schedule</h3>
+                <div class="flex justify-between items-start mb-6">
+                    <div>
+                        <h3 id="modal-title" class="text-white text-lg font-medium">Update Schedule</h3>
+                        {#if selectedTask?.task?.title}
+                            <p class="text-indigo-300 text-sm mt-1 font-medium">{selectedTask.task.title}</p>
+                        {/if}
+                    </div>
                     <span id="modal-description" class="sr-only">Update schedule date and time</span>
                     <button 
                         class="text-gray-400 hover:text-white transition-colors"
@@ -1789,5 +2064,26 @@
         position: relative;
         height: 864px; /* 18 rows * 48px */
         overflow-y: auto;
+    }
+
+    /* Responsive improvements for split events */
+    @media (max-width: 768px) {
+        .divide-y {
+            grid-template-rows: repeat(18, 40px);
+            height: 720px; /* 18 rows * 40px */
+        }
+    }
+
+    /* Ensure proper text truncation in narrow columns */
+    .truncate {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+    }
+
+    /* Better spacing for split events */
+    .leading-tight {
+        line-height: 1.1;
     }
 </style> 
