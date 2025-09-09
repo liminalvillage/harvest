@@ -818,19 +818,19 @@ import ItemModal from "./ItemModal.svelte";
                 <div class="flex-1 overflow-hidden px-6 pb-12 pt-24">
                     <!-- Four Main Sections Grid -->
                     <div class="w-full h-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <!-- Ruoli (Roles) Section -->
+                        <!-- Roles Section -->
                         <div class="bg-indigo-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-indigo-400/25 flex flex-col shadow-2xl hover:border-indigo-400/50 hover:shadow-indigo-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
                             in:fly="{{ x: -100, duration: 600, delay: 100, easing: elasticOut }}">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-8 h-8 mr-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <h3 class="text-xl md:text-2xl font-bold text-white flex items-center">
+                                    <svg class="w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                                     </svg>
-                                    Ruoli
+                                    Roles
                                 </h3>
                                 <button 
-                                    class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all duration-300 text-sm font-medium shadow-lg hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 transform"
+                                    class="px-2 py-1 md:px-4 md:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all duration-300 text-xs md:text-sm font-medium shadow-lg hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 transform"
                                     on:click={navigateToRoles}
                                 >
                                     View All
@@ -906,19 +906,20 @@ import ItemModal from "./ItemModal.svelte";
                             {/if}
                         </div>
 
-                        <!-- Eventi (Events) Section -->
+                        <!-- Upcoming Events Section -->
                         <div class="bg-green-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-green-400/25 flex flex-col shadow-2xl hover:border-green-400/50 hover:shadow-green-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
                             in:fly="{{ x: 100, duration: 600, delay: 200, easing: elasticOut }}">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-8 h-8 mr-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <h3 class="text-xl md:text-2xl font-bold text-white flex items-center">
+                                    <svg class="w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
-                                    Prossimi Eventi
+                                    <span class="hidden sm:inline">Upcoming Events</span>
+                                    <span class="sm:hidden">Events</span>
                                 </h3>
                                 <button 
-                                    class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-xl"
+                                    class="px-2 py-1 md:px-4 md:py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-xs md:text-sm font-medium shadow-lg hover:shadow-xl"
                                     on:click={() => {
                                         if (holonID) {
                                             goto(`/${holonID}/calendar`);
@@ -1025,19 +1026,19 @@ import ItemModal from "./ItemModal.svelte";
                             {/if}
                         </div>
 
-                        <!-- Compiti (Tasks) Section -->
+                        <!-- Tasks Section -->
                         <div class="bg-amber-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-amber-400/25 flex flex-col shadow-2xl hover:border-amber-400/50 hover:shadow-amber-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
                             in:fly="{{ x: -100, duration: 600, delay: 300, easing: elasticOut }}">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-8 h-8 mr-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <h3 class="text-xl md:text-2xl font-bold text-white flex items-center">
+                                    <svg class="w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                                     </svg>
-                                    Compiti
+                                    Tasks
                                 </h3>
                                 <button 
-                                    class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-xl"
+                                    class="px-2 py-1 md:px-4 md:py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors text-xs md:text-sm font-medium shadow-lg hover:shadow-xl"
                                     on:click={() => {
                                         if (holonID) {
                                             goto(`/${holonID}/tasks`);
@@ -1120,19 +1121,19 @@ import ItemModal from "./ItemModal.svelte";
                             {/if}
                         </div>
 
-                        <!-- Medaglie (Badges) Section -->
+                        <!-- Badges Section -->
                         <div class="bg-yellow-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-yellow-400/25 flex flex-col shadow-2xl hover:border-yellow-400/50 hover:shadow-yellow-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
                             in:fly="{{ x: 100, duration: 600, delay: 400, easing: elasticOut }}">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-8 h-8 mr-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <h3 class="text-xl md:text-2xl font-bold text-white flex items-center">
+                                    <svg class="w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.857 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.857 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.857.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.857-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.857 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.857 3.42 3.42 0 013.138-3.138z" />
                                     </svg>
-                                    Medaglie
+                                    Badges
                                 </h3>
                                 <button 
-                                    class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-xl"
+                                    class="px-2 py-1 md:px-4 md:py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors text-xs md:text-sm font-medium shadow-lg hover:shadow-xl"
                                     on:click={() => {
                                         if (holonID) {
                                             goto(`/${holonID}/badges`);

@@ -13,12 +13,12 @@
 	import Sidebar from './sidebar/Sidebar.svelte';
 	import MyHolons from '../components/MyHolons.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
-	import ZeitcampDashboard from '../components/ZeitcampDashboard.svelte';
+	import OverlayDashboard from '../components/OverlayDashboard.svelte';
 
 	const style = {
 		container: `bg-gray-900 h-screen overflow-hidden relative`,
 		mainContainer: `flex flex-col h-screen pl-0 w-full lg:pl-20 lg:space-y-4`,
-		main: `h-screen overflow-auto pb-36 pt-4 px-2 md:pb-8 md:pt-4 lg:pt-0 lg:px-4`,
+		main: `h-screen overflow-auto pb-8 pt-4 px-2 md:pb-8 md:pt-4 lg:pt-0 lg:px-4`,
 		rootContainer: `bg-gray-900 h-screen overflow-hidden relative`,
 		rootMain: `h-screen overflow-auto p-4`
 	};
@@ -26,7 +26,7 @@
 	let lastMouseMove = Date.now();
 	let currentRouteIndex = 0;
 	let showMyHolons = false;
-	let showZeitcampDashboard = false;
+	let showOverlayDashboard = false;
 
 	// Check if we're on the root route
 	$: isRootRoute = $page.url.pathname === '/';
@@ -46,10 +46,10 @@
 
 	// Handle global keyboard shortcuts
 	function handleGlobalKeydown(event: KeyboardEvent) {
-		// Toggle zeitcamp dashboard with Ctrl+Shift+Z or Cmd+Shift+Z
+		// Toggle overlay dashboard with Ctrl+Shift+Z or Cmd+Shift+Z
 		if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Z') {
 			event.preventDefault();
-			toggleZeitcampDashboard();
+			toggleOverlayDashboard();
 		}
 	}
 
@@ -57,8 +57,8 @@
 		showMyHolons = !showMyHolons;
 	}
 
-	function toggleZeitcampDashboard() {
-		showZeitcampDashboard = !showZeitcampDashboard;
+	function toggleOverlayDashboard() {
+		showOverlayDashboard = !showOverlayDashboard;
 	}
 
 	// Set up auto-switching if in browser
@@ -66,9 +66,9 @@
 		// Set up mouse move listener
 		window.addEventListener('mousemove', handleMouseMove);
 
-		// Set up custom event listener for Zeitcamp dashboard
-		window.addEventListener('toggleZeitcampDashboard', () => {
-			toggleZeitcampDashboard();
+		// Set up custom event listener for Overlay dashboard
+		window.addEventListener('toggleOverlayDashboard', () => {
+			toggleOverlayDashboard();
 		});
 
 		// Auto-switching is disabled by default - removed timer logic
@@ -77,8 +77,8 @@
 		// Cleanup on component destroy
 		onDestroy(() => {
 			window.removeEventListener('mousemove', handleMouseMove);
-			window.removeEventListener('toggleZeitcampDashboard', () => {
-				toggleZeitcampDashboard();
+			window.removeEventListener('toggleOverlayDashboard', () => {
+				toggleOverlayDashboard();
 			});
 		});
 	}
@@ -141,7 +141,44 @@
 			</div>
 		{/if}
 
-		<!-- Zeitcamp Dashboard Overlay -->
-		<ZeitcampDashboard bind:isVisible={showZeitcampDashboard} />
+		<!-- Overlay Dashboard -->
+		<OverlayDashboard bind:isVisible={showOverlayDashboard} />
 	</div>
 {/if}
+
+<style>
+	/* Hide scrollbars while keeping scroll functionality */
+	:global(html) {
+		/* Firefox */
+		scrollbar-width: none;
+	}
+
+	:global(body) {
+		/* Firefox */
+		scrollbar-width: none;
+	}
+
+	/* Webkit browsers (Chrome, Safari, Edge) */
+	:global(*::-webkit-scrollbar) {
+		display: none;
+		width: 0;
+		height: 0;
+	}
+
+	:global(*::-webkit-scrollbar-track) {
+		display: none;
+	}
+
+	:global(*::-webkit-scrollbar-thumb) {
+		display: none;
+	}
+
+	:global(*::-webkit-scrollbar-corner) {
+		display: none;
+	}
+
+	/* Ensure scrolling still works */
+	:global(*) {
+		-ms-overflow-style: none; /* Internet Explorer 10+ */
+	}
+</style>

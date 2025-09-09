@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, getContext } from 'svelte';
+  import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
+  import FlagSelector from './FlagSelector.svelte';
 
   // Types
   interface User {
@@ -65,15 +67,8 @@
   let realUserCount: number = 0;
   let realUsers: User[] = [];
 
-  // Available options (unchanged)
-  const languages = [
-    { code: 'en', name: 'English', flag: '🇬🇧' },
-    { code: 'it', name: 'Italian', flag: '🇮🇹' },
-    { code: 'es', name: 'Spanish', flag: '🇪🇸' },
-    { code: 'fr', name: 'French', flag: '🇫🇷' },
-    { code: 'ru', name: 'Russian', flag: '🇷🇺' },
-    { code: 'de', name: 'German', flag: '🇩🇪' }
-  ];
+  // Use the expanded language list from the store
+  const languages = supportedLanguages;
   const themes = [
     { id: 'light', name: 'Light', icon: '☀️', description: 'Clean and bright interface with light colors' },
     { id: 'dark', name: 'Dark', icon: '🌙', description: 'Dark interface for reduced eye strain' },
@@ -118,6 +113,9 @@
       } else {
         settings = getDefaultSettings(holonId);
       }
+      
+      // Update the global settings store
+      settingsStore.set(settings);
       
       // Fetch real user count from holosphere
       await fetchRealUserCount();
@@ -189,12 +187,16 @@
     loadSettings();
   }
 
-  // UI logic (unchanged except saveSettings now calls holosphere)
+  // UI logic - updated to use settings store
   function updateSetting(key, value) {
     settings = {
       ...settings,
       [key]: value
     };
+    
+    // Update the global settings store
+    settingsHelpers.updateSetting(key, value);
+    
     saveSettings();
   }
   function addArrayItem(arrayName, item) {
@@ -388,12 +390,17 @@
 							
 							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 								<div>
-									<label for="holon-language" class="block text-sm font-medium text-gray-300 mb-2">Language <span class="text-xs text-gray-400">(for Telegram bot only)</span></label>
-									<select id="holon-language" bind:value={settings.language} on:change={() => updateSetting('language', settings.language)} class="w-full px-4 py-3 rounded-xl bg-gray-600 text-white border border-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-colors">
-										{#each languages as lang}
-											<option value={lang.code}>{lang.flag} {lang.name}</option>
-										{/each}
-									</select>
+									<div class="block text-sm font-medium text-gray-300 mb-4">
+										Language 
+										<span class="text-xs text-gray-400">(affects entire app translation)</span>
+									</div>
+									<FlagSelector 
+										selectedLanguage={settings.language}
+										onLanguageChange={(lang) => updateSetting('language', lang)}
+										size="small"
+										maxVisible={12}
+										title="Current Language"
+									/>
 								</div>
 
 								<div>

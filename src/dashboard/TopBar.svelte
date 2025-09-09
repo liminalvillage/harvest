@@ -45,6 +45,7 @@
 	let currentHolonName: string | undefined;
 	let holonID: string = '';
 	let showToast = false;
+	let isTranslating = false;
 
 	// Function to save visited holon
 	async function saveVisitedHolon(holonId: string, holonName: string) {
@@ -78,6 +79,28 @@
 			processedHolonId = initialId;
 			updateCurrentHolonName(initialId);
 		}
+		
+		// Monitor for Google Translate activity
+		const observer = new MutationObserver(() => {
+			// Check if Google Translate is active by looking for translated elements
+			const hasTranslatedElements = document.querySelector('font[style*="vertical-align"]') || 
+										   document.querySelector('.goog-te-combo')?.value !== '';
+			isTranslating = !!hasTranslatedElements;
+		});
+		
+		observer.observe(document.body, {
+			childList: true,
+			subtree: true,
+			attributes: true
+		});
+		
+		// Listen for translation events
+		window.addEventListener('flagLanguageChanged', () => {
+			setTimeout(() => {
+				const selectElement = document.querySelector('.goog-te-combo') as HTMLSelectElement;
+				isTranslating = selectElement && selectElement.value !== '';
+			}, 100);
+		});
 	});
 
 	// Use centralized holon name service with proper reactivity
@@ -268,12 +291,14 @@
                     <!-- Title and ID -->
                     <div class="text-left">
                         <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
-                            {#if currentHolonName && currentHolonName !== `Holon ${$ID}`}
+                            {#if currentHolonName && currentHolonName !== `Holon ${$ID}` && !currentHolonName.startsWith('Holon ') && !isTranslating}
                                 {currentHolonName}
+                            {:else if isTranslating && currentHolonName && currentHolonName !== `Holon ${$ID}` && !currentHolonName.startsWith('Holon ')}
+                                <span class="notranslate">{currentHolonName}</span>
                             {:else if $ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== ''}
-                                {currentHolonName || 'Loading...'}
+                                <span class="notranslate">Loading...</span>
                             {:else}
-                                Loading...
+                                <span class="notranslate">Loading...</span>
                             {/if}
                         </div>
                         <div class="text-xs sm:text-sm text-gray-400 font-mono mt-1">

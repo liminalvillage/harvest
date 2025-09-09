@@ -21,15 +21,20 @@
 
 <div>
   <h1>Video Chat for Holon: {$ID}</h1>
-  <VideoChat />
+  <VideoChat roomId={$ID} />
 </div>
 
 <style>
   div {
     padding: 20px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    min-height: fit-content; /* Allow natural height */
   }
   h1 {
     margin-bottom: 20px;
     color: #333;
+    word-wrap: break-word;
   }
 </style> 

@@ -365,6 +365,10 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
     color: #333; /* Darker text for better readability */
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    min-height: fit-content; /* Allow natural height based on content */
   }
 
   .video-chat-container h2 {
@@ -379,19 +383,22 @@
   .videos {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px; /* Slightly reduced gap */
+    gap: 16px;
     margin-bottom: 20px;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .video-wrapper {
-    flex: 1 1 280px; /* Flex-grow, flex-shrink, and basis for responsiveness */
-    /* min-width: 280px; /* Ensure videos are not too small */
-    max-width: calc(50% - 8px); /* Max two videos per row, considering gap */
-    border: 1px solid #cbd5e0; /* Softer border color */
-    background: #ffffff; /* White background for video cards */
-    border-radius: 6px; /* Rounded corners for video cards */
-    overflow: hidden; /* Ensure video respects border-radius */
+    flex: 1 1 280px;
+    min-width: 280px;
+    max-width: calc(50% - 8px);
+    border: 1px solid #cbd5e0;
+    background: #ffffff;
+    border-radius: 6px;
+    overflow: hidden;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    box-sizing: border-box;
   }
 
   .video-wrapper h3 {
@@ -416,12 +423,19 @@
 
   /* Responsive adjustments */
   @media (max-width: 768px) {
+    .videos {
+      gap: 12px;
+    }
     .video-wrapper {
-      max-width: calc(100% - 16px); /* Full width on smaller screens, accounting for gap if it wraps weirdly */
-      min-width: 200px; /* Adjust min-width for smaller screens if needed */
+      max-width: 100%;
+      min-width: 200px;
+      flex: 1 1 200px;
+    }
+    .video-chat-container {
+      padding: 15px;
     }
     .video-chat-container h2 {
-        font-size: 1.25em;
+      font-size: 1.25em;
     }
   }
 

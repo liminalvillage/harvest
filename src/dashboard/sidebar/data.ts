@@ -80,7 +80,6 @@ export const data = [
 		icon: StatusIcon,
 		link: '/status'
 	},
-
 	{
 		title: 'Federation',
 		icon: FederationIcon,
@@ -90,6 +89,11 @@ export const data = [
 		title: 'Settings',
 		icon: SettingsIcon,
 		link: '/settings'
+	},
+	{
+		title: 'Auto Translation',
+		icon: TagsIcon, // Reusing Tags icon for now
+		link: '/translate-demo'
 	}
 	// {
 	// 	title: 'Documentation',

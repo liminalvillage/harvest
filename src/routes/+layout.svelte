@@ -2,6 +2,7 @@
 	import { setContext, onDestroy } from 'svelte';
 	import HoloSphere from "holosphere"
 	import Layout from '../dashboard/Layout.svelte';
+	// Removed debug components to avoid interference
 
     let environmentName: string =
         import.meta.env.VITE_LOCAL_MODE === "development" ? "HolonsDebug" : "Holons";
@@ -11,6 +12,14 @@
 	
 	// Create holosphere instance with default configuration
 	const holosphere = new HoloSphere(environmentName);
+
+	// Configure GunDB for better peer discovery after initialization
+	setTimeout(() => {
+		if (holosphere && holosphere.gun) {
+		
+			 
+		}
+	}, 1000); // Wait for HoloSphere to initialize
 	
 	// Add connection ready check - give holosphere time to initialize
 	let holosphereReady = false;
@@ -50,3 +59,5 @@
 <Layout>
 <slot />
 </Layout>
+
+<!-- Debug components removed to avoid interference -->
