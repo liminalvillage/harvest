@@ -48,17 +48,7 @@
     Cache-Control = "public, max-age=86400, s-maxage=86400"
 
 # SvelteKit routing - adapter-netlify handles most routing automatically
-# This fallback is for any routes not handled by the adapter
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-
-# Handle static assets that should return 404 if not found
-[[redirects]]
-  from = "/favicon.ico"
-  to = "/favicon.png"
-  status = 301
+# Redirect rules have been moved to _redirects file
 
 # Environment variables (uncomment and configure as needed)
 # [build.environment]
