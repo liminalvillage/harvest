@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, getContext } from 'svelte';
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
-  import FlagSelector from './FlagSelector.svelte';
 
   // Types
   interface User {
@@ -390,17 +389,22 @@
 							
 							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 								<div>
-									<div class="block text-sm font-medium text-gray-300 mb-4">
+									<label class="block text-sm font-medium text-gray-300 mb-2" for="language-select">
 										Language 
 										<span class="text-xs text-gray-400">(affects entire app translation)</span>
-									</div>
-									<FlagSelector 
-										selectedLanguage={settings.language}
-										onLanguageChange={(lang) => updateSetting('language', lang)}
-										size="small"
-										maxVisible={12}
-										title="Current Language"
-									/>
+									</label>
+									<select 
+										id="language-select"
+										class="w-full p-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+										bind:value={settings.language}
+										on:change={(e) => updateSetting('language', e.target.value)}
+									>
+										{#each supportedLanguages as lang}
+											<option value={lang.code}>
+												{lang.flag} {lang.name}
+											</option>
+										{/each}
+									</select>
 								</div>
 
 								<div>
