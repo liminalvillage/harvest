@@ -284,13 +284,13 @@
             </button>
             
             <!-- Controls row - only visible on small screens -->
-            <div class="flex sm:hidden flex-row items-center justify-center">
-                <!-- Zeitcamp Dashboard Button -->
+            <div class="flex sm:hidden flex-row items-center justify-center gap-3">
+                <!-- Overlay Dashboard Button -->
                 <button 
-                    on:click={() => window.dispatchEvent(new CustomEvent('toggleZeitcampDashboard'))}
+                    on:click={() => window.dispatchEvent(new CustomEvent('toggleOverlayDashboard'))}
                     class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
-                    title="Show Zeitcamp Dashboard (Ctrl+Shift+Z)"
-                    aria-label="Show Zeitcamp Dashboard"
+                    title="Show Overlay Dashboard (Ctrl+Shift+Z)"
+                    aria-label="Show Overlay Dashboard"
                 >
                     <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -307,17 +307,21 @@
                 </div>
             </button>
         </div>
+        
     {/if}
 
     <!-- Right side controls - only visible on larger screens -->
-    <div class="z-10 ml-auto hidden sm:flex flex-col items-center">
-        <!-- Zeitcamp Dashboard Button (only on dashboard pages) -->
+    <div class="z-10 ml-auto hidden sm:flex flex-col items-end gap-2">
+        <!-- Google Translate Widget positioned above overlay button -->
+        <div id="google_translate_element"></div>
+        
+        <!-- Overlay Dashboard Button (only on dashboard pages) -->
         {#if !isPrimaryPage}
             <button 
-                on:click={() => window.dispatchEvent(new CustomEvent('toggleZeitcampDashboard'))}
+                on:click={() => window.dispatchEvent(new CustomEvent('toggleOverlayDashboard'))}
                 class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
-                title="Show Zeitcamp Dashboard (Ctrl+Shift+Z)"
-                aria-label="Show Zeitcamp Dashboard"
+                title="Show Overlay Dashboard (Ctrl+Shift+Z)"
+                aria-label="Show Overlay Dashboard"
             >
                 <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
