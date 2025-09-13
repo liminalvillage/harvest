@@ -9,6 +9,7 @@
 	import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
+	import VideoCall from '../components/VideoCall.svelte';
 
 	export let toggleMyHolons: () => void;
 
@@ -46,6 +47,7 @@
 	let holonID: string = '';
 	let showToast = false;
 	let isTranslating = false;
+	let showVideoCall = false;
 
 	// Function to save visited holon
 	async function saveVisitedHolon(holonId: string, holonName: string) {
@@ -175,8 +177,8 @@
 				saveVisitedHolon($ID, holonName);
 			}
 			
-			// Only update route if we're not on a primary page
-			if ($page.url.pathname !== '/') {
+			// Only update route if we're not on a primary page AND not on video route
+			if ($page.url.pathname !== '/' && !$page.url.pathname.includes('/video')) {
 				// Check if we're already on a valid path for this holon
 				const currentPath = $page.url.pathname;
 				const expectedPath = `/${$ID}`;
@@ -192,6 +194,9 @@
 					// Just update the holonID without changing the route
 					holonID = $ID;
 				}
+			} else {
+				// Just update the holonID without changing the route for video
+				holonID = $ID;
 			}
 		}
 	}
@@ -209,25 +214,44 @@
 		const currentPath = $page.url.pathname;
 		const expectedPath = `/${id}`;
 		
+		console.log('TopBar updateRoute called:', { id, currentPath, expectedPath });
+		
 		// Only navigate if we're not already on the correct path
 		if (browser && !currentPath.startsWith(expectedPath)) {
 			// Extract the sub-path more carefully
 			const pathParts = currentPath.split('/');
 			let subPath = pathParts[pathParts.length - 1]; // Get the last part
 			
+			console.log('TopBar: pathParts =', pathParts, 'subPath =', subPath);
+			
+			// Don't interfere with specific routes like video
+			const protectedRoutes = ['video', 'map', 'settings', 'roles', 'offers', 'tasks', 'calendar', 'tags', 'proposals', 'shopping', 'checklists', 'status', 'federation', 'dashboard'];
+			
 			// Only default to dashboard if we're currently on a path that's just the holon ID
 			// or if the subPath is the old holon ID (meaning we're switching holons)
-			if (pathParts.length === 2 || subPath === holonID) {
+			// BUT not if we're on a protected route
+			if ((pathParts.length === 2 || subPath === holonID) && !protectedRoutes.includes(subPath)) {
+				console.log('TopBar: Defaulting to dashboard because conditions met');
 				subPath = 'dashboard';
 			}
 			
 			const newPath = `/${id}/${subPath || 'dashboard'}`;
+			console.log('TopBar: Navigating to', newPath);
 			goto(newPath);
+		} else {
+			console.log('TopBar: Not navigating, already on correct path or path starts with expected');
 		}
 	}
 
 	// Check if we're on a primary page (standalone routes)
 	$: isPrimaryPage = $page.url.pathname === '/';
+
+	function startVideoCall() {
+		if ($ID) {
+			showVideoCall = true;
+		}
+	}
+
 
 
 </script>
@@ -308,20 +332,6 @@
                 </div>
             </button>
             
-            <!-- Controls row - only visible on small screens -->
-            <div class="flex sm:hidden flex-row items-center justify-center gap-3">
-                <!-- Overlay Dashboard Button -->
-                <button 
-                    on:click={() => window.dispatchEvent(new CustomEvent('toggleOverlayDashboard'))}
-                    class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
-                    title="Show Overlay Dashboard (Ctrl+Shift+Z)"
-                    aria-label="Show Overlay Dashboard"
-                >
-                    <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                </button>
-            </div>
         </div>
     {:else}
         <!-- Root page - centered logo -->
@@ -340,19 +350,20 @@
         <!-- Google Translate Widget positioned above overlay button -->
         <div id="google_translate_element"></div>
         
-        <!-- Overlay Dashboard Button (only on dashboard pages) -->
-        {#if !isPrimaryPage}
+        <!-- Video Call Button (only on dashboard pages) -->
+        {#if !isPrimaryPage && $ID}
             <button 
-                on:click={() => window.dispatchEvent(new CustomEvent('toggleOverlayDashboard'))}
+                on:click={startVideoCall}
                 class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
-                title="Show Overlay Dashboard (Ctrl+Shift+Z)"
-                aria-label="Show Overlay Dashboard"
+                title="Start Video Call"
+                aria-label="Start Video Call"
             >
                 <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
             </button>
         {/if}
+
     </div>
 </div>
 
@@ -365,5 +376,8 @@
 		To begin using the dashboard, please type the Holon ID in the search bar.<br/> You can get the Holon ID using the command /id on any chat containing the Telegram bot @HolonsBot.
 	</button>
 {/if}
+
+<!-- Floating Video Call Component -->
+<VideoCall roomId={$ID} bind:show={showVideoCall} floating={true} />
 
 <!-- API Key Configuration Modal - MOVED TO COUNCIL COMPONENT -->

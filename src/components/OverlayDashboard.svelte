@@ -25,6 +25,7 @@ import ItemModal from "./ItemModal.svelte";
     // Current time state
     let currentTime = new Date();
     let timeInterval: ReturnType<typeof setInterval>;
+    let dataRefreshInterval: ReturnType<typeof setInterval>;
     
     // Track current date to detect midnight transitions
     let currentDate = new Date().toDateString();
@@ -145,6 +146,15 @@ import ItemModal from "./ItemModal.svelte";
             month: 'long',
             day: 'numeric',
             year: 'numeric'
+        });
+    }
+
+    function formatTimeSeconds(date: Date) {
+        return date.toLocaleTimeString('en-US', {
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
         });
     }
 
@@ -688,6 +698,17 @@ import ItemModal from "./ItemModal.svelte";
             currentTime = newTime;
         }, 1000);
 
+        // Set up periodic data refresh (every 30 seconds) 
+        dataRefreshInterval = setInterval(() => {
+            if (isVisible && holonID) {
+                // Refresh all data periodically
+                subscribeToRoles();
+                subscribeToUsers();
+                subscribeToQuests();
+                subscribeToBadges();
+            }
+        }, 30000); // 30 seconds
+
         // Set up initial subscriptions if visible and holon is available
         if (isVisible && holonID) {
             subscribeToHolonName();
@@ -696,8 +717,6 @@ import ItemModal from "./ItemModal.svelte";
             subscribeToQuests(); // Handles both events and tasks
             subscribeToBadges();
         }
-
-
 
         // Set up inactivity detection
         resetInactivityTimer();
@@ -720,11 +739,13 @@ import ItemModal from "./ItemModal.svelte";
         if (timeInterval) {
             clearInterval(timeInterval);
         }
+        if (dataRefreshInterval) {
+            clearInterval(dataRefreshInterval);
+        }
         if (inactivityTimer) {
             clearTimeout(inactivityTimer);
         }
 
-        
         // Clean up all subscriptions
         cleanupSubscriptions();
     });
@@ -748,7 +769,7 @@ import ItemModal from "./ItemModal.svelte";
 
 {#if isVisible}
     <div 
-        class="fixed inset-0 z-50 bg-gradient-to-br from-gray-800 via-gray-700 to-indigo-900 flex items-center justify-center p-4 overflow-hidden"
+        class="fixed inset-0 z-50 bg-gradient-to-br from-gray-800 via-gray-700 to-indigo-900 flex items-center justify-center p-4"
         on:click|self={() => isVisible = false}
         on:keydown={handleKeydown}
         transition:fade={{ duration: 300 }}
@@ -757,465 +778,291 @@ import ItemModal from "./ItemModal.svelte";
         aria-labelledby="zeitcamp-title"
         tabindex="0"
     >
-
         <div 
-            class="w-full max-w-6xl h-full max-h-[95vh] bg-black/30 backdrop-blur-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden relative z-40"
+            class="w-full max-w-6xl h-full max-h-[95vh] bg-black/30 backdrop-blur-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden"
             transition:slide={{ duration: 400, axis: 'y' }}
         >
-            <!-- Top Header: Date, Logo, Clock, and Close Button -->
-            <div class="absolute top-6 left-6 right-6 z-50 flex justify-between items-center">
-                <!-- Date Section -->
-                <div class="text-left">
-                    <div class="text-2xl font-light text-white/70 mb-1">
-                        {formatDay(currentTime)}
-                    </div>
-                    <div class="text-sm text-white/50 font-light">
-                        {formatDateShort(currentTime)}
-                    </div>
-                </div>
-
-                <!-- Holons Logo and Name - Centered (hidden on small screens) -->
-                <div class="hidden md:flex items-center space-x-3">
-                    <div class="w-12 h-12">
-                        <MyHolonsIcon />
-                    </div>
-                    {#if isLoadingHolonName}
-                        <div class="text-white/60 text-sm animate-pulse">Loading...</div>
-                    {:else if holonName}
-                        <div class="text-white/80 text-lg font-medium truncate max-w-48">
-                            {holonName}
-                        </div>
-                    {:else}
-                        <div class="text-white/40 text-sm">Unknown Holon</div>
-                    {/if}
-                </div>
-
-                <!-- Clock and Close Button -->
-                <div class="flex items-center space-x-4">
-                    <!-- Clock -->
-                    <div class="text-right text-white/70">
-                        <div class="text-3xl font-light">
-                            {formatTime(currentTime)}
-                        </div>
-                    </div>
-                    
-                    <!-- Close Button -->
-                    <button 
-                        class="text-white/60 hover:text-white transition-all duration-300 p-2 rounded-lg hover:bg-white/10 hover:scale-110 hover:rotate-90 transform"
-                        on:click={() => isVisible = false}
-                        aria-label="Close zeitcamp dashboard"
-                    >
-                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
-            </div>
+            <!-- Close Button -->
+            <button 
+                class="absolute top-6 right-6 z-10 text-white/60 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
+                on:click={() => isVisible = false}
+                aria-label="Close dashboard"
+            >
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
 
             <!-- Main Dashboard Content -->
-            <div class="h-full flex flex-col overflow-hidden">
-                <!-- Center Section: Four Main Sections -->
-                <div class="flex-1 overflow-hidden px-6 pb-12 pt-24">
-                    <!-- Four Main Sections Grid -->
-                    <div class="w-full h-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <!-- Roles Section -->
-                        <div class="bg-indigo-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-indigo-400/25 flex flex-col shadow-2xl hover:border-indigo-400/50 hover:shadow-indigo-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
-                            in:fly="{{ x: -100, duration: 600, delay: 100, easing: elasticOut }}">
-
-                            <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-xl md:text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                    </svg>
-                                    Roles
-                                </h3>
-                                <button 
-                                    class="px-2 py-1 md:px-4 md:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all duration-300 text-xs md:text-sm font-medium shadow-lg hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 transform"
-                                    on:click={navigateToRoles}
-                                >
-                                    View All
-                                </button>
-                            </div>
-                            
-                            {#if isLoadingRoles}
-                                <div class="flex items-center justify-center py-8">
-                                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-white/50 mr-2"></div>
-                                    <span class="text-white/60 text-sm">Loading...</span>
-                                </div>
-                            {:else if roles.length > 0}
-                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
-                                    {#each roles as role (role.id)}
-                                        <div 
-                                            class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-indigo-500/20 hover:border-indigo-400/50 cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-lg transform"
-                                            on:click={(e) => handleRoleClick(role, e)}
-                                            on:keydown={(e) => e.key === 'Enter' && handleRoleClick(role)}
-                                            role="button"
-                                            tabindex="0"
-                                            aria-label="View role details for {role.title}"
-                                            in:scale="{{ duration: 300, delay: 50 * roles.indexOf(role) }}"
-                                        >
-                                            <div class="flex-1 min-w-0">
-                                                <h4 class="font-medium text-white text-sm truncate">
-                                                    {role.title}
-                                                </h4>
-                                            </div>
-                                            <div class="flex items-center space-x-2 ml-3">
-                                                {#if role.participants && role.participants.length > 0}
-                                                    <div class="flex -space-x-1">
-                                                        {#each role.participants.slice(0, 3) as participant}
-                                                            <div class="w-6 h-6 rounded-full bg-indigo-500/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
-                                                                <img 
-                                                                    src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-                                                                    alt={getUserDisplayName(participant.id)}
-                                                                    class="w-full h-full object-cover rounded-full"
-                                                                    on:error={(e) => {
-                                                                        e.currentTarget.style.display = 'none';
-                                                                        e.currentTarget.nextElementSibling.style.display = 'flex';
-                                                                    }}
-                                                                />
-                                                                <div class="w-full h-full bg-indigo-500/20 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
-                                                                    {getUserDisplayName(participant.id).charAt(0).toUpperCase()}
-                                                                </div>
-                                                            </div>
-                                                        {/each}
-                                                        {#if role.participants.length > 3}
-                                                            <div class="w-6 h-6 rounded-full bg-white/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium">
-                                                                +{role.participants.length - 3}
-                                                            </div>
-                                                        {/if}
-                                                    </div>
-                                                    <!-- Show first names below the avatars -->
-                                                    <div class="text-xs text-white/70 ml-2">
-                                                        {role.participants.slice(0, 2).map(p => users[p.id]?.first_name || getUserDisplayName(p.id).split(' ')[0]).join(', ')}
-                                                        {#if role.participants.length > 2}
-                                                            <span class="text-white/50"> +{role.participants.length - 2} more</span>
-                                                        {/if}
-                                                    </div>
-                                                {:else}
-                                                    <span class="text-white/40 text-xs">Unassigned</span>
-                                                {/if}
-                                            </div>
-                                        </div>
-                                    {/each}
-
-                                </div>
-                            {:else}
-                                <div class="text-center py-8 flex-1 flex items-center justify-center">
-                                    <span class="text-white/50 text-sm">No roles defined</span>
-                                </div>
-                            {/if}
+            <div class="h-full p-8 pb-16 flex flex-col">
+                <!-- Top Section: Date, Holons Logo -->
+                <div class="flex justify-between items-start mb-8">
+                    <!-- Date Section -->
+                    <div class="text-left">
+                        <div class="text-6xl font-light text-white mb-2">
+                            {formatDay(currentTime)}
                         </div>
+                        <div class="text-2xl text-white/80 font-light">
+                            {formatDateShort(currentTime)}
+                        </div>
+                    </div>
 
-                        <!-- Upcoming Events Section -->
-                        <div class="bg-green-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-green-400/25 flex flex-col shadow-2xl hover:border-green-400/50 hover:shadow-green-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
-                            in:fly="{{ x: 100, duration: 600, delay: 200, easing: elasticOut }}">
+                    <!-- Holons Logo (same as ClockOverlay) -->
+                    <div class="flex items-center justify-center">
+                        <div class="w-16 h-16 sm:w-20 sm:h-20">
+                            <MyHolonsIcon />
+                        </div>
+                    </div>
 
-                            <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-xl md:text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <span class="hidden sm:inline">Upcoming Events</span>
-                                    <span class="sm:hidden">Events</span>
-                                </h3>
-                                <button 
-                                    class="px-2 py-1 md:px-4 md:py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-xs md:text-sm font-medium shadow-lg hover:shadow-xl"
-                                    on:click={() => {
-                                        if (holonID) {
-                                            goto(`/${holonID}/calendar`);
-                                            isVisible = false;
-                                        }
-                                    }}
-                                >
-                                    View All
-                                </button>
+                    <!-- Holon Name Section -->
+                    <div class="text-right">
+                        {#if isLoadingHolonName}
+                            <div class="flex items-center justify-end">
+                                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white/50 mr-3"></div>
+                                <span class="text-white/60">Loading...</span>
                             </div>
-                            
-                            {#if isLoadingEvents}
-                                <div class="flex items-center justify-center py-8">
-                                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-white/50 mr-2"></div>
-                                    <span class="text-white/60 text-sm">Loading...</span>
+                        {:else if holonName}
+                            <div class="text-right">
+                                <div class="text-4xl font-light text-white">
+                                    {holonName}
                                 </div>
-                            {:else if upcomingEvents.length > 0}
-                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
-                                    {#each upcomingEvents as event}
-                                        <div 
-                                            class="flex items-center p-2 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
-                                            on:click={() => handleEventClick(event)}
-                                            on:keydown={(e) => e.key === 'Enter' && handleEventClick(event)}
-                                            role="button"
-                                            tabindex="0"
-                                            aria-label="View event details for {event.title}"
-                                        >
-                                            <!-- Time -->
-                                            <div class="flex-shrink-0 w-16 text-center mr-3">
-                                                <div class="text-xs font-medium text-green-400">
-                                                    {event.time}
-                                                </div>
-                                            </div>
-                                            
-                                            <!-- Event info -->
-                                            <div class="flex-1 min-w-0">
-                                                <h4 class="font-medium text-white text-sm truncate mb-1">
-                                                    {event.title}
-                                                </h4>
-                                                
-                                                <!-- Participants -->
-                                                {#if event.participants && event.participants.length > 0}
-                                                    <div class="flex items-center">
-                                                        <div class="flex -space-x-1 mr-2">
-                                                            {#each event.participants.slice(0, 3) as participant}
-                                                                <div class="w-4 h-4 rounded-full bg-green-500/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
-                                                                    <img 
-                                                                        src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-                                                                        alt={getUserDisplayName(participant.id)}
-                                                                        class="w-full h-full object-cover rounded-full"
-                                                                        on:error={(e) => {
-                                                                            e.currentTarget.style.display = 'none';
-                                                                            e.currentTarget.nextElementSibling.style.display = 'flex';
-                                                                        }}
-                                                                    />
-                                                                    <div class="w-full h-full bg-green-500/20 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
-                                                                        {getUserDisplayName(participant.id).charAt(0).toUpperCase()}
-                                                                    </div>
-                                                                </div>
-                                                            {/each}
-                                                            {#if event.participants.length > 3}
-                                                                <div class="w-4 h-4 rounded-full bg-white/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium">
-                                                                    +{event.participants.length - 3}
-                                                                </div>
-                                                            {/if}
-                                                        </div>
-                                                        <div class="text-xs text-white/60">
-                                                            {event.participants.slice(0, 2).map(p => users[p.id]?.first_name || getUserDisplayName(p.id).split(' ')[0]).join(', ')}
-                                                            {#if event.participants.length > 2}
-                                                                <span class="text-white/40"> +{event.participants.length - 2} more</span>
-                                                            {/if}
-                                                        </div>
-                                                    </div>
-                                                {:else}
-                                                    <div class="text-xs text-white/40">No participants</div>
-                                                {/if}
-                                            </div>
-                                            
-                                            <!-- Priority indicator -->
-                                            {#if event.priority && event.priority !== 'normal'}
-                                                <div class="ml-2 flex-shrink-0">
-                                                    <span class="text-xs px-2 py-0.5 rounded-full {
-                                                        event.priority === 'high' ? 'bg-red-500/20 text-red-300' :
-                                                        event.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-300' :
-                                                        'bg-gray-500/20 text-gray-300'
-                                                    }">
-                                                        {event.priority}
-                                                    </span>
-                                                </div>
-                                            {/if}
+                            </div>
+                        {:else}
+                            <div class="text-white/40 text-lg">Unknown Holon</div>
+                        {/if}
+                    </div>
+                </div>
+
+                <!-- Center Section: Prominent Digital Clock -->
+                <div class="flex-1 flex flex-col items-center justify-center">
+                    <!-- Large Digital Clock -->
+                    <div class="text-center mb-12">
+                        <div class="text-8xl md:text-9xl lg:text-[10rem] font-light text-white tracking-wider mb-4 drop-shadow-2xl">
+                            {formatTime(currentTime)}
+                        </div>
+                        <div class="text-lg text-white/50 font-mono tracking-wider">
+                            {formatTimeSeconds(currentTime)}
+                        </div>
+                    </div>
+
+                    <!-- Dynamic Grid based on available content -->
+                    {#if (roles.length > 0) || (upcomingEvents.length > 0) || (topTasks.length > 0) || (badges.length > 0)}
+                        <div class="w-full max-w-5xl grid md:grid-cols-2 gap-8 px-4">
+                            <!-- Roles Section - Only show if there are roles -->
+                            {#if roles.length > 0}
+                                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden"
+                                    in:fly="{{ x: -100, duration: 600, delay: 100, easing: elasticOut }}">
+
+                                    <h3 class="text-xl font-semibold text-white mb-4 flex items-center">
+                                        <svg class="w-6 h-6 mr-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                        </svg>
+                                        Active Roles
+                                    </h3>
+                            
+                                    {#if isLoadingRoles}
+                                        <div class="flex items-center py-4">
+                                            <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white/50 mr-3"></div>
+                                            <span class="text-white/60 text-sm">Loading roles...</span>
                                         </div>
-                                    {/each}
-                                    
-                                    {#if upcomingEvents.length === 0}
-                                        <div class="text-center py-4">
-                                            <div class="text-white/40 text-sm">No upcoming scheduled items</div>
+                                    {:else}
+                                        <div class="space-y-3 max-h-40 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
+                                            {#each roles as role}
+                                                <div 
+                                                    class="bg-white/5 rounded-lg p-3 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
+                                                    on:click={() => handleRoleClick(role)}
+                                                    on:keydown={(e) => e.key === 'Enter' && handleRoleClick(role)}
+                                                    role="button"
+                                                    tabindex="0"
+                                                >
+                                                    <div class="flex justify-between items-start mb-1">
+                                                        <h4 class="font-medium text-white text-sm truncate flex-1 pr-2">
+                                                            {role.title}
+                                                        </h4>
+                                                        {#if role.participants && role.participants.length > 0}
+                                                            <span class="text-xs text-indigo-300 whitespace-nowrap">
+                                                                {role.participants.length} members
+                                                            </span>
+                                                        {/if}
+                                                    </div>
+                                                    {#if role.description}
+                                                        <p class="text-xs text-white/60 truncate">
+                                                            {role.description}
+                                                        </p>
+                                                    {/if}
+                                                </div>
+                                            {/each}
                                         </div>
                                     {/if}
                                 </div>
-                            {:else}
-                                <div class="text-center py-8 flex-1 flex items-center justify-center">
-                                    <span class="text-white/50 text-sm">No upcoming scheduled items</span>
-                                </div>
                             {/if}
-                        </div>
 
-                        <!-- Tasks Section -->
-                        <div class="bg-amber-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-amber-400/25 flex flex-col shadow-2xl hover:border-amber-400/50 hover:shadow-amber-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
-                            in:fly="{{ x: -100, duration: 600, delay: 300, easing: elasticOut }}">
+                            <!-- Upcoming Events Section - Only show if there are events -->
+                            {#if upcomingEvents.length > 0}
+                                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden"
+                                    in:fly="{{ x: 100, duration: 600, delay: 200, easing: elasticOut }}">
 
-                            <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-xl md:text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                    </svg>
-                                    Tasks
-                                </h3>
-                                <button 
-                                    class="px-2 py-1 md:px-4 md:py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors text-xs md:text-sm font-medium shadow-lg hover:shadow-xl"
-                                    on:click={() => {
-                                        if (holonID) {
-                                            goto(`/${holonID}/tasks`);
-                                            isVisible = false;
-                                        }
-                                    }}
-                                >
-                                    View All
-                                </button>
-                            </div>
+                                    <h3 class="text-xl font-semibold text-white mb-4 flex items-center">
+                                        <svg class="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        Upcoming Events
+                                    </h3>
                             
-                            {#if isLoadingTasks}
-                                <div class="flex items-center justify-center py-8">
-                                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-white/50 mr-2"></div>
-                                    <span class="text-white/60 text-sm">Loading...</span>
-                                </div>
-                            {:else if topTasks.length > 0}
-                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
-                                    {#each topTasks as task}
-                                        <div 
-                                            class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
-                                            on:click={() => handleTaskClick(task)}
-                                            on:keydown={(e) => e.key === 'Enter' && handleTaskClick(task)}
-                                            role="button"
-                                            tabindex="0"
-                                            aria-label="View task details for {task.title}"
-                                        >
-                                            <div class="flex-1 min-w-0">
-                                                <h4 class="font-medium text-white text-sm truncate">
-                                                    {task.title}
-                                                </h4>
-                                                {#if task.dueDate}
-                                                    <p class="text-white/60 text-xs">Due: {new Date(task.dueDate).toLocaleDateString()}</p>
-                                                {/if}
-                                            </div>
-                                            <div class="flex items-center space-x-2 ml-3">
-                                                {#if task.participants && task.participants.length > 0}
-                                                    <div class="flex -space-x-1">
-                                                        {#each task.participants.slice(0, 3) as participant}
-                                                            <div class="w-6 h-6 rounded-full bg-amber-500/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
-                                                                <img 
-                                                                    src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
-                                                                    alt={getUserDisplayName(participant.id)}
-                                                                    class="w-full h-full object-cover rounded-full"
-                                                                    on:error={(e) => {
-                                                                        e.currentTarget.style.display = 'none';
-                                                                        e.currentTarget.nextElementSibling.style.display = 'flex';
-                                                                    }}
-                                                                />
-                                                                <div class="w-full h-full bg-amber-500/20 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
-                                                                    {getUserDisplayName(participant.id).charAt(0).toUpperCase()}
-                                                                </div>
-                                                            </div>
-                                                        {/each}
-                                                        {#if task.participants.length > 3}
-                                                            <div class="w-6 h-6 rounded-full bg-white/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium">
-                                                                +{task.participants.length - 3}
-                                                            </div>
-                                                        {/if}
-                                                    </div>
-                                                    <!-- Show first names below the avatars -->
-                                                    <div class="text-xs text-white/70 ml-2">
-                                                        {task.participants.slice(0, 2).map(p => users[p.id]?.first_name || getUserDisplayName(p.id).split(' ')[0]).join(', ')}
-                                                        {#if task.participants.length > 2}
-                                                            <span class="text-white/50"> +{task.participants.length - 2} more</span>
-                                                        {/if}
-                                                    </div>
-                                                {:else}
-                                                    <span class="text-white/40 text-xs">Unassigned</span>
-                                                {/if}
-                                            </div>
+                                    {#if isLoadingEvents}
+                                        <div class="flex items-center py-4">
+                                            <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white/50 mr-3"></div>
+                                            <span class="text-white/60 text-sm">Loading events...</span>
                                         </div>
-                                    {/each}
-
-                                </div>
-                            {:else}
-                                <div class="text-center py-8 flex-1 flex items-center justify-center">
-                                    <span class="text-white/50 text-sm">No active tasks</span>
+                                    {:else}
+                                        <div class="space-y-3 max-h-40 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
+                                            {#each upcomingEvents as event}
+                                                <div 
+                                                    class="bg-white/5 rounded-lg p-3 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
+                                                    on:click={() => handleEventClick(event)}
+                                                    on:keydown={(e) => e.key === 'Enter' && handleEventClick(event)}
+                                                    role="button"
+                                                    tabindex="0"
+                                                >
+                                                    <div class="flex justify-between items-start mb-1">
+                                                        <div class="flex items-center flex-1 pr-2">
+                                                            <svg class="w-4 h-4 mr-2 text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                            </svg>
+                                                            <h4 class="font-medium text-white text-sm truncate">
+                                                                {event.title}
+                                                            </h4>
+                                                        </div>
+                                                        <div class="flex items-center space-x-2">
+                                                            {#if event.priority && event.priority !== 'normal'}
+                                                                <span class="text-xs px-2 py-1 rounded-full {
+                                                                    event.priority === 'high' ? 'bg-red-500/20 text-red-300' :
+                                                                    event.priority === 'medium' ? 'bg-amber-500/20 text-amber-300' :
+                                                                    'bg-gray-500/20 text-gray-300'
+                                                                }">
+                                                                    {event.priority}
+                                                                </span>
+                                                            {/if}
+                                                            <span class="text-xs text-green-300 font-mono whitespace-nowrap">
+                                                                {event.time}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    {#if event.description}
+                                                        <p class="text-xs text-white/60 truncate">
+                                                            {event.description}
+                                                        </p>
+                                                    {/if}
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    {/if}
                                 </div>
                             {/if}
-                        </div>
 
-                        <!-- Badges Section -->
-                        <div class="bg-yellow-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-yellow-400/25 flex flex-col shadow-2xl hover:border-yellow-400/50 hover:shadow-yellow-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
-                            in:fly="{{ x: 100, duration: 600, delay: 400, easing: elasticOut }}">
+                            <!-- Tasks Section - Only show if there are tasks -->
+                            {#if topTasks.length > 0}
+                                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden"
+                                    in:fly="{{ x: -100, duration: 600, delay: 300, easing: elasticOut }}">
 
-                            <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-xl md:text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.857 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.857 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.857.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.857-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.857 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.857 3.42 3.42 0 013.138-3.138z" />
-                                    </svg>
-                                    Badges
-                                </h3>
-                                <button 
-                                    class="px-2 py-1 md:px-4 md:py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors text-xs md:text-sm font-medium shadow-lg hover:shadow-xl"
-                                    on:click={() => {
-                                        if (holonID) {
-                                            goto(`/${holonID}/badges`);
-                                            isVisible = false;
-                                        }
-                                    }}
-                                >
-                                    View All
-                                </button>
-                            </div>
+                                    <h3 class="text-xl font-semibold text-white mb-4 flex items-center">
+                                        <svg class="w-6 h-6 mr-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                        </svg>
+                                        Active Tasks
+                                    </h3>
                             
-                            {#if isLoadingBadges}
-                                <div class="flex items-center justify-center py-8">
-                                    <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-white/50 mr-2"></div>
-                                    <span class="text-white/60 text-sm">Loading...</span>
-                                </div>
-                            {:else if badges.length > 0}
-                                <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
-                                    {#each badges as badge}
-                                        <div 
-                                            class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors"
-                                            on:click={() => handleBadgeClick(badge)}
-                                            on:keydown={(e) => e.key === 'Enter' && handleBadgeClick(badge)}
-                                            role="button"
-                                            tabindex="0"
-                                            aria-label="View badge details for {badge.title}"
-                                        >
-                                            <div class="flex-1 min-w-0">
-                                                <h4 class="font-medium text-white text-sm truncate">
-                                                    {badge.title}
-                                                </h4>
-                                                {#if badge.description}
-                                                    <p class="text-white/60 text-xs truncate">{badge.description}</p>
-                                                {/if}
-                                            </div>
-                                            <div class="flex items-center space-x-2 ml-3">
-                                                {#if badge.recipients && badge.recipients.length > 0}
-                                                    <div class="flex -space-x-1">
-                                                        {#each badge.recipients.slice(0, 3) as recipient}
-                                                            <div class="w-6 h-6 rounded-full bg-yellow-500/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(recipient.id)}>
-                                                                <img 
-                                                                    src={`https://telegram.holons.io/getavatar?user_id=${recipient.id}`}
-                                                                    alt={getUserDisplayName(recipient.id)}
-                                                                    class="w-full h-full object-cover rounded-full"
-                                                                    on:error={(e) => {
-                                                                        e.currentTarget.style.display = 'none';
-                                                                        e.currentTarget.nextElementSibling.style.display = 'flex';
-                                                                    }}
-                                                                />
-                                                                <div class="w-full h-full bg-yellow-500/20 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
-                                                                    {getUserDisplayName(recipient.id).charAt(0).toUpperCase()}
-                                                                </div>
-                                                            </div>
-                                                        {/each}
-                                                        {#if badge.recipients.length > 3}
-                                                            <div class="w-6 h-6 rounded-full bg-white/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium">
-                                                                +{badge.recipients.length - 3}
-                                                            </div>
-                                                        {/if}
-                                                    </div>
-                                                    <!-- Show first names below the avatars -->
-                                                    <div class="text-xs text-white/70 ml-2">
-                                                        {badge.recipients.slice(0, 2).map(p => users[p.id]?.first_name || getUserDisplayName(p.id).split(' ')[0]).join(', ')}
-                                                        {#if badge.recipients.length > 2}
-                                                            <span class="text-white/50"> +{badge.recipients.length - 2} more</span>
-                                                        {/if}
-                                                    </div>
-                                                {:else}
-                                                    <span class="text-white/40 text-xs">No recipients</span>
-                                                {/if}
-                                            </div>
+                                    {#if isLoadingTasks}
+                                        <div class="flex items-center py-4">
+                                            <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white/50 mr-3"></div>
+                                            <span class="text-white/60 text-sm">Loading tasks...</span>
                                         </div>
-                                    {/each}
-
+                                    {:else}
+                                        <div class="space-y-3 max-h-40 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
+                                            {#each topTasks as task}
+                                                <div 
+                                                    class="bg-white/5 rounded-lg p-3 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
+                                                    on:click={() => handleTaskClick(task)}
+                                                    on:keydown={(e) => e.key === 'Enter' && handleTaskClick(task)}
+                                                    role="button"
+                                                    tabindex="0"
+                                                >
+                                                    <div class="flex justify-between items-start mb-1">
+                                                        <h4 class="font-medium text-white text-sm truncate flex-1 pr-2">
+                                                            {task.title}
+                                                        </h4>
+                                                        {#if task.priority}
+                                                            <span class="text-xs px-2 py-1 rounded-full {
+                                                                task.priority.toLowerCase() === 'high' ? 'bg-red-500/20 text-red-300' :
+                                                                task.priority.toLowerCase() === 'medium' ? 'bg-amber-500/20 text-amber-300' :
+                                                                'bg-indigo-500/20 text-indigo-300'
+                                                            }">
+                                                                {task.priority}
+                                                            </span>
+                                                        {/if}
+                                                    </div>
+                                                    {#if task.dueDate}
+                                                        <p class="text-xs text-white/60">
+                                                            Due: {new Date(task.dueDate).toLocaleDateString()}
+                                                        </p>
+                                                    {/if}
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    {/if}
                                 </div>
-                            {:else}
-                                <div class="text-center py-8 flex-1 flex items-center justify-center">
-                                    <span class="text-white/50 text-sm">No badges available</span>
+                            {/if}
+
+                            <!-- Badges Section - Only show if there are badges -->
+                            {#if badges.length > 0}
+                                <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden"
+                                    in:fly="{{ x: 100, duration: 600, delay: 400, easing: elasticOut }}">
+
+                                    <h3 class="text-xl font-semibold text-white mb-4 flex items-center">
+                                        <svg class="w-6 h-6 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.857 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.857 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.857.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.857-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.857 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.857 3.42 3.42 0 013.138-3.138z" />
+                                        </svg>
+                                        Active Badges
+                                    </h3>
+                            
+                                    {#if isLoadingBadges}
+                                        <div class="flex items-center py-4">
+                                            <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white/50 mr-3"></div>
+                                            <span class="text-white/60 text-sm">Loading badges...</span>
+                                        </div>
+                                    {:else}
+                                        <div class="space-y-3 max-h-40 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
+                                            {#each badges as badge}
+                                                <div 
+                                                    class="bg-white/5 rounded-lg p-3 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
+                                                    on:click={() => handleBadgeClick(badge)}
+                                                    on:keydown={(e) => e.key === 'Enter' && handleBadgeClick(badge)}
+                                                    role="button"
+                                                    tabindex="0"
+                                                >
+                                                    <div class="flex justify-between items-start mb-1">
+                                                        <h4 class="font-medium text-white text-sm truncate flex-1 pr-2">
+                                                            {badge.title}
+                                                        </h4>
+                                                        {#if badge.recipients && badge.recipients.length > 0}
+                                                            <span class="text-xs text-yellow-300 whitespace-nowrap">
+                                                                {badge.recipients.length} recipients
+                                                            </span>
+                                                        {/if}
+                                                    </div>
+                                                    {#if badge.description}
+                                                        <p class="text-xs text-white/60 truncate">
+                                                            {badge.description}
+                                                        </p>
+                                                    {/if}
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    {/if}
                                 </div>
                             {/if}
                         </div>
-                    </div>
+                    {/if}
                 </div>
 
                 <!-- Bottom Right: ESC hint -->
@@ -1224,45 +1071,42 @@ import ItemModal from "./ItemModal.svelte";
                         Press <kbd class="mx-2 px-2 py-1 bg-white/10 rounded text-xs border border-white/20">Esc</kbd> to close
                     </p>
                 </div>
-
-                
             </div>
         </div>
     </div>
+{/if}
 
-    <!-- Role Modal -->
-    {#if showRoleModal && selectedItem && holonID}
-        <RoleModal 
-            role={selectedItem}
-            roleId={selectedItem.id}
-            userStore={users}
-            holosphere={holosphere}
-            holonId={holonID}
-            on:close={() => closeAllModals()}
-            on:deleted={() => closeAllModals()}
-        />
-    {/if}
+<!-- Role Modal -->
+{#if showRoleModal && selectedItem && holonID}
+    <RoleModal 
+        role={selectedItem}
+        roleId={selectedItem.id}
+        userStore={users}
+        holosphere={holosphere}
+        holonId={holonID}
+        on:close={() => closeAllModals()}
+        on:deleted={() => closeAllModals()}
+    />
+{/if}
 
-    <!-- Task Modal -->
-    {#if showTaskModal && selectedItem && holonID}
-        <TaskModal 
-            quest={selectedItem}
-            questId={selectedItem.id}
-            holonId={holonID}
-            on:close={() => closeAllModals()}
-        />
-    {/if}
+<!-- Task Modal -->
+{#if showTaskModal && selectedItem && holonID}
+    <TaskModal 
+        quest={selectedItem}
+        questId={selectedItem.id}
+        holonId={holonID}
+        on:close={() => closeAllModals()}
+    />
+{/if}
 
-    <!-- Event Modal (using ItemModal) -->
-    {#if showEventModal && selectedItem && holonID}
-        <ItemModal 
-            quest={selectedItem}
-            questId={selectedItem.id}
-            holonId={holonID}
-            on:close={() => closeAllModals()}
-        />
-    {/if}
-
+<!-- Event Modal (using ItemModal) -->
+{#if showEventModal && selectedItem && holonID}
+    <ItemModal 
+        quest={selectedItem}
+        questId={selectedItem.id}
+        holonId={holonID}
+        on:close={() => closeAllModals()}
+    />
 {/if}
 
 <style>
@@ -1283,18 +1127,18 @@ import ItemModal from "./ItemModal.svelte";
     }
     
     .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: linear-gradient(45deg, rgba(59, 130, 246, 0.5), rgba(147, 51, 234, 0.5));
+        background: rgba(255, 255, 255, 0.3);
         border-radius: 3px;
     }
     
     .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(45deg, rgba(59, 130, 246, 0.8), rgba(147, 51, 234, 0.8));
+        background: rgba(255, 255, 255, 0.5);
     }
     
     /* Firefox scrollbar */
     .custom-scrollbar {
         scrollbar-width: thin;
-        scrollbar-color: rgba(59, 130, 246, 0.5) rgba(255, 255, 255, 0.1);
+        scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
     }
 
 
