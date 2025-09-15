@@ -622,23 +622,23 @@
   }
 
   onMount(async () => {
-    log(`🚀 Starting video call in room: ${roomId} as ${myUserId.substring(0, 12)}`);
+    log(`🚀 Video call component mounted for room: ${roomId}`);
 
     if (!gun) {
-      connectionStatus = 'Error: No Gun connection available';
-      log('❌ Gun instance not available');
-      return;
+      try {
+        const holosphere = getContext('holosphere') as HoloSphere;
+        gun = holosphere.gun;
+      } catch (e) {
+        connectionStatus = 'Error: No Gun connection available';
+        log('❌ Gun instance not available');
+        return;
+      }
     }
 
-    try {
-      await initializeLocalMedia();
+    // Only set up signaling, don't initialize media until video window opens
+    if (gun) {
       await setupSignaling();
-      await joinRoom();
-      connectionStatus = 'Connected to room';
-      log('✅ Successfully joined room');
-    } catch (error) {
-      connectionStatus = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      log(`❌ Failed to initialize: ${error}`);
+      connectionStatus = 'Ready to start call';
     }
   });
 
@@ -652,19 +652,27 @@
     localVideoElement.srcObject = localStream;
   }
 
-  // Initialize video when show becomes true (for floating mode)
-  $: if (show && !localStream && typeof window !== 'undefined' && floating) {
+  // Initialize video and camera ONLY when show becomes true (user opens video window)
+  $: if (show && !localStream && typeof window !== 'undefined') {
     (async () => {
       try {
-        log(`🚀 Starting video call in room: ${roomId} as ${myUserId.substring(0, 12)}`);
+        log(`🚀 Video window opened - requesting camera access for room: ${roomId} as ${myUserId.substring(0, 12)}`);
 
         if (!gun) {
-          const holosphere = getContext('holosphere') as HoloSphere;
-          gun = holosphere.gun;
+          try {
+            const holosphere = getContext('holosphere') as HoloSphere;
+            gun = holosphere.gun;
+          } catch (e) {
+            connectionStatus = 'Error: No Gun connection available';
+            return;
+          }
         }
 
+        // Camera permission is requested HERE when video window opens
         await initializeLocalMedia();
-        await setupSignaling();
+        if (!roomRef || !signalRef || !userRef) {
+          await setupSignaling();
+        }
         await joinRoom();
         connectionStatus = 'Connected to room';
         log('✅ Successfully joined room and started peer discovery');
@@ -673,6 +681,12 @@
         log(`❌ Failed to initialize: ${error}`);
       }
     })();
+  }
+
+  // Clean up media when video window is closed
+  $: if (!show && localStream) {
+    log('🔒 Video window closed - stopping camera and leaving room');
+    leaveRoom();
   }
 
   // Listen for window resize
