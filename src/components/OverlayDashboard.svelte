@@ -604,11 +604,14 @@ import ItemModal from "./ItemModal.svelte";
         return 'Unknown User';
     }
 
-    // Get role statistics
-    $: totalRoles = roles.length;
-    $: assignedRoles = roles.filter(role => role.participants && role.participants.length > 0).length;
-    $: unassignedRoles = totalRoles - assignedRoles;
-    $: totalParticipants = roles.reduce((sum, role) => sum + (role.participants?.length || 0), 0);
+    // Dynamic content visibility
+    $: hasRoles = roles.length > 0;
+    $: hasEvents = upcomingEvents.length > 0;
+    $: hasTasks = topTasks.length > 0;
+    $: hasBadges = badges.length > 0;
+
+    // Count visible sections for layout decisions
+    $: visibleSections = [hasRoles, hasEvents, hasTasks, hasBadges].filter(Boolean).length;
 
 
 
@@ -833,23 +836,47 @@ import ItemModal from "./ItemModal.svelte";
                     </div>
                 </div>
 
-                <!-- Center Section: Prominent Digital Clock -->
-                <div class="flex-1 flex flex-col items-center justify-center">
-                    <!-- Large Digital Clock -->
-                    <div class="text-center mb-12">
-                        <div class="text-8xl md:text-9xl lg:text-[10rem] font-light text-white tracking-wider mb-4 drop-shadow-2xl">
-                            {formatTime(currentTime)}
+                <!-- Center Section: Dynamic Layout -->
+                <div class="flex-1 flex flex-col">
+                    {#if visibleSections === 0}
+                        <!-- No content - show large clock centered -->
+                        <div class="flex-1 flex items-center justify-center">
+                            <div class="text-center">
+                                <div class="text-8xl md:text-9xl lg:text-[10rem] font-light text-white tracking-wider mb-4 drop-shadow-2xl">
+                                    {formatTime(currentTime)}
+                                </div>
+                                <div class="text-lg text-white/50 font-mono tracking-wider mb-8">
+                                    {formatTimeSeconds(currentTime)}
+                                </div>
+                                <div class="text-white/40 text-lg">
+                                    No content available
+                                </div>
+                            </div>
                         </div>
-                        <div class="text-lg text-white/50 font-mono tracking-wider">
-                            {formatTimeSeconds(currentTime)}
-                        </div>
-                    </div>
+                    {:else}
+                        <!-- Content available - show dynamic grid -->
+                        <div class="flex-1 px-4">
+                            <div class="w-full h-full max-w-6xl mx-auto
+                                {visibleSections === 1 ? 'grid grid-cols-1 gap-6' :
+                                visibleSections === 2 ? 'grid grid-cols-1 lg:grid-cols-2 gap-6' :
+                                visibleSections === 3 ? 'grid grid-cols-1 lg:grid-cols-3 gap-4' :
+                                'grid grid-cols-1 lg:grid-cols-2 gap-4'}">
 
-                    <!-- Dynamic Grid based on available content -->
-                    {#if (roles.length > 0) || (upcomingEvents.length > 0) || (topTasks.length > 0) || (badges.length > 0)}
-                        <div class="w-full max-w-5xl grid md:grid-cols-2 gap-8 px-4">
-                            <!-- Roles Section - Only show if there are roles -->
-                            {#if roles.length > 0}
+                                <!-- Clock positioned based on layout -->
+                                {#if visibleSections <= 3}
+                                    <div class="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/15 flex items-center justify-center shadow-lg hidden lg:block">
+                                        <div class="text-center">
+                                            <div class="text-5xl xl:text-7xl font-light text-white tracking-wider mb-2">
+                                                {formatTime(currentTime)}
+                                            </div>
+                                            <div class="text-sm text-white/60">
+                                                {formatDay(currentTime)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                {/if}
+                                <!-- Roles Section -->
+                                {#if hasRoles}
                                 <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden"
                                     in:fly="{{ x: -100, duration: 600, delay: 100, easing: elasticOut }}">
 
@@ -897,8 +924,8 @@ import ItemModal from "./ItemModal.svelte";
                                 </div>
                             {/if}
 
-                            <!-- Upcoming Events Section - Only show if there are events -->
-                            {#if upcomingEvents.length > 0}
+                                <!-- Events Section -->
+                                {#if hasEvents}
                                 <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden"
                                     in:fly="{{ x: 100, duration: 600, delay: 200, easing: elasticOut }}">
 
@@ -960,8 +987,8 @@ import ItemModal from "./ItemModal.svelte";
                                 </div>
                             {/if}
 
-                            <!-- Tasks Section - Only show if there are tasks -->
-                            {#if topTasks.length > 0}
+                                <!-- Tasks Section -->
+                                {#if hasTasks}
                                 <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden"
                                     in:fly="{{ x: -100, duration: 600, delay: 300, easing: elasticOut }}">
 
@@ -1013,8 +1040,8 @@ import ItemModal from "./ItemModal.svelte";
                                 </div>
                             {/if}
 
-                            <!-- Badges Section - Only show if there are badges -->
-                            {#if badges.length > 0}
+                                <!-- Badges Section -->
+                                {#if hasBadges}
                                 <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden"
                                     in:fly="{{ x: 100, duration: 600, delay: 400, easing: elasticOut }}">
 
@@ -1061,6 +1088,7 @@ import ItemModal from "./ItemModal.svelte";
                                     {/if}
                                 </div>
                             {/if}
+                            </div>
                         </div>
                     {/if}
                 </div>

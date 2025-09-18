@@ -5,6 +5,8 @@
     import { ID } from "../dashboard/store";
     import HoloSphere from "holosphere";
     import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
+    import { goto } from "$app/navigation";
+    import { fetchHolonName } from "../utils/holonNames";
 
     import { taskSortStore, sortTasks, type TaskSortState } from "../dashboard/store";
 
@@ -24,20 +26,12 @@
     let timeInterval: ReturnType<typeof setInterval>;
     let weatherRefreshInterval: ReturnType<typeof setInterval>;
     
-    // Weather state
-    let weatherData: {
-        temperature: number;
-        weatherCode: number;
-        windSpeed: number;
-        unit: string;
-        city: string;
-        country: string;
-        lastUpdated: Date;
-    } | null = null;
-    let isLoadingWeather = false;
-    
     // Holon data state
     $: holonID = $ID;
+
+    // Holon name state
+    let holonName = '';
+    let isLoadingHolonName = false;
     
     // Events and tasks data
     let todaysEvents: Array<{

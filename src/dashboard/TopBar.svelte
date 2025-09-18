@@ -10,6 +10,7 @@
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
 	import VideoCall from '../components/VideoCall.svelte';
+	import OverlayDashboard from '../components/OverlayDashboard.svelte';
 
 	export let toggleMyHolons: () => void;
 
@@ -48,6 +49,7 @@
 	let showToast = false;
 	let isTranslating = false;
 	let showVideoCall = false;
+	let showOverlayDashboard = false;
 
 	// Function to save visited holon
 	async function saveVisitedHolon(holonId: string, holonName: string) {
@@ -252,6 +254,12 @@
 		}
 	}
 
+	function toggleOverlayDashboard() {
+		if ($ID) {
+			showOverlayDashboard = !showOverlayDashboard;
+		}
+	}
+
 
 
 </script>
@@ -346,22 +354,37 @@
     {/if}
 
     <!-- Right side controls - only visible on larger screens -->
-    <div class="z-10 ml-auto hidden sm:flex flex-col items-end gap-2">
-        <!-- Google Translate Widget positioned above overlay button -->
-        <div id="google_translate_element"></div>
-        
-        <!-- Video Call Button (only on dashboard pages) -->
+    <div class="z-10 ml-auto hidden sm:flex flex-row items-center gap-2">
+        <!-- Google Translate Widget -->
+        <div id="google_translate_element" class="scale-90"></div>
+
+        <!-- Action Buttons (only on dashboard pages) -->
         {#if !isPrimaryPage && $ID}
-            <button 
-                on:click={startVideoCall}
-                class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
-                title="Start Video Call"
-                aria-label="Start Video Call"
-            >
-                <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-            </button>
+            <div class="flex flex-row items-center gap-1">
+                <!-- Overlay Dashboard Button -->
+                <button
+                    on:click={toggleOverlayDashboard}
+                    class="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group"
+                    title="Toggle Overlay Dashboard"
+                    aria-label="Toggle Overlay Dashboard"
+                >
+                    <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                    </svg>
+                </button>
+
+                <!-- Video Call Button -->
+                <button
+                    on:click={startVideoCall}
+                    class="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group"
+                    title="Start Video Call"
+                    aria-label="Start Video Call"
+                >
+                    <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                </button>
+            </div>
         {/if}
 
     </div>
@@ -379,5 +402,8 @@
 
 <!-- Floating Video Call Component -->
 <VideoCall roomId={$ID} bind:show={showVideoCall} floating={true} />
+
+<!-- Overlay Dashboard Component -->
+<OverlayDashboard bind:isVisible={showOverlayDashboard} />
 
 <!-- API Key Configuration Modal - MOVED TO COUNCIL COMPONENT -->
