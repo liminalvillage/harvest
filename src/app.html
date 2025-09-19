@@ -253,7 +253,7 @@
 			/* Position the Google Translate widget in TopBar component */
 			#google_translate_element {
 				position: relative !important;
-				z-index: 1000 !important;
+				z-index: 1 !important; /* Lowest z-index */
 				display: block !important;
 				visibility: visible !important;
 				opacity: 1 !important;
@@ -387,7 +387,7 @@
 				right: 0 !important;
 				top: 100% !important;
 				margin-top: 8px !important; /* mt-2 */
-				z-index: 50 !important;
+				z-index: 10 !important;
 				overflow-y: auto !important;
 			}
 			
@@ -484,7 +484,7 @@
 				display: none !important;
 			}
 			
-			/* Hide Google Translate loading button and spinner */
+			/* Hide Google Translate loading button and spinner - COMPREHENSIVE */
 			.goog-te-spinner,
 			.goog-te-loading,
 			.goog-te-progress,
@@ -498,10 +498,31 @@
 			.goog-te-ftab,
 			.goog-te-menu2,
 			.goog-te-menu2-item,
-			.goog-te-menu2-item-selected {
+			.goog-te-menu2-item-selected,
+			/* Additional loading elements to hide */
+			div[id*="goog-te-"],
+			div[class*="goog-te-spinner"],
+			div[class*="goog-te-loading"],
+			span[class*="goog-te-spinner"],
+			span[class*="goog-te-loading"],
+			.goog-te-progress-bar,
+			.goog-te-loading-message,
+			.goog-te-busy,
+			div[style*="goog-te"][style*="loading"],
+			iframe[id*="goog-te-spinner"],
+			iframe[src*="translate.google"],
+			div[class*="VIpgJd"],
+			div[jscontroller],
+			div[jsaction*="translate"] {
 				display: none !important;
 				visibility: hidden !important;
 				opacity: 0 !important;
+				position: absolute !important;
+				left: -9999px !important;
+				top: -9999px !important;
+				width: 0 !important;
+				height: 0 !important;
+				z-index: -1 !important;
 			}
 			
 			/* Disable all pointer events on hover states */

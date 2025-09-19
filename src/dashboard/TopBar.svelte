@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { openSidebar, ID } from './store';
-	import { onMount, getContext } from 'svelte';
+	import { onMount, onDestroy, getContext } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
@@ -10,7 +10,7 @@
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
 	import VideoCall from '../components/VideoCall.svelte';
-	import OverlayDashboard from '../components/OverlayDashboard.svelte';
+	import WidgetDashboard from '../components/WidgetDashboard.svelte';
 
 	export let toggleMyHolons: () => void;
 
@@ -49,7 +49,7 @@
 	let showToast = false;
 	let isTranslating = false;
 	let showVideoCall = false;
-	let showOverlayDashboard = false;
+	let showWidgetDashboard = false;
 
 	// Function to save visited holon
 	async function saveVisitedHolon(holonId: string, holonName: string) {
@@ -97,6 +97,9 @@
 			subtree: true,
 			attributes: true
 		});
+
+		// Listen for widget dashboard toggle events from Layout
+		window.addEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
 		
 		// Listen for translation events
 		window.addEventListener('flagLanguageChanged', () => {
@@ -254,11 +257,18 @@
 		}
 	}
 
-	function toggleOverlayDashboard() {
+	function toggleWidgetDashboard() {
 		if ($ID) {
-			showOverlayDashboard = !showOverlayDashboard;
+			showWidgetDashboard = !showWidgetDashboard;
 		}
 	}
+
+	onDestroy(() => {
+		// Clean up event listener
+		if (browser) {
+			window.removeEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
+		}
+	});
 
 
 
@@ -353,38 +363,36 @@
         
     {/if}
 
-    <!-- Right side controls - only visible on larger screens -->
-    <div class="z-10 ml-auto hidden sm:flex flex-row items-center gap-2">
+    <!-- Right side controls - single column layout -->
+    <div class="z-10 ml-auto hidden sm:flex flex-col items-center gap-1">
         <!-- Google Translate Widget -->
-        <div id="google_translate_element" class="scale-90"></div>
+        <div id="google_translate_element" class="scale-75"></div>
 
         <!-- Action Buttons (only on dashboard pages) -->
         {#if !isPrimaryPage && $ID}
-            <div class="flex flex-row items-center gap-1">
-                <!-- Overlay Dashboard Button -->
-                <button
-                    on:click={toggleOverlayDashboard}
-                    class="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group"
-                    title="Toggle Overlay Dashboard"
-                    aria-label="Toggle Overlay Dashboard"
-                >
-                    <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                    </svg>
-                </button>
+            <!-- Widget Dashboard Button -->
+            <button
+                on:click={toggleWidgetDashboard}
+                class="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group"
+                title="Toggle Widget Dashboard"
+                aria-label="Toggle Widget Dashboard"
+            >
+                <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                </svg>
+            </button>
 
-                <!-- Video Call Button -->
-                <button
-                    on:click={startVideoCall}
-                    class="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group"
-                    title="Start Video Call"
-                    aria-label="Start Video Call"
-                >
-                    <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                </button>
-            </div>
+            <!-- Video Call Button -->
+            <button
+                on:click={startVideoCall}
+                class="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group"
+                title="Start Video Call"
+                aria-label="Start Video Call"
+            >
+                <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+            </button>
         {/if}
 
     </div>
@@ -403,7 +411,7 @@
 <!-- Floating Video Call Component -->
 <VideoCall roomId={$ID} bind:show={showVideoCall} floating={true} />
 
-<!-- Overlay Dashboard Component -->
-<OverlayDashboard bind:isVisible={showOverlayDashboard} />
+<!-- Widget Dashboard Component -->
+<WidgetDashboard bind:isVisible={showWidgetDashboard} />
 
 <!-- API Key Configuration Modal - MOVED TO COUNCIL COMPONENT -->

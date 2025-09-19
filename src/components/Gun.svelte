@@ -83,17 +83,26 @@
 	async function subscribeToTable(tableName: string) {
 		store = {};
 		const safeHolonID = holonID || "";
+		console.log(`[Gun.svelte] Subscribing to table: ${tableName} for holon: ${safeHolonID}`);
+
 		if (holosphere && tableName.trim()) {
-			console.log(safeHolonID, tableName);
 			holosphere.subscribe(safeHolonID, tableName, (newData: any, key?: string) => {
-				if (typeof key !== 'string') return;
+				console.log(`[Gun.svelte] ${tableName} subscription update:`, { key, newData, type: typeof newData });
+				if (typeof key !== 'string') {
+					console.log(`[Gun.svelte] Skipping update - key is not string:`, key);
+					return;
+				}
 				if (newData) {
 					store[key] = newData;
+					console.log(`[Gun.svelte] Added ${tableName} entry. Total entries: ${Object.keys(store).length}`);
 				} else {
 					delete store[key];
 					store = store;
+					console.log(`[Gun.svelte] Deleted ${tableName} entry. Total entries: ${Object.keys(store).length}`);
 				}
 			});
+		} else {
+			console.log(`[Gun.svelte] Cannot subscribe - holosphere: ${!!holosphere}, tableName: "${tableName}"`);
 		}
 	}
 

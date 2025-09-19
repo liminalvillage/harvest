@@ -639,17 +639,48 @@
                 // It's a full URL, try to parse it
                 const url = new URL(decodedText);
                 const pathParts = url.pathname.split('/').filter(part => part.trim() !== '');
-                
-                // Look for holon ID in the path
-                if (pathParts.length > 0) {
-                    // Take the last non-empty part of the path
-                    holonId = pathParts[pathParts.length - 1];
+
+                // Common path endings that are not holon IDs
+                const excludedPaths = ['dashboard', 'qr', 'settings', 'admin', 'holons', 'tasks', 'offers', 'map', 'council', 'proposals'];
+
+                // Look for holon ID in the path - find the first numeric or alphanumeric ID
+                for (const part of pathParts) {
+                    // Skip common path endings
+                    if (excludedPaths.includes(part.toLowerCase())) {
+                        continue;
+                    }
+
+                    // If it's all numeric or looks like a holon ID, use it
+                    if (/^[a-zA-Z0-9\-_]+$/.test(part) && part.length > 3) {
+                        holonId = part;
+                        break;
+                    }
+                }
+
+                // If no suitable holon ID found, fall back to first path part
+                if (holonId === decodedText && pathParts.length > 0) {
+                    holonId = pathParts[0];
                 }
             } else if (decodedText.includes('/')) {
-                // It's a relative path, split by '/' and take the last part
+                // It's a relative path, split by '/' and use smarter logic
                 const pathParts = decodedText.split('/').filter(part => part.trim() !== '');
-                if (pathParts.length > 0) {
-                    holonId = pathParts[pathParts.length - 1];
+                const excludedPaths = ['dashboard', 'qr', 'settings', 'admin', 'holons', 'tasks', 'offers', 'map', 'council', 'proposals'];
+
+                // Find the first part that looks like a holon ID
+                for (const part of pathParts) {
+                    if (excludedPaths.includes(part.toLowerCase())) {
+                        continue;
+                    }
+
+                    if (/^[a-zA-Z0-9\-_]+$/.test(part) && part.length > 3) {
+                        holonId = part;
+                        break;
+                    }
+                }
+
+                // Fall back to first part if nothing found
+                if (holonId === decodedText && pathParts.length > 0) {
+                    holonId = pathParts[0];
                 }
             }
             

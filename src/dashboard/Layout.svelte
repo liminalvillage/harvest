@@ -13,7 +13,6 @@
 	import Sidebar from './sidebar/Sidebar.svelte';
 	import MyHolons from '../components/MyHolons.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
-	import OverlayDashboard from '../components/OverlayDashboard.svelte';
 
 	const style = {
 		container: `bg-gray-900 h-screen overflow-hidden relative`,
@@ -26,7 +25,6 @@
 	let lastMouseMove = Date.now();
 	let currentRouteIndex = 0;
 	let showMyHolons = false;
-	let showOverlayDashboard = false;
 
 	// Check if we're on the root route
 	$: isRootRoute = $page.url.pathname === '/';
@@ -57,9 +55,6 @@
 		showMyHolons = !showMyHolons;
 	}
 
-	function toggleOverlayDashboard() {
-		showOverlayDashboard = !showOverlayDashboard;
-	}
 
 	// Set up auto-switching if in browser
 	if (browser) {
@@ -68,7 +63,8 @@
 
 		// Set up custom event listener for Overlay dashboard
 		window.addEventListener('toggleOverlayDashboard', () => {
-			toggleOverlayDashboard();
+			// Dispatch the event to TopBar instead
+			window.dispatchEvent(new CustomEvent('toggleWidgetDashboard'));
 		});
 
 		// Auto-switching is disabled by default - removed timer logic
@@ -141,8 +137,6 @@
 			</div>
 		{/if}
 
-		<!-- Overlay Dashboard -->
-		<OverlayDashboard bind:isVisible={showOverlayDashboard} />
 	</div>
 {/if}
 

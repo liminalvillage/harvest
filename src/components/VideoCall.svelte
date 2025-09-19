@@ -937,11 +937,11 @@
     transform: scale(1.1);
   }
 
-  .control-btn.muted {
+  .control-btn:global(.muted) {
     background: rgba(220, 38, 38, 0.7);
   }
 
-  .control-btn.muted:hover:not(:disabled) {
+  .control-btn:global(.muted):hover:not(:disabled) {
     background: rgba(220, 38, 38, 0.9);
   }
 

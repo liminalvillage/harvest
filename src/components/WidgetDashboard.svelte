@@ -1,7 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy, getContext } from "svelte";
-import { fade, slide, scale, fly } from "svelte/transition";
-import { elasticOut } from "svelte/easing";
+import { fade, slide } from "svelte/transition";
 import { ID } from "../dashboard/store";
 import HoloSphere from "holosphere";
 import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
@@ -747,20 +746,19 @@ import ItemModal from "./ItemModal.svelte";
 <svelte:window on:keydown={handleKeydown} />
 
 {#if isVisible}
-    <div 
-        class="fixed inset-0 z-50 bg-gradient-to-br from-gray-800 via-gray-700 to-indigo-900 flex items-center justify-center p-4 overflow-hidden"
+    <div
+        class="fixed inset-0 z-50 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-hidden"
         on:click|self={() => isVisible = false}
         on:keydown={handleKeydown}
-        transition:fade={{ duration: 300 }}
+        transition:fade={{ duration: 200 }}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="zeitcamp-title"
+        aria-labelledby="widget-dashboard-title"
         tabindex="0"
     >
 
-        <div 
-            class="w-full max-w-6xl h-full max-h-[95vh] bg-black/30 backdrop-blur-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden relative z-40"
-            transition:slide={{ duration: 400, axis: 'y' }}
+        <div
+            class="w-full max-w-6xl h-full max-h-[95vh] bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 shadow-xl overflow-hidden relative z-40"
         >
             <!-- Top Header: Date, Logo, Clock, and Close Button -->
             <div class="absolute top-6 left-6 right-6 z-50 flex justify-between items-center">
@@ -800,10 +798,10 @@ import ItemModal from "./ItemModal.svelte";
                     </div>
                     
                     <!-- Close Button -->
-                    <button 
-                        class="text-white/60 hover:text-white transition-all duration-300 p-2 rounded-lg hover:bg-white/10 hover:scale-110 hover:rotate-90 transform"
+                    <button
+                        class="text-white/60 hover:text-white transition-colors duration-200 p-2 rounded-lg hover:bg-white/10"
                         on:click={() => isVisible = false}
-                        aria-label="Close zeitcamp dashboard"
+                        aria-label="Close widget dashboard"
                     >
                         <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -819,18 +817,17 @@ import ItemModal from "./ItemModal.svelte";
                     <!-- Four Main Sections Grid -->
                     <div class="w-full h-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <!-- Ruoli (Roles) Section -->
-                        <div class="bg-indigo-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-indigo-400/25 flex flex-col shadow-2xl hover:border-indigo-400/50 hover:shadow-indigo-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
-                            in:fly="{{ x: -100, duration: 600, delay: 100, easing: elasticOut }}">
+                        <div class="bg-slate-800/40 backdrop-blur-md rounded-xl p-6 border border-slate-700/50 flex flex-col shadow-lg hover:border-slate-600/70 transition-colors duration-200 h-full relative overflow-hidden">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-8 h-8 mr-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <h3 class="text-xl font-semibold text-white/90 flex items-center">
+                                    <svg class="w-6 h-6 mr-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                                     </svg>
                                     Ruoli
                                 </h3>
-                                <button 
-                                    class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all duration-300 text-sm font-medium shadow-lg hover:shadow-xl hover:scale-105 hover:-translate-y-0.5 transform"
+                                <button
+                                    class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors duration-200 text-sm font-medium"
                                     on:click={navigateToRoles}
                                 >
                                     View All
@@ -845,14 +842,13 @@ import ItemModal from "./ItemModal.svelte";
                             {:else if roles.length > 0}
                                 <div class="space-y-2 flex-1 overflow-y-auto custom-scrollbar">
                                     {#each roles as role (role.id)}
-                                        <div 
-                                            class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-indigo-500/20 hover:border-indigo-400/50 cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-lg transform"
+                                        <div
+                                            class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10 hover:bg-white/10 cursor-pointer transition-colors duration-150"
                                             on:click={(e) => handleRoleClick(role, e)}
                                             on:keydown={(e) => e.key === 'Enter' && handleRoleClick(role)}
                                             role="button"
                                             tabindex="0"
                                             aria-label="View role details for {role.title}"
-                                            in:scale="{{ duration: 300, delay: 50 * roles.indexOf(role) }}"
                                         >
                                             <div class="flex-1 min-w-0">
                                                 <h4 class="font-medium text-white text-sm truncate">
@@ -863,7 +859,7 @@ import ItemModal from "./ItemModal.svelte";
                                                 {#if role.participants && role.participants.length > 0}
                                                     <div class="flex -space-x-1">
                                                         {#each role.participants.slice(0, 3) as participant}
-                                                            <div class="w-6 h-6 rounded-full bg-indigo-500/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
+                                                            <div class="w-6 h-6 rounded-full bg-slate-600/30 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
                                                                 <img 
                                                                     src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
                                                                     alt={getUserDisplayName(participant.id)}
@@ -873,7 +869,7 @@ import ItemModal from "./ItemModal.svelte";
                                                                         e.currentTarget.nextElementSibling.style.display = 'flex';
                                                                     }}
                                                                 />
-                                                                <div class="w-full h-full bg-indigo-500/20 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
+                                                                <div class="w-full h-full bg-slate-600/30 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
                                                                     {getUserDisplayName(participant.id).charAt(0).toUpperCase()}
                                                                 </div>
                                                             </div>
@@ -907,18 +903,17 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Eventi (Events) Section -->
-                        <div class="bg-green-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-green-400/25 flex flex-col shadow-2xl hover:border-green-400/50 hover:shadow-green-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
-                            in:fly="{{ x: 100, duration: 600, delay: 200, easing: elasticOut }}">
+                        <div class="bg-slate-800/40 backdrop-blur-md rounded-xl p-6 border border-slate-700/50 flex flex-col shadow-lg hover:border-slate-600/70 transition-colors duration-200 h-full relative overflow-hidden">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-8 h-8 mr-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <h3 class="text-xl font-semibold text-white/90 flex items-center">
+                                    <svg class="w-6 h-6 mr-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
                                     Prossimi Eventi
                                 </h3>
-                                <button 
-                                    class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-xl"
+                                <button
+                                    class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors duration-200 text-sm font-medium"
                                     on:click={() => {
                                         if (holonID) {
                                             goto(`/${holonID}/calendar`);
@@ -964,7 +959,7 @@ import ItemModal from "./ItemModal.svelte";
                                                     <div class="flex items-center">
                                                         <div class="flex -space-x-1 mr-2">
                                                             {#each event.participants.slice(0, 3) as participant}
-                                                                <div class="w-4 h-4 rounded-full bg-green-500/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
+                                                                <div class="w-4 h-4 rounded-full bg-slate-600/30 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
                                                                     <img 
                                                                         src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
                                                                         alt={getUserDisplayName(participant.id)}
@@ -974,7 +969,7 @@ import ItemModal from "./ItemModal.svelte";
                                                                             e.currentTarget.nextElementSibling.style.display = 'flex';
                                                                         }}
                                                                     />
-                                                                    <div class="w-full h-full bg-green-500/20 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
+                                                                    <div class="w-full h-full bg-slate-600/30 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
                                                                         {getUserDisplayName(participant.id).charAt(0).toUpperCase()}
                                                                     </div>
                                                                 </div>
@@ -1026,18 +1021,17 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Compiti (Tasks) Section -->
-                        <div class="bg-amber-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-amber-400/25 flex flex-col shadow-2xl hover:border-amber-400/50 hover:shadow-amber-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
-                            in:fly="{{ x: -100, duration: 600, delay: 300, easing: elasticOut }}">
+                        <div class="bg-slate-800/40 backdrop-blur-md rounded-xl p-6 border border-slate-700/50 flex flex-col shadow-lg hover:border-slate-600/70 transition-colors duration-200 h-full relative overflow-hidden">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-8 h-8 mr-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <h3 class="text-xl font-semibold text-white/90 flex items-center">
+                                    <svg class="w-6 h-6 mr-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                                     </svg>
                                     Compiti
                                 </h3>
-                                <button 
-                                    class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-xl"
+                                <button
+                                    class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors duration-200 text-sm font-medium"
                                     on:click={() => {
                                         if (holonID) {
                                             goto(`/${holonID}/tasks`);
@@ -1077,7 +1071,7 @@ import ItemModal from "./ItemModal.svelte";
                                                 {#if task.participants && task.participants.length > 0}
                                                     <div class="flex -space-x-1">
                                                         {#each task.participants.slice(0, 3) as participant}
-                                                            <div class="w-6 h-6 rounded-full bg-amber-500/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
+                                                            <div class="w-6 h-6 rounded-full bg-slate-600/30 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(participant.id)}>
                                                                 <img 
                                                                     src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
                                                                     alt={getUserDisplayName(participant.id)}
@@ -1087,7 +1081,7 @@ import ItemModal from "./ItemModal.svelte";
                                                                         e.currentTarget.nextElementSibling.style.display = 'flex';
                                                                     }}
                                                                 />
-                                                                <div class="w-full h-full bg-amber-500/20 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
+                                                                <div class="w-full h-full bg-slate-600/30 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
                                                                     {getUserDisplayName(participant.id).charAt(0).toUpperCase()}
                                                                 </div>
                                                             </div>
@@ -1121,18 +1115,17 @@ import ItemModal from "./ItemModal.svelte";
                         </div>
 
                         <!-- Medaglie (Badges) Section -->
-                        <div class="bg-yellow-500/10 backdrop-blur-md rounded-3xl p-6 border-2 border-yellow-400/25 flex flex-col shadow-2xl hover:border-yellow-400/50 hover:shadow-yellow-500/20 hover:shadow-2xl hover:scale-[1.02] transition-all duration-500 h-full group relative overflow-hidden"
-                            in:fly="{{ x: 100, duration: 600, delay: 400, easing: elasticOut }}">
+                        <div class="bg-slate-800/40 backdrop-blur-md rounded-xl p-6 border border-slate-700/50 flex flex-col shadow-lg hover:border-slate-600/70 transition-colors duration-200 h-full relative overflow-hidden">
 
                             <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                                <h3 class="text-2xl font-bold text-white flex items-center">
-                                    <svg class="w-8 h-8 mr-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <h3 class="text-xl font-semibold text-white/90 flex items-center">
+                                    <svg class="w-6 h-6 mr-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.857 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.857 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.857.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.857-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.857 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.857 3.42 3.42 0 013.138-3.138z" />
                                     </svg>
                                     Medaglie
                                 </h3>
-                                <button 
-                                    class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg hover:shadow-xl"
+                                <button
+                                    class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors duration-200 text-sm font-medium"
                                     on:click={() => {
                                         if (holonID) {
                                             goto(`/${holonID}/badges`);
@@ -1172,7 +1165,7 @@ import ItemModal from "./ItemModal.svelte";
                                                 {#if badge.recipients && badge.recipients.length > 0}
                                                     <div class="flex -space-x-1">
                                                         {#each badge.recipients.slice(0, 3) as recipient}
-                                                            <div class="w-6 h-6 rounded-full bg-yellow-500/20 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(recipient.id)}>
+                                                            <div class="w-6 h-6 rounded-full bg-slate-600/30 border border-white/20 flex items-center justify-center text-white text-xs font-medium overflow-hidden" title={getUserDisplayName(recipient.id)}>
                                                                 <img 
                                                                     src={`https://telegram.holons.io/getavatar?user_id=${recipient.id}`}
                                                                     alt={getUserDisplayName(recipient.id)}
@@ -1182,7 +1175,7 @@ import ItemModal from "./ItemModal.svelte";
                                                                         e.currentTarget.nextElementSibling.style.display = 'flex';
                                                                     }}
                                                                 />
-                                                                <div class="w-full h-full bg-yellow-500/20 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
+                                                                <div class="w-full h-full bg-slate-600/30 flex items-center justify-center text-white text-xs font-medium rounded-full" style="display: none;">
                                                                     {getUserDisplayName(recipient.id).charAt(0).toUpperCase()}
                                                                 </div>
                                                             </div>
@@ -1273,27 +1266,27 @@ import ItemModal from "./ItemModal.svelte";
     
     /* Custom scrollbar styles */
     .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
+        width: 4px;
     }
-    
+
     .custom-scrollbar::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 2px;
     }
-    
+
     .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: linear-gradient(45deg, rgba(59, 130, 246, 0.5), rgba(147, 51, 234, 0.5));
-        border-radius: 3px;
+        background: rgba(148, 163, 184, 0.3);
+        border-radius: 2px;
     }
-    
+
     .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(45deg, rgba(59, 130, 246, 0.8), rgba(147, 51, 234, 0.8));
+        background: rgba(148, 163, 184, 0.5);
     }
-    
+
     /* Firefox scrollbar */
     .custom-scrollbar {
         scrollbar-width: thin;
-        scrollbar-color: rgba(59, 130, 246, 0.5) rgba(255, 255, 255, 0.1);
+        scrollbar-color: rgba(148, 163, 184, 0.3) rgba(255, 255, 255, 0.05);
     }
 
 
