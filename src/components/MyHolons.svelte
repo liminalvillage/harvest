@@ -177,19 +177,25 @@
         refreshAllHolonNames();
     }
 
-    // Filtered holons
-    $: filteredHolons = myHolons.filter(holon => 
+    // Filtered holons - ensure names are properly displayed
+    $: filteredHolons = myHolons.filter(holon =>
         holon.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         holon.id.toLowerCase().includes(searchQuery.toLowerCase())
-    ).sort((a, b) => {
+    ).map(holon => {
+        // Ensure fallback names are not displayed - use ID if name is empty or fallback
+        const displayName = holon.name && holon.name.trim() !== '' && holon.name !== `Holon ${holon.id}`
+            ? holon.name
+            : holon.id;
+        return { ...holon, name: displayName };
+    }).sort((a, b) => {
         let aVal: any = a[sortBy];
         let bVal: any = b[sortBy];
-        
+
         if (typeof aVal === 'string') {
             aVal = aVal.toLowerCase();
             bVal = bVal.toLowerCase();
         }
-        
+
         const multiplier = sortDirection === 'asc' ? 1 : -1;
         return aVal > bVal ? multiplier : -multiplier;
     });
@@ -399,38 +405,45 @@
         nameFetchProgress.total = totalHolons;
         nameFetchProgress.completed = 0;
         nameFetchProgress.current = '';
-        
+
         const namePromises = myHolons.map(async (holon, index) => {
             try {
                 // Update progress
                 nameFetchProgress.current = `Fetching name for ${holon.id}...`;
-                
+
                 // Use force refresh to ensure we get fresh data
                 const name = await forceRefreshHolonName(holosphere, holon.id);
-                
-                // Update the specific holon with new name (same pattern as stats)
-                const updatedHolon = { ...holon, name };
-                const holonIndex = myHolons.findIndex(h => h.id === holon.id);
-                if (holonIndex !== -1) {
-                    myHolons[holonIndex] = updatedHolon;
+
+                // Only update if we got a real name (not a fallback)
+                if (name && name.trim() !== '' && name !== `Holon ${holon.id}`) {
+                    // Update the specific holon with new name (same pattern as stats)
+                    const updatedHolon = { ...holon, name };
+                    const holonIndex = myHolons.findIndex(h => h.id === holon.id);
+                    if (holonIndex !== -1) {
+                        myHolons[holonIndex] = updatedHolon;
+                    }
+
+                    // Update progress
+                    nameFetchProgress.current = `Updated ${holon.id}: ${name}`;
+                } else {
+                    // Keep the existing name if we didn't get a better one
+                    nameFetchProgress.current = `Keeping existing name for ${holon.id}`;
                 }
-                
-                // Update progress
+
                 nameFetchProgress.completed++;
-                nameFetchProgress.current = `Updated ${holon.id}: ${name}`;
             } catch (err) {
                 console.warn(`Failed to update name for holon ${holon.id}:`, err);
                 // Still count as completed even if it failed
                 nameFetchProgress.completed++;
             }
         });
-        
+
         // Await all name updates to complete before continuing
         await Promise.allSettled(namePromises);
-        
+
         // Reset progress
         nameFetchProgress.current = 'All names updated successfully!';
-        
+
         // Trigger reactivity
         myHolons = [...myHolons];
     }
@@ -441,35 +454,42 @@
         // Update visited holon names using the same pattern as personal holons
         const totalVisited = visitedHolons.length;
         nameFetchProgress.total += totalVisited;
-        
+
         const namePromises = visitedHolons.map(async (holon) => {
             try {
                 // Update progress
                 nameFetchProgress.current = `Fetching name for visited holon ${holon.id}...`;
-                
+
                 // Use force refresh to ensure we get fresh data
                 const name = await forceRefreshHolonName(holosphere, holon.id);
-                
-                // Update the specific holon with new name (same pattern as stats)
-                const updatedHolon = { ...holon, name };
-                const index = visitedHolons.findIndex(h => h.id === holon.id);
-                if (index !== -1) {
-                    visitedHolons[index] = updatedHolon;
+
+                // Only update if we got a real name (not a fallback)
+                if (name && name.trim() !== '' && name !== `Holon ${holon.id}`) {
+                    // Update the specific holon with new name (same pattern as stats)
+                    const updatedHolon = { ...holon, name };
+                    const index = visitedHolons.findIndex(h => h.id === holon.id);
+                    if (index !== -1) {
+                        visitedHolons[index] = updatedHolon;
+                    }
+
+                    // Update progress
+                    nameFetchProgress.current = `Updated visited ${holon.id}: ${name}`;
+                } else {
+                    // Keep the existing name if we didn't get a better one
+                    nameFetchProgress.current = `Keeping existing name for visited ${holon.id}`;
                 }
-                
-                // Update progress
+
                 nameFetchProgress.completed++;
-                nameFetchProgress.current = `Updated visited ${holon.id}: ${name}`;
             } catch (err) {
                 console.warn(`Failed to update name for visited holon ${holon.id}:`, err);
                 // Still count as completed even if it failed
                 nameFetchProgress.completed++;
             }
         });
-        
+
         // Await all name updates to complete before continuing
         await Promise.allSettled(namePromises);
-        
+
         // Trigger reactivity and save
         visitedHolons = [...visitedHolons];
         if ($walletAddress) {
@@ -1165,18 +1185,24 @@
             {:else if activeTab === 'visited'}
                 <!-- Visited Holons Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                    {#each visitedHolons.filter(h => 
+                    {#each visitedHolons.filter(h =>
                         h.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         h.id.toLowerCase().includes(searchQuery.toLowerCase())
-                    ).sort((a, b) => {
+                    ).map(holon => {
+                        // Ensure fallback names are not displayed for visited holons too
+                        const displayName = holon.name && holon.name.trim() !== '' && holon.name !== `Holon ${holon.id}`
+                            ? holon.name
+                            : holon.id;
+                        return { ...holon, name: displayName };
+                    }).sort((a, b) => {
                         let aVal: any = a[sortBy === 'lastVisited' ? 'lastVisited' : 'name'];
                         let bVal: any = b[sortBy === 'lastVisited' ? 'lastVisited' : 'name'];
-                        
+
                         if (typeof aVal === 'string') {
                             aVal = aVal.toLowerCase();
                             bVal = bVal.toLowerCase();
                         }
-                        
+
                         const multiplier = sortDirection === 'asc' ? 1 : -1;
                         return aVal > bVal ? multiplier : -multiplier;
                     }) as holon, index (holon.id)}

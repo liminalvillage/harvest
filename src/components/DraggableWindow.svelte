@@ -148,14 +148,14 @@
 
   {#if resizable}
     <!-- Resize handles -->
-    <div class="resize-handle resize-right" role="button" aria-label="Resize right" on:mousedown={(e) => handleResizeStart(e, 'right')}></div>
-    <div class="resize-handle resize-bottom" role="button" aria-label="Resize bottom" on:mousedown={(e) => handleResizeStart(e, 'bottom')}></div>
-    <div class="resize-handle resize-left" role="button" aria-label="Resize left" on:mousedown={(e) => handleResizeStart(e, 'left')}></div>
-    <div class="resize-handle resize-top" role="button" aria-label="Resize top" on:mousedown={(e) => handleResizeStart(e, 'top')}></div>
-    <div class="resize-handle resize-bottom-right" role="button" aria-label="Resize bottom right" on:mousedown={(e) => handleResizeStart(e, 'bottom right')}></div>
-    <div class="resize-handle resize-bottom-left" role="button" aria-label="Resize bottom left" on:mousedown={(e) => handleResizeStart(e, 'bottom left')}></div>
-    <div class="resize-handle resize-top-right" role="button" aria-label="Resize top right" on:mousedown={(e) => handleResizeStart(e, 'top right')}></div>
-    <div class="resize-handle resize-top-left" role="button" aria-label="Resize top left" on:mousedown={(e) => handleResizeStart(e, 'top left')}></div>
+    <div class="resize-handle resize-right" role="button" tabindex="0" aria-label="Resize right" on:mousedown={(e) => handleResizeStart(e, 'right')}></div>
+    <div class="resize-handle resize-bottom" role="button" tabindex="0" aria-label="Resize bottom" on:mousedown={(e) => handleResizeStart(e, 'bottom')}></div>
+    <div class="resize-handle resize-left" role="button" tabindex="0" aria-label="Resize left" on:mousedown={(e) => handleResizeStart(e, 'left')}></div>
+    <div class="resize-handle resize-top" role="button" tabindex="0" aria-label="Resize top" on:mousedown={(e) => handleResizeStart(e, 'top')}></div>
+    <div class="resize-handle resize-bottom-right" role="button" tabindex="0" aria-label="Resize bottom right" on:mousedown={(e) => handleResizeStart(e, 'bottom right')}></div>
+    <div class="resize-handle resize-bottom-left" role="button" tabindex="0" aria-label="Resize bottom left" on:mousedown={(e) => handleResizeStart(e, 'bottom left')}></div>
+    <div class="resize-handle resize-top-right" role="button" tabindex="0" aria-label="Resize top right" on:mousedown={(e) => handleResizeStart(e, 'top right')}></div>
+    <div class="resize-handle resize-top-left" role="button" tabindex="0" aria-label="Resize top left" on:mousedown={(e) => handleResizeStart(e, 'top left')}></div>
   {/if}
 </div>
 
