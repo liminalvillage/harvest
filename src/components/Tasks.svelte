@@ -16,6 +16,7 @@
 	import { taskSortStore, updateTaskSort, sortTasks, type SortCriteria } from "../dashboard/store";
 	// Add new imports for quest library
 	import QuestImportModal from "./QuestImportModal.svelte";
+	import QuestExportModal from "./QuestExportModal.svelte";
 
 	// Add filterType prop to allow filtering by quest type
 	export let filterType: 'task' | 'event' | 'all' = 'all';
@@ -1300,6 +1301,9 @@
 
 	// Add state for import modal
 	let showImportModal = false;
+	
+	// Add state for export modal
+	let showExportModal = false;
 
 </script>
 
@@ -1607,6 +1611,19 @@
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
 						</svg>
 						Import Quests
+					</button>
+					
+					<button
+						on:click={() => showExportModal = true}
+						class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-full flex items-center gap-2 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl text-sm font-medium"
+						aria-label="Export quests to CSV file"
+						title="Export quests to CSV file"
+						disabled={filteredQuests.length === 0}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+						</svg>
+						Export Quests
 					</button>
 				</div>
 
@@ -1949,6 +1966,15 @@
 	<QuestImportModal
 		on:close={() => showImportModal = false}
 		on:import={handleQuestImport}
+	/>
+{/if}
+
+<!-- Quest Export Modal -->
+{#if showExportModal && holonID}
+	<QuestExportModal
+		quests={filteredQuests}
+		holonId={holonID}
+		on:close={() => showExportModal = false}
 	/>
 {/if}
 
