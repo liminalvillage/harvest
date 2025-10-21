@@ -9,6 +9,7 @@ import organizations from '../components/schemas/organizations_schema-v1.0.0.jso
 import owpGoods from '../components/schemas/owp-goods_to_lend-v0.0.1.json';
 import personV1 from '../components/schemas/person_schema-v0.1.0.json';
 import personV2 from '../components/schemas/person_schema-v0.2.0.json';
+import podcasts from '../components/schemas/podcasts_schema-v0.1.0.json';
 import projects from '../components/schemas/projects_schema-v0.1.0.json';
 import quests from '../components/schemas/quests_schema_v0.0.1.json';
 import socialGraph from '../components/schemas/small_social_graph_people-v0.0.1.json';
@@ -27,6 +28,7 @@ export const schemas = {
     'owp-goods_to_lend-v0.0.1': owpGoods,
     'person_schema-v0.1.0': personV1,
     'person_schema-v0.2.0': personV2,
+    'podcasts_schema-v0.1.0': podcasts,
     'projects_schema-v0.1.0': projects,
     'quests_schema_v0.0.1': quests,
     'small_social_graph_people-v0.0.1': socialGraph,

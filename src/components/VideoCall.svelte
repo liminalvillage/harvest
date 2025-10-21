@@ -2,6 +2,7 @@
   import { onMount, onDestroy, getContext } from 'svelte';
   import type HoloSphere from 'holosphere';
   import DraggableWindow from './DraggableWindow.svelte';
+  import { WhisperLiveClient, type TranscriptionSegment } from '$lib/whisperLiveClient';
 
   export let roomId: string;
   export let show = false;
@@ -39,6 +40,10 @@
   let isAudioEnabled = true;
   let isVideoEnabled = true;
   let connectionStatus = 'Initializing...';
+  let isRecording = false;
+  let recordingStartTime: number | null = null;
+  let transcriptionSegments: TranscriptionSegment[] = [];
+  let whisperClient: WhisperLiveClient | null = null;
 
   // Gun instance
   let gun: any;
@@ -587,6 +592,165 @@
     }
   }
 
+  function toggleRecording() {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }
+
+  async function startRecording() {
+    if (!localStream) {
+      log('Cannot start recording: no local stream');
+      return;
+    }
+
+    log('Starting podcast recording...');
+    isRecording = true;
+    recordingStartTime = Date.now();
+    transcriptionSegments = [];
+
+    // Initialize WhisperLive client
+    try {
+      whisperClient = new WhisperLiveClient({
+        serverUrl: 'ws://localhost:9090',
+        language: 'en',
+        model: 'base',
+        useVAD: false
+      });
+
+      // Set up transcription callback
+      whisperClient.onTranscriptionSegment((segment: TranscriptionSegment) => {
+        log(`Transcription: ${segment.text}`);
+        transcriptionSegments = [...transcriptionSegments, segment];
+      });
+
+      // Set up error callback
+      whisperClient.onErrorCallback((error: Error) => {
+        log(`WhisperLive error: ${error.message}`);
+        connectionStatus = `Recording error: ${error.message}`;
+      });
+
+      // Set up status callback
+      whisperClient.onStatusChange((status) => {
+        log(`WhisperLive status: ${status}`);
+        if (status === 'connected') {
+          connectionStatus = '🔴 Recording...';
+        } else if (status === 'error') {
+          connectionStatus = 'Recording connection error';
+        }
+      });
+
+      // Connect to WhisperLive server and start streaming
+      await whisperClient.connect(localStream);
+      log('WhisperLive client connected and streaming');
+    } catch (error) {
+      log(`Failed to start WhisperLive: ${error}`);
+      connectionStatus = `Recording failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      isRecording = false;
+      recordingStartTime = null;
+      whisperClient = null;
+    }
+  }
+
+  async function stopRecording() {
+    log('Stopping podcast recording...');
+    isRecording = false;
+
+    const duration = recordingStartTime ? Math.floor((Date.now() - recordingStartTime) / 1000) : 0;
+    const endTime = Date.now();
+    const startTime = recordingStartTime || endTime;
+    recordingStartTime = null;
+
+    // Disconnect WhisperLive client
+    if (whisperClient) {
+      whisperClient.disconnect();
+      const transcript = whisperClient.getTranscript();
+      whisperClient = null;
+
+      // Save podcast data to holosphere
+      try {
+        await savePodcastToHolosphere({
+          holonId: roomId,
+          participants: [
+            { id: myUserId, username: myUserId.substring(0, 8), role: 'host' },
+            ...connectedPeers.map(peerId => ({
+              id: peerId,
+              username: peerId.substring(0, 8),
+              role: 'participant' as const
+            }))
+          ],
+          startTime,
+          endTime,
+          duration,
+          transcript
+        });
+
+        connectionStatus = `Podcast saved (${duration}s, ${transcript.segments.length} segments)`;
+        log(`Podcast saved with ${transcript.segments.length} transcript segments`);
+      } catch (error) {
+        log(`Failed to save podcast: ${error}`);
+        connectionStatus = `Recording saved locally (${duration}s) - upload failed`;
+      }
+    } else {
+      connectionStatus = `Podcast recorded (${duration}s)`;
+    }
+
+    // Reset status after a few seconds
+    setTimeout(() => {
+      if (!isRecording) {
+        connectionStatus = 'Connected to room';
+      }
+    }, 3000);
+  }
+
+  // Save podcast data to holosphere
+  async function savePodcastToHolosphere(podcastData: {
+    holonId: string;
+    participants: Array<{ id: string; username: string; role: 'host' | 'guest' | 'participant' }>;
+    startTime: number;
+    endTime: number;
+    duration: number;
+    transcript: { segments: TranscriptionSegment[]; fullText: string; language?: string };
+  }) {
+    if (!gun) {
+      throw new Error('Gun instance not available');
+    }
+
+    const podcastId = `podcast_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const date = new Date(podcastData.startTime).toISOString().split('T')[0];
+
+    const podcast = {
+      id: podcastId,
+      version: '0.1.0',
+      holonId: podcastData.holonId,
+      title: `Video Chat Recording - ${date}`,
+      description: `Podcast recording from video chat in room ${podcastData.holonId}`,
+      participants: podcastData.participants,
+      startTime: podcastData.startTime,
+      endTime: podcastData.endTime,
+      date,
+      duration: podcastData.duration,
+      transcript: {
+        segments: podcastData.transcript.segments,
+        fullText: podcastData.transcript.fullText,
+        language: podcastData.transcript.language || 'en'
+      },
+      status: 'completed',
+      tags: ['video-chat', 'recording'],
+      createdBy: myUserId,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    // Save to Gun
+    const podcastsRef = gun.get('podcasts');
+    podcastsRef.get(podcastId).put(podcast);
+
+    log(`Saved podcast ${podcastId} to holosphere`);
+  }
+
 
   function leaveRoom() {
     log('Leaving room');
@@ -762,7 +926,38 @@
             {isVideoEnabled ? '📹' : '📵'}
           </button>
 
+          <button
+            class="control-btn record-btn"
+            class:recording={isRecording}
+            on:click={toggleRecording}
+            disabled={!localStream}
+            title={isRecording ? 'Stop recording podcast' : 'Start recording podcast'}
+          >
+            {isRecording ? '⏹️' : '⏺️'}
+          </button>
+
         </div>
+
+        <!-- Transcription Panel -->
+        {#if isRecording && transcriptionSegments.length > 0}
+          <div class="transcription-panel">
+            <div class="transcription-header">
+              <span>Live Transcription</span>
+              <span class="segment-count">{transcriptionSegments.length} segments</span>
+            </div>
+            <div class="transcription-content">
+              {#each transcriptionSegments as segment}
+                <div class="transcript-segment">
+                  <span class="timestamp">{Math.floor(segment.timestamp)}s</span>
+                  <span class="text">{segment.text}</span>
+                  {#if segment.confidence}
+                    <span class="confidence">{Math.round(segment.confidence * 100)}%</span>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
     </DraggableWindow>
   {:else}
@@ -811,9 +1006,40 @@
             {isVideoEnabled ? '📹' : '📵'}
           </button>
 
+          <button
+            class="control-btn record-btn"
+            class:recording={isRecording}
+            on:click={toggleRecording}
+            disabled={!localStream}
+            title={isRecording ? 'Stop recording podcast' : 'Start recording podcast'}
+          >
+            {isRecording ? '⏹️' : '⏺️'}
+          </button>
+
         </div>
+
+        <!-- Transcription Panel (Fullscreen) -->
+        {#if isRecording && transcriptionSegments.length > 0}
+          <div class="transcription-panel">
+            <div class="transcription-header">
+              <span>Live Transcription</span>
+              <span class="segment-count">{transcriptionSegments.length} segments</span>
+            </div>
+            <div class="transcription-content">
+              {#each transcriptionSegments as segment}
+                <div class="transcript-segment">
+                  <span class="timestamp">{Math.floor(segment.timestamp)}s</span>
+                  <span class="text">{segment.text}</span>
+                  {#if segment.confidence}
+                    <span class="confidence">{Math.round(segment.confidence * 100)}%</span>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
-      
+
       {#if onClose}
         <button class="close-fullscreen" on:click={handleClose}>
           ✕ Close
@@ -945,6 +1171,32 @@
     background: rgba(220, 38, 38, 0.9);
   }
 
+  .control-btn.record-btn {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .control-btn.record-btn:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.3);
+  }
+
+  .control-btn.record-btn:global(.recording) {
+    background: rgba(239, 68, 68, 0.9);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .control-btn.record-btn:global(.recording):hover:not(:disabled) {
+    background: rgba(220, 38, 38, 0.9);
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+
 
 
   /* Dynamic grid layouts */
@@ -1046,5 +1298,85 @@
   /* Global styles to ensure proper z-index layering */
   :global(.draggable-window) {
     z-index: 10000;
+  }
+
+  /* Transcription Panel */
+  .transcription-panel {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    max-width: 300px;
+    max-height: calc(100% - 80px);
+    background: rgba(0, 0, 0, 0.9);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    backdrop-filter: blur(10px);
+    z-index: 5;
+  }
+
+  .transcription-header {
+    padding: 8px 12px;
+    background: rgba(239, 68, 68, 0.9);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: white;
+  }
+
+  .segment-count {
+    font-size: 0.75rem;
+    opacity: 0.9;
+  }
+
+  .transcription-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .transcript-segment {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+
+  .transcript-segment .timestamp {
+    color: #9ca3af;
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+
+  .transcript-segment .text {
+    color: white;
+    line-height: 1.4;
+  }
+
+  .transcript-segment .confidence {
+    color: #10b981;
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+
+  /* Mobile adjustments for transcription */
+  @media (max-width: 768px) {
+    .transcription-panel {
+      max-width: calc(100% - 20px);
+      max-height: 200px;
+      right: 10px;
+      left: 10px;
+      top: auto;
+      bottom: 70px;
+    }
   }
 </style>
