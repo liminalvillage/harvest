@@ -617,7 +617,7 @@
         serverUrl: 'ws://localhost:9090',
         language: 'en',
         model: 'base',
-        useVAD: false
+        useVAD: false  // Disable VAD for immediate transcription
       });
 
       // Set up transcription callback
@@ -721,39 +721,68 @@
     const podcastId = `podcast_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const date = new Date(podcastData.startTime).toISOString().split('T')[0];
 
+    // Create podcast metadata (Gun-friendly flat structure)
     const podcast = {
       id: podcastId,
       version: '0.1.0',
       holonId: podcastData.holonId,
       title: `Video Chat Recording - ${date}`,
       description: `Podcast recording from video chat in room ${podcastData.holonId}`,
-      participants: podcastData.participants,
       startTime: podcastData.startTime,
       endTime: podcastData.endTime,
       date,
       duration: podcastData.duration,
-      transcript: {
-        segments: podcastData.transcript.segments,
-        fullText: podcastData.transcript.fullText,
-        language: podcastData.transcript.language || 'en'
-      },
+      fullText: podcastData.transcript.fullText,
+      language: podcastData.transcript.language || 'en',
+      segmentCount: podcastData.transcript.segments.length,
       status: 'completed',
-      tags: ['video-chat', 'recording'],
+      tags: 'video-chat,recording',
       createdBy: myUserId,
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
 
-    // Save to Gun
+    // Save podcast metadata to Gun
     const podcastsRef = gun.get('podcasts');
-    podcastsRef.get(podcastId).put(podcast);
+    const podcastRef = podcastsRef.get(podcastId);
+    podcastRef.put(podcast);
 
-    log(`Saved podcast ${podcastId} to holosphere`);
+    // Save participants separately (Gun doesn't handle nested arrays well)
+    const participantsRef = podcastRef.get('participants');
+    podcastData.participants.forEach((participant, index) => {
+      participantsRef.get(`p${index}`).put({
+        id: participant.id,
+        username: participant.username,
+        role: participant.role
+      });
+    });
+
+    // Save transcript segments separately
+    const segmentsRef = podcastRef.get('segments');
+    podcastData.transcript.segments.forEach((segment, index) => {
+      segmentsRef.get(`s${index}`).put({
+        timestamp: segment.timestamp,
+        text: segment.text,
+        confidence: segment.confidence || 0
+      });
+    });
+
+    log(`Saved podcast ${podcastId} to holosphere with ${podcastData.transcript.segments.length} segments`);
   }
 
 
   function leaveRoom() {
     log('Leaving room');
+
+    // Stop any active recording
+    if (whisperClient) {
+      log('Cleaning up WhisperLive client');
+      whisperClient.disconnect();
+      whisperClient = null;
+    }
+    isRecording = false;
+    recordingStartTime = null;
+    transcriptionSegments = [];
 
     // Remove presence
     if (userRef) {
@@ -937,15 +966,21 @@
           </button>
 
         </div>
+      </div>
 
-        <!-- Transcription Panel -->
-        {#if isRecording && transcriptionSegments.length > 0}
-          <div class="transcription-panel">
-            <div class="transcription-header">
-              <span>Live Transcription</span>
-              <span class="segment-count">{transcriptionSegments.length} segments</span>
-            </div>
-            <div class="transcription-content">
+      <!-- Transcription Panel (outside video-container to avoid overflow clipping) -->
+      {#if isRecording}
+        <div class="transcription-panel floating-panel">
+          <div class="transcription-header">
+            <span>Live Transcription</span>
+            <span class="segment-count">{transcriptionSegments.length} segments</span>
+          </div>
+          <div class="transcription-content">
+            {#if transcriptionSegments.length === 0}
+              <div class="transcript-waiting">
+                <span>🎤 Listening... Speak into your microphone</span>
+              </div>
+            {:else}
               {#each transcriptionSegments as segment}
                 <div class="transcript-segment">
                   <span class="timestamp">{Math.floor(segment.timestamp)}s</span>
@@ -955,10 +990,10 @@
                   {/if}
                 </div>
               {/each}
-            </div>
+            {/if}
           </div>
-        {/if}
-      </div>
+        </div>
+      {/if}
     </DraggableWindow>
   {:else}
     <!-- Full-screen/embedded mode -->
@@ -1019,22 +1054,28 @@
         </div>
 
         <!-- Transcription Panel (Fullscreen) -->
-        {#if isRecording && transcriptionSegments.length > 0}
+        {#if isRecording}
           <div class="transcription-panel">
             <div class="transcription-header">
               <span>Live Transcription</span>
               <span class="segment-count">{transcriptionSegments.length} segments</span>
             </div>
             <div class="transcription-content">
-              {#each transcriptionSegments as segment}
-                <div class="transcript-segment">
-                  <span class="timestamp">{Math.floor(segment.timestamp)}s</span>
-                  <span class="text">{segment.text}</span>
-                  {#if segment.confidence}
-                    <span class="confidence">{Math.round(segment.confidence * 100)}%</span>
-                  {/if}
+              {#if transcriptionSegments.length === 0}
+                <div class="transcript-waiting">
+                  <span>🎤 Listening... Speak into your microphone</span>
                 </div>
-              {/each}
+              {:else}
+                {#each transcriptionSegments as segment}
+                  <div class="transcript-segment">
+                    <span class="timestamp">{Math.floor(segment.timestamp)}s</span>
+                    <span class="text">{segment.text}</span>
+                    {#if segment.confidence}
+                      <span class="confidence">{Math.round(segment.confidence * 100)}%</span>
+                    {/if}
+                  </div>
+                {/each}
+              {/if}
             </div>
           </div>
         {/if}
@@ -1316,6 +1357,16 @@
     z-index: 5;
   }
 
+  .transcription-panel.floating-panel {
+    position: absolute;
+    right: 10px;
+    top: 50px;
+    max-width: 300px;
+    max-height: calc(100% - 120px);
+    z-index: 10001;
+    pointer-events: auto;
+  }
+
   .transcription-header {
     padding: 8px 12px;
     background: rgba(239, 68, 68, 0.9);
@@ -1366,6 +1417,14 @@
     color: #10b981;
     font-size: 0.7rem;
     font-weight: 500;
+  }
+
+  .transcript-waiting {
+    padding: 12px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 0.85rem;
+    font-style: italic;
   }
 
   /* Mobile adjustments for transcription */

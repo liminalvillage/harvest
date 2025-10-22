@@ -40,6 +40,7 @@ export class WhisperLiveClient {
   private sourceNode: MediaStreamAudioSourceNode | null = null;
   private isConnected = false;
   private segments: TranscriptionSegment[] = [];
+  private processedSegments: Set<string> = new Set(); // Track completed segments by timestamp
 
   // Callbacks
   private onTranscription: TranscriptionCallback | null = null;
@@ -117,13 +118,20 @@ export class WhisperLiveClient {
         this.ws.onopen = () => {
           console.log('[WhisperLive] WebSocket connected');
 
-          // Send configuration message
+          // Send configuration message (matching official WhisperLive client protocol)
           const configMessage = {
             uid: this.clientId,
             language: this.config.language,
             task: this.config.task,
             model: this.config.model,
-            use_vad: this.config.useVAD
+            use_vad: this.config.useVAD,
+            // Additional parameters required by WhisperLive server
+            send_last_n_segments: 10,
+            no_speech_thresh: 0.45,
+            clip_audio: false,
+            same_output_threshold: 10,
+            max_clients: 4,
+            max_connection_time: 600
           };
 
           this.ws?.send(JSON.stringify(configMessage));
@@ -158,23 +166,94 @@ export class WhisperLiveClient {
     try {
       const data = JSON.parse(event.data);
 
-      console.log('[WhisperLive] Received transcription:', data);
+      console.log('[WhisperLive] Received message:', data);
 
-      // Process transcription segments
+      // Handle different message types from server
+      if (data.status === 'WARNING' || data.status === 'INFO') {
+        // Server status messages (TensorRT warning, SERVER_READY, etc.)
+        console.log(`[WhisperLive] Server status: ${data.message}`);
+        return;
+      }
+
+      // Handle transcription segments
       if (data.segments && Array.isArray(data.segments)) {
-        data.segments.forEach((segment: any) => {
+        console.log(`[WhisperLive] ✅ Received ${data.segments.length} segments:`, JSON.stringify(data.segments, null, 2));
+        data.segments.forEach((segment: any, index: number) => {
+          const isLast = index === data.segments.length - 1;
+          const isCompleted = segment.completed === true;
+
+          console.log(`[WhisperLive] 🔍 Segment ${index}:`, {
+            text: segment.text,
+            start: segment.start,
+            end: segment.end,
+            completed: isCompleted,
+            is_last: isLast,
+            raw: segment
+          });
+
           const transcriptionSegment: TranscriptionSegment = {
             timestamp: segment.start || segment.timestamp || Date.now() / 1000,
             text: segment.text || '',
             confidence: segment.confidence
           };
 
+          // Create unique key for this segment based on timestamp
+          const segmentKey = `${transcriptionSegment.timestamp}`;
+
+          // Only process completed segments that we haven't seen before
+          if (isCompleted) {
+            if (!this.processedSegments.has(segmentKey)) {
+              console.log(`[WhisperLive] ✅ Adding new completed segment:`, transcriptionSegment);
+              this.segments.push(transcriptionSegment);
+              this.processedSegments.add(segmentKey);
+
+              if (this.onTranscription) {
+                this.onTranscription(transcriptionSegment);
+              }
+            } else {
+              console.log(`[WhisperLive] ⏭️ Skipping duplicate completed segment at ${segmentKey}`);
+            }
+          } else {
+            // Incomplete segment - only notify but don't add to permanent list yet
+            console.log(`[WhisperLive] 🔄 Received incomplete segment (not saving yet):`, transcriptionSegment);
+            // Optionally notify listeners about partial transcription updates
+            // if (this.onTranscription) {
+            //   this.onTranscription(transcriptionSegment);
+            // }
+          }
+        });
+      }
+
+      // Handle single segment transcription (some servers send one at a time)
+      else if (data.text && !data.segments) {
+        console.log(`[WhisperLive] ✅ Received single segment: "${data.text}"`);
+        const transcriptionSegment: TranscriptionSegment = {
+          timestamp: data.start || data.timestamp || Date.now() / 1000,
+          text: data.text,
+          confidence: data.confidence
+        };
+
+        // Deduplicate single segments too
+        const isDuplicate = this.segments.some(existing =>
+          existing.text === transcriptionSegment.text &&
+          Math.abs(existing.timestamp - transcriptionSegment.timestamp) < 0.1
+        );
+
+        if (!isDuplicate) {
+          console.log(`[WhisperLive] ✅ Adding new segment:`, transcriptionSegment);
           this.segments.push(transcriptionSegment);
 
           if (this.onTranscription) {
             this.onTranscription(transcriptionSegment);
           }
-        });
+        } else {
+          console.log(`[WhisperLive] ⏭️ Skipping duplicate segment:`, transcriptionSegment.text.substring(0, 30) + '...');
+        }
+      }
+
+      // Log if we received a message but no transcription
+      else if (!data.status) {
+        console.log(`[WhisperLive] ⚠️ Received message with no segments or text:`, data);
       }
     } catch (error) {
       console.error('[WhisperLive] Failed to parse message:', error);
@@ -191,23 +270,43 @@ export class WhisperLiveClient {
     // Create source from MediaStream
     this.sourceNode = this.audioContext.createMediaStreamSource(mediaStream);
 
-    // Create ScriptProcessor for audio data (deprecated but still widely supported)
+    // Create ScriptProcessor for audio data
+    // NOTE: ScriptProcessorNode is deprecated in favor of AudioWorkletNode,
+    // but we use it here for broad browser compatibility and simplicity.
+    // Future enhancement: migrate to AudioWorkletNode for better performance
     // Buffer size: 4096 samples
     this.processorNode = this.audioContext.createScriptProcessor(4096, 1, 1);
 
+    let audioFrameCount = 0;
+    let totalBytesSent = 0;
+
     this.processorNode.onaudioprocess = (event) => {
       if (!this.isConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        console.warn('[WhisperLive] ⚠️ Not sending audio - WS not ready. Connected:', this.isConnected, 'WS state:', this.ws?.readyState);
         return;
       }
 
       // Get audio data from input buffer
       const inputData = event.inputBuffer.getChannelData(0);
 
-      // Convert Float32Array to Int16Array (PCM 16-bit)
-      const pcmData = this.convertFloat32ToInt16(inputData);
+      // Calculate audio levels
+      const maxLevel = Math.max(...Array.from(inputData).map(s => Math.abs(s)));
+      const avgLevel = Array.from(inputData).reduce((sum, s) => sum + Math.abs(s), 0) / inputData.length;
 
-      // Send binary audio data to server
-      this.ws.send(pcmData.buffer);
+      // Log frequently at first, then occasionally
+      audioFrameCount++;
+      if (audioFrameCount <= 5 || audioFrameCount % 50 === 0) {
+        console.log(`[WhisperLive] 🎤 Frame ${audioFrameCount}: Max=${(maxLevel * 100).toFixed(2)}%, Avg=${(avgLevel * 100).toFixed(2)}%, Sent=${totalBytesSent} bytes`);
+      }
+
+      // Send Float32Array directly (matching official WhisperLive client)
+      // The server expects Float32 audio data, not Int16
+      this.ws.send(inputData.buffer);
+      totalBytesSent += inputData.buffer.byteLength;
+
+      if (audioFrameCount === 1) {
+        console.log('[WhisperLive] ✅ Started sending audio data to server');
+      }
     };
 
     // Connect nodes
@@ -280,6 +379,7 @@ export class WhisperLiveClient {
    */
   clearTranscript(): void {
     this.segments = [];
+    this.processedSegments.clear();
   }
 
   /**
