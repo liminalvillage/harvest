@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, getContext } from 'svelte';
   import { settingsStore, settingsHelpers, supportedLanguages } from '../stores/settings';
+  import { clearHolonNameCache } from '../utils/holonNames';
 
   // Types
   interface User {
@@ -150,12 +151,21 @@
   async function saveSettings() {
     try {
       if (!holosphere || !holonId) throw new Error('Holosphere or holonId missing');
-      
+
       // Save settings to holonId/settings/holonId with the holonId as the key
       const settingsToSave = { ...settings, id: holonId };
       console.log('Saving settings to holosphere:', settingsToSave);
-      
+
       await holosphere.put(holonId, 'settings', settingsToSave);
+
+      // Clear the cached holon name to force refresh with the new name
+      clearHolonNameCache(holonId);
+
+      // Dispatch event to update the name in TopBar and MyHolons
+      window.dispatchEvent(new CustomEvent('holonNameUpdated', {
+        detail: { holonId, newName: settings.name }
+      }));
+
       showNotification('Settings saved successfully!', 'success');
     } catch (err) {
       console.error('Error saving settings:', err);
@@ -167,12 +177,21 @@
     try {
       if (!holosphere || !holonId) throw new Error('Holosphere or holonId missing');
       settings = getDefaultSettings(holonId);
-      
+
       // Save reset settings to holonId/settings/holonId
       const settingsToSave = { ...settings, id: holonId };
       console.log('Resetting settings in holosphere:', settingsToSave);
-      
+
       await holosphere.put(holonId, 'settings', settingsToSave);
+
+      // Clear the cached holon name to force refresh (will show fallback)
+      clearHolonNameCache(holonId);
+
+      // Dispatch event to update the name in TopBar and MyHolons
+      window.dispatchEvent(new CustomEvent('holonNameUpdated', {
+        detail: { holonId, newName: settings.name || `Holon ${holonId}` }
+      }));
+
       showNotification('Settings reset to defaults!', 'success');
     } catch (err) {
       console.error('Error resetting settings:', err);

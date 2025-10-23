@@ -85,6 +85,12 @@
 		const safeHolonID = holonID || "";
 		console.log(`[Gun.svelte] Subscribing to table: ${tableName} for holon: ${safeHolonID}`);
 
+		// Skip subscription if holon ID is empty
+		if (!safeHolonID || !safeHolonID.trim()) {
+			console.log(`[Gun.svelte] Skipping subscription - no holon ID provided`);
+			return;
+		}
+
 		if (holosphere && tableName.trim()) {
 			holosphere.subscribe(safeHolonID, tableName, (newData: any, key?: string) => {
 				console.log(`[Gun.svelte] ${tableName} subscription update:`, { key, newData, type: typeof newData });

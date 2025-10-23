@@ -177,17 +177,42 @@
         refreshAllHolonNames();
     }
 
+    // Handle holon name update event from Settings
+    function handleHolonNameUpdated(event: CustomEvent) {
+        const { holonId, newName } = event.detail;
+        if (holonId && newName) {
+            // Update the name in personal holons
+            const personalIndex = myHolons.findIndex(h => h.id === holonId);
+            if (personalIndex !== -1) {
+                myHolons[personalIndex].name = newName;
+                myHolons = [...myHolons];
+                savePersonalHolonsToStorage();
+            }
+
+            // Update the name in visited holons
+            const visitedIndex = visitedHolons.findIndex(h => h.id === holonId);
+            if (visitedIndex !== -1) {
+                visitedHolons[visitedIndex].name = newName;
+                visitedHolons = [...visitedHolons];
+                if ($walletAddress) {
+                    saveVisitedHolons($walletAddress, visitedHolons);
+                }
+            }
+
+            // Update the name in federated holons
+            const federatedIndex = federatedHolons.findIndex(h => h.id === holonId);
+            if (federatedIndex !== -1) {
+                federatedHolons[federatedIndex].name = newName;
+                federatedHolons = [...federatedHolons];
+            }
+        }
+    }
+
     // Filtered holons - ensure names are properly displayed
     $: filteredHolons = myHolons.filter(holon =>
         holon.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         holon.id.toLowerCase().includes(searchQuery.toLowerCase())
-    ).map(holon => {
-        // Ensure fallback names are not displayed - use ID if name is empty or fallback
-        const displayName = holon.name && holon.name.trim() !== '' && holon.name !== `Holon ${holon.id}`
-            ? holon.name
-            : holon.id;
-        return { ...holon, name: displayName };
-    }).sort((a, b) => {
+    ).sort((a, b) => {
         let aVal: any = a[sortBy];
         let bVal: any = b[sortBy];
 
@@ -255,6 +280,7 @@
             window.addEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
             window.addEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
             window.addEventListener('refreshAllHolonNames', handleRefreshAllRequest);
+            window.addEventListener('holonNameUpdated', handleHolonNameUpdated);
         }
     });
 
@@ -268,6 +294,7 @@
             window.removeEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
             window.removeEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
             window.removeEventListener('refreshAllHolonNames', handleRefreshAllRequest);
+            window.removeEventListener('holonNameUpdated', handleHolonNameUpdated);
         }
     });
 

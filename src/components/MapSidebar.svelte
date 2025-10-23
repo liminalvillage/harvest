@@ -9,6 +9,8 @@
     import HoloSphere from "holosphere";
     import { createEventDispatcher } from 'svelte';
     import type { LensType, HexagonStats } from '../types/Map';
+    import { goto } from '$app/navigation';
+    import * as h3 from "h3-js";
     const dispatch = createEventDispatcher();
 
     // Update schema options to use imported schemas
@@ -62,7 +64,7 @@
  
 
     export let selectedLens: LensType;
-    // export let hexId: string | undefined; // Prop is unused, component uses $ID store
+    export let hexId: string | undefined; // Use this to track the selected hex on the map
     export let isOverlay: boolean = false; // Flag to indicate if shown as overlay
     
     let holosphere = getContext('holosphere') as HoloSphere;
@@ -83,6 +85,10 @@
     // Add statistics
     let stats: Record<string, HexagonStats> | null = null;
 
+    // Computed value to get the current ID (prioritize hexId from map selection)
+    $: currentId = hexId || $ID;
+
+
     // Create a unique key for this combination of ID and lens
     function getFetchKey(id: string | null, lens: string | null): string | null {
         if (!id || !lens) return null;
@@ -97,7 +103,6 @@
 
     // Reset all state and ensure proper cleanup
     function resetUIState() {
-        console.log('[MapSidebar] Resetting UI state');
         // Clear content and stats
         store = {};
         content = null;
@@ -118,17 +123,13 @@
 
     // Comprehensive cleanup function to ensure all resources are released
     function performFinalCleanup() {
-        console.log('[MapSidebar] Performing final cleanup...');
-        
         // Reset all UI state
         resetUIState();
-        
+
         // Ensure large data structures are properly cleared
         store = {};
         content = null;
         stats = null;
-        
-        console.log('[MapSidebar] Final cleanup complete');
     }
 
     async function fetchData(holonId: string, lens: string) {
@@ -137,15 +138,13 @@
         // Skip if we're already fetching this data
         const fetchKey = getFetchKey(holonId, lens);
         if (fetchKey === activeFetchKey && isFetching) {
-            console.log('[MapSidebar] Already fetching data for', holonId, lens);
             return;
         }
-        
+
         // Store the current fetch key to track if lens/ID changes during fetch
         const currentFetchKey = fetchKey;
-        
+
         try {
-            console.log('[MapSidebar] Fetching data for:', holonId, lens);
             isFetching = true;
             isLoading = true;
             activeFetchKey = currentFetchKey;
@@ -165,30 +164,25 @@
                 .then(async items => {
                     // Check if lens/ID changed during fetch
                     if (activeFetchKey !== currentFetchKey) {
-                        console.log('[MapSidebar] Lens or ID changed during fetch, discarding results');
                         clearTimeout(safetyTimeout);
                         isFetching = false;
                         isLoading = false;
                         return;
                     }
-                    
-                    console.log('[MapSidebar] Data received:', items?.length || 0, 'items');
-                    
+
                     if (items && items.length > 0) {
                         // Process items to handle references/soul links
                         const processedItems = await Promise.all(items.map(async (item) => {
                             // Check if this is a reference/soul link
                             if (item.soul) {
-                                console.log('[MapSidebar] Found soul link:', item.soul);
                                 try {
                                     // Try to resolve the soul link
                                     const resolvedItem = await holosphere.getNodeBySoul(item.soul);
                                     if (resolvedItem) {
                                         // Parse if needed
-                                        const parsedItem = typeof resolvedItem === 'string' ? 
+                                        const parsedItem = typeof resolvedItem === 'string' ?
                                             JSON.parse(resolvedItem) : resolvedItem;
-                                        
-                                        console.log('[MapSidebar] Resolved soul link:', parsedItem);
+
                                         return {
                                             ...parsedItem,
                                             _federation: {
@@ -206,7 +200,6 @@
                             
                             // Handle federation references
                             if (item._federation && item._federation.isReference && !item._federation.resolved) {
-                                console.log('[MapSidebar] Found federation reference to resolve');
                                 try {
                                     // Try to resolve federation reference
                                     const resolvedItem = await holosphere.get(
@@ -216,9 +209,8 @@
                                         null,
                                         { resolveReferences: false }
                                     );
-                                    
+
                                     if (resolvedItem) {
-                                        console.log('[MapSidebar] Resolved federation reference:', resolvedItem);
                                         return {
                                             ...resolvedItem,
                                             _federation: {
@@ -240,7 +232,6 @@
                         // Check again if lens/ID changed during fetch - especially important after
                         // resolving references which can take time
                         if (activeFetchKey !== currentFetchKey) {
-                            console.log('[MapSidebar] Lens or ID changed during reference resolution, discarding results');
                             clearTimeout(safetyTimeout);
                             isFetching = false;
                             isLoading = false;
@@ -280,8 +271,6 @@
                             }
                         };
                     }
-                    
-                    console.log('[MapSidebar] Data processed, found', Object.keys(store).length, 'items');
                 })
                 .catch(error => {
                     console.error('[MapSidebar] Error fetching data:', error);
@@ -307,7 +296,6 @@
     }
 
     function toggleForm() {
-        console.log('Toggling form, current state:', showForm);
         showForm = !showForm;
         if (!showForm) {
             formData = {};
@@ -317,25 +305,23 @@
 
     async function handleFormSubmit(event: CustomEvent) {
         const newFormData = event.detail;
-        
-        if (!$ID) {
+
+        if (!currentId) {
             console.error('No holon selected');
             return;
         }
 
         try {
             const updatedContent = { ...newFormData };
-            
+
             // Use non-blocking promise approach
-            holosphere.put($ID, selectedLens, updatedContent)
+            holosphere.put(currentId, selectedLens, updatedContent)
                 .then(() => {
                     showForm = false;
                     formData = {};
-                    
-                    console.log('Successfully stored new entry:', updatedContent);
-                    
+
                     // Refresh the data
-                    fetchData($ID, selectedLens);
+                    fetchData(currentId, selectedLens);
                 })
                 .catch(error => {
                     console.error('Failed to store entry:', error);
@@ -378,51 +364,56 @@
         showForm = false;
     }
 
+    // Function to check if ID is a valid H3 hexagon
+    function isH3Cell(id: string | undefined): boolean {
+        if (!id) return false;
+        try {
+            return h3.isValidCell(id);
+        } catch {
+            return false;
+        }
+    }
+
+    // Function to navigate to the hexagon holon
+    function goToHolon() {
+        if (currentId && isH3Cell(currentId)) {
+            goto(`/${currentId}`);
+        } else {
+            console.error('[MapSidebar] Cannot navigate - currentId is not valid:', currentId);
+        }
+    }
+
     // Set up initial data fetch on mount
     onMount(() => {
-        if ($ID && selectedLens) {
-            fetchData($ID, selectedLens);
+        if (currentId && selectedLens) {
+            fetchData(currentId, selectedLens);
         }
     });
 
     // Make sure to clean up on destroy
     onDestroy(() => {
-        console.log('[MapSidebar] Component being destroyed, cleaning up resources');
         performFinalCleanup();
     });
 
-    // Also ensure we react to the ID store changes
-    $: if ($ID) {
-        const newKey = getFetchKey($ID, selectedLens);
+    // React to changes in currentId or selectedLens
+    $: if (currentId && selectedLens) {
+        const newKey = getFetchKey(currentId, selectedLens);
+        // Only fetch if this is a new combination of ID and lens
         if (newKey !== activeFetchKey) {
-            console.log(`[MapSidebar] ID changed to ${$ID}, fetching new data`);
-            resetUIState();
-            
-            if ($ID && selectedLens) {
-                fetchData($ID, selectedLens);
+            // If already fetching, schedule a retry
+            if (isFetching) {
+                setTimeout(() => {
+                    const latestKey = getFetchKey(currentId, selectedLens);
+                    if (latestKey !== activeFetchKey && !isFetching) {
+                        resetUIState();
+                        fetchData(currentId, selectedLens);
+                    }
+                }, 500);
+            } else {
+                // Not currently fetching, start new fetch
+                resetUIState();
+                fetchData(currentId, selectedLens);
             }
-        }
-    }
-
-    // React to lens changes
-    $: if (selectedLens && $ID) {
-        const newKey = getFetchKey($ID, selectedLens);
-        if (newKey !== activeFetchKey && !isFetching) {
-            console.log(`[MapSidebar] Lens changed to ${selectedLens}, fetching new data`);
-            resetUIState();
-            
-            fetchData($ID, selectedLens);
-        } else if (isFetching) {
-            console.log(`[MapSidebar] Lens changed but fetch already in progress, will retry after current fetch completes`);
-            // Store the requested lens and ID for processing after current fetch completes
-            setTimeout(() => {
-                const latestKey = getFetchKey($ID, selectedLens);
-                if (latestKey !== activeFetchKey && !isFetching) {
-                    console.log(`[MapSidebar] Retrying fetch for ${selectedLens} after prior fetch completed`);
-                    resetUIState();
-                    fetchData($ID, selectedLens);
-                }
-            }, 500);
         }
     }
 
@@ -454,8 +445,35 @@
         </div>
         {/if}
 
-        <!-- Statistics -->
-        {#if stats && stats[selectedLens]}
+        <!-- Navigation Button (always show if we have a valid hexId) -->
+        {#if currentId && isH3Cell(currentId) && !isOverlay}
+            <div class="bg-gray-700 p-4 rounded-lg mb-6">
+                {#if stats && stats[selectedLens]}
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-gray-400 text-sm">Statistics</h3>
+                        <p class="text-white text-sm">
+                            {#if selectedLens === 'quests' && stats[selectedLens].total > 0}
+                                {stats[selectedLens].total - (stats[selectedLens].completed || 0)} active / {stats[selectedLens].total} total
+                            {:else}
+                                {stats[selectedLens].total}
+                                <span class="text-gray-400 text-xs ml-1">Total</span>
+                            {/if}
+                        </p>
+                    </div>
+                {/if}
+                <button
+                    on:click={goToHolon}
+                    class="w-full px-3 py-2 bg-gray-600 text-gray-200 rounded-lg hover:bg-gray-500 border border-gray-500 transition-colors flex items-center justify-center gap-2 text-sm"
+                    title="Navigate to this hexagon holon"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                    Go to this holon
+                </button>
+            </div>
+        {:else if stats && stats[selectedLens] && !isOverlay}
+            <!-- Show statistics without button if not a valid hex -->
             <div class="bg-gray-700 p-4 rounded-lg mb-6">
                 <div class="flex justify-between items-center">
                     <h3 class="text-gray-400 text-sm">Statistics</h3>
@@ -471,16 +489,35 @@
             </div>
         {/if}
 
-        <!-- "Add New" button when in overlay mode -->
-        {#if isOverlay && selectedLens && !showForm}
-            <div class="mb-4">
-                <button
-                    class="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors flex items-center justify-center gap-2"
-                    on:click={toggleForm}
-                >
-                    <span class="text-lg">+</span> Add New {schemaOptions.find(opt => opt.value === selectedLens)?.label}
-                </button>
-            </div>
+        <!-- Navigation and Add buttons when in overlay mode -->
+        {#if isOverlay}
+            <!-- Go to holon button -->
+            {#if currentId && isH3Cell(currentId)}
+                <div class="mb-3">
+                    <button
+                        on:click={goToHolon}
+                        class="w-full px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors flex items-center justify-center gap-2 text-sm font-medium"
+                        title="Navigate to this hexagon holon"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                        Go to this holon
+                    </button>
+                </div>
+            {/if}
+
+            <!-- Add new button -->
+            {#if selectedLens && !showForm}
+                <div class="mb-4">
+                    <button
+                        class="w-full px-3 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors flex items-center justify-center gap-2"
+                        on:click={toggleForm}
+                    >
+                        <span class="text-lg">+</span> Add New {schemaOptions.find(opt => opt.value === selectedLens)?.label}
+                    </button>
+                </div>
+            {/if}
         {/if}
 
         <!-- Loading Indicator -->
@@ -508,10 +545,10 @@
                             </button>
                         </div>
                         {#if selectedLens}
-                            <SchemaForm 
-                                schema={schemaOptions.find(opt => opt.value === selectedLens)?.schema || ''} 
+                            <SchemaForm
+                                schema={schemaOptions.find(opt => opt.value === selectedLens)?.schema || ''}
                                 schemaDefinition={getSchemaForLens(selectedLens)}
-                                {ID}
+                                ID={currentId}
                                 initialData={viewingItem || formData}
                                 viewOnly={!!viewingItem}
                                 on:submit={handleFormSubmit}

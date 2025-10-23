@@ -42,6 +42,17 @@
 		toggleMyHolons();
 	}
 
+	// Handle holon name update event from Settings
+	function handleHolonNameUpdated(event: CustomEvent) {
+		const { holonId, newName } = event.detail;
+		if (holonId === $ID && newName) {
+			// Update the current holon name immediately
+			currentHolonName = newName;
+			// Also trigger a refresh to ensure consistency
+			setTimeout(() => updateCurrentHolonName(holonId), 100);
+		}
+	}
+
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let currentHolonName: string | undefined;
@@ -84,14 +95,14 @@
 			updateCurrentHolonName(initialId);
 		}
 		
-		// Monitor for Google Translate activity
+			// Monitor for Google Translate activity
 		const observer = new MutationObserver(() => {
 			// Check if Google Translate is active by looking for translated elements
-			const hasTranslatedElements = document.querySelector('font[style*="vertical-align"]') || 
+			const hasTranslatedElements = document.querySelector('font[style*="vertical-align"]') ||
 										   document.querySelector('.goog-te-combo')?.value !== '';
 			isTranslating = !!hasTranslatedElements;
 		});
-		
+
 		observer.observe(document.body, {
 			childList: true,
 			subtree: true,
@@ -100,6 +111,9 @@
 
 		// Listen for widget dashboard toggle events from Layout
 		window.addEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
+
+		// Listen for holon name update events from Settings
+		window.addEventListener('holonNameUpdated', handleHolonNameUpdated);
 		
 		// Listen for translation events
 		window.addEventListener('flagLanguageChanged', () => {
@@ -116,26 +130,28 @@
 			currentHolonName = undefined;
 			return;
 		}
-		
+
 		// Check if holosphere is available
 		if (!holosphere) {
 			currentHolonName = `Holon ${id}`;
 			return;
 		}
-		
+
 		// Check if we should wait for connection
 		if (retryCount === 0) {
 			// On first attempt, wait a bit for connection to be ready
 			await new Promise(resolve => setTimeout(resolve, 500));
 		}
-		
+
 		try {
-			// Clear cache to ensure fresh data
-			clearHolonNameCache(id);
-			
+			// Don't clear cache on first attempt to use cached value if available
+			if (retryCount > 0) {
+				clearHolonNameCache(id);
+			}
+
 			// Use centralized fetchHolonName function like MyHolons does
 			const name = await fetchHolonName(holosphere, id);
-			
+
 			// Update the name and trigger reactivity
 			currentHolonName = name;
 		} catch (error) {
@@ -264,9 +280,10 @@
 	}
 
 	onDestroy(() => {
-		// Clean up event listener
+		// Clean up event listeners
 		if (browser) {
 			window.removeEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
+			window.removeEventListener('holonNameUpdated', handleHolonNameUpdated);
 		}
 	});
 
@@ -333,12 +350,12 @@
                     <!-- Title and ID -->
                     <div class="text-left">
                         <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
-                            {#if currentHolonName && currentHolonName !== `Holon ${$ID}` && !currentHolonName.startsWith('Holon ') && !isTranslating}
+                            {#if currentHolonName && !isTranslating}
                                 {currentHolonName}
-                            {:else if isTranslating && currentHolonName && currentHolonName !== `Holon ${$ID}` && !currentHolonName.startsWith('Holon ')}
+                            {:else if isTranslating && currentHolonName}
                                 <span class="notranslate">{currentHolonName}</span>
                             {:else if $ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== ''}
-                                <span class="notranslate">Loading...</span>
+                                <span class="notranslate">Holon {$ID}</span>
                             {:else}
                                 <span class="notranslate">Loading...</span>
                             {/if}
