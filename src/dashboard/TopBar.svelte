@@ -53,6 +53,22 @@
 		}
 	}
 
+	// Handle holon navigation event from MyHolons component
+	function handleHolonNavigated(event: CustomEvent) {
+		const { holonId, holonName } = event.detail;
+		console.log('[TopBar] Holon navigated event:', { holonId, holonName });
+		if (holonId && holonName) {
+			// Update the current holon name immediately
+			currentHolonName = holonName;
+			// Update the processed ID to match
+			processedHolonId = holonId;
+			// Also save to visited holons with the name
+			if (browser && holonId !== 'undefined' && holonId !== 'null' && holonId.trim() !== '') {
+				saveVisitedHolon(holonId, holonName);
+			}
+		}
+	}
+
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let currentHolonName: string | undefined;
@@ -83,15 +99,20 @@
 	onMount(async () => {
 		// Set up initial state
 		isInitialized = true;
-		
-		// Wait for holosphere to be ready (similar to layout.svelte)
-		await new Promise(resolve => setTimeout(resolve, 1000));
-		
-		// Process initial ID if available
+
+		// Process initial ID immediately if available
 		const initialId = $page.params.id;
 		if (initialId && initialId !== 'undefined' && initialId !== 'null' && initialId.trim() !== '') {
 			ID.set(initialId);
 			processedHolonId = initialId;
+			// Start fetching the name immediately (don't wait for holosphere)
+			updateCurrentHolonName(initialId);
+		}
+
+		// Also retry after holosphere is ready
+		await new Promise(resolve => setTimeout(resolve, 1000));
+		if (initialId && initialId !== 'undefined' && initialId !== 'null' && initialId.trim() !== '') {
+			// Retry the name fetch in case it failed the first time
 			updateCurrentHolonName(initialId);
 		}
 		
@@ -114,6 +135,9 @@
 
 		// Listen for holon name update events from Settings
 		window.addEventListener('holonNameUpdated', handleHolonNameUpdated);
+
+		// Listen for holon navigation events from MyHolons
+		window.addEventListener('holonNavigated', handleHolonNavigated);
 		
 		// Listen for translation events
 		window.addEventListener('flagLanguageChanged', () => {
@@ -134,18 +158,23 @@
 		// Check if holosphere is available
 		if (!holosphere) {
 			currentHolonName = `Holon ${id}`;
+			// Retry when holosphere becomes available
+			if (retryCount < 5) {
+				setTimeout(() => {
+					updateCurrentHolonName(id, retryCount + 1);
+				}, 500);
+			}
 			return;
 		}
 
-		// Check if we should wait for connection
-		if (retryCount === 0) {
-			// On first attempt, wait a bit for connection to be ready
-			await new Promise(resolve => setTimeout(resolve, 500));
+		// On retries, wait a bit for connection to be ready
+		if (retryCount > 0) {
+			await new Promise(resolve => setTimeout(resolve, 300));
 		}
 
 		try {
-			// Don't clear cache on first attempt to use cached value if available
-			if (retryCount > 0) {
+			// Clear cache on retries to force a fresh fetch
+			if (retryCount > 1) {
 				clearHolonNameCache(id);
 			}
 
@@ -153,11 +182,17 @@
 			const name = await fetchHolonName(holosphere, id);
 
 			// Update the name and trigger reactivity
-			currentHolonName = name;
+			if (name && name !== `Holon ${id}`) {
+				currentHolonName = name;
+				console.log(`[TopBar] Updated holon name: ${name}`);
+			} else {
+				currentHolonName = `Holon ${id}`;
+			}
 		} catch (error) {
+			console.warn(`[TopBar] Error fetching holon name (attempt ${retryCount + 1}):`, error);
 			// Retry logic - try up to 3 times with exponential backoff
 			if (retryCount < 3) {
-				const delay = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+				const delay = Math.pow(2, retryCount) * 500; // 500ms, 1s, 2s
 				setTimeout(() => {
 					updateCurrentHolonName(id, retryCount + 1);
 				}, delay);
@@ -284,6 +319,7 @@
 		if (browser) {
 			window.removeEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
 			window.removeEventListener('holonNameUpdated', handleHolonNameUpdated);
+			window.removeEventListener('holonNavigated', handleHolonNavigated);
 		}
 	});
 

@@ -30,6 +30,8 @@
 	let dragOffset = { x: 0, y: 0 };
 	let lastSidebarPosition: { x: number, y: number } | null = null;
 	let showLensInfo = false;
+	let geocoderContainer: HTMLElement;
+	let geolocateControl: mapboxgl.GeolocateControl;
 	let lensData: Record<LensType, Set<string>> = {
 		quests: new Set<string>(),
 		needs: new Set<string>(),
@@ -669,18 +671,9 @@
 			renderWorldCopies: false,
 		});
 
-		// Add geocoder (search box)
+		// Initialize geolocate control (will be triggered by button in control bar)
 		try {
-			const geocoder = new MapboxGeocoder({
-				accessToken: mapboxgl.accessToken,
-				mapboxgl: mapboxgl,
-				marker: false,
-				placeholder: "Search for a location",
-				types: "poi,address,place,locality,neighborhood,region,country,postcode",
-			});
-
-			// Add geolocate control
-			const geolocate = new mapboxgl.GeolocateControl({
+			geolocateControl = new mapboxgl.GeolocateControl({
 				positionOptions: {
 					enableHighAccuracy: true,
 				},
@@ -688,20 +681,10 @@
 				showUserHeading: true,
 			});
 
-			map.addControl(geocoder, "top-right");
-			map.addControl(geolocate, "top-right");
-
-			// Ensure geocoder is visible
-			setTimeout(() => {
-				const geocoderElement = mapContainer.querySelector('.mapboxgl-ctrl-geocoder');
-				if (geocoderElement) {
-					geocoderElement.style.display = 'block';
-					geocoderElement.style.visibility = 'visible';
-					geocoderElement.style.opacity = '1';
-				}
-			}, 1000);
+			// Add it to the map invisibly so it can be triggered
+			map.addControl(geolocateControl, "bottom-right");
 		} catch (error) {
-			console.error('[Map] Error adding geocoder:', error);
+			console.error('[Map] Error adding geolocate control:', error);
 		}
 
 		map.on("style.load", () => {
@@ -940,6 +923,32 @@
 					fetchLensData(selectedLens);
 				}
 			}, 500);
+
+			// Add geocoder to custom container after map is loaded
+			try {
+				const geocoder = new MapboxGeocoder({
+					accessToken: mapboxgl.accessToken,
+					mapboxgl: mapboxgl,
+					marker: false,
+					placeholder: "Search location...",
+					types: "poi,address,place,locality,neighborhood,region,country,postcode",
+				});
+
+				// Add the geocoder to our custom container
+				if (geocoderContainer) {
+					// Clear any existing content first
+					geocoderContainer.innerHTML = '';
+					const geocoderElement = geocoder.onAdd(map);
+					console.log('[Map] Adding geocoder element:', geocoderElement);
+					geocoderContainer.appendChild(geocoderElement);
+					console.log('[Map] Geocoder container children:', geocoderContainer.children.length);
+				} else {
+					console.warn('[Map] geocoderContainer not found');
+				}
+			} catch (error) {
+				console.error('[Map] Error adding geocoder:', error);
+			}
+
 			mapInitialized = true;
 		});
 
@@ -1340,20 +1349,18 @@
 			<!-- Divider -->
 			<div class="control-divider"></div>
 
-			<!-- Search Integration Placeholder -->
-			<div class="search-placeholder">
-				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-svg">
-					<circle cx="11" cy="11" r="8"/>
-					<path d="m21 21-4.35-4.35"/>
-				</svg>
-				<span class="search-text">Search location...</span>
-			</div>
+			<!-- Geocoder Search -->
+			<div bind:this={geocoderContainer} class="geocoder-container-embedded"></div>
 
 			<!-- Divider -->
 			<div class="control-divider"></div>
 
-			<!-- Location Button -->
-			<button class="location-button-embedded" title="Go to my location">
+			<!-- Geolocate Button -->
+			<button
+				class="location-button-embedded"
+				title="Go to my location"
+				on:click={() => geolocateControl && geolocateControl.trigger()}
+			>
 				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-svg">
 					<circle cx="12" cy="12" r="10"/>
 					<circle cx="12" cy="12" r="3"/>
@@ -1363,6 +1370,7 @@
 					<line x1="18" y1="12" x2="22" y2="12"/>
 				</svg>
 			</button>
+
 		</div>
 
 		<!-- Info Tooltip -->
@@ -1508,7 +1516,7 @@
 		border-radius: 0.75rem;
 		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
 		overflow: hidden;
-		z-index: 1000;
+		z-index: 20;
 		display: flex;
 		flex-direction: column;
 		cursor: move; /* Add cursor style */
@@ -1544,7 +1552,7 @@
 		top: 20px;
 		left: 50%;
 		transform: translateX(-50%);
-		z-index: 1000;
+		z-index: 10;
 		width: calc(100% - 40px);
 		max-width: 800px;
 		pointer-events: none;
@@ -1738,7 +1746,7 @@
 		padding: 20px;
 		font-size: 13px;
 		color: #f9fafb;
-		z-index: 2000;
+		z-index: 15;
 		animation: tooltipFadeIn 0.25s ease-out;
 		pointer-events: auto;
 	}
@@ -1927,17 +1935,99 @@
 		outline: none;
 	}
 
-	/* Hide Default Mapbox Controls - We're using embedded bar instead */
-	:global(.mapboxgl-ctrl-geocoder) {
-		display: none !important;
-	}
-
-	:global(.mapboxgl-ctrl-geolocate) {
-		display: none !important;
-	}
-
+	/* Hide standalone Mapbox controls - we embed them in our control bar */
 	:global(.mapboxgl-ctrl-top-right) {
 		display: none !important;
+	}
+
+	/* Hide the geolocate control visual but keep it functional */
+	:global(.mapboxgl-ctrl-bottom-right .mapboxgl-ctrl-geolocate) {
+		display: none !important;
+	}
+
+	:global(.mapboxgl-ctrl-bottom-right) {
+		pointer-events: none !important;
+	}
+
+	/* Style for geocoder embedded in control bar */
+	.geocoder-container-embedded {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder) {
+		width: 100% !important;
+		max-width: none !important;
+		min-width: 0 !important;
+		box-shadow: none !important;
+		background: transparent !important;
+		border: none !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder input) {
+		pointer-events: auto !important;
+		background: rgba(55, 65, 81, 0.5) !important;
+		border: 1px solid rgba(255, 255, 255, 0.1) !important;
+		border-radius: 12px !important;
+		color: #f9fafb !important;
+		font-size: 14px !important;
+		font-weight: 500 !important;
+		padding: 8px 12px 8px 36px !important;
+		transition: all 0.2s ease !important;
+		width: 100% !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder input:focus) {
+		border-color: rgba(96, 165, 250, 0.4) !important;
+		background: rgba(55, 65, 81, 0.7) !important;
+		outline: 2px solid rgba(96, 165, 250, 0.4) !important;
+		outline-offset: 2px !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder input::placeholder) {
+		color: #9ca3af !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions) {
+		background: rgba(17, 24, 39, 0.98) !important;
+		border: 1px solid rgba(255, 255, 255, 0.1) !important;
+		border-radius: 12px !important;
+		margin-top: 8px !important;
+		backdrop-filter: blur(24px) !important;
+		-webkit-backdrop-filter: blur(24px) !important;
+		z-index: 25 !important;
+		position: absolute !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions > li > a) {
+		color: #f9fafb !important;
+		padding: 10px 14px !important;
+		transition: all 0.15s ease !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions > .active > a),
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions > li > a:hover) {
+		background-color: rgba(96, 165, 250, 0.2) !important;
+		color: #60a5fa !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--icon-search) {
+		fill: #9ca3af !important;
+		left: 12px !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--icon-close) {
+		fill: #f9fafb !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--button) {
+		background: transparent !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--icon-loading) {
+		fill: #60a5fa !important;
 	}
 
 	/* Keep zoom controls visible with dark theme */

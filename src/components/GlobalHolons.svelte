@@ -609,26 +609,33 @@
     async function navigateToHolon(holonId: string) {
         // Navigate to the holon
         dispatch('navigate', { holonId });
-        
+
         // Also update the ID store
         ID.set(holonId);
-        
+
         // Track this click and visit (with or without wallet)
         const walletAddr = getWalletAddress();
         try {
             const holonName = await fetchHolonName(holosphere, holonId);
-            
+
+            // Dispatch event with the holon name so TopBar can use it immediately
+            if (browser && holonName) {
+                window.dispatchEvent(new CustomEvent('holonNavigated', {
+                    detail: { holonId, holonName }
+                }));
+            }
+
             // Track as clicked holon (from global view)
             addClickedHolon(walletAddr, holonId, holonName, 'global');
-            
+
             // Also track as visited holon
             addVisitedHolon(walletAddr, holonId, holonName, 'global');
-            
+
             console.log(`Tracked holon click from global view: ${holonId}`);
         } catch (err) {
             console.warn('Failed to track holon click:', err);
         }
-        
+
         // Navigate to the dashboard using SvelteKit's goto
         goto(`/${holonId}/dashboard`);
     }

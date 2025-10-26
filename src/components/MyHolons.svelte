@@ -817,20 +817,51 @@
     }
 
     function navigateToHolon(holonId: string) {
+        console.log('[MyHolons] navigateToHolon called with:', holonId);
+
+        if (!holonId || holonId === 'undefined' || holonId === 'null') {
+            console.error('[MyHolons] Invalid holon ID:', holonId);
+            return;
+        }
+
         ID.set(holonId);
-        
+
+        // Find the holon name from our loaded holons
+        let holonName: string | undefined;
+        const foundHolon = [...myHolons, ...visitedHolons, ...federatedHolons].find(h => h.id === holonId);
+        if (foundHolon) {
+            holonName = foundHolon.name;
+            console.log('[MyHolons] Found holon name:', holonName);
+        } else {
+            console.warn('[MyHolons] Could not find holon in loaded lists');
+        }
+
+        // Dispatch event with the holon name so TopBar can use it immediately
+        if (browser && holonName) {
+            window.dispatchEvent(new CustomEvent('holonNavigated', {
+                detail: { holonId, holonName }
+            }));
+        }
+
         // Track this visit if wallet is connected
         if ($walletAddress) {
             addVisitedHolonToSeparateList(holonId);
         }
-        
+
+        console.log('[MyHolons] Navigating to:', `/${holonId}/dashboard`);
         goto(`/${holonId}/dashboard`);
     }
 
     // Drag and drop functionality
+    let isDragging = false;
+    let dragStartTime = 0;
+
     function handleDragStart(event: DragEvent, holon: MyHolon) {
         if (!event.dataTransfer) return;
-        
+
+        dragStartTime = Date.now();
+        isDragging = true;
+
         draggedHolon = holon;
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', holon.id);
@@ -872,8 +903,36 @@
     }
 
     function handleDragEnd() {
-        draggedHolon = null;
-        dragOverIndex = -1;
+        // Reset drag state after a small delay to prevent click interference
+        setTimeout(() => {
+            isDragging = false;
+            draggedHolon = null;
+            dragOverIndex = -1;
+        }, 100);
+    }
+
+    function handleHolonClick(event: MouseEvent, holonId: string) {
+        // Only navigate if this was a simple click (not part of a drag)
+        // Check if the mouse moved significantly during the click
+        const timeSinceDragStart = Date.now() - dragStartTime;
+
+        console.log('[MyHolons] handleHolonClick called', {
+            holonId,
+            isDragging,
+            timeSinceDragStart,
+            draggedHolon: draggedHolon?.id
+        });
+
+        // Allow navigation if:
+        // 1. Not currently dragging, OR
+        // 2. Drag just started (< 300ms), OR
+        // 3. No draggedHolon is set
+        if (!isDragging || timeSinceDragStart < 300 || !draggedHolon) {
+            console.log('[MyHolons] Proceeding with navigation');
+            navigateToHolon(holonId);
+        } else {
+            console.log('[MyHolons] Click ignored - dragging in progress');
+        }
     }
 
     function formatLastVisited(timestamp: number) {
@@ -1109,7 +1168,7 @@
                         on:dragleave={handleDragLeave}
                         on:drop={(e) => handleDrop(e, index)}
                         on:dragend={handleDragEnd}
-                        on:click={() => navigateToHolon(holon.id)}
+                        on:click={(e) => handleHolonClick(e, holon.id)}
                         on:keydown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
@@ -1235,7 +1294,7 @@
                     }) as holon, index (holon.id)}
                         <div
                             class="h-full"
-                            on:click={() => navigateToHolon(holon.id)}
+                            on:click={(e) => handleHolonClick(e, holon.id)}
                             on:keydown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault();
