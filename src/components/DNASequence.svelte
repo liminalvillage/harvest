@@ -25,7 +25,7 @@
 
   // Update items when sequence prop changes
   $effect(() => {
-    items = sequence.map((c, idx) => ({ ...c, _id: c.id }));
+    items = sequence.map((c) => ({ ...c }));
   });
 
   // Drag-and-drop handlers
@@ -35,11 +35,7 @@
 
   function handleDndFinalize(e: CustomEvent) {
     items = e.detail.items;
-    const newOrder = items.map(item => {
-      const { _id, ...chromosome } = item;
-      return chromosome as Chromosome;
-    });
-    onReorderSequence(newOrder);
+    onReorderSequence(items as Chromosome[]);
   }
 
   // Stats for display
@@ -110,8 +106,7 @@
         on:consider={handleDndConsider}
         on:finalize={handleDndFinalize}
       >
-        {#each items as item, index (item.id)}
-          {@const chromosome = item as Chromosome & { _id?: string }}
+        {#each items as chromosome, index (chromosome.id)}
           <div class="sequence-item" tabindex="0">
             <div class="drag-handle" aria-label="Drag to reorder">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

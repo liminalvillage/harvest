@@ -11,7 +11,10 @@
     getChromosome,
     saveDNASequence,
     subscribeToDNASequence,
-    subscribeToChromosomeLibrary
+    subscribeToChromosomeLibrary,
+    seedChromosomeLibrary,
+    removeChromosome,
+    addChromosome
   } from '$lib/dna/holosphere';
   import { validateDNASequence } from '$lib/dna/validation';
   import ChromosomeLibrary from './ChromosomeLibrary.svelte';
@@ -30,12 +33,15 @@
   let isLoadingLibrary = $state(true);
   let isLoadingSequence = $state(true);
   let isSaving = $state(false);
+  let isSeeding = $state(false);
   let showLibrary = $state(true);
   let saveError = $state<string | null>(null);
   let saveSuccess = $state(false);
   let currentVersion = $state(0);
   let isOnline = $state(true);
   let isSyncing = $state(false);
+  let showAddModal = $state(false);
+  let isAdding = $state(false);
 
   // Unsubscribe functions
   let unsubscribeDNA: (() => void) | null = null;
@@ -46,6 +52,7 @@
   const hasUnsavedChanges = $state(false);
 
   onMount(async () => {
+    console.log('[DNAEditor] onMount - holosphere:', holosphere, 'holonId:', holonId);
     await loadInitialData();
     setupRealTimeSync();
   });
@@ -58,14 +65,48 @@
 
   async function loadInitialData() {
     try {
-      // Load library and DNA sequence in parallel
-      const [libraryData, dnaData] = await Promise.all([
-        getChromosomeLibrary(holosphere, holonId),
-        getDNASequence(holosphere, holonId)
-      ]);
+      // Load library first
+      const libraryData = await getChromosomeLibrary(holosphere, holonId);
+      console.log('Loaded library data:', libraryData, 'length:', libraryData.length);
 
-      library = libraryData;
+      // Filter out chromosomes with no names
+      const validChromosomes = libraryData.filter(c => c.name && c.name.trim() !== '');
+      const invalidCount = libraryData.length - validChromosomes.length;
+
+      if (invalidCount > 0) {
+        console.log(`Found ${invalidCount} chromosomes with no names, cleaning up...`);
+        // Remove invalid chromosomes
+        for (const chromosome of libraryData) {
+          if (!chromosome.name || chromosome.name.trim() === '') {
+            await removeChromosome(holosphere, holonId, chromosome.id);
+          }
+        }
+      }
+
+      // If library is empty, seed it with default chromosomes
+      if (validChromosomes.length === 0) {
+        console.log('Library is empty, seeding with default chromosomes...');
+        isSeeding = true;
+        await seedChromosomeLibrary(holosphere, holonId);
+
+        // Wait a moment for holosphere to propagate
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Reload the library
+        const reloadedLibrary = await getChromosomeLibrary(holosphere, holonId);
+        const reloadedValid = reloadedLibrary.filter(c => c.name && c.name.trim() !== '');
+        console.log('After seeding, library has:', reloadedValid.length, 'valid chromosomes');
+        library = reloadedValid;
+        isSeeding = false;
+      } else {
+        library = validChromosomes;
+        console.log('Using existing library with', validChromosomes.length, 'valid chromosomes');
+      }
+
       isLoadingLibrary = false;
+
+      // Load DNA sequence
+      const dnaData = await getDNASequence(holosphere, holonId);
 
       if (dnaData) {
         // Load full chromosome objects from IDs
@@ -107,12 +148,23 @@
         // Chromosome removed
         library = library.filter(c => c.id !== chromosomeId);
       } else {
-        // Chromosome added or updated
+        // Chromosome added or updated - only update if it exists or has a valid name
+        if (!chromosome.name) {
+          console.log('[DNAEditor] Skipping chromosome with no name:', chromosomeId);
+          return;
+        }
+
         const existingIndex = library.findIndex(c => c.id === chromosome.id);
         if (existingIndex >= 0) {
+          // Update existing chromosome
           library[existingIndex] = chromosome;
+          library = [...library]; // Trigger reactivity
         } else {
-          library = [...library, chromosome];
+          // Check if we already have this chromosome by ID to prevent duplicates
+          const alreadyExists = library.some(c => c.id === chromosome.id);
+          if (!alreadyExists) {
+            library = [...library, chromosome];
+          }
         }
       }
     });
@@ -196,6 +248,68 @@
   function toggleLibrary() {
     showLibrary = !showLibrary;
   }
+
+  async function handleManualSeed() {
+    try {
+      isSeeding = true;
+      console.log('Manually seeding chromosome library...');
+      await seedChromosomeLibrary(holosphere, holonId);
+
+      // Wait for holosphere to propagate
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      library = await getChromosomeLibrary(holosphere, holonId);
+      console.log('Manual seed complete, library now has:', library.length, 'chromosomes');
+      isSeeding = false;
+    } catch (error) {
+      console.error('Failed to seed library:', error);
+      isSeeding = false;
+    }
+  }
+
+  async function handleDeleteChromosome(chromosomeId: string) {
+    try {
+      console.log('[DNAEditor] Deleting chromosome:', chromosomeId);
+
+      // Remove from library
+      await removeChromosome(holosphere, holonId, chromosomeId);
+
+      // Also remove from current sequence if present
+      if (currentSequence.some(c => c.id === chromosomeId)) {
+        currentSequence = currentSequence.filter(c => c.id !== chromosomeId);
+      }
+
+      // Update local library state immediately for better UX
+      library = library.filter(c => c.id !== chromosomeId);
+
+      console.log('[DNAEditor] Chromosome deleted successfully');
+    } catch (error) {
+      console.error('[DNAEditor] Failed to delete chromosome:', error);
+      alert('Failed to delete chromosome. Please try again.');
+    }
+  }
+
+  async function handleAddChromosome(chromosomeData: { name: string; type: 'value' | 'tool' | 'practice'; description: string; icon?: string }) {
+    try {
+      isAdding = true;
+      console.log('[DNAEditor] Adding chromosome:', chromosomeData);
+
+      const newChromosome = await addChromosome(holosphere, holonId, {
+        ...chromosomeData,
+        holonId
+      });
+
+      console.log('[DNAEditor] Chromosome added successfully:', newChromosome);
+
+      // Local state will be updated by subscription
+      showAddModal = false;
+      isAdding = false;
+    } catch (error) {
+      console.error('[DNAEditor] Failed to add chromosome:', error);
+      alert(error instanceof Error ? error.message : 'Failed to add chromosome. Please try again.');
+      isAdding = false;
+    }
+  }
 </script>
 
 <div class="dna-editor">
@@ -232,6 +346,41 @@
             </span>
           {/if}
         </div>
+
+        <!-- Add Chromosome Button -->
+        <button
+          type="button"
+          class="btn-add"
+          onclick={() => showAddModal = true}
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Chromosome
+        </button>
+
+        <!-- Seed Button -->
+        {#if library.length === 0 && !isLoadingLibrary && !isSeeding}
+          <button
+            type="button"
+            class="btn-seed"
+            onclick={handleManualSeed}
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Default Chromosomes
+          </button>
+        {/if}
+
+        {#if isSeeding}
+          <div class="status-badge syncing">
+            <svg class="animate-spin w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Adding chromosomes...
+          </div>
+        {/if}
 
         <!-- Save Button -->
         <button
@@ -308,6 +457,7 @@
         {library}
         {selectedChromosomeIds}
         onSelectChromosome={handleSelectChromosome}
+        onDeleteChromosome={handleDeleteChromosome}
         isLoading={isLoadingLibrary}
       />
     {/if}
@@ -323,6 +473,96 @@
       />
     </main>
   </div>
+
+  <!-- Add Chromosome Modal -->
+  {#if showAddModal}
+    <div class="modal-overlay" onclick={() => showAddModal = false}>
+      <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+        <h2 class="modal-title">Add New Chromosome</h2>
+
+        <form onsubmit={(e) => {
+          e.preventDefault();
+          const formData = new FormData(e.currentTarget);
+          handleAddChromosome({
+            name: formData.get('name') as string,
+            type: formData.get('type') as 'value' | 'tool' | 'practice',
+            description: formData.get('description') as string,
+            icon: formData.get('icon') as string || undefined
+          });
+        }}>
+          <div class="form-group">
+            <label for="name">Name *</label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              required
+              class="input"
+              placeholder="e.g., Collaboration"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="type">Type *</label>
+            <select id="type" name="type" required class="input">
+              <option value="value">Value</option>
+              <option value="tool">Tool</option>
+              <option value="practice">Practice</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="icon">Icon (emoji)</label>
+            <input
+              type="text"
+              id="icon"
+              name="icon"
+              class="input"
+              placeholder="e.g., 🤝"
+              maxlength="4"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="description">Description *</label>
+            <textarea
+              id="description"
+              name="description"
+              required
+              class="input"
+              rows="4"
+              placeholder="Describe this chromosome..."
+            ></textarea>
+          </div>
+
+          <div class="modal-actions">
+            <button
+              type="button"
+              class="btn-cancel"
+              onclick={() => showAddModal = false}
+              disabled={isAdding}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="btn-submit"
+              disabled={isAdding}
+            >
+              {#if isAdding}
+                <svg class="animate-spin w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Adding...
+              {:else}
+                Add Chromosome
+              {/if}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -372,6 +612,28 @@
   }
 
   .btn-save:not(:disabled):hover {
+    @apply shadow-md;
+  }
+
+  .btn-add {
+    @apply flex items-center gap-2 px-4 py-2 rounded-lg;
+    @apply bg-purple-600 dark:bg-purple-500 text-white;
+    @apply hover:bg-purple-700 dark:hover:bg-purple-600;
+    @apply transition-all font-medium shadow-sm;
+  }
+
+  .btn-add:hover {
+    @apply shadow-md;
+  }
+
+  .btn-seed {
+    @apply flex items-center gap-2 px-4 py-2 rounded-lg;
+    @apply bg-green-600 dark:bg-green-500 text-white;
+    @apply hover:bg-green-700 dark:hover:bg-green-600;
+    @apply transition-all font-medium shadow-sm;
+  }
+
+  .btn-seed:hover {
     @apply shadow-md;
   }
 
@@ -441,5 +703,62 @@
     .toggle-btn {
       @apply top-auto bottom-4 right-4;
     }
+  }
+
+  /* Modal styles */
+  .modal-overlay {
+    @apply fixed inset-0 z-50;
+    @apply bg-black/50 dark:bg-black/70;
+    @apply flex items-center justify-center;
+    @apply p-4;
+  }
+
+  .modal-content {
+    @apply bg-white dark:bg-gray-800;
+    @apply rounded-lg shadow-xl;
+    @apply max-w-lg w-full;
+    @apply p-6;
+    @apply max-h-[90vh] overflow-y-auto;
+  }
+
+  .modal-title {
+    @apply text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6;
+  }
+
+  .form-group {
+    @apply mb-4;
+  }
+
+  .form-group label {
+    @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 rounded-lg;
+    @apply border border-gray-300 dark:border-gray-600;
+    @apply bg-white dark:bg-gray-700;
+    @apply text-gray-900 dark:text-gray-100;
+    @apply focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400;
+    @apply transition-colors;
+  }
+
+  .modal-actions {
+    @apply flex gap-3 justify-end mt-6;
+  }
+
+  .btn-cancel {
+    @apply px-4 py-2 rounded-lg;
+    @apply bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200;
+    @apply hover:bg-gray-300 dark:hover:bg-gray-600;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply transition-all font-medium;
+  }
+
+  .btn-submit {
+    @apply flex items-center gap-2 px-4 py-2 rounded-lg;
+    @apply bg-purple-600 dark:bg-purple-500 text-white;
+    @apply hover:bg-purple-700 dark:hover:bg-purple-600;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply transition-all font-medium;
   }
 </style>

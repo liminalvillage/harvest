@@ -4,6 +4,7 @@
 import type HoloSphere from 'holosphere';
 import type { Chromosome, DNASequence } from './types';
 import { validateDNASequence, validateChromosome } from './validation';
+import { getAllDefaultChromosomes, type SeedChromosome } from './seed-data';
 
 /**
  * Get a holon's DNA sequence from holosphere
@@ -76,13 +77,50 @@ export async function getChromosomeLibrary(
 ): Promise<Chromosome[]> {
   try {
     const data = await holosphere.get(holonId, 'chromosome_library');
+
     if (!data || typeof data !== 'object') {
+      console.log('[getChromosomeLibrary] No data or not an object, returning empty array');
       return [];
     }
+
+    console.log('[getChromosomeLibrary] Raw data type:', typeof data);
+    console.log('[getChromosomeLibrary] Raw data keys:', Object.keys(data).filter(k => !k.startsWith('_')));
+
     // Convert object to array of chromosomes
-    return Object.values(data).filter((c): c is Chromosome =>
-      c !== null && typeof c === 'object' && 'id' in c
-    );
+    // Filter out Gun metadata (keys starting with '_')
+    const chromosomes: Chromosome[] = [];
+
+    for (const [key, value] of Object.entries(data)) {
+      // Skip Gun metadata keys
+      if (key.startsWith('_')) continue;
+      if (!value || typeof value !== 'object') continue;
+
+      // Access properties directly from Gun object (they should load synchronously if already cached)
+      const chromosome: Chromosome = {
+        id: value.id || key,
+        holonId: value.holonId || holonId,
+        name: value.name || '',
+        type: value.type || 'value',
+        description: value.description || '',
+        icon: value.icon,
+        color: value.color,
+        createdAt: value.createdAt || Date.now(),
+        updatedAt: value.updatedAt || Date.now()
+      };
+
+      console.log('[getChromosomeLibrary] Parsed chromosome:', {
+        id: chromosome.id,
+        name: chromosome.name,
+        type: chromosome.type,
+        hasDescription: !!chromosome.description,
+        hasIcon: !!chromosome.icon
+      });
+
+      chromosomes.push(chromosome);
+    }
+
+    console.log('[getChromosomeLibrary] Total chromosomes:', chromosomes.length);
+    return chromosomes;
   } catch (error) {
     console.error('Error getting chromosome library:', error);
     return [];
@@ -234,11 +272,25 @@ export async function getChromosome(
     if (!library || typeof library !== 'object') {
       return null;
     }
-    const chromosome = library[chromosomeId];
-    if (!chromosome || typeof chromosome !== 'object') {
+    const data = library[chromosomeId];
+    if (!data || typeof data !== 'object') {
       return null;
     }
-    return chromosome as Chromosome;
+
+    // Access properties directly from Gun object
+    const chromosome: Chromosome = {
+      id: data.id || chromosomeId,
+      holonId: data.holonId || holonId,
+      name: data.name || '',
+      type: data.type || 'value',
+      description: data.description || '',
+      icon: data.icon,
+      color: data.color,
+      createdAt: data.createdAt || Date.now(),
+      updatedAt: data.updatedAt || Date.now()
+    };
+
+    return chromosome;
   } catch (error) {
     console.error('Error getting chromosome:', error);
     return null;
@@ -288,11 +340,46 @@ export function subscribeToChromosomeLibrary(
   callback: (chromosome: Chromosome | null, chromosomeId: string) => void
 ): () => void {
   const handler = (data: any, key: string) => {
+    // Skip Gun metadata keys
+    if (!key || key.startsWith('_')) return;
+
     if (!data || typeof data !== 'object') {
       callback(null, key);
       return;
     }
-    callback(data as Chromosome, key);
+
+    try {
+      // Access properties directly from Gun object
+      const chromosome: Chromosome = {
+        id: data.id || key,
+        holonId: data.holonId || holonId,
+        name: data.name || '',
+        type: data.type || 'value',
+        description: data.description || '',
+        icon: data.icon,
+        color: data.color,
+        createdAt: data.createdAt || Date.now(),
+        updatedAt: data.updatedAt || Date.now()
+      };
+
+      console.log('[subscribeToChromosomeLibrary] Received update:', {
+        key,
+        name: chromosome.name,
+        type: chromosome.type,
+        hasDescription: !!chromosome.description,
+        hasIcon: !!chromosome.icon
+      });
+
+      // Only callback if we have at least a name
+      if (chromosome.name) {
+        callback(chromosome, key);
+      } else {
+        console.log('[subscribeToChromosomeLibrary] Skipping chromosome with no name');
+      }
+    } catch (error) {
+      console.error('[subscribeToChromosomeLibrary] Error processing chromosome:', error);
+      callback(null, key);
+    }
   };
 
   // Subscribe to chromosome library updates
@@ -303,6 +390,46 @@ export function subscribeToChromosomeLibrary(
     // Holosphere subscribe doesn't return an unsubscribe function directly
     // We'll need to handle this differently or accept that subscriptions persist
   };
+}
+
+/**
+ * Seed a holon's chromosome library with default chromosomes
+ * @param holosphere The holosphere instance
+ * @param holonId The holon identifier
+ * @returns Promise that resolves when seeding is complete
+ */
+export async function seedChromosomeLibrary(
+  holosphere: HoloSphere,
+  holonId: string
+): Promise<void> {
+  try {
+    const defaultChromosomes = getAllDefaultChromosomes();
+    const library: Record<string, Chromosome> = {};
+
+    // Create chromosome objects with IDs
+    defaultChromosomes.forEach((seed: SeedChromosome) => {
+      const chromosomeId = generateUUID();
+      const now = Date.now();
+
+      library[chromosomeId] = {
+        id: chromosomeId,
+        holonId,
+        name: seed.name,
+        type: seed.type,
+        description: seed.description,
+        icon: seed.icon,
+        createdAt: now,
+        updatedAt: now
+      };
+    });
+
+    // Save entire library at once
+    await holosphere.put(holonId, 'chromosome_library', library);
+    console.log(`Seeded ${defaultChromosomes.length} default chromosomes for holon ${holonId}`);
+  } catch (error) {
+    console.error('Error seeding chromosome library:', error);
+    throw error;
+  }
 }
 
 /**

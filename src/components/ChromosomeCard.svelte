@@ -20,6 +20,20 @@
     showRemove = false
   }: Props = $props();
 
+  // Debug logging
+  $effect(() => {
+    console.log('[ChromosomeCard] Rendering chromosome:', {
+      id: chromosome.id,
+      name: chromosome.name,
+      type: chromosome.type,
+      description: chromosome.description,
+      icon: chromosome.icon,
+      selected,
+      showRemove,
+      hasOnSelect: !!onSelect
+    });
+  });
+
   function handleClick() {
     if (onSelect) {
       onSelect(chromosome.id);
@@ -56,15 +70,16 @@
       handleClick();
     }
   }}
+  data-chromosome-id={chromosome.id}
 >
   <div class="card-content">
     {#if chromosome.icon}
       <span class="icon">{chromosome.icon}</span>
     {/if}
-    <div class="flex-1">
-      <div class="flex items-start justify-between gap-2">
-        <h3 class="font-semibold text-lg text-gray-900 dark:text-gray-100">
-          {chromosome.name}
+    <div class="flex-1 min-w-0">
+      <div class="flex items-start justify-between gap-2 mb-1">
+        <h3 class="card-title">
+          {chromosome.name || 'Unnamed'}
         </h3>
         {#if showRemove}
           <button
@@ -79,10 +94,10 @@
           </button>
         {/if}
       </div>
-      <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-        {chromosome.description}
+      <p class="card-description">
+        {chromosome.description || 'No description'}
       </p>
-      <span class="badge {typeColor} mt-2">
+      <span class="badge {typeColor}">
         {chromosome.type}
       </span>
     </div>
@@ -92,7 +107,11 @@
 <style>
   .card {
     @apply bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm;
+    @apply text-gray-900 dark:text-gray-100;
     transition: all 0.2s ease-in-out;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
   }
 
   .card.clickable {
@@ -109,14 +128,29 @@
 
   .card-content {
     @apply p-4 flex items-start gap-3;
+    flex: 1;
+    width: 100%;
   }
 
   .icon {
     @apply text-2xl flex-shrink-0;
+    line-height: 1;
+  }
+
+  .card-title {
+    @apply font-semibold text-base text-gray-900 dark:text-gray-100;
+  }
+
+  .card-description {
+    @apply text-sm text-gray-600 dark:text-gray-400 mt-1 mb-2;
+    line-height: 1.4;
+    display: block;
+    word-wrap: break-word;
   }
 
   .badge {
     @apply inline-block px-2 py-1 rounded-full text-xs font-medium;
+    text-transform: capitalize;
   }
 
   .remove-btn {
