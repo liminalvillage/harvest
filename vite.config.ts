@@ -11,7 +11,10 @@ export default defineConfig({
 		exclude: ['@sveltejs/kit']
 	},
 	resolve: {
-		dedupe: ['svelte']
+		dedupe: ['svelte'],
+		alias: {
+			'holosphere': '/Users/roberto/Projects/holosphere2/src/index.js'
+		}
 	},
 	server: {
 		fs: {

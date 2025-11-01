@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { setContext, onDestroy } from 'svelte';
-	import HoloSphere from "holosphere"
+	import { HoloSphere } from "holosphere"
 	import Layout from '../dashboard/Layout.svelte';
 	// Removed debug components to avoid interference
 
@@ -9,9 +9,24 @@
 
 	console.log(import.meta.env.VITE_LOCAL_MODE)
     console.log("Environment:", environmentName)
-	
-	// Create holosphere instance with default configuration
-	const holosphere = new HoloSphere(environmentName);
+
+	// Get the shared private key from environment (shared with HolonsBot)
+	const privateKey = import.meta.env.VITE_HOLOSPHERE_PRIVATE_KEY;
+
+	// Create holosphere instance with shared private key
+	// This allows harvest to access the same data as HolonsBot
+	const holosphere = new HoloSphere({
+		appName: environmentName,
+		privateKey: privateKey,
+		relays: ['wss://relay.damus.io', 'wss://relay.nostr.band'],
+		enablePing: false  // Disable ping to prevent connection closure issues
+	});
+
+	// Log the public key for verification
+	if (holosphere.client) {
+		console.log("HoloSphere Public Key:", holosphere.client.publicKey);
+		console.log("Expected:", "9c7d719e42af8e695f6a76cd12652eb5d93d76a2b1e5057aef88c6325b42678f");
+	}
 
 	// Configure GunDB for better peer discovery after initialization
 	setTimeout(() => {
