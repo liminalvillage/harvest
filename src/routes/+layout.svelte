@@ -18,7 +18,10 @@
 	const holosphere = new HoloSphere({
 		appName: environmentName,
 		privateKey: privateKey,
-		relays: ['wss://relay.damus.io', 'wss://relay.nostr.band'],
+		relays: [
+			'wss://relay.holons.io',     // Main Holons relay
+			'wss://relay.nostr.band'     // Backup for persistence
+		],
 		enablePing: false  // Disable ping to prevent connection closure issues
 	});
 
