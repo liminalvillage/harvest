@@ -800,7 +800,7 @@
 			console.log(`Fetching tasks for holon: ${holonID}`);
 			
 			// Fetch tasks data with timeout
-			const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 5000) => {
+			const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 10000) => {
 				const timeoutPromise = new Promise((_, reject) => 
 					setTimeout(() => reject(new Error('Timeout')), timeoutMs)
 				);
