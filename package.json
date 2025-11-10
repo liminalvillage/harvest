@@ -59,6 +59,7 @@
 		"fontawesome": "^5.6.3",
 		"holosphere": "^1.1.20",
 		"html5-qrcode": "^2.3.8",
+		"ical.js": "^2.2.1",
 		"lune": "^0.4.0",
 		"mapbox-gl": "^3.7.0",
 		"sass": "^1.77.6",
