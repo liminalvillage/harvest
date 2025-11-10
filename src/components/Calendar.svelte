@@ -1502,10 +1502,11 @@
     }
 </script>
 
-<Timeline 
+<Timeline
     currentDate={currentDate}
     profiles={profiles}
     users={users}
+    tasks={tasks}
     on:dateSelect={handleTimelineDateSelect}
 />
 
