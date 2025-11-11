@@ -2,14 +2,7 @@
   import { onMount, onDestroy, getContext } from 'svelte';
   import type HoloSphere from 'holosphere';
   import DraggableWindow from './DraggableWindow.svelte';
-
-  // Holonic Architecture Components
-  import { TypedEventBus } from '$lib/holons/shared/eventBus';
-  import { TranscriptionManager } from '$lib/holons/transcription/TranscriptionManager';
-  import { PodcastManager } from '$lib/holons/podcast/PodcastManager';
-  import TranscriptPanel from '$lib/holons/ui/TranscriptPanel.svelte';
-  import PodcastModal from '$lib/holons/ui/PodcastModal.svelte';
-  import type { TranscriptionSegment, Podcast } from '$lib/holons/shared/types';
+  import { WhisperBrowserClient, type TranscriptionSegment } from '$lib/whisperBrowserClient';
 
   export let roomId: string;
   export let show = false;
@@ -49,13 +42,10 @@
   let connectionStatus = 'Initializing...';
   let isRecording = false;
   let recordingStartTime: number | null = null;
+  let transcriptionSegments: TranscriptionSegment[] = [];
+  let whisperClient: WhisperBrowserClient | null = null;
   let showPodcastList = false;
-
-  // Holonic managers
-  let eventBus: TypedEventBus;
-  let transcriptionManager: TranscriptionManager;
-  let podcastManager: PodcastManager;
-  let podcasts: Podcast[] = [];
+  let savedPodcasts: any[] = [];
 
   // Gun instance
   let gun: any;
@@ -618,28 +608,61 @@
       return;
     }
 
-    log('Starting conversation recording...');
+    log('Starting podcast recording...');
     isRecording = true;
     recordingStartTime = Date.now();
-    connectionStatus = '🔴 Recording...';
+    transcriptionSegments = [];
 
+    // Initialize Whisper browser client (runs entirely in browser, no server needed!)
     try {
-      // Add local stream to transcription manager
-      transcriptionManager.addAudioSource(localStream, 'local');
+      whisperClient = new WhisperBrowserClient({
+        model: 'Xenova/whisper-tiny', // tiny for speed, base for better quality
+        language: 'en',
+        chunkLengthSeconds: 10, // Transcribe every 10 seconds (increased for better codec compatibility)
+        task: 'transcribe'
+      });
 
-      // Start transcription
-      await transcriptionManager.startTranscription();
-      log('✅ Transcription started with holonic architecture');
+      // Set up transcription callback
+      whisperClient.onTranscriptionSegment((segment: TranscriptionSegment) => {
+        log(`Transcription: ${segment.text}`);
+        transcriptionSegments = [...transcriptionSegments, segment];
+      });
+
+      // Set up error callback
+      whisperClient.onErrorCallback((error: Error) => {
+        log(`Whisper error: ${error.message}`);
+        connectionStatus = `Recording error: ${error.message}`;
+      });
+
+      // Set up status callback
+      whisperClient.onStatusCallback((status) => {
+        log(`Whisper status: ${status}`);
+        if (status === 'loading') {
+          connectionStatus = '⏳ Loading Whisper model... (first time only)';
+        } else if (status === 'ready') {
+          connectionStatus = '✅ Ready to record';
+        } else if (status === 'transcribing') {
+          connectionStatus = '🔴 Recording...';
+        } else if (status === 'error') {
+          connectionStatus = 'Recording error';
+        }
+      });
+
+      // Initialize and start recording
+      await whisperClient.initialize();
+      await whisperClient.startRecording(localStream);
+      log('Whisper browser client initialized and recording');
     } catch (error) {
-      log(`Failed to start transcription: ${error}`);
+      log(`Failed to start Whisper: ${error}`);
       connectionStatus = `Recording failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
       isRecording = false;
       recordingStartTime = null;
+      whisperClient = null;
     }
   }
 
   async function stopRecording() {
-    log('Stopping conversation recording...');
+    log('Stopping podcast recording...');
     isRecording = false;
 
     const duration = recordingStartTime ? Math.floor((Date.now() - recordingStartTime) / 1000) : 0;
@@ -647,31 +670,45 @@
     const startTime = recordingStartTime || endTime;
     recordingStartTime = null;
 
-    try {
-      // Stop transcription and get result
-      const transcript = await transcriptionManager.stopTranscription();
+    // Stop Whisper browser client
+    if (whisperClient) {
+      await whisperClient.stopRecording();
+      whisperClient.dispose();
+      whisperClient = null;
 
-      // Save to holosphere via podcast manager
-      const podcast = await podcastManager.save(transcript, {
-        holonId: roomId,
-        participants: [
-          { id: myUserId, username: myUserId.substring(0, 8), role: 'host' },
-          ...connectedPeers.map(peerId => ({
-            id: peerId,
-            username: peerId.substring(0, 8),
-            role: 'participant' as const
-          }))
-        ],
-        startTime,
-        endTime,
-        duration
-      });
+      // Save podcast data to holosphere
+      try {
+        // Create transcript object from collected segments
+        const transcript = {
+          segments: transcriptionSegments,
+          fullText: transcriptionSegments.map(s => s.text).join(' '),
+          language: 'en'
+        };
 
-      connectionStatus = `Conversation saved (${duration}s, ${transcript.segments.length} segments)`;
-      log(`✅ Podcast saved: ${podcast.id}`);
-    } catch (error) {
-      log(`Failed to save podcast: ${error}`);
-      connectionStatus = `Recording saved locally (${duration}s) - upload failed`;
+        await savePodcastToHolosphere({
+          holonId: roomId,
+          participants: [
+            { id: myUserId, username: myUserId.substring(0, 8), role: 'host' },
+            ...connectedPeers.map(peerId => ({
+              id: peerId,
+              username: peerId.substring(0, 8),
+              role: 'participant' as const
+            }))
+          ],
+          startTime,
+          endTime,
+          duration,
+          transcript
+        });
+
+        connectionStatus = `Podcast saved (${duration}s, ${transcriptionSegments.length} segments)`;
+        log(`Podcast saved with ${transcriptionSegments.length} transcript segments`);
+      } catch (error) {
+        log(`Failed to save podcast: ${error}`);
+        connectionStatus = `Recording saved locally (${duration}s) - upload failed`;
+      }
+    } else {
+      connectionStatus = `Podcast recorded (${duration}s)`;
     }
 
     // Reset status after a few seconds
@@ -682,10 +719,109 @@
     }, 3000);
   }
 
+  // Save podcast data to holosphere
+  async function savePodcastToHolosphere(podcastData: {
+    holonId: string;
+    participants: Array<{ id: string; username: string; role: 'host' | 'guest' | 'participant' }>;
+    startTime: number;
+    endTime: number;
+    duration: number;
+    transcript: { segments: TranscriptionSegment[]; fullText: string; language?: string };
+  }) {
+    if (!gun) {
+      throw new Error('Gun instance not available');
+    }
+
+    const podcastId = `podcast_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const date = new Date(podcastData.startTime).toISOString().split('T')[0];
+
+    // Create podcast metadata (Gun-friendly flat structure)
+    const podcast = {
+      id: podcastId,
+      version: '0.1.0',
+      holonId: podcastData.holonId,
+      title: `Video Chat Recording - ${date}`,
+      description: `Podcast recording from video chat in room ${podcastData.holonId}`,
+      startTime: podcastData.startTime,
+      endTime: podcastData.endTime,
+      date,
+      duration: podcastData.duration,
+      fullText: podcastData.transcript.fullText,
+      language: podcastData.transcript.language || 'en',
+      segmentCount: podcastData.transcript.segments.length,
+      status: 'completed',
+      tags: 'video-chat,recording',
+      createdBy: myUserId,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+
+    // Save podcast metadata to Gun
+    const podcastsRef = gun.get('podcasts');
+    const podcastRef = podcastsRef.get(podcastId);
+    podcastRef.put(podcast);
+
+    // Save participants separately (Gun doesn't handle nested arrays well)
+    const participantsRef = podcastRef.get('participants');
+    podcastData.participants.forEach((participant, index) => {
+      participantsRef.get(`p${index}`).put({
+        id: participant.id,
+        username: participant.username,
+        role: participant.role
+      });
+    });
+
+    // Save transcript segments separately
+    const segmentsRef = podcastRef.get('segments');
+    podcastData.transcript.segments.forEach((segment, index) => {
+      segmentsRef.get(`s${index}`).put({
+        timestamp: segment.timestamp,
+        text: segment.text,
+        confidence: segment.confidence || 0
+      });
+    });
+
+    log(`Saved podcast ${podcastId} to holosphere with ${podcastData.transcript.segments.length} segments`);
+  }
 
   async function loadPodcasts() {
-    log('Loading saved conversations...');
-    podcasts = await podcastManager.load();
+    if (!gun) {
+      log('Gun instance not available for loading podcasts');
+      return;
+    }
+
+    savedPodcasts = [];
+    const podcastsRef = gun.get('podcasts');
+
+    podcastsRef.map().on((podcastData: any, podcastId: string) => {
+      if (podcastData && podcastId && podcastId !== '_') {
+        // Load podcast segments
+        const segments: any[] = [];
+        const segmentsRef = podcastsRef.get(podcastId).get('segments');
+
+        segmentsRef.map().on((segment: any, segId: string) => {
+          if (segment && segId !== '_') {
+            segments.push(segment);
+          }
+        });
+
+        // Add to podcasts list
+        const podcast = {
+          ...podcastData,
+          id: podcastId,
+          segments
+        };
+
+        // Update or add podcast
+        const existingIndex = savedPodcasts.findIndex(p => p.id === podcastId);
+        if (existingIndex >= 0) {
+          savedPodcasts[existingIndex] = podcast;
+        } else {
+          savedPodcasts = [...savedPodcasts, podcast];
+        }
+      }
+    });
+
     showPodcastList = true;
   }
 
@@ -693,12 +829,15 @@
     log('Leaving room');
 
     // Stop any active recording
-    if (isRecording && transcriptionManager) {
-      log('Stopping active transcription...');
-      transcriptionManager.stopTranscription();
+    if (whisperClient) {
+      log('Cleaning up Whisper browser client');
+      whisperClient.stopRecording();
+      whisperClient.dispose();
+      whisperClient = null;
     }
     isRecording = false;
     recordingStartTime = null;
+    transcriptionSegments = [];
 
     // Remove presence
     if (userRef) {
@@ -744,23 +883,6 @@
       }
     }
 
-    // Initialize holonic managers
-    eventBus = new TypedEventBus();
-    transcriptionManager = new TranscriptionManager(eventBus);
-    podcastManager = new PodcastManager(gun, eventBus);
-
-    // Initialize transcription manager with better model
-    try {
-      await transcriptionManager.initialize({
-        model: 'Xenova/whisper-base', // Better model for Stage 1
-        language: 'en',
-        chunkLengthSeconds: 7 // Balance: better accuracy with reasonable latency
-      });
-      log('✅ Transcription manager initialized');
-    } catch (error) {
-      log(`⚠️ Failed to initialize transcription: ${error}`);
-    }
-
     // Only set up signaling, don't initialize media until video window opens
     if (gun) {
       await setupSignaling();
@@ -771,17 +893,6 @@
   // Cleanup on component destroy
   onDestroy(() => {
     leaveRoom();
-
-    // Cleanup holonic managers
-    if (transcriptionManager) {
-      transcriptionManager.destroy();
-    }
-    if (podcastManager) {
-      podcastManager.destroy();
-    }
-    if (eventBus) {
-      eventBus.clear();
-    }
   });
 
   // Update local video when stream changes
@@ -920,12 +1031,65 @@
         </div>
       </div>
 
-      <!-- Podcast List Modal (Holonic Component) -->
-      <PodcastModal {eventBus} bind:show={showPodcastList} bind:podcasts />
-    </DraggableWindow>
+      <!-- Podcast List Modal -->
+      {#if showPodcastList}
+        <div class="podcast-modal" role="button" tabindex="0" on:click={() => showPodcastList = false} on:keydown={(e) => e.key === 'Escape' && (showPodcastList = false)}>
+          <div class="podcast-modal-content" role="dialog" aria-modal="true" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+            <div class="podcast-modal-header">
+              <h2>Saved Podcasts</h2>
+              <button class="close-btn" on:click={() => showPodcastList = false}>×</button>
+            </div>
+            <div class="podcast-list">
+              {#if savedPodcasts.length === 0}
+                <p class="no-podcasts">No podcasts saved yet</p>
+              {:else}
+                {#each savedPodcasts as podcast}
+                  <div class="podcast-item">
+                    <div class="podcast-info">
+                      <h3>{podcast.title || 'Untitled Podcast'}</h3>
+                      <p class="podcast-date">{new Date(podcast.startTime).toLocaleString()}</p>
+                      <p class="podcast-duration">Duration: {Math.floor(podcast.duration / 60)}m {podcast.duration % 60}s</p>
+                      <p class="podcast-segments">{podcast.segmentCount} segments</p>
+                    </div>
+                    <div class="podcast-transcript">
+                      <h4>Transcript:</h4>
+                      <p>{podcast.fullText || 'No transcript available'}</p>
+                    </div>
+                  </div>
+                {/each}
+              {/if}
+            </div>
+          </div>
+        </div>
+      {/if}
 
-  <!-- Transcription Panel (Outside DraggableWindow - Holonic Component) -->
-  <TranscriptPanel {eventBus} {isRecording} />
+      <!-- Transcription Panel (outside video-container to avoid overflow clipping) -->
+      {#if isRecording}
+        <div class="transcription-panel floating-panel">
+          <div class="transcription-header">
+            <span>Live Transcription</span>
+            <span class="segment-count">{transcriptionSegments.length} segments</span>
+          </div>
+          <div class="transcription-content">
+            {#if transcriptionSegments.length === 0}
+              <div class="transcript-waiting">
+                <span>🎤 Listening... Speak into your microphone</span>
+              </div>
+            {:else}
+              {#each transcriptionSegments as segment}
+                <div class="transcript-segment">
+                  <span class="timestamp">{Math.floor(segment.timestamp)}s</span>
+                  <span class="text">{segment.text}</span>
+                  {#if segment.confidence}
+                    <span class="confidence">{Math.round(segment.confidence * 100)}%</span>
+                  {/if}
+                </div>
+              {/each}
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </DraggableWindow>
   {:else}
     <!-- Full-screen/embedded mode -->
     <div class="video-call-fullscreen">
@@ -984,8 +1148,32 @@
 
         </div>
 
-        <!-- Transcription Panel (Holonic Component - Fullscreen) -->
-        <TranscriptPanel {eventBus} {isRecording} />
+        <!-- Transcription Panel (Fullscreen) -->
+        {#if isRecording}
+          <div class="transcription-panel">
+            <div class="transcription-header">
+              <span>Live Transcription</span>
+              <span class="segment-count">{transcriptionSegments.length} segments</span>
+            </div>
+            <div class="transcription-content">
+              {#if transcriptionSegments.length === 0}
+                <div class="transcript-waiting">
+                  <span>🎤 Listening... Speak into your microphone</span>
+                </div>
+              {:else}
+                {#each transcriptionSegments as segment}
+                  <div class="transcript-segment">
+                    <span class="timestamp">{Math.floor(segment.timestamp)}s</span>
+                    <span class="text">{segment.text}</span>
+                    {#if segment.confidence}
+                      <span class="confidence">{Math.round(segment.confidence * 100)}%</span>
+                    {/if}
+                  </div>
+                {/each}
+              {/if}
+            </div>
+          </div>
+        {/if}
       </div>
 
       {#if onClose}

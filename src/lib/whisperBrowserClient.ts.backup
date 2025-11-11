@@ -1,0 +1,575 @@
+// Browser-based Whisper Client using Transformers.js
+// Runs entirely in the browser with no backend server needed
+
+import { pipeline, type PipelineType, env } from '@xenova/transformers';
+
+// Configure Transformers.js to use HuggingFace CDN for model files
+// This prevents Vite from trying to load models from the local dev server
+env.allowRemoteModels = true;
+env.allowLocalModels = false;
+// Use HuggingFace's CDN for model files
+env.remoteHost = 'https://huggingface.co';
+env.remotePathTemplate = '{model}/resolve/{revision}/';
+// Use CDN for WASM binaries
+env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@latest/dist/';
+
+export interface TranscriptionSegment {
+  timestamp: number;
+  text: string;
+  confidence?: number;
+}
+
+export interface WhisperBrowserConfig {
+  model?: string; // 'Xenova/whisper-tiny', 'Xenova/whisper-base', 'Xenova/whisper-small'
+  language?: string; // 'en', 'es', 'fr', etc. or 'auto' for automatic detection
+  chunkLengthSeconds?: number; // How often to transcribe (default: 10 seconds - increased for codec compatibility)
+  task?: 'transcribe' | 'translate'; // transcribe or translate to English
+}
+
+type TranscriptionCallback = (segment: TranscriptionSegment) => void;
+type ErrorCallback = (error: Error) => void;
+type StatusCallback = (status: 'loading' | 'ready' | 'transcribing' | 'error') => void;
+
+export class WhisperBrowserClient {
+  private config: Required<WhisperBrowserConfig>;
+  private transcriber: any = null;
+  private audioContext: AudioContext | null = null;
+  private mediaRecorder: MediaRecorder | null = null;
+  private audioChunks: Blob[] = [];
+  private isRecording = false;
+  private transcriptionInterval: number | null = null;
+
+  // Callbacks
+  private onTranscription: TranscriptionCallback | null = null;
+  private onError: ErrorCallback | null = null;
+  private onStatus: StatusCallback | null = null;
+
+  constructor(config: WhisperBrowserConfig = {}) {
+    this.config = {
+      model: config.model || 'Xenova/whisper-tiny', // tiny is fastest, base is better quality
+      language: config.language || 'en',
+      chunkLengthSeconds: config.chunkLengthSeconds || 10, // Increased to 10 seconds for better codec compatibility
+      task: config.task || 'transcribe'
+    };
+  }
+
+  /**
+   * Initialize the Whisper model
+   * This will download the model on first use (~40-100MB depending on model size)
+   * Subsequent uses will load from browser cache
+   */
+  async initialize(): Promise<void> {
+    try {
+      console.log('[WhisperBrowser] Initializing Whisper model:', this.config.model);
+      this.updateStatus('loading');
+
+      // Create the transcription pipeline
+      // This uses Transformers.js to run Whisper in the browser
+      // Models are loaded from HuggingFace CDN by default
+      this.transcriber = await pipeline(
+        'automatic-speech-recognition' as PipelineType,
+        this.config.model,
+        {
+          quantized: true, // Use quantized model for better performance
+          // Force remote loading from HuggingFace CDN
+          local_files_only: false,
+        }
+      );
+
+      console.log('[WhisperBrowser] Model loaded successfully');
+      this.updateStatus('ready');
+    } catch (error) {
+      console.error('[WhisperBrowser] Failed to initialize:', error);
+      this.updateStatus('error');
+      this.handleError(error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Start recording and transcribing audio from a MediaStream
+   */
+  async startRecording(mediaStream: MediaStream): Promise<void> {
+    if (!this.transcriber) {
+      await this.initialize();
+    }
+
+    try {
+      console.log('[WhisperBrowser] Starting recording');
+
+      // Validate MediaStream has audio tracks
+      const audioTracks = mediaStream.getAudioTracks();
+      console.log('[WhisperBrowser] Audio tracks in stream:', audioTracks.length);
+      console.log('[WhisperBrowser] Video tracks in stream:', mediaStream.getVideoTracks().length);
+
+      if (audioTracks.length === 0) {
+        throw new Error('No audio tracks found in MediaStream');
+      }
+
+      audioTracks.forEach((track, index) => {
+        console.log(`[WhisperBrowser] Audio track ${index}:`, {
+          enabled: track.enabled,
+          muted: track.muted,
+          readyState: track.readyState,
+          label: track.label
+        });
+      });
+
+      // Create audio-only stream for MediaRecorder
+      // Safari has issues with mixed audio/video streams
+      console.log('[WhisperBrowser] Creating audio-only MediaStream...');
+      const audioOnlyStream = new MediaStream(audioTracks);
+      console.log('[WhisperBrowser] Audio-only stream created with', audioOnlyStream.getAudioTracks().length, 'audio tracks');
+
+      // Create audio context for processing
+      this.audioContext = new AudioContext({ sampleRate: 16000 }); // Whisper expects 16kHz
+
+      // Create MediaRecorder WITHOUT options - let browser use native format
+      // Safari/macOS has issues with explicit MIME type specification
+      console.log('[WhisperBrowser] Creating MediaRecorder with browser default settings...');
+
+      try {
+        this.mediaRecorder = new MediaRecorder(audioOnlyStream);
+        console.log('[WhisperBrowser] ✅ MediaRecorder created successfully');
+        console.log('[WhisperBrowser] MediaRecorder MIME type:', this.mediaRecorder.mimeType);
+        console.log('[WhisperBrowser] MediaRecorder state:', this.mediaRecorder.state);
+      } catch (error) {
+        console.error('[WhisperBrowser] ❌ Failed to create MediaRecorder:', error);
+        throw error;
+      }
+
+      this.audioChunks = [];
+
+      // Collect audio chunks - we'll transcribe them when we stop or on interval
+      this.mediaRecorder.ondataavailable = async (event) => {
+        console.log('[WhisperBrowser] 🎤 ondataavailable fired! Size:', event.data.size, 'bytes');
+        if (event.data.size > 0) {
+          console.log('[WhisperBrowser] ✅ Received audio chunk:', event.data.size, 'bytes');
+
+          // Keep for final transcription on stop
+          this.audioChunks.push(event.data);
+          console.log('[WhisperBrowser] 📦 Total chunks accumulated:', this.audioChunks.length);
+
+          // Transcribe this chunk immediately for live transcription
+          if (this.isRecording) {
+            await this.transcribeSingleChunk(event.data);
+          }
+        } else {
+          console.log('[WhisperBrowser] ⚠️ ondataavailable fired but data size is 0');
+        }
+      };
+
+      // Handle recording stop
+      this.mediaRecorder.onstop = () => {
+        console.log('[WhisperBrowser] MediaRecorder stopped');
+      };
+
+      // Handle errors
+      this.mediaRecorder.onerror = (event: any) => {
+        console.error('[WhisperBrowser] MediaRecorder error:', event.error);
+      };
+
+      // Start recording with timeslice to enable periodic data events
+      console.log('[WhisperBrowser] Calling start() on MediaRecorder...');
+      console.log('[WhisperBrowser] MediaStream active?', mediaStream.active);
+      console.log('[WhisperBrowser] MediaStream id:', mediaStream.id);
+
+      try {
+        // Pass timeslice to get periodic ondataavailable events
+        const timesliceMs = this.config.chunkLengthSeconds * 1000;
+        this.mediaRecorder.start(timesliceMs);
+        console.log('[WhisperBrowser] ✅✅✅ MediaRecorder.start() succeeded with timeslice:', timesliceMs, 'ms');
+        console.log('[WhisperBrowser] MediaRecorder state after start:', this.mediaRecorder.state);
+      } catch (startError) {
+        console.error('[WhisperBrowser] ❌❌❌ MediaRecorder.start() failed:', startError);
+        console.error('[WhisperBrowser] Error details:', {
+          name: (startError as Error).name,
+          message: (startError as Error).message,
+          mediaRecorderState: this.mediaRecorder?.state,
+          streamActive: mediaStream.active,
+          audioTracks: mediaStream.getAudioTracks().map(t => ({
+            enabled: t.enabled,
+            muted: t.muted,
+            readyState: t.readyState
+          }))
+        });
+        throw startError;
+      }
+
+      this.isRecording = true;
+      this.updateStatus('transcribing');
+
+      // Note: Live transcription happens automatically in ondataavailable handler
+      // MediaRecorder will emit chunks every 10 seconds due to timeslice parameter
+
+      console.log('[WhisperBrowser] Recording started successfully');
+    } catch (error) {
+      console.error('[WhisperBrowser] Failed to start recording:', error);
+      this.handleError(error as Error);
+      throw error;
+    }
+  }
+
+  /**
+   * Stop recording and transcribe any remaining audio
+   */
+  async stopRecording(): Promise<void> {
+    console.log('[WhisperBrowser] 🛑 Stopping recording...');
+
+    this.isRecording = false;
+
+    if (this.transcriptionInterval) {
+      clearInterval(this.transcriptionInterval);
+      this.transcriptionInterval = null;
+    }
+
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      // Stop the recorder and wait for ondataavailable to fire
+      const dataPromise = new Promise<void>((resolve) => {
+        const originalHandler = this.mediaRecorder!.ondataavailable;
+        this.mediaRecorder!.ondataavailable = (event) => {
+          console.log('[WhisperBrowser] 🎤 Final ondataavailable fired! Size:', event.data.size, 'bytes');
+          // Call original handler if it exists
+          if (originalHandler) {
+            originalHandler.call(this.mediaRecorder, event);
+          }
+          resolve();
+        };
+
+        // Set a timeout in case ondataavailable never fires
+        setTimeout(() => {
+          console.log('[WhisperBrowser] ⏱️ Timeout waiting for ondataavailable');
+          resolve();
+        }, 1000);
+      });
+
+      console.log('[WhisperBrowser] Calling stop() on MediaRecorder...');
+      this.mediaRecorder.stop();
+
+      // Wait for the ondataavailable event
+      await dataPromise;
+      console.log('[WhisperBrowser] ✅ ondataavailable completed');
+    }
+
+    // Note: All chunks have already been transcribed individually during recording
+    // We keep the chunks for creating the final audio file for saving
+    console.log('[WhisperBrowser] 📦 Total audio chunks accumulated:', this.audioChunks.length);
+    console.log('[WhisperBrowser] ✅ Live transcription complete (all chunks already transcribed)');
+
+    this.updateStatus('ready');
+  }
+
+  /**
+   * Set up stop/restart cycle to force MediaRecorder to emit data
+   * This is a workaround for codecs (like opus) that don't properly support requestData()
+   */
+  private setupStopRestartCycle(intervalMs: number): void {
+    console.log('[WhisperBrowser] Setting up stop/restart cycle every', intervalMs, 'ms');
+
+    this.transcriptionInterval = window.setInterval(async () => {
+      if (!this.isRecording || !this.mediaRecorder) {
+        console.log('[WhisperBrowser] ⚠️ Not recording, skipping stop/restart');
+        return;
+      }
+
+      console.log('[WhisperBrowser] 🔄 Stopping MediaRecorder to force data emission...');
+
+      // Stop the current recording session
+      if (this.mediaRecorder.state === 'recording') {
+        this.mediaRecorder.stop();
+
+        // Wait a bit for ondataavailable to fire
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Transcribe any accumulated chunks
+        if (this.audioChunks.length > 0) {
+          console.log('[WhisperBrowser] 📝 Transcribing', this.audioChunks.length, 'chunks before restart');
+          await this.transcribeChunks();
+        }
+
+        // Restart recording if still in recording mode
+        if (this.isRecording) {
+          console.log('[WhisperBrowser] ▶️ Restarting MediaRecorder...');
+          try {
+            this.mediaRecorder.start();
+            console.log('[WhisperBrowser] ✅ MediaRecorder restarted');
+          } catch (error) {
+            console.error('[WhisperBrowser] ❌ Failed to restart MediaRecorder:', error);
+          }
+        }
+      }
+    }, intervalMs);
+  }
+
+  /**
+   * Set up periodic transcription of audio chunks
+   */
+  private startPeriodicTranscription(): void {
+    const intervalMs = this.config.chunkLengthSeconds * 1000;
+
+    this.transcriptionInterval = window.setInterval(async () => {
+      if (this.isRecording && this.mediaRecorder?.state === 'recording') {
+        console.log('[WhisperBrowser] 🔄 Periodic transcription triggered, requesting data...');
+        // Request data to force MediaRecorder to emit a complete audio segment
+        // This ensures each chunk has proper headers for decoding
+        this.mediaRecorder.requestData();
+
+        // Wait briefly for ondataavailable to fire and collect the chunk
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        // Now transcribe the collected chunks
+        if (this.audioChunks.length > 0) {
+          await this.transcribeChunks();
+        }
+      }
+    }, intervalMs);
+  }
+
+  /**
+   * Transcribe a single audio chunk for live transcription
+   */
+  private async transcribeSingleChunk(audioBlob: Blob): Promise<void> {
+    try {
+      console.log(`[WhisperBrowser] 🔊 Transcribing single chunk: ${audioBlob.size} bytes`);
+
+      // Convert blob to ArrayBuffer
+      const arrayBuffer = await audioBlob.arrayBuffer();
+
+      // Decode audio data
+      const audioData = await this.decodeAudioData(arrayBuffer);
+
+      // Run transcription
+      const result = await this.transcriber(audioData, {
+        language: this.config.language === 'auto' ? undefined : this.config.language,
+        task: this.config.task,
+        chunk_length_s: 30,
+        stride_length_s: 3,
+        return_timestamps: true
+      });
+
+      console.log('[WhisperBrowser] Single chunk transcription result:', result);
+
+      // Process the result
+      if (result && result.chunks && Array.isArray(result.chunks) && result.chunks.length > 0) {
+        for (const chunk of result.chunks) {
+          if (chunk.text && chunk.text.trim().length > 0) {
+            const segment: TranscriptionSegment = {
+              timestamp: chunk.timestamp?.[0] || Date.now() / 1000,
+              text: chunk.text.trim(),
+              confidence: undefined
+            };
+
+            console.log('[WhisperBrowser] ✅ Chunk transcription:', segment.text);
+            if (this.onTranscription) {
+              this.onTranscription(segment);
+            }
+          }
+        }
+      } else if (result && result.text) {
+        const segment: TranscriptionSegment = {
+          timestamp: Date.now() / 1000,
+          text: result.text.trim(),
+          confidence: result.confidence || undefined
+        };
+
+        if (segment.text.length > 0) {
+          console.log('[WhisperBrowser] ✅ Full transcription:', segment.text);
+          if (this.onTranscription) {
+            this.onTranscription(segment);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[WhisperBrowser] Single chunk transcription failed:', error);
+      this.handleError(error as Error);
+    }
+  }
+
+  /**
+   * Transcribe collected audio chunks
+   */
+  private async transcribeChunks(): Promise<void> {
+    console.log('[WhisperBrowser] 🎯 transcribeChunks called. Chunks:', this.audioChunks.length);
+    if (this.audioChunks.length === 0) {
+      console.log('[WhisperBrowser] ⚠️ No chunks to transcribe, returning early');
+      return;
+    }
+
+    try {
+      // Combine all audio chunks into a single blob
+      const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+      this.audioChunks = []; // Clear chunks after combining
+
+      console.log(`[WhisperBrowser] 🔊 Transcribing ${audioBlob.size} bytes of audio`);
+
+      // Convert blob to ArrayBuffer
+      const arrayBuffer = await audioBlob.arrayBuffer();
+
+      // Decode audio data
+      const audioData = await this.decodeAudioData(arrayBuffer);
+
+      // Run transcription with improved parameters to reduce repetition
+      const result = await this.transcriber(audioData, {
+        language: this.config.language === 'auto' ? undefined : this.config.language,
+        task: this.config.task,
+        chunk_length_s: 30, // Internal chunking for long audio
+        stride_length_s: 3, // Reduced overlap to minimize repetition
+        return_timestamps: true
+      });
+
+      console.log('[WhisperBrowser] Transcription result:', result);
+
+      // Process the result - prefer chunks over full text to avoid duplication
+      if (result && result.chunks && Array.isArray(result.chunks) && result.chunks.length > 0) {
+        // Use chunked results for better granularity
+        for (const chunk of result.chunks) {
+          if (chunk.text && chunk.text.trim().length > 0) {
+            const segment: TranscriptionSegment = {
+              timestamp: chunk.timestamp?.[0] || Date.now() / 1000,
+              text: chunk.text.trim(),
+              confidence: undefined
+            };
+
+            console.log('[WhisperBrowser] ✅ Chunk transcription:', segment.text);
+            if (this.onTranscription) {
+              this.onTranscription(segment);
+            }
+          }
+        }
+      } else if (result && result.text) {
+        // Fallback to full text if no chunks available
+        const segment: TranscriptionSegment = {
+          timestamp: Date.now() / 1000,
+          text: result.text.trim(),
+          confidence: result.confidence || undefined
+        };
+
+        if (segment.text.length > 0) {
+          console.log('[WhisperBrowser] ✅ Full transcription:', segment.text);
+
+          if (this.onTranscription) {
+            this.onTranscription(segment);
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error('[WhisperBrowser] Transcription failed:', error);
+      this.handleError(error as Error);
+    }
+  }
+
+  /**
+   * Decode audio data to Float32Array for Whisper
+   */
+  private async decodeAudioData(arrayBuffer: ArrayBuffer): Promise<Float32Array> {
+    if (!this.audioContext) {
+      this.audioContext = new AudioContext({ sampleRate: 16000 });
+    }
+
+    const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+
+    // Resample to 16kHz mono if needed
+    let audioData = audioBuffer.getChannelData(0);
+
+    if (audioBuffer.sampleRate !== 16000) {
+      // Simple resampling by taking every Nth sample
+      const ratio = audioBuffer.sampleRate / 16000;
+      const newLength = Math.floor(audioData.length / ratio);
+      const resampled = new Float32Array(newLength);
+
+      for (let i = 0; i < newLength; i++) {
+        resampled[i] = audioData[Math.floor(i * ratio)];
+      }
+
+      audioData = resampled;
+    }
+
+    return audioData;
+  }
+
+  /**
+   * Get supported MIME type for MediaRecorder
+   * Prioritizes formats that work better with browser recording
+   */
+  private getSupportedMimeType(): string {
+    const types = [
+      'audio/webm',  // Try basic webm first (browser will choose codec)
+      'audio/webm;codecs=opus',
+      'audio/ogg;codecs=opus',
+      'audio/mp4',
+      'audio/wav'  // WAV as last resort
+    ];
+
+    console.log('[WhisperBrowser] Testing supported MIME types...');
+    for (const type of types) {
+      const isSupported = MediaRecorder.isTypeSupported(type);
+      console.log(`[WhisperBrowser]   ${type}: ${isSupported ? '✅ supported' : '❌ not supported'}`);
+      if (isSupported) {
+        console.log('[WhisperBrowser] Selected MIME type:', type);
+        return type;
+      }
+    }
+
+    console.warn('[WhisperBrowser] No preferred MIME type supported, using default (browser will choose)');
+    return '';
+  }
+
+  /**
+   * Set callback for transcription segments
+   */
+  onTranscriptionSegment(callback: TranscriptionCallback): void {
+    this.onTranscription = callback;
+  }
+
+  /**
+   * Set callback for errors
+   */
+  onErrorCallback(callback: ErrorCallback): void {
+    this.onError = callback;
+  }
+
+  /**
+   * Set callback for status updates
+   */
+  onStatusCallback(callback: StatusCallback): void {
+    this.onStatus = callback;
+  }
+
+  /**
+   * Update status and notify callback
+   */
+  private updateStatus(status: 'loading' | 'ready' | 'transcribing' | 'error'): void {
+    if (this.onStatus) {
+      this.onStatus(status);
+    }
+  }
+
+  /**
+   * Handle errors and notify callback
+   */
+  private handleError(error: Error): void {
+    if (this.onError) {
+      this.onError(error);
+    }
+  }
+
+  /**
+   * Clean up resources
+   */
+  dispose(): void {
+    console.log('[WhisperBrowser] Disposing resources');
+
+    this.stopRecording();
+
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
+    }
+
+    this.transcriber = null;
+    this.onTranscription = null;
+    this.onError = null;
+    this.onStatus = null;
+  }
+}
