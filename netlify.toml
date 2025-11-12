@@ -1,0 +1,76 @@
+[build]
+  # Directory to change to before starting a build
+  base = "."
+  # Directory that contains the deploy-ready HTML files and assets
+  publish = "build"
+  # Default build command
+  command = "npm run build"
+
+[build.environment]
+  # Node.js version for builds
+  NODE_VERSION = "20"
+
+# Build settings for SvelteKit
+[build.processing]
+  skip_processing = false
+
+[build.processing.css]
+  bundle = true
+  minify = true
+
+[build.processing.js]
+  bundle = true
+  minify = true
+
+[build.processing.html]
+  pretty_urls = true
+
+# Security headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://translate.google.com https://translate.googleapis.com https://api.mapbox.com https://events.mapbox.com; style-src 'self' 'unsafe-inline' https://api.mapbox.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com https://api.mapbox.com; img-src 'self' data: https: blob:; connect-src 'self' https://api.mapbox.com https://events.mapbox.com https://translate.google.com https://translate.googleapis.com wss://*.mapbox.com; frame-src https://translate.google.com;"
+
+# Cache static assets (SvelteKit optimized)
+[[headers]]
+  for = "/_app/immutable/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Cache images and assets
+[[headers]]
+  for = "/images/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400, s-maxage=86400"
+
+# SvelteKit routing - adapter-netlify handles most routing automatically
+# Redirect rules have been moved to _redirects file
+
+# Environment variables (uncomment and configure as needed)
+# [build.environment]
+#   PUBLIC_API_URL = "your-api-url"
+#   PUBLIC_MAPBOX_TOKEN = "your-mapbox-token"
+#   PUBLIC_GOOGLE_TRANSLATE_KEY = "your-google-translate-key"
+#   DATABASE_URL = "your-database-url"
+
+# Functions configuration (if you add serverless functions later)
+# [functions]
+#   directory = "netlify/functions"
+
+# Dev server configuration for local development
+# [dev]
+#   command = "npm run dev"
+#   port = 5173
+#   publish = "build"
+
+# Build hooks (optional)
+# [build.hooks]
+#   init = "echo 'Starting SvelteKit build...'"
+
+# Plugins for SvelteKit (optional)
+# [[plugins]]
+#   package = "@netlify/plugin-sveltekit"

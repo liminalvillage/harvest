@@ -13,12 +13,11 @@
 	import Sidebar from './sidebar/Sidebar.svelte';
 	import MyHolons from '../components/MyHolons.svelte';
 	import RouteTransition from '../components/RouteTransition.svelte';
-	import ClockOverlay from '../components/ClockOverlay.svelte';
 
 	const style = {
 		container: `bg-gray-900 h-screen overflow-hidden relative`,
 		mainContainer: `flex flex-col h-screen pl-0 w-full lg:pl-20 lg:space-y-4`,
-		main: `h-screen overflow-auto pb-36 pt-4 px-2 md:pb-8 md:pt-4 lg:pt-0 lg:px-4`,
+		main: `h-screen overflow-auto pb-8 pt-4 px-2 md:pb-8 md:pt-4 lg:pt-0 lg:px-4`,
 		rootContainer: `bg-gray-900 h-screen overflow-hidden relative`,
 		rootMain: `h-screen overflow-auto p-4`
 	};
@@ -26,7 +25,6 @@
 	let lastMouseMove = Date.now();
 	let currentRouteIndex = 0;
 	let showMyHolons = false;
-	let showClockOverlay = false;
 
 	// Check if we're on the root route
 	$: isRootRoute = $page.url.pathname === '/';
@@ -46,10 +44,10 @@
 
 	// Handle global keyboard shortcuts
 	function handleGlobalKeydown(event: KeyboardEvent) {
-		// Toggle clock overlay with Ctrl+Shift+C or Cmd+Shift+C
-		if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'C') {
+		// Toggle overlay dashboard with Ctrl+Shift+Z or Cmd+Shift+Z
+		if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Z') {
 			event.preventDefault();
-			toggleClockOverlay();
+			toggleOverlayDashboard();
 		}
 	}
 
@@ -57,29 +55,27 @@
 		showMyHolons = !showMyHolons;
 	}
 
-	function toggleClockOverlay() {
-		showClockOverlay = !showClockOverlay;
-	}
 
 	// Set up auto-switching if in browser
 	if (browser) {
 		// Set up mouse move listener
 		window.addEventListener('mousemove', handleMouseMove);
 
-		// Set up interval for route switching
-		const interval = setInterval(() => {
-			const now = Date.now();
-			// Only switch if auto-transition is enabled
-			if ($autoTransitionEnabled && now - lastMouseMove >= 10 * 1000) {
-				currentRouteIndex = (currentRouteIndex + 1) % allowedRoutes.length;
-				goto('/' + $page.params.id + allowedRoutes[currentRouteIndex].link);
-			}
-		}, 10000); // 10 seconds
+		// Set up custom event listener for Overlay dashboard
+		window.addEventListener('toggleOverlayDashboard', () => {
+			// Dispatch the event to TopBar instead
+			window.dispatchEvent(new CustomEvent('toggleWidgetDashboard'));
+		});
+
+		// Auto-switching is disabled by default - removed timer logic
+		// Users can manually enable it if needed through the store
 
 		// Cleanup on component destroy
 		onDestroy(() => {
-			clearInterval(interval);
 			window.removeEventListener('mousemove', handleMouseMove);
+			window.removeEventListener('toggleOverlayDashboard', () => {
+				toggleOverlayDashboard();
+			});
 		});
 	}
 
@@ -117,7 +113,7 @@
 			<Overlay />
 			<Sidebar mobileOrientation="start" />
 			<div class={style.mainContainer}>
-				<TopBar {toggleMyHolons} {toggleClockOverlay} />
+				<TopBar {toggleMyHolons} />
 				<main class={style.main}>
 					<RouteTransition pathname={$page.url.pathname}>
 						<slot />
@@ -141,7 +137,42 @@
 			</div>
 		{/if}
 
-		<!-- Clock Overlay -->
-		<ClockOverlay bind:isVisible={showClockOverlay} />
 	</div>
 {/if}
+
+<style>
+	/* Hide scrollbars while keeping scroll functionality */
+	:global(html) {
+		/* Firefox */
+		scrollbar-width: none;
+	}
+
+	:global(body) {
+		/* Firefox */
+		scrollbar-width: none;
+	}
+
+	/* Webkit browsers (Chrome, Safari, Edge) */
+	:global(*::-webkit-scrollbar) {
+		display: none;
+		width: 0;
+		height: 0;
+	}
+
+	:global(*::-webkit-scrollbar-track) {
+		display: none;
+	}
+
+	:global(*::-webkit-scrollbar-thumb) {
+		display: none;
+	}
+
+	:global(*::-webkit-scrollbar-corner) {
+		display: none;
+	}
+
+	/* Ensure scrolling still works */
+	:global(*) {
+		-ms-overflow-style: none; /* Internet Explorer 10+ */
+	}
+</style>

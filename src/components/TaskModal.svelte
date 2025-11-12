@@ -785,6 +785,19 @@
         }
     }
 
+    // Function to open dependency modal
+    function openDependencyModal(dependencyId: string) {
+        // Close current modal first
+        dispatch("close");
+        
+        // Dispatch a custom event to notify the Tasks component
+        const event = new CustomEvent('openDependencyTask', {
+            detail: { taskId: dependencyId },
+            bubbles: true
+        });
+        window.dispatchEvent(event);
+    }
+
     // Add publish functionality
     let isPublishing = false;
     let publishStatus = '';
@@ -799,46 +812,126 @@
         publishStatus = 'Checking federation...';
 
         try {
+            // Get settings to check for hex configuration
+            let settingsHex: string | null = null;
+            try {
+                const settings = await holosphere.get(holonId, 'settings', holonId);
+                if (settings && settings.hex) {
+                    settingsHex = settings.hex;
+                    console.log('[TaskModal] Found settings hex:', settingsHex);
+                }
+            } catch (e) {
+                console.log('[TaskModal] No settings hex found:', e);
+            }
+
             // First check if there are any federated chats available
             const fedInfo = await holosphere.getFederation(holonId);
-            
-            // Check if we have either federated chats OR if this is a hex-based holon that can propagate to parents
-            const hasFederatedChats = fedInfo && fedInfo.notify && fedInfo.notify.length > 0;
-            
+
+            // Check if we have federated holons
+            const hasFederatedHolons = fedInfo && fedInfo.notify && fedInfo.notify.length > 0;
+
+            // If we have neither federation nor settings hex, show error
+            if (!hasFederatedHolons && !settingsHex) {
+                publishStatus = 'No federated holons found. Please set up federation or configure a hex in settings.';
+                setTimeout(() => {
+                    publishStatus = '';
+                }, 5000);
+                return;
+            }
+
             publishStatus = 'Publishing...';
 
             // Create a hologram for the quest to propagate
             // Use the full quest data instead of just the ID reference
             const hologram = holosphere.createHologram(holonId, 'quests', quest);
 
-            // Use federation propagation to publish to federated spaces
-            // Explicitly enable parent propagation for hex-based holons
-            const propagationResult = await holosphere.propagate(holonId, 'quests', hologram, {
-                useHolograms: true,
-                propagateToParents: true,
-                maxParentLevels: 1  // Only propagate to immediate parent (1 level up)
-            });
+            // Determine if this is an H3 holon by checking if it's a valid H3 cell
+            let isH3Holon = false;
+            try {
+                // Import h3-js to check if it's a valid H3 cell
+                const h3 = await import('h3-js');
+                isH3Holon = h3.isValidCell(holonId);
+            } catch (e) {
+                // If h3-js is not available or check fails, assume it's not H3
+                isH3Holon = false;
+            }
 
-            if (propagationResult.success > 0 || (propagationResult.parentPropagation?.success || 0) > 0) {
-                const totalSuccess = (propagationResult.success || 0) + (propagationResult.parentPropagation?.success || 0);
-                publishStatus = `Published to ${totalSuccess} location(s)`;
-                
+            let totalPublished = 0;
+            const publishErrors: string[] = [];
+
+            // First, publish to settings hex if configured
+            if (settingsHex) {
+                try {
+                    console.log('[TaskModal] Publishing to settings hex:', settingsHex);
+                    await holosphere.put(settingsHex, 'quests', hologram);
+                    totalPublished++;
+                    console.log('[TaskModal] Successfully published to settings hex');
+                } catch (error) {
+                    console.error('[TaskModal] Failed to publish to settings hex:', error);
+                    publishErrors.push(`Settings hex: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+            }
+
+            // Then use federation propagation to publish to federated spaces
+            // Only enable parent propagation for H3-based holons
+            if (hasFederatedHolons) {
+                const propagationResult = await holosphere.propagate(holonId, 'quests', hologram, {
+                    useHolograms: true,
+                    propagateToParents: isH3Holon,  // Only propagate to parents if this is an H3 holon
+                    maxParentLevels: isH3Holon ? 1 : 0  // Only propagate to immediate parent (1 level up) for H3 holons
+                });
+
+                console.log('[TaskModal] Propagation result:', propagationResult);
+
+                totalPublished += (propagationResult.success || 0) + (propagationResult.parentPropagation?.success || 0);
+
+                // Collect any propagation errors
+                if (propagationResult.failed > 0) {
+                    if (propagationResult.messages && Array.isArray(propagationResult.messages)) {
+                        publishErrors.push(...propagationResult.messages);
+                    }
+                    if (propagationResult.parentPropagation?.messages && propagationResult.parentPropagation.messages.length > 0) {
+                        publishErrors.push(...propagationResult.parentPropagation.messages);
+                    }
+                }
+            }
+
+            if (totalPublished > 0) {
+                const locations = settingsHex && hasFederatedHolons
+                    ? `${totalPublished} location(s) (settings hex + federation)`
+                    : settingsHex
+                        ? `settings hex`
+                        : `${totalPublished} federated holon(s)`;
+                // Add warning if there were partial errors
+                if (publishErrors.length > 0) {
+                    publishStatus = `Published to ${locations} (with some errors)`;
+                    console.warn('[TaskModal] Publish errors:', publishErrors);
+                } else {
+                    publishStatus = `Published to ${locations}`;
+                }
+
                 // Update the quest to show it's been published
-                await updateQuest({ 
+                await updateQuest({
                     published: true,
                     publishedAt: new Date().toISOString(),
-                    publishedTo: totalSuccess
+                    publishedTo: totalPublished
                 });
-                
+
                 // Show success message briefly
                 setTimeout(() => {
                     publishStatus = '';
                 }, 3000);
             } else {
-                const errorMessage = propagationResult.message || propagationResult.parentPropagation?.messages?.join(', ') || 'Unknown propagation error';
+                // All publish attempts failed
+                let errorMessage = 'Failed to publish to all targets';
+
+                if (publishErrors.length > 0) {
+                    errorMessage = publishErrors.join('; ');
+                }
+
+                console.error('[TaskModal] Publishing failed:', errorMessage);
                 publishStatus = `Failed to publish: ${errorMessage}`;
-                console.error('Propagation failed:', propagationResult);
-                
+
                 // Show error message briefly
                 setTimeout(() => {
                     publishStatus = '';
@@ -847,7 +940,7 @@
         } catch (error) {
             console.error("[TaskModal.svelte] Error publishing quest:", error);
             publishStatus = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-            
+
             // Show error message briefly
             setTimeout(() => {
                 publishStatus = '';
@@ -860,19 +953,21 @@
 
 <div
     data-component="TaskModal"
-    class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+    class="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-3"
     on:click|self={closeModal}
     on:keydown={(e) => e.key === "Escape" && closeModal()}
     role="presentation"
     transition:fade
 >
     <div
-        class="bg-gray-800 rounded-xl max-w-2xl w-full max-h-[90vh] shadow-xl relative flex flex-col"
+        class="bg-gray-800 rounded-xl max-w-3xl w-full max-h-[95vh] shadow-2xl relative flex flex-col border border-gray-700 mx-auto lg:mx-0"
         transition:scale={{ duration: 200, start: 0.95 }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
+        tabindex="-1"
         on:click|stopPropagation
+        on:keydown|stopPropagation
     >
         <button
             class="absolute top-4 right-4 text-gray-400 hover:text-white z-10 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center p-2"
@@ -898,26 +993,23 @@
             </svg>
         </button>
 
-        <div class="p-6 overflow-y-auto flex-1 modal-content">
             <!-- Header -->
-            <div class="flex justify-between items-start mb-6">
-                <div>
+        <div class="flex items-center justify-between p-4 border-b border-gray-700">
+            <div class="flex-1 mr-4">
                     {#if editingTitle}
-                        <!-- Editable title input -->
                         <input
                             type="text"
                             bind:value={tempTitle}
-                            class="text-2xl font-bold text-white bg-gray-700 rounded px-2 py-1 w-full"
+                        class="text-xl font-bold text-white bg-transparent border-b border-gray-500 focus:border-blue-400 px-1 py-1 w-full outline-none"
                             on:blur={handleTitleEdit}
                             on:keydown={handleTitleKeydown}
                             use:focusOnMount
                         />
                     {:else}
-                        <!-- Clickable title -->
                         <button
                             type="button"
                             id="modal-title"
-                            class="text-2xl font-bold text-white text-left hover:text-gray-300 touch-manipulation min-h-[44px] min-w-[44px] flex items-center"
+                        class="text-xl font-bold text-white text-left hover:text-gray-300 transition-colors w-full text-left"
                             on:click={() => {
                                 tempTitle = quest.title;
                                 editingTitle = true;
@@ -929,77 +1021,43 @@
                             {quest.title}
                         </button>
                     {/if}
-                    <div class="flex items-center gap-3 mt-2">
-                        {#if quest._meta?.resolvedFromHologram}
-                            <button
-                                class="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 text-blue-300 rounded-lg text-sm font-medium hover:bg-blue-500/30 transition-colors border border-blue-500/50 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
-                                on:click={navigateToHologramSource}
-                                on:touchstart={handleButtonTouchStart}
-                                on:touchend={handleButtonTouchEnd}
-                                on:touchcancel={handleButtonTouchCancel}
-                                title="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
-                                type="button"
-                            >
-                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                                </svg>
-                                <span>Hologram from {getHologramSource(quest._meta.hologramSoul)}</span>
+                
+                <!-- Compact metadata -->
+                <div class="flex items-center gap-2 mt-1 text-xs text-gray-400">
+                    {#if quest.created}
+                        <span class="flex items-center gap-1">
                                 <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
                                 </svg>
-                            </button>
-                        {/if}
-                        {#if quest.published}
-                            <span
-                                class="inline-flex items-center gap-2 px-3 py-1.5 bg-green-500/20 text-green-300 rounded-lg text-sm font-medium border border-green-500/50"
-                                title="Cast to {quest.publishedTo || 'federated'} chat(s) on {new Date(quest.publishedAt).toLocaleDateString()}"
-                                style="display: none"
-                            >
-                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
-                                </svg>
-                                <span>Cast</span>
+                            {formatDate(quest.created)}
                             </span>
                         {/if}
-                        {#if quest.created}
-                        <span
-                            class="inline-flex items-center text-sm text-gray-400"
-                        >
-                            <svg
-                                class="w-4 h-4 mr-1"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                            >
-                                <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    stroke-width="2"
-                                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                />
-                            </svg>
-                            Created: {formatDate(quest.created)}
-                        </span>
-                    {/if}
                     {#if quest.category}
-                        <span
-                            class="inline-flex items-center text-sm text-gray-400"
-                        >
-                            <svg
-                                class="w-4 h-4 mr-1"
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                            >
-                                <path
-                                    d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06zm1.03-2h4.03l3-2h-4.03l-3 2zm-8 0h4.03l-3-2h-4.03l3 2z"
-                                />
+                        <span class="flex items-center gap-1">
+                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M11.03 8h-6.06l-3 8h6.06l3-8zm1.94 0l3 8h6.06l-3-8h-6.06z"/>
                             </svg>
                             {quest.category}
                         </span>
                     {/if}
+                    {#if quest._meta?.resolvedFromHologram}
+                        <button
+                            class="flex items-center gap-1 px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs hover:bg-blue-500/30 transition-colors"
+                            on:click={navigateToHologramSource}
+                            title="Navigate to source holon: {getHologramSource(quest._meta.hologramSoul)}"
+                            type="button"
+                        >
+                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                            </svg>
+                            Hologram
+                        </button>
+                    {/if}
                             </div>
     </div>
 </div>
+
+        <div class="p-4 overflow-y-auto flex-1 modal-content scrollbar-thin">
 
 <style>
     /* Custom scrollbar for webkit browsers */
@@ -1041,14 +1099,23 @@
     }
 </style>
 
-            <div class="space-y-6 text-gray-300">
+            <!-- Main content grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-gray-300 min-h-0">
+                <!-- Left column -->
+                <div class="space-y-3 min-h-0">
                 <!-- Description -->
-                <div class="bg-gray-700/50 p-4 rounded-lg">
+                    <div class="bg-gray-700/30 p-3 rounded-lg">
+                        <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
+                            </svg>
+                            Description
+                        </h4>
                     {#if editingDescription}
                         <textarea
                             bind:value={tempDescription}
-                            class="text-sm text-white bg-gray-700 rounded px-2 py-1 w-full resize-none border border-gray-600 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            rows="4"
+                                class="text-sm text-white bg-gray-800 rounded px-2 py-2 w-full resize-none border border-gray-600 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                rows="3"
                             placeholder="Add a description..."
                             on:blur={saveDescription}
                             on:keydown={handleDescriptionKeydown}
@@ -1057,30 +1124,22 @@
                     {:else}
                         {#if quest.description}
                             <button  
-                                id="modal-description"
-                                class="text-sm whitespace-pre-wrap cursor-pointer hover:bg-gray-700 p-1 rounded-md touch-manipulation min-h-[44px] min-w-[44px] flex items-center" 
+                                    class="text-sm whitespace-pre-wrap text-left w-full hover:bg-gray-700/50 p-2 rounded transition-colors" 
                                 on:click={() => {
                                     tempDescription = quest.description || '';
                                     editingDescription = true;
                                 }}
-                                on:touchstart={handleButtonTouchStart}
-                                on:touchend={handleButtonTouchEnd}
-                                on:touchcancel={handleButtonTouchCancel}
-                                on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && (tempDescription = quest.description || '', editingDescription = true)}
                                 type="button"
                             >
                                 {quest.description}
                             </button>
                         {:else}
                             <button 
-                                class="text-sm text-gray-400 hover:text-white px-2 py-1 rounded-md hover:bg-gray-700 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                    class="text-sm text-gray-400 hover:text-white p-2 rounded hover:bg-gray-700/50 w-full text-left transition-colors"
                                 on:click={() => {
-                                    tempDescription = ''; // Start with empty for new description
+                                        tempDescription = '';
                                     editingDescription = true;
                                 }}
-                                on:touchstart={handleButtonTouchStart}
-                                on:touchend={handleButtonTouchEnd}
-                                on:touchcancel={handleButtonTouchCancel}
                                 type="button">
                                 + Add description
                             </button>
@@ -1088,621 +1147,365 @@
                     {/if}
                 </div>
 
-                <!-- Dependencies Section -->
-                <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">
-                    <div class="flex justify-between items-center">
-                        <h3 class="text-lg font-semibold flex items-center gap-2">
-                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <!-- Dependencies -->
+                    <div class="bg-gray-700/30 p-3 rounded-lg">
+                        <div class="flex justify-between items-center mb-2">
+                            <h4 class="text-sm font-medium text-gray-300 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
                             Dependencies
-                        </h3>
+                            </h4>
                         <button
-                            class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                class="px-2 py-1 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 text-xs transition-colors"
                             on:click={() => showDependencyEditor = !showDependencyEditor}
-                            on:touchstart={handleButtonTouchStart}
-                            on:touchend={handleButtonTouchEnd}
-                            on:touchcancel={handleButtonTouchCancel}
                             type="button"
                         >
-                            {showDependencyEditor ? 'Cancel' : 'Edit Dependencies'}
+                                {showDependencyEditor ? 'Cancel' : 'Edit'}
                         </button>
                     </div>
 
                     {#if showDependencyEditor}
-                        <div class="bg-gray-700 p-4 rounded-lg border border-gray-600 space-y-4">
                             <div class="space-y-2">
-                                <label for="dependency-select" class="block text-sm font-medium text-gray-300">
-                                    Add Task Dependency
-                                </label>
-                                <div class="flex gap-2">
                                     <select
-                                        id="dependency-select"
-                                        class="flex-1 bg-gray-800 text-white rounded-lg border border-gray-600 p-2 text-sm"
+                                    class="w-full bg-gray-800 text-white rounded border border-gray-600 p-2 text-sm"
                                         on:change={(e) => {
                                             const selectedId = e.target.value;
                                             if (selectedId && selectedId !== 'default') {
                                                 addDependency(selectedId);
-                                                e.target.value = 'default'; // Reset selection
+                                            e.target.value = 'default';
                                             }
                                         }}
                                     >
-                                        <option value="default">Select a task...</option>
+                                    <option value="default">+ Add dependency...</option>
                                         {#each availableTasks.filter(task => !quest.dependsOn?.includes(task.id)) as task}
                                             <option value={task.id}>{task.title}</option>
                                         {/each}
                                     </select>
                                 </div>
-                            </div>
+                        {/if}
                             
                             {#if quest.dependsOn && quest.dependsOn.length > 0}
-                                <div class="space-y-2">
-                                    <label class="block text-sm font-medium text-gray-300">Current Dependencies</label>
-                                    <div class="space-y-2">
+                            <div class="space-y-1">
                                         {#each quest.dependsOn as depId, index}
                                             {@const depTask = availableTasks.find(t => t.id === depId)}
-                                            <div class="flex items-center justify-between bg-gray-800 p-2 rounded border border-gray-600">
-                                                <span class="text-sm text-gray-300">
-                                                    {depTask ? depTask.title : depId}
-                                                </span>
+                                    <div class="flex items-center justify-between bg-gray-800 p-2 rounded text-sm">
                                                 <button
-                                                    class="text-red-400 hover:text-red-300 transition-colors touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center p-1"
-                                                    on:click={() => removeDependency(index)}
-                                                    on:touchstart={handleButtonTouchStart}
-                                                    on:touchend={handleButtonTouchEnd}
-                                                    on:touchcancel={handleButtonTouchCancel}
+                                            class="flex-1 text-left text-gray-300 hover:text-white transition-colors"
+                                                    on:click={() => openDependencyModal(depId)}
                                                     type="button"
                                                 >
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        {depTask ? depTask.title : depId}
+                                                </button>
+                                        {#if showDependencyEditor}
+                                                <button
+                                                class="text-red-400 hover:text-red-300 ml-2 p-1"
+                                                    on:click={() => removeDependency(index)}
+                                                    type="button"
+                                                    aria-label="Remove dependency"
+                                                >
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                                                     </svg>
                                                 </button>
-                                            </div>
-                                        {/each}
-                                    </div>
-                                </div>
                             {/if}
                         </div>
-                    {:else if quest.dependsOn && quest.dependsOn.length > 0}
-                        <div class="space-y-2">
-                            <div class="text-sm text-gray-300">This task depends on:</div>
-                            <div class="space-y-2">
-                                {#each quest.dependsOn as depId}
-                                    {@const depTask = availableTasks.find(t => t.id === depId)}
-                                    <div class="bg-gray-800 p-2 rounded border border-gray-600">
-                                        <span class="text-sm text-gray-300">
-                                            {depTask ? depTask.title : depId}
-                                        </span>
-                                    </div>
                                 {/each}
-                            </div>
                         </div>
                     {:else}
-                        <p class="text-gray-500 text-sm">No dependencies</p>
+                            <p class="text-gray-500 text-xs">No dependencies</p>
                     {/if}
                 </div>
 
-                <!-- Recurring Section -->
-                {#if quest.recurringTaskId || quest.status === 'recurring' || quest.status === 'repeating'}
-                    <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">
-                        <div class="flex justify-between items-center">
-                            <h3 class="text-lg font-semibold flex items-center gap-2">
-                                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                </svg>
-                                Recurring Task
-                            </h3>
-                            <button
-                                class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
-                                on:click={() => showRecurringEditor = !showRecurringEditor}
-                                on:touchstart={handleButtonTouchStart}
-                                on:touchend={handleButtonTouchEnd}
-                                on:touchcancel={handleButtonTouchCancel}
-                                type="button"
-                            >
-                                {showRecurringEditor ? 'Cancel' : 'Edit Recurring'}
-                            </button>
-                        </div>
-
-                        {#if showRecurringEditor}
-                            <div class="bg-gray-700 p-4 rounded-lg border border-gray-600 space-y-4">
-                                <div class="space-y-2">
-                                    <label for="recurring-task-id" class="block text-sm font-medium text-gray-300">
-                                        Recurring Task ID
-                                    </label>
-                                    <input
-                                        id="recurring-task-id"
-                                        type="text"
-                                        bind:value={recurringTaskId}
-                                        placeholder="Enter recurring task ID..."
-                                        class="w-full bg-gray-800 text-white rounded-lg border border-gray-600 p-2 text-sm"
-                                    />
-                                </div>
-                                
-                                <div class="space-y-2">
-                                    <label for="recurring-status" class="block text-sm font-medium text-gray-300">
-                                        Recurring Status
-                                    </label>
-                                    <select
-                                        id="recurring-status"
-                                        bind:value={recurringStatus}
-                                        class="w-full bg-gray-800 text-white rounded-lg border border-gray-600 p-2 text-sm"
-                                    >
-                                        <option value="ongoing">Ongoing</option>
-                                        <option value="recurring">Recurring</option>
-                                        <option value="repeating">Repeating</option>
-                                        <option value="completed">Completed</option>
-                                    </select>
-                                </div>
-
-                                <div class="flex justify-end space-x-2">
-                                    <button
-                                        class="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
-                                        on:click={() => showRecurringEditor = false}
-                                        on:touchstart={handleButtonTouchStart}
-                                        on:touchend={handleButtonTouchEnd}
-                                        on:touchcancel={handleButtonTouchCancel}
-                                        type="button"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
-                                        on:click={saveRecurringSettings}
-                                        on:touchstart={handleButtonTouchStart}
-                                        on:touchend={handleButtonTouchEnd}
-                                        on:touchcancel={handleButtonTouchCancel}
-                                        type="button"
-                                    >
-                                        Save
-                                    </button>
-                                </div>
-                            </div>
-                        {:else}
-                            <div class="space-y-2">
-                                {#if quest.recurringTaskId}
-                                    <div class="bg-gray-800 p-2 rounded border border-gray-600">
-                                        <span class="text-sm text-gray-300">Recurring Task ID: {quest.recurringTaskId}</span>
-                                    </div>
-                                {/if}
-                                <div class="bg-gray-800 p-2 rounded border border-gray-600">
-                                    <span class="text-sm text-gray-300">Status: {quest.status}</span>
-                                </div>
-                            </div>
-                        {/if}
-                    </div>
-                {/if}
-
-                <!-- Schedule Section -->
-                <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">
-                    <div class="flex justify-between items-center">
-                        <h3
-                            class="text-lg font-semibold flex items-center gap-2"
-                        >
-                            <svg
-                                class="w-5 h-5 text-gray-400"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                            >
-                                <rect
-                                    x="3"
-                                    y="4"
-                                    width="18"
-                                    height="18"
-                                    rx="2"
-                                    ry="2"
-                                />
-                                <line x1="16" y1="2" x2="16" y2="6" />
-                                <line x1="8" y1="2" x2="8" y2="6" />
-                                <line x1="3" y1="10" x2="21" y2="10" />
+                    <!-- Schedule -->
+                    <div class="bg-gray-700/30 p-3 rounded-lg">
+                        <div class="flex justify-between items-center mb-2">
+                            <h4 class="text-sm font-medium text-gray-300 flex items-center gap-2">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                    <line x1="16" y1="2" x2="16" y2="6"/>
+                                    <line x1="8" y1="2" x2="8" y2="6"/>
+                                    <line x1="3" y1="10" x2="21" y2="10"/>
                             </svg>
                             Schedule
-                        </h3>
+                            </h4>
                         <button
-                            class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                class="px-2 py-1 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 text-xs transition-colors"
                             on:click={() => (showDatePicker = !showDatePicker)}
-                            on:touchstart={handleButtonTouchStart}
-                            on:touchend={handleButtonTouchEnd}
-                            on:touchcancel={handleButtonTouchCancel}
                             type="button"
                         >
-                            {quest.when ? "Reschedule" : "Schedule Task"}
+                                {quest.when ? "Edit" : "Set"}
                         </button>
                     </div>
 
                     {#if showDatePicker}
-                        <div
-                            class="bg-gray-700 p-4 rounded-lg border border-gray-600 space-y-4"
-                        >
-                            <div class="grid grid-cols-2 gap-4">
                                 <div class="space-y-2">
-                                    <label
-                                        for="task-date"
-                                        class="block text-sm font-medium text-gray-300"
-                                        >Date</label
-                                    >
+                                <div class="grid grid-cols-2 gap-2">
                                     <input
-                                        id="task-date"
                                         type="date"
-                                        class="w-full bg-gray-800 text-white rounded-lg border border-gray-600 p-2"
+                                        class="bg-gray-800 text-white rounded border border-gray-600 p-2 text-sm"
                                         bind:value={selectedDate}
                                     />
-                                </div>
-                                <div class="space-y-2">
-                                    <label
-                                        for="task-time"
-                                        class="block text-sm font-medium text-gray-300"
-                                        >Time</label
-                                    >
                                     <input
-                                        id="task-time"
                                         type="time"
-                                        class="w-full bg-gray-800 text-white rounded-lg border border-gray-600 p-2"
+                                        class="bg-gray-800 text-white rounded border border-gray-600 p-2 text-sm"
                                         bind:value={selectedTime}
                                     />
                                 </div>
-                            </div>
-                            <div class="flex justify-end space-x-2">
+                                <div class="flex justify-end gap-2">
                                 <button
-                                    class="px-3 py-1.5 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                        class="px-2 py-1 bg-gray-700 text-gray-300 rounded hover:bg-gray-600 text-xs"
                                     on:click={() => (showDatePicker = false)}
-                                    on:touchstart={handleButtonTouchStart}
-                                    on:touchend={handleButtonTouchEnd}
-                                    on:touchcancel={handleButtonTouchCancel}
                                     type="button"
                                 >
                                     Cancel
                                 </button>
                                 <button
-                                    class="px-3 py-1.5 bg-gray-800 text-blue-400 rounded-lg hover:bg-gray-600 border border-blue-500 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                        class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs"
                                     on:click={scheduleTask}
-                                    on:touchstart={handleButtonTouchStart}
-                                    on:touchend={handleButtonTouchEnd}
-                                    on:touchcancel={handleButtonTouchCancel}
                                     type="button"
                                 >
-                                    Save Schedule
+                                        Save
                                 </button>
                             </div>
                         </div>
-                    {/if}
-
-                    {#if quest.when}
-                        <div
-                            class="bg-gray-700/50 p-3 rounded-lg border border-gray-600/50"
-                        >
+                        {:else if quest.when}
+                            <div class="bg-gray-800 p-2 rounded text-sm">
                             <div class="flex items-center justify-between">
-                                <div class="flex items-center gap-2">
                                     <span class="text-gray-300">
-                                        {new Date(
-                                            quest.when,
-                                        ).toLocaleDateString()} at {new Date(
-                                            quest.when,
-                                        ).toLocaleTimeString([], {
+                                        {new Date(quest.when).toLocaleDateString()} at {new Date(quest.when).toLocaleTimeString([], {
                                             hour: "2-digit",
                                             minute: "2-digit",
                                         })}
                                     </span>
-                                </div>
                                 <button
-                                    class="text-gray-400 hover:text-red-400 transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center p-2"
-                                    on:click={() =>
-                                        updateQuest({
-                                            when: null,
-                                            status: "ongoing",
-                                        })}
-                                    on:touchstart={handleButtonTouchStart}
-                                    on:touchend={handleButtonTouchEnd}
-                                    on:touchcancel={handleButtonTouchCancel}
-                                    aria-label="Remove schedule"
+                                        class="text-gray-400 hover:text-red-400 p-1"
+                                        on:click={() => updateQuest({ when: null, status: "ongoing" })}
                                     type="button"
-                                >
-                                    <svg
-                                        class="w-5 h-5"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
+                                        aria-label="Remove schedule"
                                     >
-                                        <path
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                            stroke-width="2"
-                                            d="M6 18L18 6M6 6l12 12"
-                                        />
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                                     </svg>
                                 </button>
                             </div>
                         </div>
+                        {:else}
+                            <p class="text-gray-500 text-xs">Not scheduled</p>
                     {/if}
+                    </div>
                 </div>
 
-                <!-- Participants Section -->
-                <div class="bg-gray-700/30 p-4 rounded-lg space-y-4">
-                    <div class="flex justify-between items-center">
-                        <h3
-                            class="text-lg font-semibold flex items-center gap-2"
-                        >
-                            <svg
-                                class="w-5 h-5 text-gray-400"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                            >
-                                <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    stroke-width="2"
-                                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                                />
+                <!-- Right column -->
+                <div class="space-y-3 min-h-0">
+                    <!-- Participants -->
+                    <div class="bg-gray-700/30 p-3 rounded-lg">
+                        <div class="flex justify-between items-center mb-2">
+                            <h4 class="text-sm font-medium text-gray-300 flex items-center gap-2">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
                             </svg>
-                            Participants
-                        </h3>
+                                Team
+                            </h4>
                         <button
-                            class="px-3 py-1.5 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                class="px-2 py-1 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 text-xs transition-colors"
                             on:click|stopPropagation={fetchUsersAndShowDropdown}
-                            on:touchstart={handleButtonTouchStart}
-                            on:touchend={handleButtonTouchEnd}
-                            on:touchcancel={handleButtonTouchCancel}
-                            disabled={!holosphere}
                             type="button"
                         >
-                            + Add Participant
+                                + Add
                         </button>
                     </div>
 
-                    <!-- Current Participants List -->
-                    <div class="space-y-2">
+                        <!-- Participants list -->
                         {#if quest.participants?.length}
+                            <div class="space-y-1">
                             {#each quest.participants as participant}
                                 {@const currentTime = quest.timeTracking?.[participant.id] || 0}
-                                <div
-                                    class="flex items-center justify-between bg-gray-700/50 p-3 rounded-lg border border-gray-600/50"
-                                >
+                                    <div class="flex items-center justify-between bg-gray-800 p-2 rounded text-sm">
                                     <div class="flex items-center gap-2">
                                         <img
                                             src={`https://telegram.holons.io/getavatar?user_id=${participant.id}`}
                                             alt={`${participant.firstName} ${participant.lastName || ""}`}
-                                            class="w-8 h-8 rounded-full"
+                                                class="w-6 h-6 rounded-full"
                                         />
-                                        <div class="flex flex-col">
-                                            <span class="text-sm font-medium">
+                                            <div>
+                                                <div class="text-gray-300">
                                                 {participant.firstName} {participant.lastName || ""}
-                                            </span>
-                                            <span class="text-xs text-gray-400">
-                                                {formatTime(currentTime)}
-                                            </span>
+                                                </div>
+                                                {#if currentTime > 0}
+                                                    <div class="text-xs text-gray-400">{formatTime(currentTime)}</div>
+                                                {/if}
                                         </div>
                                     </div>
                                     
                                     <div class="flex items-center gap-1">
-                                        <!-- Time tracking buttons -->
                                         <button
-                                            class="px-2 py-1 bg-red-500/20 text-red-400 rounded border border-red-500/50 hover:bg-red-500/30 transition-colors text-xs font-medium touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center"
-                                            on:click={() => updateTimeTracking(participant.id, -1)}
-                                            on:touchstart={handleButtonTouchStart}
-                                            on:touchend={handleButtonTouchEnd}
-                                            on:touchcancel={handleButtonTouchCancel}
-                                            disabled={currentTime === 0}
-                                            title="Remove 1 hour"
-                                            type="button"
-                                        >
-                                            -1h
-                                        </button>
-                                        <button
-                                            class="px-2 py-1 bg-red-500/20 text-red-400 rounded border border-red-500/50 hover:bg-red-500/30 transition-colors text-xs font-medium touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center"
-                                            on:click={() => updateTimeTracking(participant.id, -0.25)}
-                                            on:touchstart={handleButtonTouchStart}
-                                            on:touchend={handleButtonTouchEnd}
-                                            on:touchcancel={handleButtonTouchCancel}
-                                            disabled={currentTime === 0}
-                                            title="Remove 15 minutes"
-                                            type="button"
-                                        >
-                                            -15m
-                                        </button>
-                                        <button
-                                            class="px-2 py-1 bg-green-500/20 text-green-400 rounded border border-green-500/50 hover:bg-green-500/30 transition-colors text-xs font-medium touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center"
+                                                class="px-1 py-0.5 bg-green-500/20 text-green-400 rounded text-xs hover:bg-green-500/30"
                                             on:click={() => updateTimeTracking(participant.id, 0.25)}
-                                            on:touchstart={handleButtonTouchStart}
-                                            on:touchend={handleButtonTouchEnd}
-                                            on:touchcancel={handleButtonTouchCancel}
                                             title="Add 15 minutes"
                                             type="button"
                                         >
                                             +15m
                                         </button>
                                         <button
-                                            class="px-2 py-1 bg-green-500/20 text-green-400 rounded border border-green-500/50 hover:bg-green-500/30 transition-colors text-xs font-medium touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center"
-                                            on:click={() => updateTimeTracking(participant.id, 1)}
-                                            on:touchstart={handleButtonTouchStart}
-                                            on:touchend={handleButtonTouchEnd}
-                                            on:touchcancel={handleButtonTouchCancel}
-                                            title="Add 1 hour"
+                                                class="text-gray-400 hover:text-red-400 p-1"
+                                                on:click={() => removeParticipant(participant.id)}
                                             type="button"
-                                        >
-                                            +1h
-                                        </button>
-                                        
-                                        <!-- Remove participant button -->
-                                        <button
-                                            class="text-gray-400 hover:text-red-400 transition-colors touch-manipulation min-h-[32px] min-w-[32px] flex items-center justify-center p-1 ml-2"
-                                            on:click={() =>
-                                                removeParticipant(participant.id)}
-                                            on:touchstart={handleButtonTouchStart}
-                                            on:touchend={handleButtonTouchEnd}
-                                            on:touchcancel={handleButtonTouchCancel}
                                             aria-label={`Remove participant ${participant.firstName}`}
-                                            title="Remove participant"
-                                            type="button"
-                                        >
-                                            <svg
-                                                class="w-4 h-4"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
                                             >
-                                                <path
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"
-                                                    stroke-width="2"
-                                                    d="M6 18L18 6M6 6l12 12"
-                                                />
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                                             </svg>
                                         </button>
                                     </div>
                                 </div>
                             {/each}
+                            </div>
                         {:else}
-                            <p class="text-gray-500 text-sm">
-                                No participants yet
-                            </p>
+                            <p class="text-gray-500 text-xs">No participants</p>
                         {/if}
 
-                        <!-- Total time summary -->
+                        <!-- Time summary -->
                         {#if quest.timeTracking && Object.keys(quest.timeTracking).length > 0}
                             {@const totalHours = Object.values(quest.timeTracking).reduce((sum: number, hours: any) => sum + (hours as number), 0)}
                             {#if totalHours > 0}
-                                <div class="bg-gray-700/30 p-3 rounded-lg border border-gray-600/30 mt-3">
-                                    <div class="flex items-center justify-between">
-                                        <span class="text-sm font-medium text-gray-300">Total Time Logged:</span>
-                                        <span class="text-sm font-bold text-white">{formatTime(totalHours as number)}</span>
-                                    </div>
+                                <div class="bg-gray-800 p-2 rounded text-xs text-center border-t border-gray-600 mt-2">
+                                    <span class="text-gray-400">Total: </span>
+                                    <span class="text-white font-medium">{formatTime(totalHours as number)}</span>
                                 </div>
                             {/if}
                         {/if}
-                    </div>
 
                     <!-- User Dropdown -->
                     {#if showDropdown}
                         {@const availableUsers = Object.entries(userStore).filter(([userId]) => !isUserParticipant(userId))}
-                        {@const allUsers = Object.entries(userStore)}
-                        <div
-                            class="bg-gray-700 rounded-lg overflow-hidden mt-2 user-dropdown border border-gray-600"
-                        >
+                            <div class="bg-gray-700 rounded-lg overflow-hidden mt-2 user-dropdown border border-gray-600 max-h-32 overflow-y-auto">
                             {#each availableUsers as [userId, user]}
                                 <button
-                                    class="w-full text-left px-4 py-2 transition-colors flex items-center gap-2 hover:bg-gray-600 text-gray-200 touch-manipulation min-h-[44px]"
-                                    on:click|stopPropagation={() =>
-                                        toggleParticipant(userId)}
-                                    on:touchstart={handleButtonTouchStart}
-                                    on:touchend={handleButtonTouchEnd}
-                                    on:touchcancel={handleButtonTouchCancel}
+                                        class="w-full text-left px-3 py-2 transition-colors flex items-center gap-2 hover:bg-gray-600 text-gray-200 text-sm"
+                                        on:click|stopPropagation={() => toggleParticipant(userId)}
                                     type="button"
                                 >
                                     <img
                                         src={`https://telegram.holons.io/getavatar?user_id=${user.id}`}
                                         alt={user.first_name}
-                                        class="w-6 h-6 rounded-full"
+                                            class="w-5 h-5 rounded-full"
                                     />
-                                    <span
-                                        >{user.first_name}
-                                        {user.last_name || ""}</span
-                                    >
+                                        <span>{user.first_name} {user.last_name || ""}</span>
                                 </button>
                             {/each}
                             {#if availableUsers.length === 0}
-                                <div class="px-4 py-2 text-gray-400 text-sm">
-                                    No more users available
-                                </div>
+                                    <div class="px-3 py-2 text-gray-400 text-xs">No more users available</div>
                             {/if}
                         </div>
                     {/if}
                 </div>
 
-                <!-- Checklist Section -->
-                <div class="bg-gray-700/30 p-4 rounded-lg">
-                    <div class="flex justify-between items-center">
-                        <h3 class="text-lg font-semibold flex items-center gap-2">
-                            <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                    <!-- Quick Actions -->
+                    <div class="bg-gray-700/30 p-3 rounded-lg">
+                        <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                             </svg>
-                            Checklist
-                        </h3>
+                            Actions
+                        </h4>
+                        <div class="space-y-1">
                         {#if quest.checklistId}
                             <button
-                                class="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm transition-colors flex items-center gap-2 touch-manipulation min-h-[44px] min-w-[44px] justify-center"
+                                    class="w-full px-2 py-1 bg-teal-500/20 text-teal-300 rounded text-xs hover:bg-teal-500/30 transition-colors flex items-center gap-2"
                                 on:click={navigateToChecklist}
-                                on:touchstart={handleButtonTouchStart}
-                                on:touchend={handleButtonTouchEnd}
-                                on:touchcancel={handleButtonTouchCancel}
                                 type="button"
                             >
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                                 </svg>
                                 View Checklist
                             </button>
                         {:else}
                             <button
-                                class="px-3 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                    class="w-full px-2 py-1 bg-gray-600 text-gray-300 rounded text-xs hover:bg-gray-500 transition-colors flex items-center gap-2"
                                 on:click={createChecklistForTask}
-                                on:touchstart={handleButtonTouchStart}
-                                on:touchend={handleButtonTouchEnd}
-                                on:touchcancel={handleButtonTouchCancel}
                                 type="button"
                             >
-                                + Create Checklist
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                    </svg>
+                                    Create Checklist
                             </button>
                         {/if}
                     </div>
                 </div>
 
-                <!-- Action Buttons -->
-                <div class="flex gap-2 pt-4">
-                    <button
-                        class="px-4 py-2 bg-gray-700/50 text-red-400 rounded-lg hover:bg-gray-600 border border-red-500/50 transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
-                        on:click={deleteQuest}
-                        on:touchstart={handleButtonTouchStart}
-                        on:touchend={handleButtonTouchEnd}
-                        on:touchcancel={handleButtonTouchCancel}
-                        type="button"
-                    >
-                        Delete Task
-                    </button>
-
-                    <button
-                        class="px-4 py-2 bg-gray-700/50 {quest.status ===
-                        'completed'
-                            ? 'text-yellow-400 border-yellow-500/50'
-                            : 'text-green-400 border-green-500/50'} rounded-lg border hover:bg-gray-600 transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
-                        on:click={completeQuest}
-                        on:touchstart={handleButtonTouchStart}
-                        on:touchend={handleButtonTouchEnd}
-                        on:touchcancel={handleButtonTouchCancel}
-                        type="button"
-                    >
-                        {quest.status === "completed"
-                            ? "Mark Ongoing"
-                            : "Mark Complete"}
-                    </button>
-
-                    <button
-                        class="px-4 py-2 bg-gray-700/50 text-blue-400 rounded-lg hover:bg-gray-600 border border-blue-500/50 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation min-h-[44px] min-w-[44px] justify-center"
-                        on:click={publishToFederatedChats}
-                        on:touchstart={handleButtonTouchStart}
-                        on:touchend={handleButtonTouchEnd}
-                        on:touchcancel={handleButtonTouchCancel}
-                        disabled={isPublishing}
-                        title={quest.published ? 
-                            `Cast to ${quest.publishedTo || 'federated'} chat(s) on ${new Date(quest.publishedAt).toLocaleDateString()}` : 
-                            'Cast this task to federated chats'
-                        }
-                        type="button"
-                        style="display: none"
-                    >
-                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"/>
-                        </svg>
-                        {#if isPublishing}
-                            <span class="text-sm">{publishStatus}</span>
-                        {:else if quest.published}
-                            <span class="text-sm">Cast</span>
-                        {:else}
-                            <span class="text-sm">Cast</span>
-                        {/if}
-                    </button>
+                    <!-- Recurring Task Info -->
+                    {#if quest.recurringTaskId || quest.status === 'recurring' || quest.status === 'repeating'}
+                        <div class="bg-gray-700/30 p-3 rounded-lg">
+                            <h4 class="text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                                Recurring
+                            </h4>
+                            <div class="space-y-1 text-xs text-gray-400">
+                                {#if quest.recurringTaskId}
+                                    <div>ID: {quest.recurringTaskId}</div>
+                                {/if}
+                                <div>Status: {quest.status}</div>
+                            </div>
+                        </div>
+                    {/if}
                 </div>
+            </div>
+
+            <!-- Footer Actions -->
+            <div class="border-t border-gray-700 p-4">
+                <div class="flex gap-2 justify-between">
+                    <button
+                        class="px-3 py-2 bg-red-500/10 text-red-400 rounded hover:bg-red-500/20 border border-red-500/30 transition-colors text-sm flex items-center gap-2"
+                        on:click={deleteQuest}
+                        type="button"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                        Delete
+                    </button>
+
+                    <div class="flex gap-2">
+                    <button
+                            class="px-4 py-2 bg-purple-500/10 text-purple-400 rounded hover:bg-purple-500/20 border border-purple-500/30 transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        on:click={publishToFederatedChats}
+                        disabled={isPublishing}
+                        type="button"
+                        title="Publish this task as a hologram to all federated holons"
+                    >
+                        {#if isPublishing}
+                            <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                        {:else}
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+                            </svg>
+                        {/if}
+                        Publish to Federation
+                    </button>
+                    <button
+                            class="px-4 py-2 {quest.status === 'completed'
+                                ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
+                                : 'bg-green-500/10 text-green-400 border-green-500/30'} rounded border hover:bg-opacity-20 transition-colors text-sm font-medium"
+                        on:click={completeQuest}
+                        type="button"
+                    >
+                            {quest.status === "completed" ? "Mark Ongoing" : "Mark Complete"}
+                    </button>
+                    </div>
+                </div>
+
+                {#if publishStatus}
+                    <div class="mt-2 px-3 py-2 rounded text-sm {publishStatus.includes('Published') ? 'bg-green-500/10 text-green-400 border border-green-500/30' : publishStatus.includes('Failed') || publishStatus.includes('Error') ? 'bg-red-500/10 text-red-400 border border-red-500/30' : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'}">
+                        {publishStatus}
+                    </div>
+                {/if}
             </div>
         </div>
     </div>

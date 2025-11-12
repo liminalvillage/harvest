@@ -77,7 +77,13 @@
             const qrCodeSuccessCallback = (decodedText: string) => {
                 console.log('QR Code detected:', decodedText);
                 dispatch('scan', { decodedText });
-                stopScanner();
+                // Add a small delay to allow the scanner to finish processing
+                // This prevents "Cannot transition to a new state" error
+                setTimeout(() => {
+                    stopScanner();
+                    // Also dispatch close event to ensure parent knows to hide the scanner
+                    dispatch('close');
+                }, 100);
             };
 
             const qrCodeErrorCallback = (errorMessage: string) => {
@@ -211,22 +217,11 @@
         position: relative;
         background: black;
     }
-    
-    #qr-reader video {
-        width: 100% !important;
-        height: 100% !important;
-        object-fit: cover !important;
-        border-radius: 0.5rem;
-        display: block !important;
-    }
 
-    #qr-reader > div {
-        width: 100% !important;
-        height: 100% !important;
-        display: block !important;
-    }
-    
-    #qr-reader canvas {
-        display: none !important;
+    /* Mirror the video feed for better user experience */
+    /* The camera preview should act like a mirror */
+    :global(#qr-reader video) {
+        transform: scaleX(-1);
+        -webkit-transform: scaleX(-1);
     }
 </style> 

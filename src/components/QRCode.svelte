@@ -4,7 +4,9 @@
 
 	export let action: string = '';
 	export let title: string = '';
-	export let chatId: string = '';
+	export let holonID: string = '';
+	export let deckId: string = '';
+	export let cardId: string = '';
 	export let desc: string = '';
 
 	let qrContainer: HTMLDivElement;
@@ -15,14 +17,17 @@
 	});
 
 	function generateQRCode() {
-		if (!action || !title || !chatId) {
+		if (!action || !title || !holonID) {
 			console.error('Missing required parameters for QR code generation');
 			return;
 		}
 
+		// Normalize action type - treat 'action' as 'task'
+		const normalizedAction = action.toLowerCase() === 'action' ? 'task' : action;
+
 		// Create the URL that the QR code should point to
-		// Note: We're using the same URL structure as the original request
-		const qrUrl = `https://dashboard.holons.io/qr?action=${encodeURIComponent(action)}&title=${encodeURIComponent(title)}&chatId=${encodeURIComponent(chatId)}&desc=${encodeURIComponent(desc)}`;
+		// Using the new URL structure with holonID, deckId, and cardId
+		const qrUrl = `https://dashboard.holons.io/qr?action=${encodeURIComponent(normalizedAction)}&title=${encodeURIComponent(title)}&desc=${encodeURIComponent(desc)}&holonID=${encodeURIComponent(holonID)}&deckId=${encodeURIComponent(deckId)}&cardId=${encodeURIComponent(cardId)}`;
 		
 		// Generate SVG QR code using a reliable service
 		// SVG format provides better quality and scalability
@@ -46,7 +51,7 @@
 		document.body.removeChild(link);
 	}
 
-	$: if (action && title && chatId) {
+	$: if (action && title && holonID) {
 		generateQRCode();
 	}
 </script>
@@ -54,7 +59,7 @@
 <div class="role-card">
 	<!-- Title Section -->
 	<div class="card-title">
-		<span class="title-text">BADGE</span>
+		<span class="title-text">{(action.toLowerCase() === 'action' ? 'TASK' : action.toUpperCase())}</span>
 	</div>
 	
 	<!-- Icon/QR Code Section -->
@@ -84,8 +89,14 @@
 		
 		<!-- Action Info -->
 		<div class="action-info">
-			<p><strong>Action:</strong> {action}</p>
-			<p><strong>Chat ID:</strong> {chatId}</p>
+			<p><strong>Action:</strong> {action.toLowerCase() === 'action' ? 'task' : action}</p>
+			<p><strong>Holon ID:</strong> {holonID}</p>
+			{#if deckId}
+				<p><strong>Deck ID:</strong> {deckId}</p>
+			{/if}
+			{#if cardId}
+				<p><strong>Card ID:</strong> {cardId}</p>
+			{/if}
 		</div>
 		
 		<!-- Download Button -->

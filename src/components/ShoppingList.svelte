@@ -368,13 +368,23 @@
                                                     {item.id}
                                                 </h3>
                                                 {#if item._meta?.resolvedFromHologram}
-                                                    <button 
-                                                        class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/20 text-indigo-300 flex-shrink-0 hover:bg-indigo-500/30 transition-colors" 
+                                                    <div 
+                                                        class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-500/20 text-indigo-300 flex-shrink-0 hover:bg-indigo-500/30 transition-colors cursor-pointer" 
                                                         title="Navigate to source holon: {getHologramSource(item._meta.hologramSoul)}"
                                                         on:click|stopPropagation={() => {
                                                             const match = item._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
                                                             if (match) {
                                                                 window.location.href = `/${match[1]}/shopping`;
+                                                            }
+                                                        }}
+                                                        role="button"
+                                                        tabindex="0"
+                                                        on:keydown|stopPropagation={(e) => {
+                                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                                const match = item._meta?.hologramSoul?.match(/Holons\/([^\/]+)/);
+                                                                if (match) {
+                                                                    window.location.href = `/${match[1]}/shopping`;
+                                                                }
                                                             }
                                                         }}
                                                     >
@@ -385,7 +395,7 @@
                                                         <svg class="w-2 h-2" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
                                                         </svg>
-                                                    </button>
+                                                    </div>
                                                 {/if}
                                             </div>
                                             <p class="text-sm" class:text-gray-500={item.done} class:text-gray-400={!item.done}>
@@ -506,8 +516,5 @@
     /* Toggle switch styling */
     .dot {
         transition: transform 0.3s ease-in-out;
-    }
-    .translate-x-5 {
-        transform: translateX(1.25rem);
     }
 </style>

@@ -7,8 +7,6 @@
     import { browser } from "$app/environment";
     import HoloSphere from "holosphere";
     import { ID, walletAddress } from "../dashboard/store";
-    import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
-    import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
     import { 
         savePersonalHolons, 
         loadPersonalHolons, 
@@ -19,6 +17,8 @@
         type PersonalHolon,
         type VisitedHolon
     } from "../utils/localStorage";
+    import { fetchHolonName, clearHolonNameCache, clearFallbackNames, forceRefreshHolonName } from "../utils/holonNames";
+    import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
     import QRScanner from "./QRScanner.svelte";
 
     // Initialize holosphere
@@ -87,6 +87,13 @@
     let activeTab: 'personal' | 'visited' = 'personal';
     let showSplashScreen = false;
     let showHolonIdInfo = false;
+    
+    // Progress tracking for name fetching
+    let nameFetchProgress = {
+        total: 0,
+        completed: 0,
+        current: ''
+    };
 
     // Add a function to refresh visited holon names that can be called externally
     async function refreshVisitedHolonNames() {
@@ -97,10 +104,9 @@
             const freshVisitedHolons = loadVisitedHolons($walletAddress);
             visitedHolons = freshVisitedHolons;
             
-            // Update the names (cache clearing is handled in updateVisitedHolonDetails)
+            // Update the names synchronously - wait for ALL names to be fetched
             await updateVisitedHolonDetails();
             
-            console.log('Refreshed visited holon names:', visitedHolons);
         } catch (err) {
             console.error('Error refreshing visited holon names:', err);
         }
@@ -111,12 +117,49 @@
         if (!holosphere || !connectionReady) return;
         
         try {
-            // Re-fetch names for all personal holons (cache clearing is handled in updateNamesSync)
-            await updateHolonDetails();
-            
-            console.log('Refreshed personal holon names:', myHolons);
+            // Re-fetch names for all personal holons synchronously - wait for ALL names to be fetched
+            await updateNamesSync();
         } catch (err) {
             console.error('Error refreshing personal holon names:', err);
+        }
+    }
+
+    // Add a comprehensive refresh function that updates ALL names before displaying
+    async function refreshAllHolonNames() {
+        if (!holosphere || !connectionReady) return;
+        
+        try {
+            // Reset progress tracking
+            nameFetchProgress = {
+                total: 0,
+                completed: 0,
+                current: ''
+            };
+            
+            // Clear ALL fallback names from cache to force re-fetching
+            clearFallbackNames();
+            
+            // Load fresh data from localStorage
+            loadPersonalHolonsFromStorage();
+            const freshVisitedHolons = loadVisitedHolons($walletAddress);
+            visitedHolons = freshVisitedHolons;
+            
+            // Update ALL names synchronously using Promise.all to wait for completion
+            const updatePromises = [
+                updateNamesSync(),
+                updateVisitedHolonDetails()
+            ];
+            
+            // Wait for ALL name updates to complete before continuing
+            await Promise.all(updatePromises);
+            
+            // Save the updated data
+            savePersonalHolonsToStorage();
+            if ($walletAddress) {
+                saveVisitedHolons($walletAddress, visitedHolons);
+            }
+        } catch (err) {
+            console.error('Error in comprehensive refresh of holon names:', err);
         }
     }
 
@@ -129,19 +172,55 @@
         refreshPersonalHolonNames();
     }
 
-    // Filtered holons
-    $: filteredHolons = myHolons.filter(holon => 
+    // Add handler for comprehensive refresh
+    function handleRefreshAllRequest() {
+        refreshAllHolonNames();
+    }
+
+    // Handle holon name update event from Settings
+    function handleHolonNameUpdated(event: CustomEvent) {
+        const { holonId, newName } = event.detail;
+        if (holonId && newName) {
+            // Update the name in personal holons
+            const personalIndex = myHolons.findIndex(h => h.id === holonId);
+            if (personalIndex !== -1) {
+                myHolons[personalIndex].name = newName;
+                myHolons = [...myHolons];
+                savePersonalHolonsToStorage();
+            }
+
+            // Update the name in visited holons
+            const visitedIndex = visitedHolons.findIndex(h => h.id === holonId);
+            if (visitedIndex !== -1) {
+                visitedHolons[visitedIndex].name = newName;
+                visitedHolons = [...visitedHolons];
+                if ($walletAddress) {
+                    saveVisitedHolons($walletAddress, visitedHolons);
+                }
+            }
+
+            // Update the name in federated holons
+            const federatedIndex = federatedHolons.findIndex(h => h.id === holonId);
+            if (federatedIndex !== -1) {
+                federatedHolons[federatedIndex].name = newName;
+                federatedHolons = [...federatedHolons];
+            }
+        }
+    }
+
+    // Filtered holons - ensure names are properly displayed
+    $: filteredHolons = myHolons.filter(holon =>
         holon.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         holon.id.toLowerCase().includes(searchQuery.toLowerCase())
     ).sort((a, b) => {
         let aVal: any = a[sortBy];
         let bVal: any = b[sortBy];
-        
+
         if (typeof aVal === 'string') {
             aVal = aVal.toLowerCase();
             bVal = bVal.toLowerCase();
         }
-        
+
         const multiplier = sortDirection === 'asc' ? 1 : -1;
         return aVal > bVal ? multiplier : -multiplier;
     });
@@ -168,8 +247,15 @@
             if (holosphere) {
                 // Wait a bit for holosphere to initialize
                 await new Promise(resolve => setTimeout(resolve, 1000));
-                connectionReady = true;
-                console.log('Holosphere connection ready');
+                
+                // Test the connection by trying to access a simple property
+                try {
+                    // Try to access a simple property to test connection
+                    const testResult = await holosphere.get('test', 'test', 'test').catch(() => null);
+                    connectionReady = true;
+                } catch (connErr) {
+                    connectionReady = true; // Still mark as ready to avoid blocking
+                }
             } else {
                 throw new Error('Holosphere not available');
             }
@@ -193,6 +279,8 @@
         if (browser) {
             window.addEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
             window.addEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
+            window.addEventListener('refreshAllHolonNames', handleRefreshAllRequest);
+            window.addEventListener('holonNameUpdated', handleHolonNameUpdated);
         }
     });
 
@@ -205,6 +293,8 @@
         if (browser) {
             window.removeEventListener('refreshVisitedHolonNames', handleRefreshVisitedRequest);
             window.removeEventListener('refreshPersonalHolonNames', handleRefreshPersonalRequest);
+            window.removeEventListener('refreshAllHolonNames', handleRefreshAllRequest);
+            window.removeEventListener('holonNameUpdated', handleHolonNameUpdated);
         }
     });
 
@@ -214,6 +304,13 @@
         isLoading = true;
         loadingMessage = 'Loading holons...';
         error = '';
+        
+        // Reset progress tracking
+        nameFetchProgress = {
+            total: 0,
+            completed: 0,
+            current: ''
+        };
         
         try {
             // Load personal holons from localStorage
@@ -233,20 +330,27 @@
             });
             await Promise.race([federatedPromise, federatedTimeout]);
             
-            // Update holon names FIRST and immediately
-            loadingMessage = 'Updating holon names...';
-            const updatePromise = updateHolonDetails();
-            const updateVisitedPromise = updateVisitedHolonDetails();
+            // Update ALL holon names comprehensively - wait for ALL names to be fetched
+            loadingMessage = 'Updating ALL holon names...';
+            const updatePromises = [
+                updateNamesSync(),
+                updateVisitedHolonDetails()
+            ];
+            
+            // Wait for ALL name updates to complete before continuing
             const updateTimeout = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('Update details timeout')), 10000);
+                setTimeout(() => reject(new Error('Update details timeout')), 15000); // Increased timeout
             });
-            await Promise.race([Promise.all([updatePromise, updateVisitedPromise]), updateTimeout]);
+            await Promise.race([Promise.all(updatePromises), updateTimeout]);
             
             // Note: Removed the duplicate call to addVisitedHolonToSeparateList here
             // as it's already handled by TopBar component
             
             // Save once at the end of all loading and updates
             savePersonalHolonsToStorage();
+            if ($walletAddress) {
+                saveVisitedHolons($walletAddress, visitedHolons);
+            }
             
         } catch (err) {
             console.error('Error loading data:', err);
@@ -324,30 +428,49 @@
 
     async function updateNamesSync() {
         // Update names synchronously in the same pattern as stats
-        const namePromises = myHolons.map(async (holon) => {
+        const totalHolons = myHolons.length;
+        nameFetchProgress.total = totalHolons;
+        nameFetchProgress.completed = 0;
+        nameFetchProgress.current = '';
+
+        const namePromises = myHolons.map(async (holon, index) => {
             try {
-                // Clear cache for this specific holon to ensure fresh data
-                clearHolonNameCache(holon.id);
-                
-                const name = await fetchHolonName(holosphere, holon.id);
-                
-                // Update the specific holon with new name (same pattern as stats)
-                const updatedHolon = { ...holon, name };
-                const index = myHolons.findIndex(h => h.id === holon.id);
-                if (index !== -1) {
-                    myHolons[index] = updatedHolon;
+                // Update progress
+                nameFetchProgress.current = `Fetching name for ${holon.id}...`;
+
+                // Use force refresh to ensure we get fresh data
+                const name = await forceRefreshHolonName(holosphere, holon.id);
+
+                // Only update if we got a real name (not a fallback)
+                if (name && name.trim() !== '' && name !== `Holon ${holon.id}`) {
+                    // Update the specific holon with new name (same pattern as stats)
+                    const updatedHolon = { ...holon, name };
+                    const holonIndex = myHolons.findIndex(h => h.id === holon.id);
+                    if (holonIndex !== -1) {
+                        myHolons[holonIndex] = updatedHolon;
+                    }
+
+                    // Update progress
+                    nameFetchProgress.current = `Updated ${holon.id}: ${name}`;
+                } else {
+                    // Keep the existing name if we didn't get a better one
+                    nameFetchProgress.current = `Keeping existing name for ${holon.id}`;
                 }
-                
-                console.log(`Updated name for holon ${holon.id}: ${name}`);
+
+                nameFetchProgress.completed++;
             } catch (err) {
                 console.warn(`Failed to update name for holon ${holon.id}:`, err);
+                // Still count as completed even if it failed
+                nameFetchProgress.completed++;
             }
         });
-        
+
         // Await all name updates to complete before continuing
         await Promise.allSettled(namePromises);
-        console.log('All name updates completed');
-        
+
+        // Reset progress
+        nameFetchProgress.current = 'All names updated successfully!';
+
         // Trigger reactivity
         myHolons = [...myHolons];
     }
@@ -356,30 +479,44 @@
         if (!visitedHolons || visitedHolons.length === 0) return;
 
         // Update visited holon names using the same pattern as personal holons
+        const totalVisited = visitedHolons.length;
+        nameFetchProgress.total += totalVisited;
+
         const namePromises = visitedHolons.map(async (holon) => {
             try {
-                // Clear cache for this specific holon to ensure fresh data
-                clearHolonNameCache(holon.id);
-                
-                const name = await fetchHolonName(holosphere, holon.id);
-                
-                // Update the specific holon with new name (same pattern as stats)
-                const updatedHolon = { ...holon, name };
-                const index = visitedHolons.findIndex(h => h.id === holon.id);
-                if (index !== -1) {
-                    visitedHolons[index] = updatedHolon;
+                // Update progress
+                nameFetchProgress.current = `Fetching name for visited holon ${holon.id}...`;
+
+                // Use force refresh to ensure we get fresh data
+                const name = await forceRefreshHolonName(holosphere, holon.id);
+
+                // Only update if we got a real name (not a fallback)
+                if (name && name.trim() !== '' && name !== `Holon ${holon.id}`) {
+                    // Update the specific holon with new name (same pattern as stats)
+                    const updatedHolon = { ...holon, name };
+                    const index = visitedHolons.findIndex(h => h.id === holon.id);
+                    if (index !== -1) {
+                        visitedHolons[index] = updatedHolon;
+                    }
+
+                    // Update progress
+                    nameFetchProgress.current = `Updated visited ${holon.id}: ${name}`;
+                } else {
+                    // Keep the existing name if we didn't get a better one
+                    nameFetchProgress.current = `Keeping existing name for visited ${holon.id}`;
                 }
-                
-                console.log(`Updated name for visited holon ${holon.id}: ${name}`);
+
+                nameFetchProgress.completed++;
             } catch (err) {
                 console.warn(`Failed to update name for visited holon ${holon.id}:`, err);
+                // Still count as completed even if it failed
+                nameFetchProgress.completed++;
             }
         });
-        
+
         // Await all name updates to complete before continuing
         await Promise.allSettled(namePromises);
-        console.log('All visited holon name updates completed');
-        
+
         // Trigger reactivity and save
         visitedHolons = [...visitedHolons];
         if ($walletAddress) {
@@ -549,17 +686,48 @@
                 // It's a full URL, try to parse it
                 const url = new URL(decodedText);
                 const pathParts = url.pathname.split('/').filter(part => part.trim() !== '');
-                
-                // Look for holon ID in the path
-                if (pathParts.length > 0) {
-                    // Take the last non-empty part of the path
-                    holonId = pathParts[pathParts.length - 1];
+
+                // Common path endings that are not holon IDs
+                const excludedPaths = ['dashboard', 'qr', 'settings', 'admin', 'holons', 'tasks', 'offers', 'map', 'council', 'proposals'];
+
+                // Look for holon ID in the path - find the first numeric or alphanumeric ID
+                for (const part of pathParts) {
+                    // Skip common path endings
+                    if (excludedPaths.includes(part.toLowerCase())) {
+                        continue;
+                    }
+
+                    // If it's all numeric or looks like a holon ID, use it
+                    if (/^[a-zA-Z0-9\-_]+$/.test(part) && part.length > 3) {
+                        holonId = part;
+                        break;
+                    }
+                }
+
+                // If no suitable holon ID found, fall back to first path part
+                if (holonId === decodedText && pathParts.length > 0) {
+                    holonId = pathParts[0];
                 }
             } else if (decodedText.includes('/')) {
-                // It's a relative path, split by '/' and take the last part
+                // It's a relative path, split by '/' and use smarter logic
                 const pathParts = decodedText.split('/').filter(part => part.trim() !== '');
-                if (pathParts.length > 0) {
-                    holonId = pathParts[pathParts.length - 1];
+                const excludedPaths = ['dashboard', 'qr', 'settings', 'admin', 'holons', 'tasks', 'offers', 'map', 'council', 'proposals'];
+
+                // Find the first part that looks like a holon ID
+                for (const part of pathParts) {
+                    if (excludedPaths.includes(part.toLowerCase())) {
+                        continue;
+                    }
+
+                    if (/^[a-zA-Z0-9\-_]+$/.test(part) && part.length > 3) {
+                        holonId = part;
+                        break;
+                    }
+                }
+
+                // Fall back to first part if nothing found
+                if (holonId === decodedText && pathParts.length > 0) {
+                    holonId = pathParts[0];
                 }
             }
             
@@ -649,20 +817,51 @@
     }
 
     function navigateToHolon(holonId: string) {
+        console.log('[MyHolons] navigateToHolon called with:', holonId);
+
+        if (!holonId || holonId === 'undefined' || holonId === 'null') {
+            console.error('[MyHolons] Invalid holon ID:', holonId);
+            return;
+        }
+
         ID.set(holonId);
-        
+
+        // Find the holon name from our loaded holons
+        let holonName: string | undefined;
+        const foundHolon = [...myHolons, ...visitedHolons, ...federatedHolons].find(h => h.id === holonId);
+        if (foundHolon) {
+            holonName = foundHolon.name;
+            console.log('[MyHolons] Found holon name:', holonName);
+        } else {
+            console.warn('[MyHolons] Could not find holon in loaded lists');
+        }
+
+        // Dispatch event with the holon name so TopBar can use it immediately
+        if (browser && holonName) {
+            window.dispatchEvent(new CustomEvent('holonNavigated', {
+                detail: { holonId, holonName }
+            }));
+        }
+
         // Track this visit if wallet is connected
         if ($walletAddress) {
             addVisitedHolonToSeparateList(holonId);
         }
-        
+
+        console.log('[MyHolons] Navigating to:', `/${holonId}/dashboard`);
         goto(`/${holonId}/dashboard`);
     }
 
     // Drag and drop functionality
+    let isDragging = false;
+    let dragStartTime = 0;
+
     function handleDragStart(event: DragEvent, holon: MyHolon) {
         if (!event.dataTransfer) return;
-        
+
+        dragStartTime = Date.now();
+        isDragging = true;
+
         draggedHolon = holon;
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', holon.id);
@@ -704,8 +903,36 @@
     }
 
     function handleDragEnd() {
-        draggedHolon = null;
-        dragOverIndex = -1;
+        // Reset drag state after a small delay to prevent click interference
+        setTimeout(() => {
+            isDragging = false;
+            draggedHolon = null;
+            dragOverIndex = -1;
+        }, 100);
+    }
+
+    function handleHolonClick(event: MouseEvent, holonId: string) {
+        // Only navigate if this was a simple click (not part of a drag)
+        // Check if the mouse moved significantly during the click
+        const timeSinceDragStart = Date.now() - dragStartTime;
+
+        console.log('[MyHolons] handleHolonClick called', {
+            holonId,
+            isDragging,
+            timeSinceDragStart,
+            draggedHolon: draggedHolon?.id
+        });
+
+        // Allow navigation if:
+        // 1. Not currently dragging, OR
+        // 2. Drag just started (< 300ms), OR
+        // 3. No draggedHolon is set
+        if (!isDragging || timeSinceDragStart < 300 || !draggedHolon) {
+            console.log('[MyHolons] Proceeding with navigation');
+            navigateToHolon(holonId);
+        } else {
+            console.log('[MyHolons] Click ignored - dragging in progress');
+        }
     }
 
     function formatLastVisited(timestamp: number) {
@@ -821,7 +1048,7 @@
     <!-- Main MyHolons Interface -->
     <div class="p-6">
         <!-- Header -->
-        <div class="flex justify-end items-center mb-6">
+        <div class="flex justify-end items-center mb-6 gap-2">
             <button
                 on:click={() => showAddDialog = true}
                 class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
@@ -894,7 +1121,33 @@
         {#if isLoading}
             <div class="flex flex-col items-center justify-center py-12">
                 <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mb-4"></div>
-                <p class="text-gray-400 text-center">{loadingMessage}</p>
+                <p class="text-gray-400 text-center mb-2">{loadingMessage}</p>
+                
+                <!-- Show additional progress info when updating names -->
+                {#if loadingMessage.includes('Updating')}
+                    <div class="text-center text-sm text-gray-500 mb-4">
+                        <p>Fetching holon names from the network...</p>
+                        <p class="mt-1">This ensures all holons display with proper names instead of IDs</p>
+                        
+                        <!-- Progress bar for name fetching -->
+                        {#if nameFetchProgress.total > 0}
+                            <div class="mt-4 w-64">
+                                <div class="flex justify-between text-xs text-gray-400 mb-1">
+                                    <span>Progress: {nameFetchProgress.completed}/{nameFetchProgress.total}</span>
+                                    <span>{Math.round((nameFetchProgress.completed / nameFetchProgress.total) * 100)}%</span>
+                                </div>
+                                <div class="w-full bg-gray-700 rounded-full h-2">
+                                    <div 
+                                        class="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+                                        style="width: {(nameFetchProgress.completed / nameFetchProgress.total) * 100}%"
+                                    ></div>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-2 text-center">{nameFetchProgress.current}</p>
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+                
                 <button 
                     on:click={loadData}
                     class="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
@@ -915,7 +1168,7 @@
                         on:dragleave={handleDragLeave}
                         on:drop={(e) => handleDrop(e, index)}
                         on:dragend={handleDragEnd}
-                        on:click={() => navigateToHolon(holon.id)}
+                        on:click={(e) => handleHolonClick(e, holon.id)}
                         on:keydown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
@@ -1018,24 +1271,30 @@
             {:else if activeTab === 'visited'}
                 <!-- Visited Holons Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                    {#each visitedHolons.filter(h => 
+                    {#each visitedHolons.filter(h =>
                         h.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         h.id.toLowerCase().includes(searchQuery.toLowerCase())
-                    ).sort((a, b) => {
+                    ).map(holon => {
+                        // Ensure fallback names are not displayed for visited holons too
+                        const displayName = holon.name && holon.name.trim() !== '' && holon.name !== `Holon ${holon.id}`
+                            ? holon.name
+                            : holon.id;
+                        return { ...holon, name: displayName };
+                    }).sort((a, b) => {
                         let aVal: any = a[sortBy === 'lastVisited' ? 'lastVisited' : 'name'];
                         let bVal: any = b[sortBy === 'lastVisited' ? 'lastVisited' : 'name'];
-                        
+
                         if (typeof aVal === 'string') {
                             aVal = aVal.toLowerCase();
                             bVal = bVal.toLowerCase();
                         }
-                        
+
                         const multiplier = sortDirection === 'asc' ? 1 : -1;
                         return aVal > bVal ? multiplier : -multiplier;
                     }) as holon, index (holon.id)}
                         <div
                             class="h-full"
-                            on:click={() => navigateToHolon(holon.id)}
+                            on:click={(e) => handleHolonClick(e, holon.id)}
                             on:keydown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault();

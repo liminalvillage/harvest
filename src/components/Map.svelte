@@ -19,6 +19,8 @@
 	let mapContainer: HTMLElement;
 	let map: mapboxgl.Map;
 	let hexId: string;
+	let hexIdSetByUser = false; // Track if hexId was set by user clicking on map
+	let lastSyncedIdFromStore: string | undefined; // Track last ID synced from store to prevent loops
 	export let selectedLens: LensType = 'quests';
 	export let isVisible: boolean = true;
 	let holoSubscriptions = new Map();
@@ -28,6 +30,8 @@
 	let dragOffset = { x: 0, y: 0 };
 	let lastSidebarPosition: { x: number, y: number } | null = null;
 	let showLensInfo = false;
+	let geocoderContainer: HTMLElement;
+	let geolocateControl: mapboxgl.GeolocateControl;
 	let lensData: Record<LensType, Set<string>> = {
 		quests: new Set<string>(),
 		needs: new Set<string>(),
@@ -188,13 +192,19 @@
 			})
 		);
 
-		// Update the highlighted hexagons if any are visible at current resolution
-		if (visibleHighlightedHexes.size > 0) {
-			const highlightedSource = map.getSource("highlighted-hexagons");
-			if (highlightedSource) {
+		// Update the highlighted hexagons - always update to either show highlights or clear them
+		const highlightedSource = map.getSource("highlighted-hexagons");
+		if (highlightedSource) {
+			if (visibleHighlightedHexes.size > 0) {
 				highlightedSource.setData(
 					highlightHexagons(visibleHighlightedHexes, highlightColor)
 				);
+			} else {
+				// Clear highlights when no hexes have content
+				highlightedSource.setData({
+					type: "FeatureCollection",
+					features: []
+				});
 			}
 		}
 
@@ -420,7 +430,7 @@
 		const boundary = h3.cellToBoundary(hexId, true);
 		const [lat, lng] = h3.cellToLatLng(hexId);
 		const hexSize = h3.getHexagonEdgeLengthAvg(h3.getResolution(hexId), 'km') * 1000;
-		
+
 		// Create both polygon and point features for the selected hexagon
 		const features = {
 			type: "FeatureCollection" as const,
@@ -445,17 +455,18 @@
 				}
 			]
 		};
-		
+
 		map.getSource("selected-hexagon")?.setData(features);
-		
+
 		dispatch('holonChange', { id: hexId });
-		
-		ID.set(hexId);
+
+		// Don't update the global ID store - that should only reflect the current dashboard holon
+		// The hexId prop will be used by MapSidebar to show the selected hexagon's data
 		goToHex(hexId);
 
 		// Show sidebar when hexagon is selected
 		showSidebar = true;
-		
+
 		// If we have a saved position, use it, otherwise calculate a new position
 		if (lastSidebarPosition) {
 			sidebarPosition = lastSidebarPosition;
@@ -470,9 +481,7 @@
 
 	// Update the lens selection to use fetch instead of subscribe
 	$: if (map && selectedLens) {
-		// Add a console log to track lens changes
-		console.log(`[Map] Lens selection triggered: ${selectedLens}`);
-		
+
 		// Clear only the highlighted hexagons visually
 		map.getSource("highlighted-hexagons")?.setData({
 			type: "FeatureCollection",
@@ -484,7 +493,6 @@
 		
 		// Schedule a fetch after a short delay
 		moveTimeout = window.setTimeout(() => {
-			console.log(`[Map] Fetching data for lens: ${selectedLens}`);
 			// Clear only the previous lens data before fetching new data
 			lensData[selectedLens] = new Set<string>();
 			fetchLensData(selectedLens);
@@ -498,7 +506,6 @@
 		// Implement throttling
 		const now = Date.now();
 		if (now - lastFetchTime < THROTTLE_INTERVAL) {
-			console.log(`[Map] Throttling fetch for ${lens}, too soon after last fetch`);
 			return;
 		}
 		
@@ -538,8 +545,6 @@
 			}
 		}
 
-		console.log(`[Map] Fetching ${currentLens} data for ${hexagons.size} hexagons`);
-		
 		// Create a map to track which hexagons have content
 		const hexagonsWithContent = new Set<string>();
 		
@@ -555,14 +560,9 @@
 				if (currentLens === selectedLens) {
 					// Update lens data with hexagons that have content
 					lensData[currentLens as LensType] = hexagonsWithContent;
-					
+
 					// Render the updated hexes
-					console.log(`[Map] Rendering ${hexagonsWithContent.size} hexagons for ${currentLens}`);
 					renderHexes(map, currentLens);
-					
-					console.log(`[Map] Found ${hexagonsWithContent.size} hexagons with ${currentLens} data (${fetchesCompleted}/${fetchesInProgress} fetches)`);
-				} else {
-					console.log(`[Map] Lens changed during fetch, discarding results for ${currentLens}`);
 				}
 			}
 		};
@@ -572,15 +572,12 @@
 		for (const hex of hexagons) {
 			fetchesInProgress++;
 			hasStartedFetches = true;
-			
+
 			// Non-blocking call without await
-			console.log(`[Map Debug] Fetching data for hexagon: ${hex}, lens: ${lens}`);
 			holosphere.getAll(hex, lens)
 				.then(items => {
 					// Add to set if content exists
-					console.log(`[Map Debug] Retrieved ${items?.length || 0} items for hexagon: ${hex}, lens: ${lens}`);
 					if (items && items.length > 0) {
-						console.log(`[Map Debug] Adding hexagon with content: ${hex}`);
 						hexagonsWithContent.add(hex);
 					}
 					checkAllFetchesComplete();
@@ -664,8 +661,7 @@
 		}
 		
 		mapboxgl.accessToken = accessToken;
-		console.log('[Map] Initializing map with access token:', accessToken.substring(0, 20) + '...');
-		
+
 		map = new mapboxgl.Map({
 			container: mapContainer,
 			style: "mapbox://styles/mapbox/satellite-streets-v12",
@@ -675,18 +671,9 @@
 			renderWorldCopies: false,
 		});
 
-		// Add geocoder (search box)
+		// Initialize geolocate control (will be triggered by button in control bar)
 		try {
-			const geocoder = new MapboxGeocoder({
-				accessToken: mapboxgl.accessToken,
-				mapboxgl: mapboxgl,
-				marker: false,
-				placeholder: "Search for a location",
-				types: "poi,address,place,locality,neighborhood,region,country,postcode",
-			});
-
-			// Add geolocate control
-			const geolocate = new mapboxgl.GeolocateControl({
+			geolocateControl = new mapboxgl.GeolocateControl({
 				positionOptions: {
 					enableHighAccuracy: true,
 				},
@@ -694,31 +681,13 @@
 				showUserHeading: true,
 			});
 
-			map.addControl(geocoder, "top-right");
-			map.addControl(geolocate, "top-right");
-			
-			// Debug: Check if geocoder was added successfully
-			console.log('[Map] Geocoder added to map');
-			
-			// Ensure geocoder is visible
-			setTimeout(() => {
-				const geocoderElement = mapContainer.querySelector('.mapboxgl-ctrl-geocoder');
-				if (geocoderElement) {
-					console.log('[Map] Geocoder element found:', geocoderElement);
-					geocoderElement.style.display = 'block';
-					geocoderElement.style.visibility = 'visible';
-					geocoderElement.style.opacity = '1';
-				} else {
-					console.warn('[Map] Geocoder element not found');
-				}
-			}, 1000);
+			// Add it to the map invisibly so it can be triggered
+			map.addControl(geolocateControl, "bottom-right");
 		} catch (error) {
-			console.error('[Map] Error adding geocoder:', error);
+			console.error('[Map] Error adding geolocate control:', error);
 		}
 
 		map.on("style.load", () => {
-			console.log("Map style loaded");
-			
 			map.setFog({
 				color: "rgb(255, 255, 255)",       // Lower atmosphere white
 				"high-color": "rgb(255, 255, 255)", // Upper atmosphere white
@@ -939,7 +908,6 @@
 				
 				// Now that sources are ready, render initial hexes
 				if (selectedLens) {
-					console.log('[Map] Rendering initial hexes after style load');
 					renderHexes(map, selectedLens);
 				}
 			} catch (e) {
@@ -948,17 +916,39 @@
 		});
 
 		map.on("load", () => {
-			console.log("Map loaded");
-			
 			// Initial data fetch after map is fully loaded
-			console.log('[Map] Map initialized, scheduling initial data fetch');
 			clearMoveTimeout();
 			moveTimeout = window.setTimeout(() => {
 				if (selectedLens) {
-					console.log('[Map] Performing initial data fetch');
 					fetchLensData(selectedLens);
 				}
 			}, 500);
+
+			// Add geocoder to custom container after map is loaded
+			try {
+				const geocoder = new MapboxGeocoder({
+					accessToken: mapboxgl.accessToken,
+					mapboxgl: mapboxgl,
+					marker: false,
+					placeholder: "Search location...",
+					types: "poi,address,place,locality,neighborhood,region,country,postcode",
+				});
+
+				// Add the geocoder to our custom container
+				if (geocoderContainer) {
+					// Clear any existing content first
+					geocoderContainer.innerHTML = '';
+					const geocoderElement = geocoder.onAdd(map);
+					console.log('[Map] Adding geocoder element:', geocoderElement);
+					geocoderContainer.appendChild(geocoderElement);
+					console.log('[Map] Geocoder container children:', geocoderContainer.children.length);
+				} else {
+					console.warn('[Map] geocoderContainer not found');
+				}
+			} catch (error) {
+				console.error('[Map] Error adding geocoder:', error);
+			}
+
 			mapInitialized = true;
 		});
 
@@ -976,15 +966,13 @@
 		map.on("moveend", () => {
 			// Movement has ended
 			isMoving = false;
-			console.log('[Map] Movement ended');
-			
+
 			// Clear any previous timeout
 			clearMoveTimeout();
-			
+
 			// Schedule data fetch after movement with a delay
 			moveTimeout = window.setTimeout(() => {
 				if (selectedLens) {
-					console.log('[Map] Fetching data after movement pause');
 					fetchLensData(selectedLens);
 				}
 			}, 1000); // 1 second delay
@@ -994,30 +982,23 @@
 		});
 
 		map.on("click", (e: mapboxgl.MapMouseEvent) => {
-			console.log("Map clicked", e.lngLat);
 			const { lng, lat } = e.lngLat;
 			const zoom = map.getZoom();
 			const resolution = getResolution(zoom);
 			const newHexId = h3.latLngToCell(lat, lng, resolution);
-			console.log("Hexagon ID:", newHexId);
-			
-			// Update sidebar position
-			updateSidebarPosition();
-			
+
+			// Only update sidebar position if it's not already shown
+			// This preserves the user's chosen position when switching hexagons
+			if (!showSidebar) {
+				updateSidebarPosition();
+			}
+
 			// Only update if it's a valid H3 cell
 			if (isH3Cell(newHexId)) {
+				hexIdSetByUser = true; // Mark that this was a user action
 				hexId = newHexId;
 				updateSelectedHexagon(newHexId);
 			}
-
-			// Log lens data for the clicked hexagon - non-blocking call
-			holosphere.getAll(newHexId, selectedLens)
-				.then(data => {
-					console.log(`${selectedLens} data for hexagon ${newHexId}:`, data);
-				})
-				.catch(error => {
-					console.error(`Error fetching ${selectedLens} data:`, error);
-				});
 		});
 	}
 
@@ -1092,10 +1073,8 @@
 	// Add cleanup function for map
 	function cleanupMap() {
 		if (!map) return;
-		
+
 		try {
-			console.log('[Map] Cleaning up map instance');
-			
 			// Remove event listeners first
 			map.off('movestart');
 			map.off('move', handleMapMove);
@@ -1118,11 +1097,10 @@
 					// Remove layers first (they depend on sources)
 					for (const layerId of layerIds) {
 						if (map.getLayer(layerId)) {
-							console.log(`[Map] Removing layer: ${layerId}`);
 							map.removeLayer(layerId);
 						}
 					}
-					
+
 					// Then remove the source
 					if (map.getSource(sourceId)) {
 						console.log(`[Map] Removing source: ${sourceId}`);
@@ -1137,7 +1115,6 @@
 			map.remove();
 			map = null;
 			mapInitialized = false;
-			console.log('[Map] Map cleanup complete');
 		} catch (error) {
 			console.error('[Map] Error cleaning up map:', error);
 			// Force reset of variables
@@ -1155,25 +1132,32 @@
 		}
 	}
 
-	// Update ID store subscription
-	$: if ($ID && $ID !== hexId && isH3Cell($ID)) {
-		console.log(`[Map] ID changed to hexagon: ${$ID}`);
-		hexId = $ID;
-		dispatch('holonChange', { id: $ID });
-		
-		// If map is ready and visible, navigate immediately
-		if (map && isVisible && mapInitialized) {
-			console.log(`[Map] Navigating to hexagon: ${$ID}`);
-			updateSelectedHexagon($ID);
-		} else if (isVisible && !mapInitialized && browser) {
-			// If map isn't ready yet but we're visible, initialize it and then navigate
-			console.log(`[Map] Map not ready, initializing and will navigate to: ${$ID}`);
-			window.setTimeout(() => {
-				if (map && mapInitialized) {
-					console.log(`[Map] Map now ready, navigating to: ${$ID}`);
+	// Update ID store subscription - only sync from dashboard navigation, not from map clicks
+	// Use lastSyncedIdFromStore to break cyclical dependency
+	$: {
+		if ($ID && isH3Cell($ID) && $ID !== lastSyncedIdFromStore) {
+			if (!hexIdSetByUser) {
+				// Dashboard navigated to a new hexagon
+				lastSyncedIdFromStore = $ID;
+				hexId = $ID;
+				dispatch('holonChange', { id: $ID });
+
+				// If map is ready and visible, navigate immediately
+				if (map && isVisible && mapInitialized) {
 					updateSelectedHexagon($ID);
+				} else if (isVisible && !mapInitialized && browser) {
+					// If map isn't ready yet but we're visible, initialize it and then navigate
+					window.setTimeout(() => {
+						if (map && mapInitialized) {
+							updateSelectedHexagon($ID);
+						}
+					}, 200);
 				}
-			}, 200);
+			} else if ($ID !== hexId) {
+				// Dashboard navigated away from the user-selected hexagon, reset flag
+				hexIdSetByUser = false;
+				lastSyncedIdFromStore = $ID;
+			}
 		}
 	}
 
@@ -1189,7 +1173,6 @@
 		
 		// If we're not already at the hexagon (within a small threshold), navigate to it
 		if (distance > 0.01) { // About 1km threshold
-			console.log(`[Map] Map ready, navigating to existing hexagon: ${hexId}`);
 			updateSelectedHexagon(hexId);
 		}
 	}
@@ -1198,20 +1181,16 @@
 	$: if (isVisible) {
 		// Initialize or re-initialize map when becoming visible
 		if (!mapInitialized && browser) {
-			console.log('[Map] Component is now visible, initializing map');
 			// Add a small delay to ensure container is properly sized
 			window.setTimeout(initializeMap, 100);
 		}
 	} else if (mapInitialized) {
 		// Clean up map when becoming invisible
-		console.log('[Map] Component is now hidden, cleaning up map');
 		performFinalCleanup();
 	}
 
 	// Comprehensive cleanup function
 	function performFinalCleanup() {
-		console.log('[Map] Performing final cleanup...');
-		
 		// Make sure all timeouts are cleared
 		if (moveTimeout) {
 			clearTimeout(moveTimeout);
@@ -1234,19 +1213,15 @@
 	
 	// Clean up map resources
 	cleanupMap();
-	
-	console.log('[Map] Final cleanup complete');
 	}
 
 	// Update onDestroy to reset all state
 	onDestroy(() => {
-		console.log('[Map] Component being destroyed, cleaning up resources');
 		performFinalCleanup();
 	});
 
 	// Also ensure cleanup on hide/unmount via the isVisible property
 	$: if (!isVisible && mapInitialized) {
-		console.log('[Map] Component hidden, cleaning up resources');
 		performFinalCleanup();
 	}
 
@@ -1336,48 +1311,146 @@
 		{/if}
 	</div>
 
-	<!-- Lens Selector -->
-	<div class="lens-selector">
-		<div class="lens-control">
-			<label for="lens-select" class="lens-label">Lens:</label>
-			<select 
-				id="lens-select"
-				bind:value={selectedLens}
-				class="lens-select"
-				aria-label="Select lens type"
+	<!-- Embedded Map Control Bar -->
+	<div class="map-control-bar">
+		<div class="control-bar-inner">
+			<!-- Lens Selector -->
+			<div class="lens-selector-embedded">
+				<div class="lens-icon">
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-svg">
+						<circle cx="11" cy="11" r="8"/>
+						<path d="m21 21-4.35-4.35"/>
+					</svg>
+				</div>
+				<div class="lens-select-wrapper">
+					<select
+						id="lens-select"
+						bind:value={selectedLens}
+						class="lens-select-embedded"
+						aria-label="Select lens type"
+					>
+						{#each lensOptions as option}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+				</div>
+				<button
+					class="info-button-embedded"
+					aria-label="Lens information"
+					on:mouseenter={() => showLensInfo = true}
+					on:mouseleave={() => showLensInfo = false}
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="icon-svg-small">
+						<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" />
+					</svg>
+				</button>
+			</div>
+
+			<!-- Divider -->
+			<div class="control-divider"></div>
+
+			<!-- Geocoder Search -->
+			<div bind:this={geocoderContainer} class="geocoder-container-embedded"></div>
+
+			<!-- Divider -->
+			<div class="control-divider"></div>
+
+			<!-- Geolocate Button -->
+			<button
+				class="location-button-embedded"
+				title="Go to my location"
+				on:click={() => geolocateControl && geolocateControl.trigger()}
 			>
-				{#each lensOptions as option}
-					<option value={option.value}>{option.label}</option>
-				{/each}
-			</select>
-			<button 
-				class="info-button" 
-				aria-label="Lens information"
-				on:mouseenter={() => showLensInfo = true}
-				on:mouseleave={() => showLensInfo = false}
-			>
-				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-					<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" />
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-svg">
+					<circle cx="12" cy="12" r="10"/>
+					<circle cx="12" cy="12" r="3"/>
+					<line x1="12" y1="2" x2="12" y2="6"/>
+					<line x1="12" y1="18" x2="12" y2="22"/>
+					<line x1="2" y1="12" x2="6" y2="12"/>
+					<line x1="18" y1="12" x2="22" y2="12"/>
 				</svg>
 			</button>
-			
-			{#if showLensInfo}
-				<div class="info-tooltip">
-					<p>Lenses filter the map to show different types of data:</p>
-					<ul>
-						<li><strong>Tasks:</strong> View active tasks and quests</li>
-						<li><strong>Local Needs:</strong> Community needs and requests</li>
-						<li><strong>Offers:</strong> Available resources and services</li>
-						<li><strong>Communities:</strong> Active local groups</li>
-						<li><strong>Organizations:</strong> Registered organizations</li>
-						<li><strong>Projects:</strong> Ongoing initiatives</li>
-						<li><strong>Currencies:</strong> Local exchange systems</li>
-						<li><strong>People:</strong> Community members</li>
-						<li><strong>Holons:</strong> Nested organizational units</li>
-					</ul>
-				</div>
-			{/if}
+
 		</div>
+
+		<!-- Info Tooltip -->
+		{#if showLensInfo}
+			<div class="info-tooltip-embedded">
+				<div class="tooltip-header">
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-5 h-5">
+						<circle cx="11" cy="11" r="8"/>
+						<path d="m21 21-4.35-4.35"/>
+					</svg>
+					<h3>Lens Filters</h3>
+				</div>
+				<p class="tooltip-description">Filter the map to show different types of data:</p>
+				<div class="lens-options-grid">
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #f44336;"></span>
+						<div>
+							<strong>Tasks</strong>
+							<span class="lens-desc">Active tasks and quests</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #2196f3;"></span>
+						<div>
+							<strong>Local Needs</strong>
+							<span class="lens-desc">Community requests</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #4caf50;"></span>
+						<div>
+							<strong>Offers</strong>
+							<span class="lens-desc">Resources & services</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #ff9800;"></span>
+						<div>
+							<strong>Communities</strong>
+							<span class="lens-desc">Local groups</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #9c27b0;"></span>
+						<div>
+							<strong>Organizations</strong>
+							<span class="lens-desc">Registered orgs</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #3f51b5;"></span>
+						<div>
+							<strong>Projects</strong>
+							<span class="lens-desc">Ongoing initiatives</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #e91e63;"></span>
+						<div>
+							<strong>Currencies</strong>
+							<span class="lens-desc">Exchange systems</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #607d8b;"></span>
+						<div>
+							<strong>People</strong>
+							<span class="lens-desc">Community members</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #ff5722;"></span>
+						<div>
+							<strong>Holons</strong>
+							<span class="lens-desc">Organizational units</span>
+						</div>
+					</div>
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Overlay sidebar when hexagon is selected -->
@@ -1402,9 +1475,9 @@
 				>×</button>
 			</div>
 			<div class="sidebar-content">
-				<MapSidebar 
+				<MapSidebar
 					{selectedLens}
-					
+					{hexId}
 					isOverlay={true}
 				/>
 			</div>
@@ -1432,9 +1505,7 @@
 		z-index: 1;
 	}
 	
-	.hidden {
-		display: none;
-	}
+
 
 	/* Sidebar overlay styles */
 	.sidebar-overlay {
@@ -1445,7 +1516,7 @@
 		border-radius: 0.75rem;
 		box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
 		overflow: hidden;
-		z-index: 1000;
+		z-index: 20;
 		display: flex;
 		flex-direction: column;
 		cursor: move; /* Add cursor style */
@@ -1475,129 +1546,383 @@
 		max-height: 70vh;
 	}
 
-	/* .custom-control-container {
+	/* Embedded Map Control Bar - Dark Style */
+	.map-control-bar {
 		position: absolute;
-		top: 10px;
-		right: 10px;
-		z-index: 2;
-		display: flex;
-		gap: 10px;
-		background: white;
-		padding: 10px;
-		border-radius: 4px;
-		box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-	} */
-
-	/* .lens-container {
-		display: flex;
-		align-items: center;
-	} */
-
-	.lens-selector {
-		position: absolute;
-		top: 10px;
+		top: 20px;
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: 10;
+		width: calc(100% - 40px);
+		max-width: 800px;
+		pointer-events: none;
 	}
 
-	.lens-control {
+	.control-bar-inner {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		padding: 0 8px;
-		min-height: 36px;
-		background: white;
-		border-radius: 4px;
-		box-shadow: 0 0 0 2px rgba(0,0,0,0.1);
-		white-space: nowrap;
+		gap: 12px;
+		background: linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(31, 41, 55, 0.92) 100%);
+		backdrop-filter: blur(20px);
+		-webkit-backdrop-filter: blur(20px);
+		padding: 12px 16px;
+		border-radius: 20px;
+		box-shadow:
+			0 10px 40px rgba(0, 0, 0, 0.4),
+			0 4px 12px rgba(0, 0, 0, 0.3),
+			inset 0 1px 0 rgba(255, 255, 255, 0.1);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		pointer-events: auto;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
-	.lens-label {
-		color: #333;
-		font-weight: 500;
-		font-size: 14px;
-		white-space: nowrap;
+	.control-bar-inner:hover {
+		box-shadow:
+			0 12px 50px rgba(0, 0, 0, 0.5),
+			0 6px 16px rgba(0, 0, 0, 0.35),
+			inset 0 1px 0 rgba(255, 255, 255, 0.15);
 	}
 
-	.lens-select {
-		appearance: none;
-		background: transparent;
-		color: #333;
-		border: none;
-		padding: 4px 24px 4px 8px;
-		font-size: 14px;
-		cursor: pointer;
-		min-width: 120px;
+	.lens-selector-embedded {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-shrink: 0;
 	}
 
-	/* .select-arrow {
-		position: absolute;
-		right: 36px;
-		top: 50%;
-		transform: translateY(-50%);
-		pointer-events: none;
-		color: #333;
-	} */
-
-	.info-button {
-		background: none;
-		border: none;
-		padding: 4px;
-		color: #000;
-		cursor: pointer;
-		transition: color 0.2s;
+	.lens-icon {
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		color: #60a5fa;
+		flex-shrink: 0;
 	}
 
-	.info-button:hover {
-		color: #333;
+	.icon-svg {
+		width: 20px;
+		height: 20px;
 	}
 
-	.info-tooltip {
+	.icon-svg-small {
+		width: 16px;
+		height: 16px;
+	}
+
+	.lens-select-wrapper {
+		position: relative;
+		flex-shrink: 0;
+	}
+
+	.lens-select-embedded {
+		appearance: none;
+		background: rgba(55, 65, 81, 0.5);
+		color: #f9fafb;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		padding: 8px 32px 8px 12px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		border-radius: 12px;
+		outline: none;
+		min-width: 140px;
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2360a5fa' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+		background-repeat: no-repeat;
+		background-position: right 10px center;
+		transition: all 0.2s ease;
+	}
+
+	.lens-select-embedded:hover {
+		background: rgba(55, 65, 81, 0.7);
+		border-color: rgba(96, 165, 250, 0.3);
+	}
+
+	.lens-select-embedded:focus {
+		outline: 2px solid rgba(96, 165, 250, 0.4);
+		outline-offset: 2px;
+		border-color: rgba(96, 165, 250, 0.5);
+	}
+
+	.info-button-embedded {
+		background: rgba(96, 165, 250, 0.15);
+		border: none;
+		padding: 8px;
+		color: #60a5fa;
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 10px;
+		flex-shrink: 0;
+	}
+
+	.info-button-embedded:hover {
+		background: rgba(96, 165, 250, 0.25);
+		transform: scale(1.05);
+	}
+
+	.info-button-embedded:active {
+		transform: scale(0.95);
+	}
+
+	.control-divider {
+		width: 1px;
+		height: 24px;
+		background: linear-gradient(
+			to bottom,
+			rgba(255, 255, 255, 0),
+			rgba(255, 255, 255, 0.15),
+			rgba(255, 255, 255, 0)
+		);
+		flex-shrink: 0;
+	}
+
+	.search-placeholder {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex: 1;
+		min-width: 0;
+		padding: 8px 12px;
+		background: rgba(55, 65, 81, 0.4);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 12px;
+		color: #9ca3af;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.search-placeholder:hover {
+		background: rgba(55, 65, 81, 0.6);
+		border-color: rgba(96, 165, 250, 0.3);
+	}
+
+	.search-text {
+		font-size: 14px;
+		font-weight: 500;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.location-button-embedded {
+		background: rgba(96, 165, 250, 0.15);
+		border: 1px solid rgba(96, 165, 250, 0.2);
+		padding: 10px;
+		color: #60a5fa;
+		cursor: pointer;
+		transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 12px;
+		flex-shrink: 0;
+	}
+
+	.location-button-embedded:hover {
+		background: rgba(96, 165, 250, 0.25);
+		border-color: rgba(96, 165, 250, 0.4);
+		transform: scale(1.05);
+	}
+
+	.location-button-embedded:active {
+		transform: scale(0.95);
+	}
+
+	.info-tooltip-embedded {
 		position: absolute;
-		top: calc(100% + 8px);
+		top: calc(100% + 12px);
+		left: 0;
 		right: 0;
-		background: white;
-		border-radius: 4px;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-		padding: 12px;
-		width: 280px;
+		background: linear-gradient(135deg, rgba(17, 24, 39, 0.98) 0%, rgba(31, 41, 55, 0.96) 100%);
+		backdrop-filter: blur(24px);
+		-webkit-backdrop-filter: blur(24px);
+		border-radius: 20px;
+		box-shadow:
+			0 20px 60px rgba(0, 0, 0, 0.6),
+			0 10px 30px rgba(0, 0, 0, 0.4),
+			inset 0 1px 0 rgba(255, 255, 255, 0.1);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		padding: 20px;
 		font-size: 13px;
-		color: #333;
-		z-index: 1000;
-		transform: translateX(50%); /* Center the tooltip */
+		color: #f9fafb;
+		z-index: 15;
+		animation: tooltipFadeIn 0.25s ease-out;
+		pointer-events: auto;
 	}
 
-	.info-tooltip::before {
+	@keyframes tooltipFadeIn {
+		from {
+			opacity: 0;
+			transform: translateY(-8px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.info-tooltip-embedded::before {
 		content: '';
 		position: absolute;
 		top: -6px;
-		right: 50%;
+		left: 32px;
 		width: 12px;
 		height: 12px;
-		background: white;
+		background: linear-gradient(135deg, rgba(17, 24, 39, 0.98) 0%, rgba(31, 41, 55, 0.96) 100%);
+		border-left: 1px solid rgba(255, 255, 255, 0.1);
+		border-top: 1px solid rgba(255, 255, 255, 0.1);
 		transform: rotate(45deg);
-		box-shadow: -2px -2px 4px rgba(0,0,0,0.05);
 	}
 
-	.info-tooltip p {
-		margin: 0 0 8px 0;
+	.tooltip-header {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-bottom: 12px;
+		padding-bottom: 12px;
+		border-bottom: 2px solid rgba(96, 165, 250, 0.2);
 	}
 
-	.info-tooltip ul {
+	.tooltip-header svg {
+		color: #60a5fa;
+	}
+
+	.tooltip-header h3 {
 		margin: 0;
-		padding-left: 16px;
+		font-size: 16px;
+		font-weight: 700;
+		color: #f9fafb;
 	}
 
-	.info-tooltip li {
-		margin: 4px 0;
+	.tooltip-description {
+		margin: 0 0 16px 0;
+		color: #9ca3af;
+		font-size: 13px;
+		line-height: 1.5;
 	}
 
-	.info-tooltip strong {
-		color: #000;
+	.lens-options-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: 10px;
+	}
+
+	.lens-option-item {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 12px;
+		background: rgba(55, 65, 81, 0.4);
+		border: 1px solid rgba(255, 255, 255, 0.05);
+		border-radius: 12px;
+		transition: all 0.2s ease;
+	}
+
+	.lens-option-item:hover {
+		background: rgba(55, 65, 81, 0.6);
+		border-color: rgba(96, 165, 250, 0.2);
+		transform: translateX(4px);
+	}
+
+	.lens-dot {
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		flex-shrink: 0;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+	}
+
+	.lens-option-item div {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		flex: 1;
+	}
+
+	.lens-option-item strong {
+		color: #f9fafb;
+		font-size: 13px;
+		font-weight: 600;
+	}
+
+	.lens-desc {
+		color: #9ca3af;
+		font-size: 11px;
+		line-height: 1.3;
+	}
+
+	/* Responsive Design */
+	@media (max-width: 768px) {
+		.map-control-bar {
+			width: calc(100% - 20px);
+			max-width: none;
+		}
+
+		.control-bar-inner {
+			padding: 10px 12px;
+			gap: 8px;
+			flex-wrap: wrap;
+		}
+
+		.lens-selector-embedded {
+			order: 1;
+			flex: 1;
+			min-width: 0;
+		}
+
+		.lens-select-embedded {
+			min-width: 120px;
+			font-size: 13px;
+			padding: 6px 28px 6px 10px;
+		}
+
+		.control-divider {
+			display: none;
+		}
+
+		.search-placeholder {
+			order: 3;
+			flex: 1 1 100%;
+			min-width: 0;
+		}
+
+		.location-button-embedded {
+			order: 2;
+		}
+
+		.search-text {
+			font-size: 13px;
+		}
+
+		.lens-options-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	@media (max-width: 480px) {
+		.map-control-bar {
+			top: 10px;
+		}
+
+		.control-bar-inner {
+			padding: 8px 10px;
+			border-radius: 16px;
+		}
+
+		.lens-select-embedded {
+			min-width: 100px;
+			font-size: 12px;
+		}
+
+		.search-text {
+			font-size: 12px;
+		}
+
+		.icon-svg {
+			width: 18px;
+			height: 18px;
+		}
 	}
 
 	:global(.mapboxgl-ctrl.mapboxgl-ctrl-group) {
@@ -1610,59 +1935,153 @@
 		outline: none;
 	}
 
-	:global(.mapboxgl-ctrl-geocoder) {
-		min-width: 250px !important;
-		width: auto !important;
-		max-width: 360px !important;
-		font-size: 14px !important;
-		line-height: 20px !important;
-		box-shadow: 0 0 0 2px rgba(0,0,0,0.1) !important;
-		display: block !important;
-		visibility: visible !important;
-		opacity: 1 !important;
-		z-index: 1000 !important;
-	}
-
-	:global(.mapboxgl-ctrl-geocoder input[type='text']) {
-		height: 36px !important;
-		padding: 6px 35px !important;
-	}
-
-	:global(.mapboxgl-ctrl-geocoder--icon) {
-		top: 8px !important;
-	}
-
-	:global(.mapboxgl-ctrl-geocoder--button) {
-		top: 3px !important;
-	}
-
-	/* Ensure geolocate control doesn't overlap */
+	/* Hide standalone Mapbox controls - we embed them in our control bar */
 	:global(.mapboxgl-ctrl-top-right) {
+		display: none !important;
+	}
+
+	/* Hide the geolocate control visual but keep it functional */
+	:global(.mapboxgl-ctrl-bottom-right .mapboxgl-ctrl-geolocate) {
+		display: none !important;
+	}
+
+	:global(.mapboxgl-ctrl-bottom-right) {
+		pointer-events: none !important;
+	}
+
+	/* Style for geocoder embedded in control bar */
+	.geocoder-container-embedded {
+		flex: 1;
+		min-width: 0;
 		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		z-index: 1000 !important;
+		align-items: center;
 	}
 
-	/* Ensure proper spacing between controls */
-	:global(.mapboxgl-ctrl-top-right .mapboxgl-ctrl) {
-		margin: 10px 10px 0 0;
-		display: block !important;
-		visibility: visible !important;
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder) {
+		width: 100% !important;
+		max-width: none !important;
+		min-width: 0 !important;
+		box-shadow: none !important;
+		background: transparent !important;
+		border: none !important;
 	}
 
-	/* Ensure the geocoder doesn't wrap */
-	:global(.mapboxgl-ctrl-geocoder.mapboxgl-ctrl) {
-		margin-top: 10px !important;
-		display: block !important;
-		visibility: visible !important;
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder input) {
+		pointer-events: auto !important;
+		background: rgba(55, 65, 81, 0.5) !important;
+		border: 1px solid rgba(255, 255, 255, 0.1) !important;
+		border-radius: 12px !important;
+		color: #f9fafb !important;
+		font-size: 14px !important;
+		font-weight: 500 !important;
+		padding: 8px 12px 8px 36px !important;
+		transition: all 0.2s ease !important;
+		width: 100% !important;
 	}
 
-	/* Ensure the geolocate control appears below */
-	:global(.mapboxgl-ctrl-geolocate.mapboxgl-ctrl-geolocate) {
-		margin-top: 10px !important;
-		display: block !important;
-		visibility: visible !important;
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder input:focus) {
+		border-color: rgba(96, 165, 250, 0.4) !important;
+		background: rgba(55, 65, 81, 0.7) !important;
+		outline: 2px solid rgba(96, 165, 250, 0.4) !important;
+		outline-offset: 2px !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder input::placeholder) {
+		color: #9ca3af !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions) {
+		background: rgba(17, 24, 39, 0.98) !important;
+		border: 1px solid rgba(255, 255, 255, 0.1) !important;
+		border-radius: 12px !important;
+		margin-top: 8px !important;
+		backdrop-filter: blur(24px) !important;
+		-webkit-backdrop-filter: blur(24px) !important;
+		z-index: 25 !important;
+		position: absolute !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions > li > a) {
+		color: #f9fafb !important;
+		padding: 10px 14px !important;
+		transition: all 0.15s ease !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions > .active > a),
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder .suggestions > li > a:hover) {
+		background-color: rgba(96, 165, 250, 0.2) !important;
+		color: #60a5fa !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--icon-search) {
+		fill: #9ca3af !important;
+		left: 12px !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--icon-close) {
+		fill: #f9fafb !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--button) {
+		background: transparent !important;
+	}
+
+	.geocoder-container-embedded :global(.mapboxgl-ctrl-geocoder--icon-loading) {
+		fill: #60a5fa !important;
+	}
+
+	/* Keep zoom controls visible with dark theme */
+	:global(.mapboxgl-ctrl-zoom-in),
+	:global(.mapboxgl-ctrl-zoom-out) {
+		background: linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(31, 41, 55, 0.92) 100%) !important;
+		backdrop-filter: blur(20px) !important;
+		-webkit-backdrop-filter: blur(20px) !important;
+		border: 1px solid rgba(255, 255, 255, 0.1) !important;
+		color: #f9fafb !important;
+		transition: all 0.2s ease !important;
+	}
+
+	:global(.mapboxgl-ctrl-zoom-in:hover),
+	:global(.mapboxgl-ctrl-zoom-out:hover) {
+		background: linear-gradient(135deg, rgba(31, 41, 55, 0.98) 0%, rgba(55, 65, 81, 0.95) 100%) !important;
+		border-color: rgba(96, 165, 250, 0.3) !important;
+	}
+
+	:global(.mapboxgl-ctrl-bottom-right) {
+		margin: 0 10px 10px 0 !important;
+	}
+
+	:global(.mapboxgl-ctrl-group) {
+		background: transparent !important;
+		box-shadow: none !important;
+		border-radius: 12px !important;
+		overflow: hidden !important;
+	}
+
+	:global(.mapboxgl-ctrl-group > button) {
+		background: linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(31, 41, 55, 0.92) 100%) !important;
+		backdrop-filter: blur(20px) !important;
+		-webkit-backdrop-filter: blur(20px) !important;
+		border: 1px solid rgba(255, 255, 255, 0.1) !important;
+		border-radius: 0 !important;
+		transition: all 0.2s ease !important;
+	}
+
+	:global(.mapboxgl-ctrl-group > button:first-child) {
+		border-radius: 12px 12px 0 0 !important;
+	}
+
+	:global(.mapboxgl-ctrl-group > button:last-child) {
+		border-radius: 0 0 12px 12px !important;
+	}
+
+	:global(.mapboxgl-ctrl-group > button:hover) {
+		background: linear-gradient(135deg, rgba(31, 41, 55, 0.98) 0%, rgba(55, 65, 81, 0.95) 100%) !important;
+		border-color: rgba(96, 165, 250, 0.3) !important;
+	}
+
+	:global(.mapboxgl-ctrl-icon) {
+		filter: brightness(0) invert(1) !important;
 	}
 </style>
 

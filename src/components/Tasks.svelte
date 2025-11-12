@@ -17,6 +17,9 @@
 	// Add new imports for quest library
 	import QuestImportModal from "./QuestImportModal.svelte";
 
+	// Add filterType prop to allow filtering by quest type
+	export let filterType: 'task' | 'event' | 'all' = 'all';
+
 	interface Quest {
 		id: string;
 		title: string;
@@ -77,7 +80,7 @@
 		description: '',
 		category: '',
 		status: 'ongoing',
-		type: 'task',
+		type: filterType === 'all' ? 'task' : filterType, // Use filterType for new items
 		participants: [],
 		appreciation: []
 	};
@@ -109,7 +112,7 @@
 	$: sortDirection = $taskSortStore.direction;
 
 	// SVG Paths for sort icons
-	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"; // Calendar icon
+	const calendarIconPath = "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z"; // Calendar icon
 	const orderIndexIconPath = "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"; // Heroicons bars-3
 	const directionalSortIconPath = "M12 5v14M19 12l-7 7-7-7"; // Current arrow
 	let currentIconPath = calendarIconPath; // Initial icon
@@ -191,10 +194,27 @@
 				}
 			}
 
-			// Show tasks, quests, and recurring items (default to 'task' if type is missing)
-			const type = quest.type || 'task'; 
-			if (type !== 'task' && type !== 'recurring' && type !== 'quest') {
-				return false;
+			// Apply type filtering based on filterType prop
+			if (filterType !== 'all') {
+				if (filterType === 'event') {
+					// For events filter, include both type='event' and any item with a 'when' field (scheduled items)
+					const type = quest.type || 'task';
+					const isScheduled = quest.when && quest.when.trim() !== '';
+					if (type !== 'event' && !isScheduled) {
+						return false;
+					}
+				} else {
+					const type = quest.type || 'task';
+					if (type !== filterType) {
+						return false;
+					}
+				}
+			} else {
+				// Show all quest types when filterType is 'all' (default to 'task' if type is missing)
+				const type = quest.type || 'task'; 
+				if (type !== 'task' && type !== 'recurring' && type !== 'quest' && type !== 'event') {
+					return false;
+				}
 			}
 
 			// Default to 'ongoing' if status is missing.
@@ -301,6 +321,20 @@
 		replaceState(url.toString(), { replaceState: true });
 	}
 
+	// Handle dependency click to open dependency task modal
+	function handleDependencyClick(dependencyId: string) {
+		// Close current task modal if open
+		selectedTask = null;
+		
+		// Update URL with dependency task parameter
+		const url = new URL(window.location.href);
+		url.searchParams.set('task', dependencyId);
+		replaceState(url.toString(), { replaceState: true });
+		
+		// Open the dependency task modal
+		handleTaskClick(dependencyId, store[dependencyId]);
+	}
+
 	// Add this helper function after the existing functions
 	function generateId() {
 		return ''+ Date.now();
@@ -373,7 +407,7 @@
 				description: '',
 				category: '',
 				status: 'ongoing',
-				type: 'task',
+				type: filterType === 'all' ? 'task' : filterType, // Use filterType for new items
 				participants: [],
 				appreciation: []
 			};
@@ -562,7 +596,7 @@
 			description: '',
 			category: '',
 			status: 'ongoing',
-			type: 'task',
+			type: filterType === 'all' ? 'task' : filterType, // Use filterType for new items
 			participants: [],
 			appreciation: []
 		};
@@ -1218,6 +1252,26 @@
 		}
 	}
 
+	// Listen for dependency task modal requests
+	onMount(() => {
+		const handleDependencyTask = (event: CustomEvent) => {
+			const { taskId } = event.detail;
+			if (taskId && store[taskId]) {
+				// Close current modal if open
+				selectedTask = null;
+				
+				// Open the new task modal
+				selectedTask = { key: taskId, quest: store[taskId] };
+			}
+		};
+		
+		window.addEventListener('openDependencyTask', handleDependencyTask as EventListener);
+		
+		return () => {
+			window.removeEventListener('openDependencyTask', handleDependencyTask as EventListener);
+		};
+	});
+
 	// Modify the reactive statements to be more efficient and avoid triggering excessive re-processing
 
 
@@ -1254,7 +1308,9 @@
 	<div class="bg-gradient-to-r from-gray-800 to-gray-700 py-6 px-3 sm:py-8 sm:px-8 rounded-3xl shadow-2xl">
 		<div class="flex flex-col sm:flex-row justify-between items-center sm:gap-0 gap-2">
 			<div class="text-center sm:text-left mb-2 sm:mb-0 flex-1 min-w-0">
-				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">Tasks & Quests</h1>
+				<h1 class="text-3xl sm:text-4xl font-bold text-white mb-1 sm:mb-2 truncate overflow-hidden text-ellipsis">
+					{filterType === 'event' ? 'Events & Scheduled Items' : filterType === 'task' ? 'Tasks' : 'Tasks & Quests'}
+				</h1>
 			</div>
 			<!-- Hide date on xs screens -->
 			<p class="text-gray-300 text-base sm:text-lg flex-shrink-0 hidden sm:block">{new Date().toDateString()}</p>
@@ -1271,10 +1327,26 @@
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
-								([_, quest]) =>
-									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
-									!quest.participants?.length &&
-									quest.status !== "completed"
+								([_, quest]) => {
+									// Apply type filtering
+																	if (filterType !== 'all') {
+									if (filterType === 'event') {
+										const type = quest.type || 'task';
+										const isScheduled = quest.when && quest.when.trim() !== '';
+										if (type !== 'event' && !isScheduled) return false;
+									} else {
+										const type = quest.type || 'task';
+										if (type !== filterType) return false;
+									}
+									} else {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
+											// Continue with other filters
+										} else {
+											return false;
+										}
+									}
+									return !quest.participants?.length && quest.status !== "completed";
+								}
 							).length}
 						</div>
 						<div class="text-sm text-gray-400">Unassigned</div>
@@ -1282,9 +1354,26 @@
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
-								([_, quest]) => 
-									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
-									quest.status !== "completed"
+								([_, quest]) => {
+									// Apply type filtering
+																	if (filterType !== 'all') {
+									if (filterType === 'event') {
+										const type = quest.type || 'task';
+										const isScheduled = quest.when && quest.when.trim() !== '';
+										if (type !== 'event' && !isScheduled) return false;
+									} else {
+										const type = quest.type || 'task';
+										if (type !== filterType) return false;
+									}
+									} else {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
+											// Continue with other filters
+										} else {
+											return false;
+										}
+									}
+									return quest.status !== "completed";
+								}
 							).length}
 						</div>
 						<div class="text-sm text-gray-400">Open Items</div>
@@ -1292,9 +1381,26 @@
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
-								([_, quest]) => 
-									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
-									(quest.status === "recurring" || quest.status === "repeating")
+								([_, quest]) => {
+									// Apply type filtering
+																	if (filterType !== 'all') {
+									if (filterType === 'event') {
+										const type = quest.type || 'task';
+										const isScheduled = quest.when && quest.when.trim() !== '';
+										if (type !== 'event' && !isScheduled) return false;
+									} else {
+										const type = quest.type || 'task';
+										if (type !== filterType) return false;
+									}
+									} else {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
+											// Continue with other filters
+										} else {
+											return false;
+										}
+									}
+									return (quest.status === "recurring" || quest.status === "repeating");
+								}
 							).length}
 						</div>
 						<div class="text-sm text-gray-400">Recurring</div>
@@ -1302,20 +1408,47 @@
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
 							{quests.filter(
-								([_, quest]) => 
-									(!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest") &&
-									quest.status === "completed"
+								([_, quest]) => {
+									// Apply type filtering
+																	if (filterType !== 'all') {
+									if (filterType === 'event') {
+										const type = quest.type || 'task';
+										const isScheduled = quest.when && quest.when.trim() !== '';
+										if (type !== 'event' && !isScheduled) return false;
+									} else {
+										const type = quest.type || 'task';
+										if (type !== filterType) return false;
+									}
+									} else {
+										if (!quest.type || quest.type === "task" || quest.type === "recurring" || quest.type === "quest" || quest.type === "event") {
+											// Continue with other filters
+										} else {
+											return false;
+										}
+									}
+									return quest.status === "completed";
+								}
 							).length}
 						</div>
 						<div class="text-sm text-gray-400">Completed</div>
 					</div>
 					<div class="bg-gray-700/50 rounded-2xl p-4 text-center">
 						<div class="text-2xl font-bold text-white mb-1">
-							{quests.filter(([_, quest]) => 
-								quest.type === "quest"
-							).length}
+							{quests.filter(([_, quest]) => {
+								if (filterType !== 'all') {
+									if (filterType === 'event') {
+										const type = quest.type || 'task';
+										const isScheduled = quest.when && quest.when.trim() !== '';
+										return type === 'event' || isScheduled;
+									} else {
+										const type = quest.type || 'task';
+										return type === filterType;
+									}
+								}
+								return quest.type === "quest";
+							}).length}
 						</div>
-						<div class="text-sm text-gray-400">Quests</div>
+						<div class="text-sm text-gray-400">{filterType === 'event' ? 'Scheduled' : filterType === 'task' ? 'Tasks' : 'Quests'}</div>
 					</div>
 				</div>
 
@@ -1506,18 +1639,25 @@
 					<div class="space-y-2 sm:space-y-3">
 										{#each filteredQuests as [key, quest]}
 					{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
-						<button
+						<div
 							id={key}
-							class="w-full task-card relative text-left group"
+							class="w-full task-card relative text-left group cursor-pointer"
 							on:click|stopPropagation={() => handleTaskClick(key, quest)}
 							draggable="true"
 							on:dragstart={(e) => handleDragStart(e, key)}
 							on:dragover={(e) => handleDragOver(e, key)}
 							on:drop={(e) => handleDrop(e, key)}
 							on:dragend={handleDragEnd}
+							role="button"
+							tabindex="0"
 							aria-label={`Open task: ${quest.title}`}
 							class:dragging={$dragState.draggedId === key}
 							class:drag-over={$dragState.dragOverId === key}
+							on:keydown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									handleTaskClick(key, quest);
+								}
+							}}
 						>
 							<div
 								class="p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
@@ -1529,7 +1669,7 @@
 									<div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
 										<!-- Task Icon -->
 										<div class="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-black/20 flex items-center justify-center text-xs sm:text-sm">
-											{quest.status === 'completed' ? '✅' : quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : '✓'}
+											{quest.status === 'completed' ? '✅' : quest.type === 'event' ? '📅' : quest.type === 'quest' ? '⚔️' : quest.type === 'recurring' || quest.status === 'recurring' || quest.status === 'repeating' ? '🔄' : (filterType === 'event' && quest.when) ? '📅' : '✓'}
 										</div>
 										
 										<!-- Main Content -->
@@ -1582,19 +1722,33 @@
 											
 											{#if quest.dependsOn && quest.dependsOn.length > 0}
 												<div class="text-xs text-gray-600 mb-1">
-													<span class="text-blue-600">📌 Depends on:</span>
-													{#each quest.dependsOn as depId, index}
-														{@const depQuest = Object.entries(store).find(([key, q]) => key === depId)}
-														{#if depQuest}
-															<span class="inline-block bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md text-xs mr-1 mb-1">
-																{depQuest[1].title.length > 20 ? depQuest[1].title.substring(0, 20) + '...' : depQuest[1].title}
-															</span>
-														{:else}
-															<span class="inline-block bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md text-xs mr-1 mb-1">
-																Unknown dependency
-															</span>
-														{/if}
-													{/each}
+													<div class="flex items-center gap-1 mb-1">
+														<span class="text-blue-600 flex-shrink-0">📌 Depends on:</span>
+													</div>
+													<div class="flex flex-wrap items-center gap-1">
+														{#each quest.dependsOn as depId, index}
+															{@const depQuest = Object.entries(store).find(([key, q]) => key === depId)}
+															{#if depQuest}
+																<button
+																	class="inline-flex items-center bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md text-xs hover:bg-blue-200 transition-colors cursor-pointer touch-manipulation min-h-[24px] min-w-[24px] flex-shrink-0"
+																	on:click|stopPropagation={() => handleDependencyClick(depId)}
+																	on:touchstart|stopPropagation={(e) => e.preventDefault()}
+																	on:touchend|stopPropagation={(e) => {
+																		e.preventDefault();
+																		handleDependencyClick(depId);
+																	}}
+																	title="Click to open dependency task: {depQuest[1].title}"
+																	type="button"
+																>
+																	{depQuest[1].title.length > 20 ? depQuest[1].title.substring(0, 20) + '...' : depQuest[1].title}
+																</button>
+															{:else}
+																<span class="inline-flex items-center bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md text-xs flex-shrink-0">
+																	Unknown dependency
+																</span>
+															{/if}
+														{/each}
+													</div>
 												</div>
 											{/if}
 										</div>
@@ -1644,7 +1798,7 @@
 									</div>
 								</div>
 							</div>
-						</button>
+						</div>
 							{/if}
 						{/each}
 						
@@ -1767,14 +1921,14 @@
 						>
 							Cancel
 						</button>
-						<button
-							type="submit"
-							class="px-6 py-2.5 text-sm font-medium rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
-							disabled={!newTask.title.trim()}
-							aria-label="Add new task"
-						>
-							Create Task
-						</button>
+													<button
+								type="submit"
+								class="px-6 py-2.5 text-sm font-medium rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
+								disabled={!newTask.title.trim()}
+								aria-label="Add new {filterType === 'event' ? 'event' : 'task'}"
+							>
+								Create {filterType === 'event' ? 'Event' : 'Task'}
+							</button>
 					</div>
 				</form>
 			</div>
@@ -1820,6 +1974,7 @@
 		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+		line-clamp: 2;
 	}
 
 	/* Smooth animations */

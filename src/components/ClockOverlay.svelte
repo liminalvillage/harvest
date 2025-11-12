@@ -1,9 +1,12 @@
+
 <script lang="ts">
     import { onMount, onDestroy, getContext } from "svelte";
     import { fade, slide } from "svelte/transition";
     import { ID } from "../dashboard/store";
     import HoloSphere from "holosphere";
     import MyHolonsIcon from "../dashboard/sidebar/icons/MyHolonsIcon.svelte";
+    import { goto } from "$app/navigation";
+    import { fetchHolonName } from "../utils/holonNames";
 
     import { taskSortStore, sortTasks, type TaskSortState } from "../dashboard/store";
 
@@ -23,20 +26,12 @@
     let timeInterval: ReturnType<typeof setInterval>;
     let weatherRefreshInterval: ReturnType<typeof setInterval>;
     
-    // Weather state
-    let weatherData: {
-        temperature: number;
-        weatherCode: number;
-        windSpeed: number;
-        unit: string;
-        city: string;
-        country: string;
-        lastUpdated: Date;
-    } | null = null;
-    let isLoadingWeather = false;
-    
     // Holon data state
     $: holonID = $ID;
+
+    // Holon name state
+    let holonName = '';
+    let isLoadingHolonName = false;
     
     // Events and tasks data
     let todaysEvents: Array<{
@@ -500,7 +495,7 @@
 
                 
             <!-- Main Dashboard Content -->
-            <div class="h-full p-8 flex flex-col">
+            <div class="h-full p-8 pb-16 flex flex-col">
                 <!-- Top Section: Date, Holons Logo, and Weather -->
                 <div class="flex justify-between items-start mb-8">
                     <!-- Date Section -->
@@ -569,7 +564,7 @@
                     </div>
 
                     <!-- Events, Scheduled Tasks, and Active Tasks Grid -->
-                    <div class="w-full max-w-5xl grid md:grid-cols-2 gap-8">
+                    <div class="w-full max-w-5xl grid md:grid-cols-2 gap-8 px-4">
                         <!-- Today's Earliest 3 Scheduled Items -->
                         <div class="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 overflow-hidden">
                                 <h3 class="text-xl font-semibold text-white mb-4 flex items-center">
@@ -585,7 +580,7 @@
                                     <span class="text-white/60 text-sm">Loading next items...</span>
                                     </div>
                             {:else if todaysEvents.length > 0}
-                                <div class="space-y-3 max-h-60 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
+                                <div class="space-y-3 max-h-40 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
                                     {#each todaysEvents as event}
                                         <div class="bg-white/5 rounded-lg p-3 border border-white/10 flex-shrink-0">
                                             <div class="flex justify-between items-start mb-1">
@@ -653,7 +648,7 @@
                                     <span class="text-white/60 text-sm">Loading tasks...</span>
                                         </div>
                             {:else if topTasks.length > 0}
-                                <div class="space-y-3 max-h-60 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
+                                <div class="space-y-3 max-h-40 overflow-y-auto overflow-x-hidden pr-2 custom-scrollbar min-h-0 flex flex-col">
                                     {#each topTasks as task}
                                         <div class="bg-white/5 rounded-lg p-3 border border-white/10 flex-shrink-0">
                                             <div class="flex justify-between items-start mb-1">
@@ -692,8 +687,19 @@
                                     
                 
 
-                <!-- Bottom Right: ESC hint -->
-                <div class="absolute bottom-6 right-6">
+                <!-- Bottom Right: ESC hint and Badges button -->
+                <div class="absolute bottom-6 right-6 flex items-center space-x-4">
+                    <!-- Badges Button -->
+                    <button 
+                        class="bg-indigo-600/80 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg transition-all duration-200 hover:scale-105 flex items-center space-x-2 shadow-lg"
+                        on:click={() => window.location.href = `/${holonID}/badges`}
+                        aria-label="View community badges"
+                    >
+                        <span class="text-lg">🏆</span>
+                        <span class="text-sm font-medium">Badges</span>
+                    </button>
+                    
+                    <!-- ESC hint -->
                     <p class="text-white/40 text-sm flex items-center">
                         Press <kbd class="mx-2 px-2 py-1 bg-white/10 rounded text-xs border border-white/20">Esc</kbd> to close
                     </p>

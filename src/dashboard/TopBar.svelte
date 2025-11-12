@@ -1,92 +1,82 @@
-<script context="module" lang="ts">
-	// Extend Window interface for MetaMask
-	interface MetaMaskWindow extends Window {
-		ethereum?: any; // You can use a more specific type if you have one for ethers provider
-	}
-
-	declare let window: MetaMaskWindow;
-</script>
-
 <script lang="ts">
-	import { openSidebar, ID, autoTransitionEnabled, walletAddress } from './store';
+	import { openSidebar, ID } from './store';
 	import { onMount, onDestroy, getContext } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import HoloSphere from 'holosphere';
-	import { ethers } from 'ethers';
-	import { fetchHolonName } from "../utils/holonNames";
 	import { addVisitedHolon, getWalletAddress } from "../utils/localStorage";
+	import { fetchHolonName, clearHolonNameCache } from "../utils/holonNames";
 	import MyHolonsIcon from './sidebar/icons/MyHolonsIcon.svelte';
 	import Menu from 'svelte-feather-icons/src/icons/MenuIcon.svelte';
+	import VideoCall from '../components/VideoCall.svelte';
+	import WidgetDashboard from '../components/WidgetDashboard.svelte';
 
 	export let toggleMyHolons: () => void;
-	export let toggleClockOverlay: () => void;
 
-	// Add a function to refresh visited holon names
-	async function refreshVisitedHolonNames() {
-		if (browser && $walletAddress) {
+	// Add a function to refresh ALL holon names comprehensively
+	async function refreshAllHolonNames() {
+		if (browser) {
 			try {
-				// Dispatch a custom event to trigger refresh in MyHolons component
-				const refreshEvent = new CustomEvent('refreshVisitedHolonNames', {
-					detail: { walletAddress: $walletAddress }
+				// Dispatch a custom event to trigger comprehensive refresh in MyHolons component
+				const refreshEvent = new CustomEvent('refreshAllHolonNames', {
+					detail: { timestamp: Date.now() }
 				});
 				window.dispatchEvent(refreshEvent);
-				console.log('Dispatched refresh event for visited holon names');
+				
+				// Also refresh the current holon name if we have one
+				if ($ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== '') {
+					await updateCurrentHolonName($ID);
+				}
 			} catch (err) {
-				console.error('Error dispatching refresh event:', err);
+				console.error('Error dispatching comprehensive refresh event:', err);
 			}
 		}
 	}
 
-	// Enhanced toggle function that refreshes names
+	// Enhanced toggle function that refreshes names comprehensively
 	function handleToggleMyHolons() {
-		// First refresh the visited holon names
-		refreshVisitedHolonNames();
+		// First refresh ALL types of holon names comprehensively
+		refreshAllHolonNames();
 		// Then call the original toggle function
 		toggleMyHolons();
+	}
+
+	// Handle holon name update event from Settings
+	function handleHolonNameUpdated(event: CustomEvent) {
+		const { holonId, newName } = event.detail;
+		if (holonId === $ID && newName) {
+			// Update the current holon name immediately
+			currentHolonName = newName;
+			// Also trigger a refresh to ensure consistency
+			setTimeout(() => updateCurrentHolonName(holonId), 100);
+		}
+	}
+
+	// Handle holon navigation event from MyHolons component
+	function handleHolonNavigated(event: CustomEvent) {
+		const { holonId, holonName } = event.detail;
+		console.log('[TopBar] Holon navigated event:', { holonId, holonName });
+		if (holonId && holonName) {
+			// Update the current holon name immediately
+			currentHolonName = holonName;
+			// Update the processed ID to match
+			processedHolonId = holonId;
+			// Also save to visited holons with the name
+			if (browser && holonId !== 'undefined' && holonId !== 'null' && holonId.trim() !== '') {
+				saveVisitedHolon(holonId, holonName);
+			}
+		}
 	}
 
 	let holosphere = getContext("holosphere") as HoloSphere;
 
 	let currentHolonName: string | undefined;
-
-	interface HolonInfo {
-		id: string;
-		name?: string;
-	}
-
-
 	let holonID: string = '';
 	let showToast = false;
-
-	// API Key Configuration Modal
-	// NOTE: This is a placeholder UI - keys are collected but not stored/used yet
-	let showApiModal = false;
-	let apiKeys = {
-		openai: '',
-		anthropic: '',
-		groq: ''
-	};
-
-	// Ethereum wallet connection
-	async function connectWallet() {
-		if (browser && typeof window.ethereum !== 'undefined') {
-			try {
-				const provider = new ethers.BrowserProvider(window.ethereum);
-				await provider.send("eth_requestAccounts", []);
-				const signer = await provider.getSigner();
-				const address = await signer.getAddress();
-				walletAddress.set(address);
-			} catch (error) {
-				console.error('Error connecting to wallet:', error);
-				// Handle error (e.g., show a message to the user)
-			}
-		} else {
-			console.log('MetaMask is not installed!');
-			// Handle case where MetaMask (or other provider) is not available
-		}
-	}
+	let isTranslating = false;
+	let showVideoCall = false;
+	let showWidgetDashboard = false;
 
 	// Function to save visited holon
 	async function saveVisitedHolon(holonId: string, holonName: string) {
@@ -106,97 +96,109 @@
 	let isInitialized = false;
 
 	// Initialize on mount
-	onMount(() => {
-		// Ensure auto-transition is off by default when TopBar loads
-		autoTransitionEnabled.set(false);
-
-		// Add event listeners only in browser environment
-		if (browser) {
-			window.addEventListener('mousemove', handleActivity);
-			window.addEventListener('touchstart', handleActivity);
-			window.addEventListener('touchmove', handleActivity);
-			window.addEventListener('scroll', handleActivity);
-		}
-
+	onMount(async () => {
 		// Set up initial state
 		isInitialized = true;
-		
-		// Process initial ID if available
+
+		// Process initial ID immediately if available
 		const initialId = $page.params.id;
 		if (initialId && initialId !== 'undefined' && initialId !== 'null' && initialId.trim() !== '') {
 			ID.set(initialId);
 			processedHolonId = initialId;
+			// Start fetching the name immediately (don't wait for holosphere)
 			updateCurrentHolonName(initialId);
 		}
-	});
 
-	onDestroy(() => {
-		if (browser) {
-			window.removeEventListener('mousemove', handleActivity);
-			window.removeEventListener('touchstart', handleActivity);
-			window.removeEventListener('touchmove', handleActivity);
-			window.removeEventListener('scroll', handleActivity);
+		// Also retry after holosphere is ready
+		await new Promise(resolve => setTimeout(resolve, 1000));
+		if (initialId && initialId !== 'undefined' && initialId !== 'null' && initialId.trim() !== '') {
+			// Retry the name fetch in case it failed the first time
+			updateCurrentHolonName(initialId);
 		}
+		
+			// Monitor for Google Translate activity
+		const observer = new MutationObserver(() => {
+			// Check if Google Translate is active by looking for translated elements
+			const hasTranslatedElements = document.querySelector('font[style*="vertical-align"]') ||
+										   document.querySelector('.goog-te-combo')?.value !== '';
+			isTranslating = !!hasTranslatedElements;
+		});
+
+		observer.observe(document.body, {
+			childList: true,
+			subtree: true,
+			attributes: true
+		});
+
+		// Listen for widget dashboard toggle events from Layout
+		window.addEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
+
+		// Listen for holon name update events from Settings
+		window.addEventListener('holonNameUpdated', handleHolonNameUpdated);
+
+		// Listen for holon navigation events from MyHolons
+		window.addEventListener('holonNavigated', handleHolonNavigated);
+		
+		// Listen for translation events
+		window.addEventListener('flagLanguageChanged', () => {
+			setTimeout(() => {
+				const selectElement = document.querySelector('.goog-te-combo') as HTMLSelectElement;
+				isTranslating = selectElement && selectElement.value !== '';
+			}, 100);
+		});
 	});
 
-	// Function to disconnect wallet
-	function disconnectWallet() {
-		walletAddress.set(null);
-		// Potentially clear other related stored data if needed
-	}
-
-	// API Key Modal Functions
-	// NOTE: This is a placeholder implementation for future secure API key management
-	// Currently, the modal collects keys but does NOT save or use them anywhere
-	
-	function openApiModal() {
-		showApiModal = true;
-	}
-
-	function closeApiModal() {
-		showApiModal = false;
-		// Clear the input fields when closing (since we're not saving)
-		// This ensures keys don't remain in memory
-		apiKeys = {
-			openai: '',
-			anthropic: '',
-			groq: ''
-		};
-	}
-
-	function handleApiSubmit() {
-		// CURRENT BEHAVIOR: Keys are logged (redacted) but immediately discarded
-		// The LLMService still uses environment variables only (src/utils/llm-service.ts)
-		// 
-		// TODO FOR FUTURE IMPLEMENTATION:
-		// 1. Implement secure storage (encrypted localStorage or secure session storage)
-		// 2. Update LLMService to accept runtime API keys instead of just env vars
-		// 3. Add API key validation (format checking, test API calls)
-		// 4. Add key management UI (show which keys are set, allow individual clearing)
-		// 5. Consider key expiration/refresh mechanisms
-		
-		console.log('API Keys entered (not saved for security):', {
-			openai: apiKeys.openai ? '***' : 'empty',
-			anthropic: apiKeys.anthropic ? '***' : 'empty', 
-			groq: apiKeys.groq ? '***' : 'empty'
-		});
-		
-		// Keys are immediately discarded for security
-		closeApiModal();
-	}
-
-	// Use centralized holon name service
-	async function updateCurrentHolonName(id: string) {
+	// Use centralized holon name service with proper reactivity
+	async function updateCurrentHolonName(id: string, retryCount = 0) {
 		if (!id || id === '') {
 			currentHolonName = undefined;
 			return;
 		}
-		
+
+		// Check if holosphere is available
+		if (!holosphere) {
+			currentHolonName = `Holon ${id}`;
+			// Retry when holosphere becomes available
+			if (retryCount < 5) {
+				setTimeout(() => {
+					updateCurrentHolonName(id, retryCount + 1);
+				}, 500);
+			}
+			return;
+		}
+
+		// On retries, wait a bit for connection to be ready
+		if (retryCount > 0) {
+			await new Promise(resolve => setTimeout(resolve, 300));
+		}
+
 		try {
-			currentHolonName = await fetchHolonName(holosphere, id);
+			// Clear cache on retries to force a fresh fetch
+			if (retryCount > 1) {
+				clearHolonNameCache(id);
+			}
+
+			// Use centralized fetchHolonName function like MyHolons does
+			const name = await fetchHolonName(holosphere, id);
+
+			// Update the name and trigger reactivity
+			if (name && name !== `Holon ${id}`) {
+				currentHolonName = name;
+				console.log(`[TopBar] Updated holon name: ${name}`);
+			} else {
+				currentHolonName = `Holon ${id}`;
+			}
 		} catch (error) {
-			console.error(`Error fetching name for holon ${id}:`, error);
-			currentHolonName = undefined;
+			console.warn(`[TopBar] Error fetching holon name (attempt ${retryCount + 1}):`, error);
+			// Retry logic - try up to 3 times with exponential backoff
+			if (retryCount < 3) {
+				const delay = Math.pow(2, retryCount) * 500; // 500ms, 1s, 2s
+				setTimeout(() => {
+					updateCurrentHolonName(id, retryCount + 1);
+				}, delay);
+			} else {
+				currentHolonName = `Holon ${id}`; // Fallback to ID on error
+			}
 		}
 	}
 
@@ -231,8 +233,8 @@
 				saveVisitedHolon($ID, holonName);
 			}
 			
-			// Only update route if we're not on a primary page
-			if ($page.url.pathname !== '/') {
+			// Only update route if we're not on a primary page AND not on video route
+			if ($page.url.pathname !== '/' && !$page.url.pathname.includes('/video')) {
 				// Check if we're already on a valid path for this holon
 				const currentPath = $page.url.pathname;
 				const expectedPath = `/${$ID}`;
@@ -248,6 +250,9 @@
 					// Just update the holonID without changing the route
 					holonID = $ID;
 				}
+			} else {
+				// Just update the holonID without changing the route for video
+				holonID = $ID;
 			}
 		}
 	}
@@ -265,43 +270,59 @@
 		const currentPath = $page.url.pathname;
 		const expectedPath = `/${id}`;
 		
+		console.log('TopBar updateRoute called:', { id, currentPath, expectedPath });
+		
 		// Only navigate if we're not already on the correct path
 		if (browser && !currentPath.startsWith(expectedPath)) {
 			// Extract the sub-path more carefully
 			const pathParts = currentPath.split('/');
 			let subPath = pathParts[pathParts.length - 1]; // Get the last part
 			
+			console.log('TopBar: pathParts =', pathParts, 'subPath =', subPath);
+			
+			// Don't interfere with specific routes like video
+			const protectedRoutes = ['video', 'map', 'settings', 'roles', 'offers', 'tasks', 'calendar', 'tags', 'proposals', 'shopping', 'checklists', 'status', 'federation', 'dashboard'];
+			
 			// Only default to dashboard if we're currently on a path that's just the holon ID
 			// or if the subPath is the old holon ID (meaning we're switching holons)
-			if (pathParts.length === 2 || subPath === holonID) {
+			// BUT not if we're on a protected route
+			if ((pathParts.length === 2 || subPath === holonID) && !protectedRoutes.includes(subPath)) {
+				console.log('TopBar: Defaulting to dashboard because conditions met');
 				subPath = 'dashboard';
 			}
 			
 			const newPath = `/${id}/${subPath || 'dashboard'}`;
+			console.log('TopBar: Navigating to', newPath);
 			goto(newPath);
+		} else {
+			console.log('TopBar: Not navigating, already on correct path or path starts with expected');
 		}
 	}
 
 	// Check if we're on a primary page (standalone routes)
 	$: isPrimaryPage = $page.url.pathname === '/';
-	
-	// Reactive statement for walletAddress changes
-	$: if ($walletAddress) {
-		console.log('Wallet connected:', $walletAddress);
-		// You can add logic here if something needs to happen when the wallet connects,
-		// e.g., fetching user-specific data based on wallet address.
-	}
 
-	function toggleAutoTransition() {
-		autoTransitionEnabled.update(value => !value);
-	}
-
-	// Pause on any mouse or touch activity
-	function handleActivity() {
-		if ($autoTransitionEnabled) {
-			autoTransitionEnabled.set(false);
+	function startVideoCall() {
+		if ($ID) {
+			showVideoCall = true;
 		}
 	}
+
+	function toggleWidgetDashboard() {
+		if ($ID) {
+			showWidgetDashboard = !showWidgetDashboard;
+		}
+	}
+
+	onDestroy(() => {
+		// Clean up event listeners
+		if (browser) {
+			window.removeEventListener('toggleWidgetDashboard', toggleWidgetDashboard);
+			window.removeEventListener('holonNameUpdated', handleHolonNameUpdated);
+			window.removeEventListener('holonNavigated', handleHolonNavigated);
+		}
+	});
+
 
 
 </script>
@@ -330,40 +351,7 @@
 		border-radius: 0.5rem;
 		margin-right: 1rem;
 	}
-	.wallet-button {
-		background-color: #4a5568; /* gray-700 */
-		color: white;
-		padding: 0.5rem 1rem;
-		border-radius: 0.375rem; /* rounded-md */
-		font-weight: 500; /* font-medium */
-		margin-left: 1rem; /* ml-4 */
-		transition: background-color 0.2s;
-	}
-	.wallet-button:hover {
-		background-color: #2d3748; /* gray-800 */
-	}
-	.wallet-info {
-		color: white;
-		margin-left: 1rem; /* ml-4 */
-		font-size: 0.875rem; /* text-sm */
-		display: flex;
-		align-items: center;
-	}
-	.disconnect-button {
-		background-color: transparent;
-		color: #cbd5e0; /* gray-400 */
-		border: 1px solid #cbd5e0; /* gray-400 */
-		padding: 0.25rem 0.5rem;
-		border-radius: 0.375rem; /* rounded-md */
-		margin-left: 0.5rem; /* ml-2 */
-		font-size: 0.75rem; /* text-xs */
-		cursor: pointer;
-	}
-	.disconnect-button:hover {
-		background-color: #ef4444; /* red-500 */
-		color: white;
-		border-color: #ef4444; /* red-500 */
-	}
+
 </style>
 
 <div class="top-bar-container w-full px-4 py-2 flex items-center gap-4 relative">
@@ -376,34 +364,46 @@
 
     <!-- Dashboard-style bar - full width -->
     {#if !isPrimaryPage}
-        <button 
-            on:click={handleToggleMyHolons} 
-            class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 px-4 sm:px-6 py-2 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-[1.01] relative overflow-hidden flex-1"
-            title="Open My Holons"
-        >
-            <!-- Gradient overlay -->
-            <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            
-            <!-- Bar content - responsive layout -->
-            <div class="relative z-10 flex flex-col sm:flex-row items-center gap-1 sm:gap-3">
-                <!-- Holons Logo -->
-                <div class="flex-shrink-0">
-                    <div class="w-12 h-12 sm:w-20 sm:h-20 group-hover:scale-105 transition-transform">
-                        <MyHolonsIcon />
-                    </div>
-                </div>
+        <div class="flex-1 flex flex-col gap-3">
+            <!-- Title section - takes full width -->
+            <button 
+                on:click={handleToggleMyHolons} 
+                class="group bg-gray-800 hover:bg-gray-750 transition-all duration-300 px-4 sm:px-6 py-2 rounded-2xl shadow-xl hover:shadow-2xl transform hover:scale-[1.01] relative overflow-hidden w-full"
+                title="Open My Holons"
+            >
+                <!-- Gradient overlay -->
+                <div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                 
-                <!-- Title and ID -->
-                <div class="text-center sm:text-left">
-                    <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
-                        {currentHolonName || 'Loading...'}
+                <!-- Bar content - responsive layout -->
+                <div class="relative z-10 flex flex-row items-center gap-3">
+                    <!-- Holons Logo -->
+                    <div class="flex-shrink-0">
+                        <div class="w-12 h-12 sm:w-20 sm:h-20 group-hover:scale-105 transition-transform">
+                            <MyHolonsIcon />
+                        </div>
                     </div>
-                    <div class="text-xs sm:text-sm text-gray-400 font-mono mt-1">
-                        {$ID || '...'}
+                    
+                    <!-- Title and ID -->
+                    <div class="text-left">
+                        <div class="text-lg sm:text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-tight">
+                            {#if currentHolonName && !isTranslating}
+                                {currentHolonName}
+                            {:else if isTranslating && currentHolonName}
+                                <span class="notranslate">{currentHolonName}</span>
+                            {:else if $ID && $ID !== 'undefined' && $ID !== 'null' && $ID.trim() !== ''}
+                                <span class="notranslate">Holon {$ID}</span>
+                            {:else}
+                                <span class="notranslate">Loading...</span>
+                            {/if}
+                        </div>
+                        <div class="text-xs sm:text-sm text-gray-400 font-mono mt-1">
+                            {$ID || '...'}
+                        </div>
                     </div>
                 </div>
-            </div>
-        </button>
+            </button>
+            
+        </div>
     {:else}
         <!-- Root page - centered logo -->
         <div class="flex-1 flex items-center justify-center">
@@ -413,43 +413,41 @@
                 </div>
             </button>
         </div>
+        
     {/if}
 
-    <!-- Right side controls -->
-    <div class="z-10 ml-auto flex items-center gap-3">
-        <!-- Clock Overlay Button (only on dashboard pages) -->
-        {#if !isPrimaryPage}
-            <button 
-                on:click={toggleClockOverlay}
-                class="p-3 text-gray-300 hover:text-white hover:bg-gray-700 rounded-xl transition-all duration-200 group"
-                title="Show System Overview (Ctrl+Shift+C)"
-                aria-label="Show System Overview"
+    <!-- Right side controls - single column layout -->
+    <div class="z-10 ml-auto hidden sm:flex flex-col items-center gap-1">
+        <!-- Google Translate Widget -->
+        <div id="google_translate_element" class="scale-75"></div>
+
+        <!-- Action Buttons (only on dashboard pages) -->
+        {#if !isPrimaryPage && $ID}
+            <!-- Widget Dashboard Button -->
+            <button
+                on:click={toggleWidgetDashboard}
+                class="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group"
+                title="Toggle Widget Dashboard"
+                aria-label="Toggle Widget Dashboard"
             >
-                <svg class="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                </svg>
+            </button>
+
+            <!-- Video Call Button -->
+            <button
+                on:click={startVideoCall}
+                class="p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group"
+                title="Start Video Call"
+                aria-label="Start Video Call"
+            >
+                <svg class="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
             </button>
         {/if}
 
-        <!-- Wallet and API Keys - Vertical Layout -->
-        <div class="flex flex-col gap-2">
-            <!-- Wallet -->
-            {#if $walletAddress}
-                <div class="wallet-info">
-                    <span>{`${$walletAddress.substring(0, 6)}...${$walletAddress.substring($walletAddress.length - 4)}`}</span>
-                    <button on:click={disconnectWallet} class="disconnect-button">Disconnect</button>
-                </div>
-            {:else}
-                <button on:click={connectWallet} class="wallet-button">
-                    Connect Wallet
-                </button>
-            {/if}
-            
-            <!-- API Key Configuration Button -->
-            <button on:click={openApiModal} class="wallet-button">
-                🔐 API Keys
-            </button>
-        </div>
     </div>
 </div>
 
@@ -463,75 +461,10 @@
 	</button>
 {/if}
 
-<!-- API Key Configuration Modal -->
-{#if showApiModal}
-	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" role="dialog" aria-modal="true" tabindex="-1" on:click={closeApiModal} on:keydown={(e) => e.key === 'Escape' && closeApiModal()}>
-		<div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4" role="document" on:click={(e) => e.stopPropagation()}>
-			<div class="flex justify-between items-center mb-4">
-				<h2 class="text-xl font-bold text-white">🔐 API Key Configuration</h2>
-				<button on:click={closeApiModal} class="text-gray-400 hover:text-white" aria-label="Close modal">
-					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-					</svg>
-				</button>
-			</div>
-			
-			<form on:submit|preventDefault={handleApiSubmit} class="space-y-4">
-				<div>
-					<label for="openai-key" class="block text-sm font-medium text-gray-300 mb-2">OpenAI API Key</label>
-					<input
-						type="password"
-						id="openai-key"
-						bind:value={apiKeys.openai}
-						placeholder="sk-..."
-						class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-					/>
-				</div>
-				
-				<div>
-					<label for="anthropic-key" class="block text-sm font-medium text-gray-300 mb-2">Anthropic API Key</label>
-					<input
-						type="password"
-						id="anthropic-key"
-						bind:value={apiKeys.anthropic}
-						placeholder="sk-ant-..."
-						class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-					/>
-				</div>
-				
-				<div>
-					<label for="groq-key" class="block text-sm font-medium text-gray-300 mb-2">Groq API Key</label>
-					<input
-						type="password"
-						id="groq-key"
-						bind:value={apiKeys.groq}
-						placeholder="gsk_..."
-						class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-					/>
-				</div>
-				
-				<div class="bg-yellow-900 border border-yellow-600 rounded-md p-3 mb-4">
-					<p class="text-sm text-yellow-200">
-						⚠️ <strong>Security Notice:</strong> API keys are not saved for security reasons. You'll need to re-enter them each session until secure storage is implemented.
-					</p>
-				</div>
-				
-				<div class="flex justify-end space-x-3">
-					<button
-						type="button"
-						on:click={closeApiModal}
-						class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
-					>
-						Cancel
-					</button>
-					<button
-						type="submit"
-						class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-					>
-						Apply
-					</button>
-				</div>
-			</form>
-		</div>
-	</div>
-{/if}
+<!-- Floating Video Call Component -->
+<VideoCall roomId={$ID} bind:show={showVideoCall} floating={true} />
+
+<!-- Widget Dashboard Component -->
+<WidgetDashboard bind:isVisible={showWidgetDashboard} />
+
+<!-- API Key Configuration Modal - MOVED TO COUNCIL COMPONENT -->

@@ -11,8 +11,9 @@ const fetchPromises = new Map<string, Promise<string>>();
  */
 export async function fetchHolonName(holosphere: HoloSphere, holonId: string): Promise<string> {
 	// Return cached name if available
-	if (holonNameCache.has(holonId)) {
-		return holonNameCache.get(holonId)!;
+	const cachedName = holonNameCache.get(holonId);
+	if (cachedName) {
+		return cachedName;
 	}
 
 	// Return existing promise if already fetching
@@ -23,11 +24,38 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 	// Create new fetch promise
 	const fetchPromise = (async () => {
 		try {
+			// Check if holosphere is available
+			if (!holosphere) {
+				// Cache and return fallback name
+				const fallbackName = `Holon ${holonId}`;
+				holonNameCache.set(holonId, fallbackName);
+				return fallbackName;
+			}
+
 			const settings = await holosphere.get(holonId, "settings", holonId);
-			const holonName = settings?.name || `Holon ${holonId}`;
-			holonNameCache.set(holonId, holonName);
-			return holonName;
+
+			// Check if settings exists and has the expected structure
+			if (!settings) {
+				// Cache and return fallback name when no settings
+				const fallbackName = `Holon ${holonId}`;
+				holonNameCache.set(holonId, fallbackName);
+				return fallbackName;
+			}
+
+			const holonName = settings?.name;
+
+			// Check if we got a real name (not empty, not undefined)
+			if (holonName && holonName.trim() !== '') {
+				holonNameCache.set(holonId, holonName);
+				return holonName;
+			} else {
+				// Cache and return fallback name when name is empty
+				const fallbackName = `Holon ${holonId}`;
+				holonNameCache.set(holonId, fallbackName);
+				return fallbackName;
+			}
 		} catch (error) {
+			// Cache and return fallback name on error
 			const fallbackName = `Holon ${holonId}`;
 			holonNameCache.set(holonId, fallbackName);
 			return fallbackName;
@@ -39,7 +67,7 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
 
 	// Cache the promise
 	fetchPromises.set(holonId, fetchPromise);
-	
+
 	return fetchPromise;
 }
 
@@ -47,7 +75,13 @@ export async function fetchHolonName(holosphere: HoloSphere, holonId: string): P
  * Get cached holon name or return fallback
  */
 export function getCachedHolonName(holonId: string): string {
-	return holonNameCache.get(holonId) || `Holon ${holonId}`;
+	const cachedName = holonNameCache.get(holonId);
+	// Return cached name if it exists
+	if (cachedName) {
+		return cachedName;
+	}
+	// Return fallback (not cached here since it should be fetched properly)
+	return `Holon ${holonId}`;
 }
 
 /**
@@ -118,6 +152,33 @@ export function clearHolonNameCache(holonId?: string): void {
 		holonNameCache.clear();
 		fetchPromises.clear();
 	}
+}
+
+/**
+ * Clear fallback names from cache to force re-fetching
+ * This is useful when you want to retry fetching proper names for holons
+ * that previously didn't have settings
+ */
+export function clearFallbackNames(): void {
+	const holonIds = Array.from(holonNameCache.keys());
+	let clearedCount = 0;
+
+	for (const id of holonIds) {
+		const cachedName = holonNameCache.get(id);
+		// Clear fallback names to allow retry
+		if (cachedName === `Holon ${id}`) {
+			holonNameCache.delete(id);
+			clearedCount++;
+		}
+	}
+}
+
+/**
+ * Force refresh of a specific holon name by clearing cache and re-fetching
+ */
+export async function forceRefreshHolonName(holosphere: HoloSphere, holonId: string): Promise<string> {
+	clearHolonNameCache(holonId);
+	return await fetchHolonName(holosphere, holonId);
 }
 
 /**

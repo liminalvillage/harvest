@@ -31,16 +31,24 @@
     // Reactive statement to calculate available users
     $: availableUsersToList = (() => {
         if (!userStore || Object.keys(userStore).length === 0) {
+            console.log(`[RoleModal.svelte] No userStore or empty userStore`);
             return [];
         }
         
+        console.log(`[RoleModal.svelte] userStore keys:`, Object.keys(userStore));
+        console.log(`[RoleModal.svelte] role.participants:`, role?.participants);
+        
         if (!role?.participants) {
             // If no participants yet, show all users
-            return Object.entries(userStore);
+            const allUsers = Object.entries(userStore);
+            console.log(`[RoleModal.svelte] No participants yet, showing all users:`, allUsers.map(([key, user]) => ({ key, id: user.id, name: user.first_name })));
+            return allUsers;
         }
         
         // Filter out users who are already participants
-        return Object.entries(userStore).filter(([userId, _user]) => !isUserParticipant(userId));
+        const availableUsers = Object.entries(userStore).filter(([userId, _user]) => !isUserParticipant(userId));
+        console.log(`[RoleModal.svelte] Filtered available users:`, availableUsers.map(([key, user]) => ({ key, id: user.id, name: user.first_name })));
+        return availableUsers;
     })();
 
     // Debug logging when dropdown is shown
@@ -75,21 +83,42 @@
     }
 
     async function addParticipant(userId: string) {
+        console.log(`[RoleModal.svelte] addParticipant called with userId: '${userId}'`);
+        console.log(`[RoleModal.svelte] userStore keys:`, Object.keys(userStore || {}));
+        console.log(`[RoleModal.svelte] Looking for user with key: '${userId}'`);
+        
         const user = userStore[userId];
+        console.log(`[RoleModal.svelte] Found user:`, user);
+        
+        if (!user) {
+            console.error(`[RoleModal.svelte] User not found in userStore with key '${userId}'`);
+            return;
+        }
+        
         const participants = [...(role.participants || [])];
         
         if (!participants.some((p: { id: string }) => p.id === userId)) {
-            participants.push({
+            const newParticipant = {
                 id: userId,
                 username: user.first_name + (user.last_name ? ' ' + user.last_name : '')
-            });
+            };
+            console.log(`[RoleModal.svelte] Adding new participant:`, newParticipant);
+            
+            participants.push(newParticipant);
             await updateRole({ participants });
+        } else {
+            console.log(`[RoleModal.svelte] User '${userId}' is already a participant`);
         }
         showAddParticipants = false;
     }
 
     function isUserParticipant(userId: string) {
-        return role.participants?.some((p: { id: string }) => p.id === userId);
+        const isParticipant = role.participants?.some((p: { id: string }) => p.id === userId);
+        console.log(`[RoleModal.svelte] isUserParticipant('${userId}'): ${isParticipant}`);
+        if (role.participants) {
+            console.log(`[RoleModal.svelte] Current participants:`, role.participants.map(p => ({ id: p.id, username: p.username })));
+        }
+        return isParticipant;
     }
 </script>
 
@@ -100,6 +129,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="modal-title"
+    tabindex="-1"
     transition:fade
 >
     <div 
@@ -166,6 +196,7 @@
                                     <button 
                                         class="text-red-400 hover:text-red-300"
                                         on:click={() => removeParticipant(participant.id)}
+                                        aria-label="Remove participant"
                                     >
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />

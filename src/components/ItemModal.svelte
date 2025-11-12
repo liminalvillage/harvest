@@ -26,13 +26,38 @@
         [key: string]: User;
     }
 
-
     const holosphere = getContext("holosphere") as HoloSphere;
     
     let userStore: UserStore = {};
+    
+    // Scheduling interface variables
+    let showScheduling = false;
+    let tempDate: string;
+    let tempTime: string;
+    let tempEndTime: string;
 
     onMount(() => {
         document.addEventListener('click', handleClickOutside);
+        
+        // Initialize scheduling form with current item values
+        if (item.when) {
+            const date = new Date(item.when);
+            tempDate = date.toISOString().split('T')[0];
+            tempTime = date.toTimeString().slice(0, 5);
+        } else {
+            const now = new Date();
+            tempDate = now.toISOString().split('T')[0];
+            tempTime = now.toTimeString().slice(0, 5);
+        }
+        
+        if (item.ends) {
+            const endDate = new Date(item.ends);
+            tempEndTime = endDate.toTimeString().slice(0, 5);
+        } else {
+            const startTime = new Date(item.when || new Date());
+            startTime.setHours(startTime.getHours() + 1);
+            tempEndTime = startTime.toTimeString().slice(0, 5);
+        }
         
         const initializeUsers = async () => {
             if (holosphere) {
@@ -61,11 +86,17 @@
                 // Then subscribe to future updates
                 holosphere.subscribe(holonId, "users", (newUser: any, key?: string) => {
                     if (key && newUser) {
-                        const parsedUser = newUser;
-                        userStore = {
-                            ...userStore,
-                            [key]: parsedUser
-                        };
+                        // Use user.id as the canonical key if available
+                        const canonicalKey = newUser.id || key;
+                        
+                        if (newUser.id && key !== newUser.id) {
+                            // Remove the old key if it's different from the canonical key
+                            const { [key]: _, ...rest } = userStore;
+                            userStore = { ...rest, [canonicalKey]: newUser };
+                        } else {
+                            // Use the key directly
+                            userStore = { ...userStore, [canonicalKey]: newUser };
+                        }
                     } else if (key) {
                         const { [key]: _, ...rest } = userStore;
                         userStore = rest;
@@ -167,6 +198,63 @@
     async function completeItem() {
         const newStatus = item.status === 'completed' ? 'ongoing' : 'completed';
         await updateItem({ status: newStatus }, true);
+    }
+
+    // Scheduling functions
+    async function updateSchedule() {
+        if (!tempDate || !tempTime) {
+            alert('Please select both date and start time');
+            return;
+        }
+
+        const newDate = new Date(`${tempDate}T${tempTime}`);
+        const endDate = tempEndTime ? new Date(`${tempDate}T${tempEndTime}`) : new Date(newDate.getTime() + 60*60*1000);
+        
+        const updatedItem = {
+            ...item,
+            when: newDate.toISOString(),
+            ends: endDate.toISOString()
+        };
+
+        await updateItem(updatedItem);
+        showScheduling = false;
+    }
+
+    async function removeSchedule() {
+        const updatedItem = {
+            ...item,
+            when: null,
+            ends: null,
+            status: 'ongoing'
+        };
+
+        await updateItem(updatedItem);
+        showScheduling = false;
+    }
+
+    function toggleScheduling() {
+        showScheduling = !showScheduling;
+        if (showScheduling) {
+            // Reset form to current values
+            if (item.when) {
+                const date = new Date(item.when);
+                tempDate = date.toISOString().split('T')[0];
+                tempTime = date.toTimeString().slice(0, 5);
+            } else {
+                const now = new Date();
+                tempDate = now.toISOString().split('T')[0];
+                tempTime = now.toTimeString().slice(0, 5);
+            }
+            
+            if (item.ends) {
+                const endDate = new Date(item.ends);
+                tempEndTime = endDate.toTimeString().slice(0, 5);
+            } else {
+                const startTime = new Date(item.when || new Date());
+                startTime.setHours(startTime.getHours() + 1);
+                tempEndTime = startTime.toTimeString().slice(0, 5);
+            }
+        }
     }
 
     function handleClickOutside(event: MouseEvent) {
@@ -332,6 +420,81 @@
                         {/if}
                     </div>
                 {/if}
+
+                <!-- Scheduling Interface -->
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-lg font-semibold">Schedule</h3>
+                        <button 
+                            class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded-full text-sm transition-colors"
+                            on:click={toggleScheduling}
+                        >
+                            {showScheduling ? 'Cancel' : (item.when ? 'Edit Schedule' : '+ Add Schedule')}
+                        </button>
+                    </div>
+
+                    {#if showScheduling}
+                        <div class="bg-gray-700/50 p-4 rounded-lg space-y-4">
+                            <div>
+                                <label for="schedule-date" class="text-gray-300 text-sm font-medium block mb-2">Date</label>
+                                <input 
+                                    id="schedule-date"
+                                    type="date" 
+                                    bind:value={tempDate}
+                                    class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
+                                >
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label for="schedule-start-time" class="text-gray-300 text-sm font-medium block mb-2">Start Time</label>
+                                    <input 
+                                        id="schedule-start-time"
+                                        type="time" 
+                                        bind:value={tempTime}
+                                        class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
+                                    >
+                                </div>
+                                
+                                <div>
+                                    <label for="schedule-end-time" class="text-gray-300 text-sm font-medium block mb-2">End Time</label>
+                                    <input 
+                                        id="schedule-end-time"
+                                        type="time" 
+                                        bind:value={tempEndTime}
+                                        class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
+                                    >
+                                </div>
+                            </div>
+                            
+                            <div class="flex gap-3 justify-end pt-2">
+                                {#if item.when}
+                                    <button 
+                                        type="button"
+                                        class="px-4 py-2 bg-gray-700 text-red-300 rounded-lg hover:bg-gray-600 border border-red-900/20 transition-colors text-sm font-medium"
+                                        on:click={removeSchedule}
+                                    >
+                                        Remove Schedule
+                                    </button>
+                                {/if}
+                                <button 
+                                    type="button"
+                                    class="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm font-medium"
+                                    on:click={() => showScheduling = false}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="button"
+                                    class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors text-sm font-medium"
+                                    on:click={updateSchedule}
+                                >
+                                    {item.when ? 'Update Schedule' : 'Set Schedule'}
+                                </button>
+                            </div>
+                        </div>
+                    {/if}
+                </div>
 
                 <div class="flex justify-between pt-6">
                     <button

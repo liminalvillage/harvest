@@ -98,7 +98,17 @@
 			holosphere.subscribe(holonID, "users", (updatedUser, key) => {
 				try {
 					if (updatedUser) {
-						userStore = { ...userStore, [key]: updatedUser };
+						// Use user.id as the canonical key if available
+						const canonicalKey = updatedUser.id || key;
+						
+						if (updatedUser.id && key !== updatedUser.id) {
+							// Remove the old key if it's different from the canonical key
+							const { [key]: _, ...rest } = userStore;
+							userStore = { ...rest, [canonicalKey]: updatedUser };
+						} else {
+							// Use the key directly
+							userStore = { ...userStore, [canonicalKey]: updatedUser };
+						}
 					} else {
 						const { [key]: _, ...rest } = userStore;
 						userStore = rest;
@@ -760,7 +770,7 @@
 					<span class="sr-only">Include federated offers</span>
 					<span 
 						class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {includeFederatedOffers ? 'translate-x-6' : 'translate-x-1'}"
-					/>
+					></span>
 				</button>
 				{#if loadingFederated}
 					<div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>

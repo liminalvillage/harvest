@@ -80,7 +80,6 @@ export const data = [
 		icon: StatusIcon,
 		link: '/status'
 	},
-
 	{
 		title: 'Federation',
 		icon: FederationIcon,

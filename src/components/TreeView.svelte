@@ -51,7 +51,7 @@
         display: inline-block;
         margin-right: 0.5rem; /* Add margin between the arrow and the text */
     }
-    .arrowDown { transform: rotate(90deg); }
+
     .label {
         color: white;
     }

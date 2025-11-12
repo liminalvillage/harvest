@@ -202,7 +202,17 @@
                     (newUser: any, key?: string) => {
                         if (key === undefined) return;
                         if (newUser) {
-                            store[key] = newUser as User;
+                            // Use user.id as the canonical key if available
+                            const canonicalKey = newUser.id || key;
+                            
+                            if (newUser.id && key !== newUser.id) {
+                                // Remove the old key if it's different from the canonical key
+                                const { [key]: _, ...rest } = store;
+                                store = { ...rest, [canonicalKey]: newUser as User };
+                            } else {
+                                // Use the key directly
+                                store[key] = newUser as User;
+                            }
                         } else {
                             delete store[key];
                         }

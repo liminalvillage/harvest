@@ -6,7 +6,6 @@
     import HoloSphere from "holosphere";
     import User from "./User.svelte";
     import { calculateCurrencyBalance } from "../utils/expenseCalculations";
-
     interface User {
         id?: string;
         username?: string;
@@ -322,57 +321,73 @@
     function flushPendingUsers() {
         if (pendingUsers.size > 0) {
             const updates = Object.fromEntries(pendingUsers);
+            console.log("[Status.svelte] Flushing pending user updates:", updates);
+            console.log("[Status.svelte] Store before update:", Object.keys(store));
             store = { ...store, ...updates };
+            console.log("[Status.svelte] Store after update:", Object.keys(store));
             pendingUsers.clear();
         }
     }
 
     async function subscribeToUsers() {
         if (holosphere && holonID) {
+            console.log("[Status.svelte] Setting up user subscription for holon:", holonID);
             holosphere.subscribe(holonID, "users", (newUser, key) => {
-                if (!key || key === 'undefined') return;
-                
-                if (newUser && newUser.id) {
-                    // Use user ID as canonical key
-                    const canonicalKey = newUser.id;
-                    
-                    // Check if this is actually a new/changed user to avoid unnecessary updates
-                    const existingUser = store[canonicalKey];
-                    if (existingUser && JSON.stringify(existingUser) === JSON.stringify(newUser)) {
-                        return; // No actual change, skip update
-                    }
-                    
-                    // Batch the update
-                    pendingUsers.set(canonicalKey, newUser);
-                    
-                    // Debounce updates to batch multiple changes
-                    if (subscriptionUpdateTimeout) {
-                        clearTimeout(subscriptionUpdateTimeout);
+                console.log("[Status.svelte] Subscription update received:", { key, newUser, hasId: !!newUser?.id });
+
+                if (!key || key === 'undefined') {
+                    console.log("[Status.svelte] Skipping update - invalid key:", key);
+                    return;
                 }
-                    subscriptionUpdateTimeout = setTimeout(flushPendingUsers, 50);
-                    
-                } else if (newUser && !newUser.id) {
-                    // Fallback for users without id
-                    store = { ...store, [key]: newUser };
+
+                // Simpler, more defensive approach
+                if (newUser) {
+                    // Determine the best key to use
+                    let userKey = key;
+                    if (newUser.id) {
+                        userKey = newUser.id;
+                    } else if (newUser.username) {
+                        userKey = newUser.username;
+                    }
+
+                    console.log("[Status.svelte] Adding/updating user. Key:", userKey, "Original key:", key);
+
+                    // Simple direct update - no batching for now to avoid race conditions
+                    store = { ...store, [userKey]: newUser };
+                    console.log("[Status.svelte] Updated store. User count:", Object.keys(store).length);
+
                 } else {
-                    // Handle deletion
+                    // Handle deletion - only delete if user was explicitly set to null
+                    console.log("[Status.svelte] Handling deletion for key:", key);
                     if (store.hasOwnProperty(key)) {
-                    const { [key]: _, ...rest } = store;
-                    store = rest;
+                        const { [key]: _, ...rest } = store;
+                        store = rest;
+                        console.log("[Status.svelte] User deleted. Remaining users:", Object.keys(store).length);
+                    }
+
+                    // Also check if we need to delete by user ID
+                    const userToDelete = Object.entries(store).find(([storeKey, user]) =>
+                        (user?.id === key) || (user?.username === key)
+                    );
+                    if (userToDelete) {
+                        const [storeKey] = userToDelete;
+                        const { [storeKey]: _, ...rest } = store;
+                        store = rest;
+                        console.log("[Status.svelte] Also deleted user by ID/username. Remaining users:", Object.keys(store).length);
                     }
                 }
             });
         }
     }
 
-    async function fetchInitialUsersAndSubscribe() {
+    async function fetchInitialUsersAndSubscribe(retryCount = 0) {
         if (!holosphere || !holonID) {
             store = {};
             return;
         }
 
-
         try {
+            console.log(`[Status.svelte] Fetching initial users for holon ${holonID} using reliable wrapper`);
             const initialUsers = await holosphere.getAll(holonID, "users");
             
             if (Array.isArray(initialUsers)) {
@@ -405,36 +420,48 @@
             console.error("[Status.svelte] Error fetching initial users:", error);
             store = {};
         }
+
+        // Debug logging to help diagnose user data issues
+        console.log(`[Status.svelte] Loaded ${Object.keys(store).length} users for holon ${holonID}`);
+        if (Object.keys(store).length > 0) {
+            console.log("[Status.svelte] Sample user data:", Object.values(store)[0]);
+            console.log("[Status.svelte] All user keys:", Object.keys(store));
+        }
         subscribeToUsers();
     }
 
     function calculateScore(user: User): number {
         let score = 0;
-        
+
         // Only include metrics with values > 0
+        // Use safe property access with fallback to default values
         if (equation.initiated > 0) {
-            score += user.initiated.length * equation.initiated;
+            const initiated = user.initiated || [];
+            score += (Array.isArray(initiated) ? initiated.length : 0) * equation.initiated;
         }
         if (equation.completed > 0) {
-            score += user.completed.length * equation.completed;
+            const completed = user.completed || [];
+            score += (Array.isArray(completed) ? completed.length : 0) * equation.completed;
         }
         if (equation.sent > 0) {
-            score += user.sent * equation.sent;
+            score += (user.sent || 0) * equation.sent;
         }
         if (equation.received > 0) {
-            score += user.received * equation.received;
+            score += (user.received || 0) * equation.received;
         }
         if (equation.hours > 0) {
-            score += user.hours * equation.hours;
+            score += (user.hours || 0) * equation.hours;
         }
         if (equation.collaboration > 0) {
-            score += user.collaboration * equation.collaboration;
+            score += (user.collaboration || 0) * equation.collaboration;
         }
         if (equation.wants > 0) {
-            score += user.wants.length * equation.wants;
+            const wants = user.wants || [];
+            score += (Array.isArray(wants) ? wants.length : 0) * equation.wants;
         }
         if (equation.offers > 0) {
-            score += user.offers.length * equation.offers;
+            const offers = user.offers || [];
+            score += (Array.isArray(offers) ? offers.length : 0) * equation.offers;
         }
         
         // Add currency balances if their weights are > 0
@@ -638,22 +665,22 @@
                                         </td>
                                         <td class="p-4">
                                             <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-600/20 text-blue-300">
-                                                {user.initiated.length}
+                                                {(user.initiated && Array.isArray(user.initiated)) ? user.initiated.length : 0}
                                             </span>
                                         </td>
                                         <td class="p-4">
                                             <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-600/20 text-green-300">
-                                                {user.completed.length}
+                                                {(user.completed && Array.isArray(user.completed)) ? user.completed.length : 0}
                                             </span>
                                         </td>
                                         <td class="p-4">
                                             <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-600/20 text-blue-300">
-                                                {user.sent}
+                                                {user.sent || 0}
                                             </span>
                                         </td>
                                         <td class="p-4">
                                             <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-600/20 text-purple-300">
-                                                {user.received}
+                                                {user.received || 0}
                                             </span>
                                         </td>
                                         {#each availableCurrencies as currency}
@@ -798,6 +825,7 @@
                                     <button 
                                         on:click={() => adjustValue('completed', -1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Decrease completed tasks weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -813,6 +841,7 @@
                                     <button 
                                         on:click={() => adjustValue('completed', 1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Increase completed tasks weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -839,6 +868,7 @@
                                     <button 
                                         on:click={() => adjustValue('sent', -1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Decrease appreciation sent weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -854,6 +884,7 @@
                                     <button 
                                         on:click={() => adjustValue('sent', 1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Increase appreciation sent weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -880,6 +911,7 @@
                                     <button 
                                         on:click={() => adjustValue('received', -1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Decrease appreciation received weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -895,6 +927,7 @@
                                     <button 
                                         on:click={() => adjustValue('received', 1)}
                                         class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                        aria-label="Increase appreciation received weight"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -927,6 +960,7 @@
                                                 <button 
                                                     on:click={() => adjustCurrencyWeight(currency, -1)}
                                                     class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                                    aria-label="Decrease {currency} weight"
                                                 >
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -942,6 +976,7 @@
                                                 <button 
                                                     on:click={() => adjustCurrencyWeight(currency, 1)}
                                                     class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                                    aria-label="Increase {currency} weight"
                                                 >
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -976,6 +1011,7 @@
                                         <button 
                                             on:click={() => adjustValue('hours', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Decrease hours weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -991,6 +1027,7 @@
                                         <button 
                                             on:click={() => adjustValue('hours', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Increase hours weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -1017,6 +1054,7 @@
                                         <button 
                                             on:click={() => adjustValue('collaboration', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Decrease collaboration weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -1032,6 +1070,7 @@
                                         <button 
                                             on:click={() => adjustValue('collaboration', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Increase collaboration weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -1058,6 +1097,7 @@
                                         <button 
                                             on:click={() => adjustValue('wants', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Decrease wants weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -1073,6 +1113,7 @@
                                         <button 
                                             on:click={() => adjustValue('wants', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Increase wants weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -1099,6 +1140,7 @@
                                         <button 
                                             on:click={() => adjustValue('offers', -1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Decrease offers weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/>
@@ -1114,11 +1156,12 @@
                                         <button 
                                             on:click={() => adjustValue('offers', 1)}
                                             class="w-8 h-8 bg-gray-500 hover:bg-gray-400 text-white rounded-lg flex items-center justify-center transition-colors"
+                                            aria-label="Increase offers weight"
                                         >
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                            </svg>
-                                        </button>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                    </button>
                                     </div>
                                 {:else}
                                     <div class="text-2xl font-bold {equation.offers > 0 ? 'text-indigo-400' : 'text-gray-500'}">{equation.offers}</div>

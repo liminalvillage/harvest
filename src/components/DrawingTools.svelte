@@ -102,6 +102,7 @@
                         style="background-color: {color};"
                         on:click={() => selectColor(color)}
                         title={color}
+                        aria-label="Select {color} color"
                     ></button>
                 {/each}
             </div>
@@ -118,6 +119,7 @@
                         class:bg-gray-700={currentStroke !== width}
                         on:click={() => selectStroke(width)}
                         title="{width}px"
+                        aria-label="Select {width}px stroke width"
                     >
                         <div 
                             class="rounded-full bg-current"
