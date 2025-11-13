@@ -49,10 +49,13 @@
 
     // Imported calendar state
     let showCalendarSettings = false;
-    let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean }> = [];
+    let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean; color?: string }> = [];
     let externalEvents: ExternalCalendarEvent[] = [];
     let syncInterval: NodeJS.Timeout | number | null = null;
     const SYNC_INTERVAL_MS = 10 * 60 * 1000; // Sync every 10 minutes
+
+    // Map to store calendar colors by calendar ID for quick lookup
+    let calendarColorsMap: Record<string, string> = {};
 
     // Orbital visualization variables
     interface RecurringTask {
@@ -396,7 +399,7 @@
                 location: event.location,
                 when: event.start.toISOString(),
                 ends: event.end.toISOString(),
-                color: '#10b981', // Green color for external events
+                color: calendarColorsMap[event.calendarUrl] || '#10b981', // Use calendar color or default green
                 isExternalEvent: true,
                 calendarName: event.calendarName
             }));
@@ -516,6 +519,15 @@
             const calendarData = await holosphere.get($ID, 'settings', 'imported_calendars');
             if (calendarData && Array.isArray(calendarData.calendars)) {
                 importedCalendars = calendarData.calendars;
+
+                // Build color map for quick lookup
+                calendarColorsMap = {};
+                importedCalendars.forEach(cal => {
+                    if (cal.color) {
+                        calendarColorsMap[cal.url] = cal.color;
+                    }
+                });
+
                 // Sync calendars after loading
                 await syncAllCalendars();
             }

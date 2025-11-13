@@ -36,15 +36,19 @@ export async function fetchAndParseICalFeed(
         // Convert webcal:// to https://
         const fetchUrl = url.replace(/^webcal:\/\//i, 'https://');
 
+        // Use a CORS proxy for external calendar feeds
+        // This is needed because most calendar services block direct browser requests
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(fetchUrl)}`;
+
         // Fetch the iCal feed
-        const response = await fetch(fetchUrl, {
+        const response = await fetch(proxyUrl, {
             headers: {
                 'Accept': 'text/calendar, text/plain, */*'
             }
         });
 
         if (!response.ok) {
-            throw new Error(`Failed to fetch calendar: ${response.statusText}`);
+            throw new Error(`Failed to fetch calendar: ${response.status} ${response.statusText}`);
         }
 
         const icalText = await response.text();
@@ -70,8 +74,18 @@ export function parseICalText(
     calendarName?: string
 ): ParsedCalendar {
     try {
+        // Validate that it looks like iCal data
+        if (!icalText.includes('BEGIN:VCALENDAR')) {
+            throw new Error('Invalid iCal format: missing VCALENDAR');
+        }
+
         const jcalData = ICAL.parse(icalText);
         const comp = new ICAL.Component(jcalData);
+
+        // Verify it's a calendar component
+        if (comp.name !== 'vcalendar') {
+            throw new Error('Invalid iCal format: not a VCALENDAR component');
+        }
 
         // Get calendar name from X-WR-CALNAME or use provided name
         const calNameProp = comp.getFirstPropertyValue('x-wr-calname');

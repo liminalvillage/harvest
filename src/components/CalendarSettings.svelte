@@ -53,6 +53,18 @@
         }
     }
 
+    // Generate a pastel color for a calendar based on its ID
+    function getCalendarColor(calendarId: string): string {
+        // Generate a hash from the calendar ID
+        let hash = 0;
+        for (let i = 0; i < calendarId.length; i++) {
+            hash = calendarId.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        // Convert to HSL color with pastel tones (lower saturation, higher lightness)
+        const hue = Math.abs(hash % 360);
+        return `hsl(${hue}, 60%, 75%)`;
+    }
+
     // Add a new calendar
     async function addCalendar() {
         error = '';
@@ -71,28 +83,44 @@
         loading = true;
 
         try {
-            const calendarId = `cal_${Date.now()}`;
-            const newCalendar = {
-                id: calendarId,
-                url: newCalendarUrl.trim(),
-                name: newCalendarName.trim() || 'Imported Calendar',
-                enabled: true
-            };
+            // First, try to fetch and validate the calendar feed
+            const testUrl = newCalendarUrl.trim();
 
-            importedCalendars = [...importedCalendars, newCalendar];
-            await saveImportedCalendars();
+            // Import the parser to test the feed
+            const { fetchAndParseICalFeed } = await import('$lib/services/icalParser');
 
-            // Clear form
-            newCalendarUrl = '';
-            newCalendarName = '';
-            successMessage = 'Calendar added successfully!';
+            try {
+                const testResult = await fetchAndParseICalFeed(testUrl, newCalendarName.trim() || 'Test');
 
-            // Notify parent component to refresh
-            dispatch('calendarsUpdated');
+                // If we get here, the feed is valid
+                const calendarId = `cal_${Date.now()}`;
+                const newCalendar = {
+                    id: calendarId,
+                    url: testUrl,
+                    name: newCalendarName.trim() || testResult.name || 'Imported Calendar',
+                    enabled: true,
+                    color: getCalendarColor(calendarId)
+                };
 
-            setTimeout(() => {
-                successMessage = '';
-            }, 3000);
+                importedCalendars = [...importedCalendars, newCalendar];
+                await saveImportedCalendars();
+
+                // Clear form
+                newCalendarUrl = '';
+                newCalendarName = '';
+                successMessage = `Calendar added successfully! Found ${testResult.events.length} events.`;
+
+                // Notify parent component to refresh
+                dispatch('calendarsUpdated');
+
+                setTimeout(() => {
+                    successMessage = '';
+                }, 3000);
+            } catch (fetchError) {
+                console.error('Failed to validate calendar:', fetchError);
+                error = 'Invalid calendar URL. Please make sure it\'s a valid iCal/ICS feed. ' +
+                        'If it\'s a Google Calendar, use the "Secret address in iCal format" from calendar settings.';
+            }
         } catch (err) {
             error = 'Failed to add calendar. Please try again.';
             console.error(err);
@@ -310,6 +338,13 @@
                                                 {/if}
                                             </div>
                                         </button>
+                                        {#if calendar.color}
+                                            <div
+                                                class="w-4 h-4 rounded flex-shrink-0 border border-gray-700"
+                                                style="background-color: {calendar.color};"
+                                                title="Calendar color"
+                                            ></div>
+                                        {/if}
                                         <div class="flex-1 min-w-0">
                                             <div class="text-white font-medium truncate">{calendar.name}</div>
                                             <div class="text-gray-400 text-xs truncate">{calendar.url}</div>
