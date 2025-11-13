@@ -407,6 +407,39 @@
         return [...(events[dateStr] || []), ...dayTasks, ...dayExternalEvents];
     }
 
+    // Get all events (both holon and external) for a specific date for week/day views
+    function getAllEventsForDate(date: Date) {
+        const dateStr = date.toDateString();
+
+        // Get holon tasks
+        const holonTasks = Object.entries(tasks)
+            .filter(([_, task]) => task.when && new Date(task.when).toDateString() === dateStr)
+            .map(([key, task]) => ({ key, task, isExternal: false }));
+
+        // Get external events
+        const externalEventsForDay = externalEvents
+            .filter(event => {
+                const eventStart = new Date(event.start);
+                return eventStart.toDateString() === dateStr;
+            })
+            .map(event => ({
+                key: event.id,
+                task: {
+                    id: event.id,
+                    title: event.title,
+                    description: event.description,
+                    location: event.location,
+                    when: event.start.toISOString(),
+                    ends: event.end.toISOString(),
+                    color: calendarColorsMap[event.calendarUrl] || '#10b981',
+                    calendarName: event.calendarName
+                },
+                isExternal: true
+            }));
+
+        return [...holonTasks, ...externalEventsForDay];
+    }
+
     function handleTimelineDateSelect(event: CustomEvent<{date: Date, dayOfYear: number}>) {
         currentDate = event.detail.date;
         selectedDate = currentDate;
@@ -1712,29 +1745,32 @@
                             {/each}
                         </div>
 
-                        <!-- Tasks for this day -->
-                        {#each calculateEventColumns(Object.entries(tasks).filter(([key, task]) => task.when && new Date(task.when).toDateString() === date.toDateString()).map(([key, task]) => ({key, task}))) as {key, task, column, totalColumns}}
+                        <!-- Tasks for this day (including external events) -->
+                        {#each calculateEventColumns(getAllEventsForDate(date)) as {key, task, column, totalColumns, isExternal}}
                             {@const position = getTaskPosition(task)}
                             {@const columnWidth = totalColumns > 1 ? `calc((100% - ${totalColumns * 2}px) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
                             {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * ((100% - ${totalColumns * 2}px) / ${totalColumns}) + ${column * 2}px)` : '0.25rem'}
                             {@const startHour = new Date(task.when).getHours()}
                             {@const endHour = task.ends ? new Date(task.ends).getHours() : startHour + 1}
                             {@const isShortEvent = (position.gridRowEnd - position.gridRowStart) <= 2}
-                            <div 
-                                class="rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden"
+                            {@const taskColor = task.color || '#6366f1'}
+                            <div
+                                class="rounded text-white transition-colors absolute z-10 overflow-hidden"
+                                class:cursor-move={!isExternal}
+                                class:cursor-pointer={isExternal}
                                 class:opacity-50={draggedTask?.key === key}
                                 class:text-xs={!isShortEvent}
                                 class:text-[10px]={isShortEvent}
                                 class:p-1={isShortEvent}
                                 class:p-2={!isShortEvent}
-                                draggable="true"
-                                on:dragstart={(e) => handleDragStart(e, key, task)}
+                                draggable={!isExternal}
+                                on:dragstart={(e) => !isExternal && handleDragStart(e, key, task)}
                                 on:dragend={handleDragEnd}
                                 on:click|stopPropagation={() => handleTaskClick(key, task)}
                                 on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                                 role="button"
                                 tabindex="0"
-                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
+                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth}; background-color: {taskColor}; opacity: 0.9;"
                             >
                                 <div class="font-bold truncate leading-tight">
                                     {#if totalColumns > 2 && task.title.length > 15}
@@ -1847,22 +1883,25 @@
                     {/each}
                 </div>
 
-                <!-- Tasks for this day -->
-                {#each calculateEventColumns(Object.entries(tasks).filter(([key, task]) => task.when && new Date(task.when).toDateString() === currentDate.toDateString()).map(([key, task]) => ({key, task}))) as {key, task, column, totalColumns}}
+                <!-- Tasks for this day (including external events) -->
+                {#each calculateEventColumns(getAllEventsForDate(currentDate)) as {key, task, column, totalColumns, isExternal}}
                     {@const position = getTaskPosition(task)}
                     {@const columnWidth = totalColumns > 1 ? `calc((100% - 0.5rem) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
                     {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * (100% - 0.5rem) / ${totalColumns})` : '0.25rem'}
+                    {@const taskColor = task.color || '#6366f1'}
                     <div
-                        class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10"
+                        class="text-xs p-2 rounded text-white transition-colors absolute z-10"
+                        class:cursor-move={!isExternal}
+                        class:cursor-pointer={isExternal}
                         class:opacity-50={draggedTask?.key === key}
-                        draggable="true"
-                        on:dragstart={(e) => handleDragStart(e, key, task)}
+                        draggable={!isExternal}
+                        on:dragstart={(e) => !isExternal && handleDragStart(e, key, task)}
                         on:dragend={handleDragEnd}
                         on:click|stopPropagation={() => handleTaskClick(key, task)}
                         on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                         role="button"
                         tabindex="0"
-                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
+                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth}; background-color: {taskColor}; opacity: 0.9;"
                     >
                         <div class="font-bold truncate">{task.title}</div>
                         <div class="text-xs opacity-75">
