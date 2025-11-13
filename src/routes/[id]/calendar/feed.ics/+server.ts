@@ -5,10 +5,12 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { generateICalFeed } from '$lib/services/icalGenerator';
 import HoloSphere from 'holosphere';
+import { VITE_LOCAL_MODE } from '$env/static/private';
 
 // Initialize HoloSphere instance for server-side data access
-// Default to production environment for iCal feed endpoint
-const holosphere = new HoloSphere('Holons');
+// Use the same logic as the client to determine environment
+const environmentName = VITE_LOCAL_MODE === "development" ? "HolonsDebug" : "Holons";
+const holosphere = new HoloSphere(environmentName);
 
 export const GET: RequestHandler = async ({ params }) => {
     const holonId = params.id;
@@ -22,11 +24,26 @@ export const GET: RequestHandler = async ({ params }) => {
         const holonData = await holosphere.get(holonId, 'profile', holonId);
         const holonName = holonData?.name || holonData?.title || 'Holon Calendar';
 
-        // Fetch all quests/events from the holon
-        const quests = await holosphere.getAll(holonId, 'quests');
+        // Fetch all quests/events from the holon using subscribe
+        // We use subscribe instead of getAll because Gun's data is async/real-time
+        const questsData = await new Promise((resolve) => {
+            const questsMap = new Map();
 
-        // Filter events that have a 'when' field (are scheduled)
-        const scheduledEvents = (quests || []).filter((quest: any) => quest.when);
+            // Subscribe temporarily to get all data
+            holosphere.subscribe(holonId, 'quests', (quest: any, key?: string) => {
+                if (quest && key && quest.when) {
+                    // Use Map to avoid duplicates from Gun's callback firing multiple times
+                    questsMap.set(key, { ...quest, id: key });
+                }
+            });
+
+            // Give Gun time to sync data, then resolve
+            setTimeout(() => {
+                resolve(Array.from(questsMap.values()));
+            }, 1000);
+        });
+
+        const scheduledEvents = Array.isArray(questsData) ? questsData : [];
 
         // Generate the iCal feed
         const icalContent = generateICalFeed(scheduledEvents, holonName, holonId);
