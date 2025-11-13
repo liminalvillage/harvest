@@ -333,13 +333,55 @@
         return week;
     }
 
-    function handleDateClick(date: Date) {
+    // Quick event creation state
+    let showQuickEventDialog = false;
+    let quickEventDate: Date | null = null;
+    let quickEventHour: number | null = null;
+    let quickEventTitle = '';
+    let quickEventDuration = 1; // hours
+
+    function handleDateClick(date: Date, hour?: number) {
         currentDate = date;
         selectedDate = date;
-        dispatch('dateSelect', { 
-            date, 
-            events: events[date.toDateString()] || [] 
-        });
+
+        // Open quick event dialog
+        quickEventDate = date;
+        quickEventHour = hour ?? new Date().getHours();
+        quickEventTitle = '';
+        quickEventDuration = 1;
+        showQuickEventDialog = true;
+    }
+
+    async function createQuickEvent() {
+        if (!quickEventTitle.trim() || !quickEventDate || !holosphere || !$ID) return;
+
+        const eventDate = new Date(quickEventDate);
+        eventDate.setHours(quickEventHour ?? 9, 0, 0, 0);
+
+        const endDate = new Date(eventDate);
+        endDate.setHours(eventDate.getHours() + quickEventDuration);
+
+        const newEvent = {
+            id: `event_${Date.now()}`,
+            title: quickEventTitle.trim(),
+            when: eventDate.toISOString(),
+            ends: endDate.toISOString(),
+            created: new Date().toISOString()
+        };
+
+        try {
+            await holosphere.put($ID, 'quests', newEvent);
+            showQuickEventDialog = false;
+            quickEventTitle = '';
+        } catch (error) {
+            console.error('Error creating event:', error);
+            alert('Failed to create event. Please try again.');
+        }
+    }
+
+    function cancelQuickEvent() {
+        showQuickEventDialog = false;
+        quickEventTitle = '';
     }
 
     function navigateMonth(direction: 1 | -1) {
@@ -1730,10 +1772,11 @@
                         <div class="divide-y divide-gray-700">
                             {#each Array(18) as _, i}
                                 {@const hour = i + 6}
-                                <div 
-                                    class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
+                                <div
+                                    class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative cursor-pointer"
                                     class:bg-indigo-100={dragOverDate?.toDateString() === date.toDateString() && dragOverTime === hour}
                                     class:bg-opacity-10={dragOverDate?.toDateString() === date.toDateString() && dragOverTime === hour}
+                                    on:click={() => handleDateClick(date, hour)}
                                     on:dragover={(e) => handleDragOver(e, date, hour)}
                                     on:dragleave={handleDragLeave}
                                     on:drop={(e) => handleDrop(e, date, hour)}
@@ -1853,21 +1896,15 @@
                 <div class="divide-y divide-gray-700">
                     {#each Array(18) as _, i}
                         {@const hour = i + 6}
-                        <div 
+                        <div
                             class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
                             class:bg-indigo-100={dragOverDate?.toDateString() === currentDate.toDateString() && dragOverTime === hour}
                             class:bg-opacity-10={dragOverDate?.toDateString() === currentDate.toDateString() && dragOverTime === hour}
-                            on:click={() => {
-                                const eventDate = new Date(currentDate);
-                                eventDate.setHours(hour);
-                                handleDateClick(eventDate);
-                            }}
+                            on:click={() => handleDateClick(currentDate, hour)}
                             on:keydown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault();
-                                    const eventDate = new Date(currentDate);
-                                    eventDate.setHours(hour);
-                                    handleDateClick(eventDate);
+                                    handleDateClick(currentDate, hour);
                                 }
                             }}
                             on:dragover={(e) => handleDragOver(e, currentDate, hour)}
@@ -2173,6 +2210,105 @@
     bind:show={showCalendarSettings}
     on:calendarsUpdated={handleCalendarsUpdated}
 />
+
+<!-- Quick Event Creation Dialog -->
+{#if showQuickEventDialog && quickEventDate}
+    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" on:click={cancelQuickEvent}>
+        <div class="bg-gray-800 rounded-xl border border-gray-700 max-w-md w-full p-6" on:click|stopPropagation>
+            <h3 class="text-xl font-bold text-white mb-4">Create Event</h3>
+
+            <div class="space-y-4">
+                <!-- Date and Time -->
+                <div class="text-gray-300 text-sm">
+                    <span class="font-medium">
+                        {quickEventDate.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                    </span>
+                    at
+                    <span class="font-medium">
+                        {(quickEventHour ?? 9).toString().padStart(2, '0')}:00
+                    </span>
+                </div>
+
+                <!-- Title -->
+                <div>
+                    <label for="quick-event-title" class="text-gray-300 text-sm font-medium block mb-2">
+                        Event Title
+                    </label>
+                    <input
+                        id="quick-event-title"
+                        type="text"
+                        bind:value={quickEventTitle}
+                        placeholder="Enter event title..."
+                        class="w-full bg-gray-900 text-white px-3 py-2 rounded-lg border border-gray-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                        autofocus
+                        on:keydown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                createQuickEvent();
+                            } else if (e.key === 'Escape') {
+                                cancelQuickEvent();
+                            }
+                        }}
+                    />
+                </div>
+
+                <!-- Time Inputs -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="quick-event-hour" class="text-gray-300 text-sm font-medium block mb-2">
+                            Start Time
+                        </label>
+                        <select
+                            id="quick-event-hour"
+                            bind:value={quickEventHour}
+                            class="w-full bg-gray-900 text-white px-3 py-2 rounded-lg border border-gray-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                        >
+                            {#each Array(24) as _, i}
+                                <option value={i}>{i.toString().padStart(2, '0')}:00</option>
+                            {/each}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="quick-event-duration" class="text-gray-300 text-sm font-medium block mb-2">
+                            Duration
+                        </label>
+                        <select
+                            id="quick-event-duration"
+                            bind:value={quickEventDuration}
+                            class="w-full bg-gray-900 text-white px-3 py-2 rounded-lg border border-gray-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                        >
+                            <option value={0.25}>15 min</option>
+                            <option value={0.5}>30 min</option>
+                            <option value={1}>1 hour</option>
+                            <option value={1.5}>1.5 hours</option>
+                            <option value={2}>2 hours</option>
+                            <option value={3}>3 hours</option>
+                            <option value={4}>4 hours</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Buttons -->
+                <div class="flex gap-3 pt-2">
+                    <button
+                        class="flex-1 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                        on:click={cancelQuickEvent}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        on:click={createQuickEvent}
+                        disabled={!quickEventTitle.trim()}
+                    >
+                        Create Event
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+{/if}
 
 <style>
     button {

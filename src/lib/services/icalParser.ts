@@ -96,7 +96,9 @@ export function parseICalText(
         const events: ExternalCalendarEvent[] = [];
         const vevents = comp.getAllSubcomponents('vevent');
 
-        vevents.forEach((vevent) => {
+        console.log(`Found ${vevents.length} events in calendar`);
+
+        vevents.forEach((vevent, index) => {
             try {
                 const event = new ICAL.Event(vevent);
 
@@ -116,6 +118,21 @@ export function parseICalText(
                 // Get recurrence rule if exists
                 const rrule = vevent.getFirstPropertyValue('rrule');
                 const recurrence = rrule ? rrule.toString() : undefined;
+
+                // Check event status and transparency (for debugging)
+                const status = vevent.getFirstPropertyValue('status');
+                const transp = vevent.getFirstPropertyValue('transp');
+
+                // Log event details for debugging
+                if (index < 3) { // Log first 3 events as sample
+                    console.log(`Event ${index + 1}:`, {
+                        title: summary,
+                        start: startDate,
+                        status,
+                        transp,
+                        uid: uid.substring(0, 20) + '...'
+                    });
+                }
 
                 events.push({
                     id: uid,
