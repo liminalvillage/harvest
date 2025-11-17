@@ -3,8 +3,10 @@
     import HoloSphere from 'holosphere';
     import { ID } from "../dashboard/store";
     import Timeline from './Timeline.svelte';
+    import CalendarSettings from './CalendarSettings.svelte';
     import { formatDate } from "../utils/date";
     import * as d3 from "d3";
+    import { fetchAndParseICalFeed, filterEventsByDateRange, type ExternalCalendarEvent } from '../lib/services/icalParser';
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -44,6 +46,16 @@
     let users: Record<string, User> = {};
     let profiles: Record<string, Profile> = {};
     let unsubscribe: (() => void) | undefined;
+
+    // Imported calendar state
+    let showCalendarSettings = false;
+    let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean; color?: string }> = [];
+    let externalEvents: ExternalCalendarEvent[] = [];
+    let syncInterval: NodeJS.Timeout | number | null = null;
+    const SYNC_INTERVAL_MS = 10 * 60 * 1000; // Sync every 10 minutes
+
+    // Map to store calendar colors by calendar ID for quick lookup
+    let calendarColorsMap: Record<string, string> = {};
 
     // Orbital visualization variables
     interface RecurringTask {
@@ -146,10 +158,16 @@
     onMount(() => {
         loadProfiles();
         loadTasks();
-        
+        loadImportedCalendars();
+
+        // Set up periodic sync for imported calendars
+        syncInterval = setInterval(() => {
+            syncAllCalendars();
+        }, SYNC_INTERVAL_MS);
+
         // Add resize listener for orbital view
         window.addEventListener('resize', handleResize);
-        
+
         return () => {
             clearInterval(currentTimeInterval);
         };
@@ -158,7 +176,12 @@
     onDestroy(() => {
         // Remove resize listener
         window.removeEventListener('resize', handleResize);
-        
+
+        // Clear sync interval
+        if (syncInterval) {
+            clearInterval(syncInterval);
+        }
+
         // Clean up HoloSphere subscriptions
         if (questsUnsubscribe) {
             questsUnsubscribe();
@@ -310,13 +333,55 @@
         return week;
     }
 
-    function handleDateClick(date: Date) {
+    // Quick event creation state
+    let showQuickEventDialog = false;
+    let quickEventDate: Date | null = null;
+    let quickEventHour: number | null = null;
+    let quickEventTitle = '';
+    let quickEventDuration = 1; // hours
+
+    function handleDateClick(date: Date, hour?: number) {
         currentDate = date;
         selectedDate = date;
-        dispatch('dateSelect', { 
-            date, 
-            events: events[date.toDateString()] || [] 
-        });
+
+        // Open quick event dialog
+        quickEventDate = date;
+        quickEventHour = hour ?? new Date().getHours();
+        quickEventTitle = '';
+        quickEventDuration = 1;
+        showQuickEventDialog = true;
+    }
+
+    async function createQuickEvent() {
+        if (!quickEventTitle.trim() || !quickEventDate || !holosphere || !$ID) return;
+
+        const eventDate = new Date(quickEventDate);
+        eventDate.setHours(quickEventHour ?? 9, 0, 0, 0);
+
+        const endDate = new Date(eventDate);
+        endDate.setHours(eventDate.getHours() + quickEventDuration);
+
+        const newEvent = {
+            id: `event_${Date.now()}`,
+            title: quickEventTitle.trim(),
+            when: eventDate.toISOString(),
+            ends: endDate.toISOString(),
+            created: new Date().toISOString()
+        };
+
+        try {
+            await holosphere.put($ID, 'quests', newEvent);
+            showQuickEventDialog = false;
+            quickEventTitle = '';
+        } catch (error) {
+            console.error('Error creating event:', error);
+            alert('Failed to create event. Please try again.');
+        }
+    }
+
+    function cancelQuickEvent() {
+        showQuickEventDialog = false;
+        quickEventTitle = '';
     }
 
     function navigateMonth(direction: 1 | -1) {
@@ -357,9 +422,64 @@
             .map(task => ({
                 ...task,
                 color: '#6366f1',
+                isHolonEvent: true
             }));
-        
-        return [...(events[dateStr] || []), ...dayTasks];
+
+        // Get external events for this day
+        const dayExternalEvents = externalEvents
+            .filter(event => {
+                const eventStart = new Date(event.start);
+                const eventEnd = new Date(event.end);
+                const checkDate = new Date(dateStr);
+                return eventStart.toDateString() === dateStr ||
+                       (eventStart <= checkDate && eventEnd >= checkDate);
+            })
+            .map(event => ({
+                id: event.id,
+                title: event.title,
+                description: event.description,
+                location: event.location,
+                when: event.start.toISOString(),
+                ends: event.end.toISOString(),
+                color: calendarColorsMap[event.calendarUrl] || '#10b981', // Use calendar color or default green
+                isExternalEvent: true,
+                calendarName: event.calendarName
+            }));
+
+        return [...(events[dateStr] || []), ...dayTasks, ...dayExternalEvents];
+    }
+
+    // Get all events (both holon and external) for a specific date for week/day views
+    function getAllEventsForDate(date: Date) {
+        const dateStr = date.toDateString();
+
+        // Get holon tasks
+        const holonTasks = Object.entries(tasks)
+            .filter(([_, task]) => task.when && new Date(task.when).toDateString() === dateStr)
+            .map(([key, task]) => ({ key, task, isExternal: false }));
+
+        // Get external events
+        const externalEventsForDay = externalEvents
+            .filter(event => {
+                const eventStart = new Date(event.start);
+                return eventStart.toDateString() === dateStr;
+            })
+            .map(event => ({
+                key: event.id,
+                task: {
+                    id: event.id,
+                    title: event.title,
+                    description: event.description,
+                    location: event.location,
+                    when: event.start.toISOString(),
+                    ends: event.end.toISOString(),
+                    color: calendarColorsMap[event.calendarUrl] || '#10b981',
+                    calendarName: event.calendarName
+                },
+                isExternal: true
+            }));
+
+        return [...holonTasks, ...externalEventsForDay];
     }
 
     function handleTimelineDateSelect(event: CustomEvent<{date: Date, dayOfYear: number}>) {
@@ -446,7 +566,7 @@
 
     function loadTasks() {
         if (!holosphere || !$ID) return;
-        
+
         holosphere.subscribe($ID, 'quests', (newTask: any, key?: string) => {
             if (!key) return; // Skip if no key
             if (newTask) {
@@ -464,6 +584,60 @@
                 tasks = tasks;
             }
         });
+    }
+
+    // Load imported calendars configuration
+    async function loadImportedCalendars() {
+        if (!holosphere || !$ID) return;
+
+        try {
+            const calendarData = await holosphere.get($ID, 'settings', 'imported_calendars');
+            if (calendarData && Array.isArray(calendarData.calendars)) {
+                importedCalendars = calendarData.calendars;
+
+                // Build color map for quick lookup
+                calendarColorsMap = {};
+                importedCalendars.forEach(cal => {
+                    if (cal.color) {
+                        calendarColorsMap[cal.url] = cal.color;
+                    }
+                });
+
+                // Sync calendars after loading
+                await syncAllCalendars();
+            }
+        } catch (err) {
+            console.error('Error loading imported calendars:', err);
+        }
+    }
+
+    // Sync all enabled imported calendars
+    async function syncAllCalendars() {
+        if (importedCalendars.length === 0) return;
+
+        const enabledCalendars = importedCalendars.filter(cal => cal.enabled);
+        const allEvents: ExternalCalendarEvent[] = [];
+
+        for (const calendar of enabledCalendars) {
+            try {
+                const parsed = await fetchAndParseICalFeed(calendar.url, calendar.name);
+                // Add calendar info to each event
+                const eventsWithCal = parsed.events.map(event => ({
+                    ...event,
+                    calendarName: calendar.name
+                }));
+                allEvents.push(...eventsWithCal);
+            } catch (error) {
+                console.error(`Error syncing calendar ${calendar.name}:`, error);
+            }
+        }
+
+        externalEvents = allEvents;
+    }
+
+    // Handle calendar settings update
+    function handleCalendarsUpdated() {
+        loadImportedCalendars();
     }
 
     // Make monthTasks reactive to changes in tasks
@@ -1415,10 +1589,11 @@
     }
 </script>
 
-<Timeline 
+<Timeline
     currentDate={currentDate}
     profiles={profiles}
     users={users}
+    tasks={tasks}
     on:dateSelect={handleTimelineDateSelect}
 />
 
@@ -1427,7 +1602,7 @@
         <div class="flex items-center gap-4">
             <div class="flex gap-2">
                 <!-- svelte-ignore a11y_consider_explicit_label -->
-                <button 
+                <button
                     class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
                     on:click={() => handleNavigation(-1)}
                 >
@@ -1435,7 +1610,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
                     </svg>
                 </button>
-                <button 
+                <button
                     class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
                     on:click={() => handleNavigation(1)}
                     aria-label="Next period"
@@ -1449,14 +1624,25 @@
                 {#if viewMode === 'month'}
                     {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
                 {:else if viewMode === 'week'}
-                    {weekData[0].toLocaleDateString(undefined, { month: 'long', day: 'numeric' })} - 
+                    {weekData[0].toLocaleDateString(undefined, { month: 'long', day: 'numeric' })} -
                     {weekData[6].toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
                 {:else}
                     {currentDate.toLocaleString('default', { month: 'long', day: 'numeric', year: 'numeric' })}
                 {/if}
             </h2>
         </div>
-        <div class="flex gap-2 flex-wrap">
+        <div class="flex gap-2 flex-wrap items-center">
+            <button
+                class="p-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 transition-colors"
+                on:click={() => showCalendarSettings = true}
+                aria-label="Calendar settings"
+                title="Calendar Settings - Import/Export"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+            </button>
             <button 
                 class="px-3 sm:px-4 py-2 rounded-lg {viewMode === 'day' ? 'bg-gray-600' : 'bg-gray-700'} text-white hover:bg-gray-600 transition-colors text-sm sm:text-base"
                 on:click={() => handleViewModeChange('day')}
@@ -1586,10 +1772,11 @@
                         <div class="divide-y divide-gray-700">
                             {#each Array(18) as _, i}
                                 {@const hour = i + 6}
-                                <div 
-                                    class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
+                                <div
+                                    class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative cursor-pointer"
                                     class:bg-indigo-100={dragOverDate?.toDateString() === date.toDateString() && dragOverTime === hour}
                                     class:bg-opacity-10={dragOverDate?.toDateString() === date.toDateString() && dragOverTime === hour}
+                                    on:click={() => handleDateClick(date, hour)}
                                     on:dragover={(e) => handleDragOver(e, date, hour)}
                                     on:dragleave={handleDragLeave}
                                     on:drop={(e) => handleDrop(e, date, hour)}
@@ -1601,29 +1788,32 @@
                             {/each}
                         </div>
 
-                        <!-- Tasks for this day -->
-                        {#each calculateEventColumns(Object.entries(tasks).filter(([key, task]) => task.when && new Date(task.when).toDateString() === date.toDateString()).map(([key, task]) => ({key, task}))) as {key, task, column, totalColumns}}
+                        <!-- Tasks for this day (including external events) -->
+                        {#each calculateEventColumns(getAllEventsForDate(date)) as {key, task, column, totalColumns, isExternal}}
                             {@const position = getTaskPosition(task)}
                             {@const columnWidth = totalColumns > 1 ? `calc((100% - ${totalColumns * 2}px) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
                             {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * ((100% - ${totalColumns * 2}px) / ${totalColumns}) + ${column * 2}px)` : '0.25rem'}
                             {@const startHour = new Date(task.when).getHours()}
                             {@const endHour = task.ends ? new Date(task.ends).getHours() : startHour + 1}
                             {@const isShortEvent = (position.gridRowEnd - position.gridRowStart) <= 2}
-                            <div 
-                                class="rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10 overflow-hidden"
+                            {@const taskColor = task.color || '#6366f1'}
+                            <div
+                                class="rounded text-white transition-colors absolute z-10 overflow-hidden"
+                                class:cursor-move={!isExternal}
+                                class:cursor-pointer={isExternal}
                                 class:opacity-50={draggedTask?.key === key}
                                 class:text-xs={!isShortEvent}
                                 class:text-[10px]={isShortEvent}
                                 class:p-1={isShortEvent}
                                 class:p-2={!isShortEvent}
-                                draggable="true"
-                                on:dragstart={(e) => handleDragStart(e, key, task)}
+                                draggable={!isExternal}
+                                on:dragstart={(e) => !isExternal && handleDragStart(e, key, task)}
                                 on:dragend={handleDragEnd}
                                 on:click|stopPropagation={() => handleTaskClick(key, task)}
                                 on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                                 role="button"
                                 tabindex="0"
-                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
+                                style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth}; background-color: {taskColor}; opacity: 0.9;"
                             >
                                 <div class="font-bold truncate leading-tight">
                                     {#if totalColumns > 2 && task.title.length > 15}
@@ -1706,21 +1896,15 @@
                 <div class="divide-y divide-gray-700">
                     {#each Array(18) as _, i}
                         {@const hour = i + 6}
-                        <div 
+                        <div
                             class="p-1 min-h-[48px] group hover:bg-gray-700 transition-colors relative"
                             class:bg-indigo-100={dragOverDate?.toDateString() === currentDate.toDateString() && dragOverTime === hour}
                             class:bg-opacity-10={dragOverDate?.toDateString() === currentDate.toDateString() && dragOverTime === hour}
-                            on:click={() => {
-                                const eventDate = new Date(currentDate);
-                                eventDate.setHours(hour);
-                                handleDateClick(eventDate);
-                            }}
+                            on:click={() => handleDateClick(currentDate, hour)}
                             on:keydown={(e) => {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault();
-                                    const eventDate = new Date(currentDate);
-                                    eventDate.setHours(hour);
-                                    handleDateClick(eventDate);
+                                    handleDateClick(currentDate, hour);
                                 }
                             }}
                             on:dragover={(e) => handleDragOver(e, currentDate, hour)}
@@ -1736,22 +1920,25 @@
                     {/each}
                 </div>
 
-                <!-- Tasks for this day -->
-                {#each calculateEventColumns(Object.entries(tasks).filter(([key, task]) => task.when && new Date(task.when).toDateString() === currentDate.toDateString()).map(([key, task]) => ({key, task}))) as {key, task, column, totalColumns}}
+                <!-- Tasks for this day (including external events) -->
+                {#each calculateEventColumns(getAllEventsForDate(currentDate)) as {key, task, column, totalColumns, isExternal}}
                     {@const position = getTaskPosition(task)}
                     {@const columnWidth = totalColumns > 1 ? `calc((100% - 0.5rem) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
                     {@const leftOffset = totalColumns > 1 ? `calc(0.25rem + ${column} * (100% - 0.5rem) / ${totalColumns})` : '0.25rem'}
+                    {@const taskColor = task.color || '#6366f1'}
                     <div
-                        class="text-xs p-2 rounded bg-indigo-500 bg-opacity-90 text-white cursor-move hover:bg-indigo-400 transition-colors absolute z-10"
+                        class="text-xs p-2 rounded text-white transition-colors absolute z-10"
+                        class:cursor-move={!isExternal}
+                        class:cursor-pointer={isExternal}
                         class:opacity-50={draggedTask?.key === key}
-                        draggable="true"
-                        on:dragstart={(e) => handleDragStart(e, key, task)}
+                        draggable={!isExternal}
+                        on:dragstart={(e) => !isExternal && handleDragStart(e, key, task)}
                         on:dragend={handleDragEnd}
                         on:click|stopPropagation={() => handleTaskClick(key, task)}
                         on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
                         role="button"
                         tabindex="0"
-                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth};"
+                        style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth}; background-color: {taskColor}; opacity: 0.9;"
                     >
                         <div class="font-bold truncate">{task.title}</div>
                         <div class="text-xs opacity-75">
@@ -2016,6 +2203,111 @@
             </form>
         </div>
     </dialog>
+{/if}
+
+<!-- Calendar Settings Modal -->
+<CalendarSettings
+    bind:show={showCalendarSettings}
+    on:calendarsUpdated={handleCalendarsUpdated}
+/>
+
+<!-- Quick Event Creation Dialog -->
+{#if showQuickEventDialog && quickEventDate}
+    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" on:click={cancelQuickEvent}>
+        <div class="bg-gray-800 rounded-xl border border-gray-700 max-w-md w-full p-6" on:click|stopPropagation>
+            <h3 class="text-xl font-bold text-white mb-4">Create Event</h3>
+
+            <div class="space-y-4">
+                <!-- Date and Time -->
+                <div class="text-gray-300 text-sm">
+                    <span class="font-medium">
+                        {quickEventDate.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                    </span>
+                    at
+                    <span class="font-medium">
+                        {(quickEventHour ?? 9).toString().padStart(2, '0')}:00
+                    </span>
+                </div>
+
+                <!-- Title -->
+                <div>
+                    <label for="quick-event-title" class="text-gray-300 text-sm font-medium block mb-2">
+                        Event Title
+                    </label>
+                    <input
+                        id="quick-event-title"
+                        type="text"
+                        bind:value={quickEventTitle}
+                        placeholder="Enter event title..."
+                        class="w-full bg-gray-900 text-white px-3 py-2 rounded-lg border border-gray-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                        autofocus
+                        on:keydown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                createQuickEvent();
+                            } else if (e.key === 'Escape') {
+                                cancelQuickEvent();
+                            }
+                        }}
+                    />
+                </div>
+
+                <!-- Time Inputs -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="quick-event-hour" class="text-gray-300 text-sm font-medium block mb-2">
+                            Start Time
+                        </label>
+                        <select
+                            id="quick-event-hour"
+                            bind:value={quickEventHour}
+                            class="w-full bg-gray-900 text-white px-3 py-2 rounded-lg border border-gray-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                        >
+                            {#each Array(24) as _, i}
+                                <option value={i}>{i.toString().padStart(2, '0')}:00</option>
+                            {/each}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="quick-event-duration" class="text-gray-300 text-sm font-medium block mb-2">
+                            Duration
+                        </label>
+                        <select
+                            id="quick-event-duration"
+                            bind:value={quickEventDuration}
+                            class="w-full bg-gray-900 text-white px-3 py-2 rounded-lg border border-gray-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                        >
+                            <option value={0.25}>15 min</option>
+                            <option value={0.5}>30 min</option>
+                            <option value={1}>1 hour</option>
+                            <option value={1.5}>1.5 hours</option>
+                            <option value={2}>2 hours</option>
+                            <option value={3}>3 hours</option>
+                            <option value={4}>4 hours</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Buttons -->
+                <div class="flex gap-3 pt-2">
+                    <button
+                        class="flex-1 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                        on:click={cancelQuickEvent}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        on:click={createQuickEvent}
+                        disabled={!quickEventTitle.trim()}
+                    >
+                        Create Event
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 {/if}
 
 <style>
