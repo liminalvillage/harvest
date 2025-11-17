@@ -1301,141 +1301,137 @@
 	// Add state for import modal
 	let showImportModal = false;
 
-	// Swipe state management
-	interface SwipeState {
+	// Interaction state management (handles both swipe and reorder)
+	interface InteractionState {
 		taskKey: string | null;
 		startX: number;
 		startY: number;
 		currentX: number;
 		currentY: number;
 		isDragging: boolean;
-		direction: 'left' | 'right' | null;
+		mode: 'none' | 'swipe' | 'reorder';
+		direction: 'left' | 'right' | 'up' | 'down' | null;
+		dragOverKey: string | null;
+		originalIndex: number;
 	}
 
-	let swipeState: SwipeState = {
+	let interactionState: InteractionState = {
 		taskKey: null,
 		startX: 0,
 		startY: 0,
 		currentX: 0,
 		currentY: 0,
 		isDragging: false,
-		direction: null
+		mode: 'none',
+		direction: null,
+		dragOverKey: null,
+		originalIndex: -1
 	};
 
 	const SWIPE_THRESHOLD = 100; // Pixels to swipe before action is triggered
 	const SWIPE_ACTION_THRESHOLD = 150; // Pixels to complete the action
-	const SWIPE_VELOCITY_THRESHOLD = 0.3; // Minimum velocity to trigger action
+	const DIRECTION_THRESHOLD = 15; // Pixels before we determine direction
 
-	// Touch event handlers for swipe detection
-	function handleTouchStart(event: TouchEvent, key: string) {
-		const touch = event.touches[0];
-		swipeState = {
+	// Store for live reordering preview
+	let reorderPreviewList: [string, Quest][] = [];
+
+	// Touch/Mouse event handlers with direction detection
+	function handleInteractionStart(event: TouchEvent | MouseEvent, key: string) {
+		const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
+		const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
+
+		const keyIndex = filteredQuests.findIndex(([k]) => k === key);
+
+		interactionState = {
 			taskKey: key,
-			startX: touch.clientX,
-			startY: touch.clientY,
-			currentX: touch.clientX,
-			currentY: touch.clientY,
+			startX: clientX,
+			startY: clientY,
+			currentX: clientX,
+			currentY: clientY,
 			isDragging: true,
-			direction: null
+			mode: 'none', // Will be determined on first move
+			direction: null,
+			dragOverKey: null,
+			originalIndex: keyIndex
 		};
+
+		reorderPreviewList = [...filteredQuests];
 	}
 
-	function handleTouchMove(event: TouchEvent) {
-		if (!swipeState.isDragging || !swipeState.taskKey) return;
+	function handleInteractionMove(event: TouchEvent | MouseEvent) {
+		if (!interactionState.isDragging || !interactionState.taskKey) return;
 
-		const touch = event.touches[0];
-		const deltaX = touch.clientX - swipeState.startX;
-		const deltaY = touch.clientY - swipeState.startY;
+		const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
+		const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
 
-		// Only allow horizontal swipe if horizontal movement is greater than vertical
-		if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
-			event.preventDefault(); // Prevent scrolling when swiping horizontally
+		const deltaX = clientX - interactionState.startX;
+		const deltaY = clientY - interactionState.startY;
 
-			swipeState = {
-				...swipeState,
-				currentX: touch.clientX,
-				currentY: touch.clientY,
-				direction: deltaX > 0 ? 'right' : 'left'
-			};
-		}
-	}
-
-	async function handleTouchEnd(event: TouchEvent) {
-		if (!swipeState.isDragging || !swipeState.taskKey) return;
-
-		const deltaX = swipeState.currentX - swipeState.startX;
-		const deltaY = swipeState.currentY - swipeState.startY;
-		const taskKey = swipeState.taskKey;
-
-		// Only process horizontal swipes
-		if (Math.abs(deltaX) > Math.abs(deltaY)) {
-			const absDeltaX = Math.abs(deltaX);
-
-			// Check if swipe exceeds action threshold
-			if (absDeltaX >= SWIPE_ACTION_THRESHOLD) {
-				if (deltaX > 0) {
-					// Swipe right - complete task
-					await completeTask(taskKey);
+		// Determine mode on first significant movement
+		if (interactionState.mode === 'none') {
+			if (Math.abs(deltaX) > DIRECTION_THRESHOLD || Math.abs(deltaY) > DIRECTION_THRESHOLD) {
+				// Horizontal movement = swipe, Vertical movement = reorder
+				if (Math.abs(deltaX) > Math.abs(deltaY)) {
+					interactionState.mode = 'swipe';
+					interactionState.direction = deltaX > 0 ? 'right' : 'left';
 				} else {
-					// Swipe left - delete task
-					await deleteTask(taskKey);
+					interactionState.mode = 'reorder';
+					interactionState.direction = deltaY > 0 ? 'down' : 'up';
 				}
 			}
 		}
 
-		// Reset swipe state
-		swipeState = {
-			taskKey: null,
-			startX: 0,
-			startY: 0,
-			currentX: 0,
-			currentY: 0,
-			isDragging: false,
-			direction: null
-		};
-	}
-
-	// Mouse event handlers for desktop testing
-	function handleMouseDown(event: MouseEvent, key: string) {
-		swipeState = {
-			taskKey: key,
-			startX: event.clientX,
-			startY: event.clientY,
-			currentX: event.clientX,
-			currentY: event.clientY,
-			isDragging: true,
-			direction: null
-		};
-	}
-
-	function handleMouseMove(event: MouseEvent) {
-		if (!swipeState.isDragging || !swipeState.taskKey) return;
-
-		const deltaX = event.clientX - swipeState.startX;
-		const deltaY = event.clientY - swipeState.startY;
-
-		// Only allow horizontal swipe if horizontal movement is greater than vertical
-		if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
+		// Handle based on mode
+		if (interactionState.mode === 'swipe') {
+			event.preventDefault();
+			interactionState = {
+				...interactionState,
+				currentX: clientX,
+				currentY: clientY,
+				direction: deltaX > 0 ? 'right' : 'left'
+			};
+		} else if (interactionState.mode === 'reorder') {
 			event.preventDefault();
 
-			swipeState = {
-				...swipeState,
-				currentX: event.clientX,
-				currentY: event.clientY,
-				direction: deltaX > 0 ? 'right' : 'left'
+			// Update live reorder preview
+			const currentIndex = interactionState.originalIndex;
+			const mouseY = clientY;
+
+			// Find which task we're hovering over
+			let newIndex = currentIndex;
+			const elements = document.querySelectorAll('.task-card-wrapper');
+			elements.forEach((el, idx) => {
+				const rect = el.getBoundingClientRect();
+				if (mouseY > rect.top && mouseY < rect.bottom) {
+					newIndex = idx;
+				}
+			});
+
+			if (newIndex !== currentIndex) {
+				// Create preview with item moved to new position
+				const newList = [...filteredQuests];
+				const [item] = newList.splice(currentIndex, 1);
+				newList.splice(newIndex, 0, item);
+				reorderPreviewList = newList;
+				interactionState.dragOverKey = newList[newIndex][0];
+			}
+
+			interactionState = {
+				...interactionState,
+				currentX: clientX,
+				currentY: clientY
 			};
 		}
 	}
 
-	async function handleMouseUp(event: MouseEvent) {
-		if (!swipeState.isDragging || !swipeState.taskKey) return;
+	async function handleInteractionEnd(event: TouchEvent | MouseEvent) {
+		if (!interactionState.isDragging || !interactionState.taskKey) return;
 
-		const deltaX = swipeState.currentX - swipeState.startX;
-		const deltaY = swipeState.currentY - swipeState.startY;
-		const taskKey = swipeState.taskKey;
+		const deltaX = interactionState.currentX - interactionState.startX;
+		const deltaY = interactionState.currentY - interactionState.startY;
+		const taskKey = interactionState.taskKey;
 
-		// Only process horizontal swipes
-		if (Math.abs(deltaX) > Math.abs(deltaY)) {
+		if (interactionState.mode === 'swipe') {
 			const absDeltaX = Math.abs(deltaX);
 
 			// Check if swipe exceeds action threshold
@@ -1448,35 +1444,59 @@
 					await deleteTask(taskKey);
 				}
 			}
+		} else if (interactionState.mode === 'reorder' && interactionState.dragOverKey) {
+			// Apply the reorder
+			await applyReorder(reorderPreviewList);
 		}
 
-		// Reset swipe state
-		swipeState = {
+		// Reset interaction state
+		interactionState = {
 			taskKey: null,
 			startX: 0,
 			startY: 0,
 			currentX: 0,
 			currentY: 0,
 			isDragging: false,
-			direction: null
+			mode: 'none',
+			direction: null,
+			dragOverKey: null,
+			originalIndex: -1
 		};
+		reorderPreviewList = [];
+	}
+
+	// Apply reorder to holosphere
+	async function applyReorder(newOrder: [string, Quest][]) {
+		if (!holosphere || !holonID || sortCriteria !== 'orderIndex') return;
+
+		try {
+			const updatedQuestsPromises = newOrder.map(async ([key, questToUpdate], index) => {
+				if (questToUpdate.orderIndex !== index) {
+					const updatedQuest = { ...questToUpdate, id: key, orderIndex: index };
+					store[key] = updatedQuest;
+					console.log(`[Tasks] Updating orderIndex for quest ${key}: ${questToUpdate.orderIndex || 'undefined'} -> ${index}`);
+					return holosphere.put(holonID, 'quests', updatedQuest);
+				}
+				return Promise.resolve();
+			});
+
+			await Promise.all(updatedQuestsPromises);
+			console.log(`[Tasks] Successfully applied reorder`);
+			quests = Object.entries(store);
+		} catch (error) {
+			console.error('Error applying reorder:', error);
+		}
 	}
 
 	// Helper function to get swipe offset for a specific task
 	function getSwipeOffset(key: string): number {
-		if (swipeState.taskKey !== key || !swipeState.isDragging) return 0;
+		if (interactionState.taskKey !== key || !interactionState.isDragging || interactionState.mode !== 'swipe') return 0;
 
-		const deltaX = swipeState.currentX - swipeState.startX;
-		const deltaY = swipeState.currentY - swipeState.startY;
+		const deltaX = interactionState.currentX - interactionState.startX;
 
-		// Only allow swipe if horizontal movement is greater than vertical
-		if (Math.abs(deltaX) > Math.abs(deltaY)) {
-			// Limit the swipe distance for better UX
-			const maxSwipe = 200;
-			return Math.max(-maxSwipe, Math.min(maxSwipe, deltaX));
-		}
-
-		return 0;
+		// Limit the swipe distance for better UX
+		const maxSwipe = 200;
+		return Math.max(-maxSwipe, Math.min(maxSwipe, deltaX));
 	}
 
 	// Complete task function
@@ -1870,25 +1890,27 @@
 					{/if}
 				{:else}
 					<div class="space-y-2 sm:space-y-3">
-										{#each filteredQuests as [key, quest]}
+										{#each (reorderPreviewList.length > 0 ? reorderPreviewList : filteredQuests) as [key, quest], index}
 					{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
 						<div
 							id={key}
 							class="w-full task-card-wrapper relative overflow-hidden"
-							on:touchstart={(e) => handleTouchStart(e, key)}
-							on:touchmove={(e) => handleTouchMove(e)}
-							on:touchend={(e) => handleTouchEnd(e)}
-							on:mousedown={(e) => handleMouseDown(e, key)}
-							on:mousemove={(e) => handleMouseMove(e)}
-							on:mouseup={(e) => handleMouseUp(e)}
+							class:being-dragged={interactionState.taskKey === key && interactionState.isDragging && interactionState.mode === 'reorder'}
+							class:drag-target={interactionState.dragOverKey === key && interactionState.mode === 'reorder'}
+							on:touchstart={(e) => handleInteractionStart(e, key)}
+							on:touchmove={(e) => handleInteractionMove(e)}
+							on:touchend={(e) => handleInteractionEnd(e)}
+							on:mousedown={(e) => handleInteractionStart(e, key)}
+							on:mousemove={(e) => handleInteractionMove(e)}
+							on:mouseup={(e) => handleInteractionEnd(e)}
 							on:mouseleave={(e) => {
-								if (swipeState.isDragging && swipeState.taskKey === key) {
-									handleMouseUp(e);
+								if (interactionState.isDragging && interactionState.taskKey === key) {
+									handleInteractionEnd(e);
 								}
 							}}
 						>
 							<!-- Delete action background (shown on left swipe) -->
-							<div class="swipe-action-bg delete-action" class:visible={swipeState.taskKey === key && getSwipeOffset(key) < -SWIPE_THRESHOLD}>
+							<div class="swipe-action-bg delete-action" class:visible={interactionState.taskKey === key && getSwipeOffset(key) < -SWIPE_THRESHOLD}>
 								<div class="action-content">
 									<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -1898,7 +1920,7 @@
 							</div>
 
 							<!-- Complete action background (shown on right swipe) -->
-							<div class="swipe-action-bg complete-action" class:visible={swipeState.taskKey === key && getSwipeOffset(key) > SWIPE_THRESHOLD}>
+							<div class="swipe-action-bg complete-action" class:visible={interactionState.taskKey === key && getSwipeOffset(key) > SWIPE_THRESHOLD}>
 								<div class="action-content">
 									<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
@@ -1910,23 +1932,16 @@
 							<!-- Task card content -->
 							<div
 								class="task-card relative text-left group cursor-pointer"
-								style="transform: translateX({getSwipeOffset(key)}px); transition: {swipeState.taskKey === key ? 'none' : 'transform 0.3s ease-out'};"
+								style="transform: translateX({getSwipeOffset(key)}px); transition: {interactionState.taskKey === key ? 'none' : 'transform 0.3s ease-out'};"
 								on:click|stopPropagation={(e) => {
-									// Only open modal if not swiping
-									if (!swipeState.isDragging && Math.abs(getSwipeOffset(key)) < 5) {
+									// Only open modal if not interacting
+									if (!interactionState.isDragging && Math.abs(getSwipeOffset(key)) < 5) {
 										handleTaskClick(key, quest);
 									}
 								}}
-								draggable="true"
-								on:dragstart={(e) => handleDragStart(e, key)}
-								on:dragover={(e) => handleDragOver(e, key)}
-								on:drop={(e) => handleDrop(e, key)}
-								on:dragend={handleDragEnd}
 								role="button"
 								tabindex="0"
 								aria-label={`Open task: ${quest.title}`}
-								class:dragging={$dragState.draggedId === key}
-								class:drag-over={$dragState.dragOverId === key}
 								on:keydown={(e) => {
 									if (e.key === 'Enter' || e.key === ' ') {
 										handleTaskClick(key, quest);
@@ -2336,5 +2351,22 @@
 			-webkit-user-select: none;
 			user-select: none;
 		}
+	}
+
+	/* Reordering visual feedback */
+	.being-dragged {
+		opacity: 0.5;
+		transform: scale(0.98);
+		transition: all 0.2s ease;
+	}
+
+	.drag-target {
+		border-top: 3px solid #3b82f6;
+		padding-top: 0.5rem;
+		transition: all 0.2s ease;
+	}
+
+	.task-card-wrapper {
+		transition: transform 0.2s ease, opacity 0.2s ease;
 	}
 </style>
