@@ -7,6 +7,7 @@
     import { formatDate } from "../utils/date";
     import * as d3 from "d3";
     import { fetchAndParseICalFeed, filterEventsByDateRange, type ExternalCalendarEvent } from '../lib/services/icalParser';
+    import type { PublicityLevel } from '../types/Quest';
 
     interface CalendarEvents {
         dateSelect: { date: Date; events: any[] };
@@ -159,6 +160,7 @@
         loadProfiles();
         loadTasks();
         loadImportedCalendars();
+        loadDefaultPublicity();
 
         // Set up periodic sync for imported calendars
         syncInterval = setInterval(() => {
@@ -339,6 +341,20 @@
     let quickEventHour: number | null = null;
     let quickEventTitle = '';
     let quickEventDuration = 1; // hours
+    let quickEventPublicity: PublicityLevel = 'internal';
+    let defaultPublicity: PublicityLevel = 'internal';
+
+    // Load default publicity setting
+    async function loadDefaultPublicity() {
+        try {
+            const settings = await holosphere.get($ID, 'settings', 'calendar_publicity');
+            if (settings?.defaultPublicity) {
+                defaultPublicity = settings.defaultPublicity;
+            }
+        } catch (error) {
+            console.error('Error loading default publicity:', error);
+        }
+    }
 
     function handleDateClick(date: Date, hour?: number) {
         currentDate = date;
@@ -349,6 +365,7 @@
         quickEventHour = hour ?? new Date().getHours();
         quickEventTitle = '';
         quickEventDuration = 1;
+        quickEventPublicity = defaultPublicity;
         showQuickEventDialog = true;
     }
 
@@ -366,6 +383,7 @@
             title: quickEventTitle.trim(),
             when: eventDate.toISOString(),
             ends: endDate.toISOString(),
+            publicity: quickEventPublicity,
             created: new Date().toISOString()
         };
 
@@ -2287,6 +2305,45 @@
                             <option value={4}>4 hours</option>
                         </select>
                     </div>
+                </div>
+
+                <!-- Publicity Level -->
+                <div>
+                    <label class="text-gray-300 text-sm font-medium block mb-2">
+                        Publicity Level
+                    </label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button
+                            type="button"
+                            class="px-3 py-2 rounded-lg text-sm transition-colors border {quickEventPublicity === 'internal' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'}"
+                            on:click={() => quickEventPublicity = 'internal'}
+                        >
+                            🔒 Internal
+                        </button>
+                        <button
+                            type="button"
+                            class="px-3 py-2 rounded-lg text-sm transition-colors border {quickEventPublicity === 'children' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'}"
+                            on:click={() => quickEventPublicity = 'children'}
+                        >
+                            👥 Children
+                        </button>
+                        <button
+                            type="button"
+                            class="px-3 py-2 rounded-lg text-sm transition-colors border {quickEventPublicity === 'network' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'}"
+                            on:click={() => quickEventPublicity = 'network'}
+                        >
+                            🌐 Network
+                        </button>
+                    </div>
+                    <p class="text-gray-400 text-xs mt-1">
+                        {#if quickEventPublicity === 'internal'}
+                            Only visible within this holon
+                        {:else if quickEventPublicity === 'children'}
+                            Child holons can subscribe to this event
+                        {:else}
+                            Globally visible to the entire network
+                        {/if}
+                    </p>
                 </div>
 
                 <!-- Buttons -->

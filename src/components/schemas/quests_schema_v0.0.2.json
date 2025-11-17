@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+(\\.\\d+)?$"
+    },
+    "chat": {
+      "type": "string"
+    },
+    "initiator": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "picture": {
+      "type": "string"
+    },
+    "document": {
+      "type": "string"
+    },
+    "where": {
+      "type": "object",
+      "properties": {
+        "latitude": {
+          "type": "string"
+        },
+        "longitude": {
+          "type": "string"
+        }
+      },
+      "required": ["latitude", "longitude"]
+    },
+    "date": {
+      "type": "integer"
+    },
+    "when": {
+      "type": "string"
+    },
+    "ends": {
+      "type": "string"
+    },
+    "completed": {
+      "type": "string"
+    },
+    "participants": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "appreciation": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stoppers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "type": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ongoing", "completed", "cancelled"]
+    },
+    "publicity": {
+      "type": "string",
+      "enum": ["internal", "children", "network"],
+      "description": "Publicity level: internal (holon only), children (child holons can subscribe), network (globally public)",
+      "default": "internal"
+    },
+    "sharedWith": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Array of specific holon IDs this event is shared with (when publicity is 'children')"
+    }
+  },
+  "required": ["id", "version", "chat", "initiator", "title", "picture", "document", "where", "date", "when", "completed", "participants", "appreciation", "stoppers", "type", "status"]
+}

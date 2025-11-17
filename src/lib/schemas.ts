@@ -11,6 +11,7 @@ import personV1 from '../components/schemas/person_schema-v0.1.0.json';
 import personV2 from '../components/schemas/person_schema-v0.2.0.json';
 import projects from '../components/schemas/projects_schema-v0.1.0.json';
 import quests from '../components/schemas/quests_schema_v0.0.1.json';
+import questsV2 from '../components/schemas/quests_schema_v0.0.2.json';
 import socialGraph from '../components/schemas/small_social_graph_people-v0.0.1.json';
 import solidarity from '../components/schemas/solidarity_economy_initiatives-v0.2.0.json';
 import systemsChange from '../components/schemas/systems_change_map-v2.0.0.json';
@@ -29,6 +30,7 @@ export const schemas = {
     'person_schema-v0.2.0': personV2,
     'projects_schema-v0.1.0': projects,
     'quests_schema_v0.0.1': quests,
+    'quests_schema_v0.0.2': questsV2,
     'small_social_graph_people-v0.0.1': socialGraph,
     'solidarity_economy_initiatives-v0.2.0': solidarity,
     'systems_change_map-v2.0.0': systemsChange

@@ -1,4 +1,6 @@
 // Flow Settings Management based on the original Settings.js system
+import type { CalendarPublicitySettings } from '../../types/CalendarPublicity';
+
 export interface LensConfig {
   name: string;
   enabled: boolean;
@@ -43,6 +45,7 @@ export interface HolonSettings {
       maxInternal: number;
     };
   };
+  calendarPublicity?: CalendarPublicitySettings;
   timestamp: number;
 }
 
@@ -477,5 +480,162 @@ export class FlowSettings {
    */
   clearCache(): void {
     this.settings.clear();
+  }
+
+  /**
+   * Get calendar publicity settings for a holon
+   */
+  getCalendarPublicity(holonId: string): CalendarPublicitySettings {
+    const settings = this.settings.get(holonId);
+
+    if (settings?.calendarPublicity) {
+      return settings.calendarPublicity;
+    }
+
+    // Return default settings
+    return {
+      id: holonId,
+      defaultPublicity: 'internal',
+      parentSubscriptions: [],
+      childHolons: [],
+      globalPublic: false,
+      updated: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Update calendar publicity settings
+   */
+  async updateCalendarPublicity(
+    gun: any,
+    holonId: string,
+    publicity: Partial<CalendarPublicitySettings>
+  ): Promise<void> {
+    const current = this.getCalendarPublicity(holonId);
+
+    const updated: CalendarPublicitySettings = {
+      ...current,
+      ...publicity,
+      updated: new Date().toISOString()
+    };
+
+    await this.saveSettings(gun, holonId, {
+      calendarPublicity: updated
+    });
+  }
+
+  /**
+   * Subscribe to a parent holon's calendar
+   */
+  async subscribeToParentCalendar(
+    gun: any,
+    holonId: string,
+    parentHolonId: string,
+    parentHolonName: string,
+    color?: string
+  ): Promise<void> {
+    const current = this.getCalendarPublicity(holonId);
+
+    // Check if already subscribed
+    const existingIndex = current.parentSubscriptions.findIndex(
+      sub => sub.holonId === parentHolonId
+    );
+
+    if (existingIndex >= 0) {
+      // Update existing subscription
+      current.parentSubscriptions[existingIndex] = {
+        ...current.parentSubscriptions[existingIndex],
+        subscribed: true,
+        color,
+        lastSync: new Date().toISOString()
+      };
+    } else {
+      // Add new subscription
+      current.parentSubscriptions.push({
+        holonId: parentHolonId,
+        holonName: parentHolonName,
+        subscribed: true,
+        color,
+        lastSync: new Date().toISOString()
+      });
+    }
+
+    await this.updateCalendarPublicity(gun, holonId, current);
+  }
+
+  /**
+   * Unsubscribe from a parent holon's calendar
+   */
+  async unsubscribeFromParentCalendar(
+    gun: any,
+    holonId: string,
+    parentHolonId: string
+  ): Promise<void> {
+    const current = this.getCalendarPublicity(holonId);
+
+    current.parentSubscriptions = current.parentSubscriptions.filter(
+      sub => sub.holonId !== parentHolonId
+    );
+
+    await this.updateCalendarPublicity(gun, holonId, current);
+  }
+
+  /**
+   * Add a child holon that can subscribe to this calendar
+   */
+  async addChildHolon(
+    gun: any,
+    holonId: string,
+    childHolonId: string
+  ): Promise<void> {
+    const current = this.getCalendarPublicity(holonId);
+
+    if (!current.childHolons.includes(childHolonId)) {
+      current.childHolons.push(childHolonId);
+      await this.updateCalendarPublicity(gun, holonId, current);
+    }
+  }
+
+  /**
+   * Remove a child holon
+   */
+  async removeChildHolon(
+    gun: any,
+    holonId: string,
+    childHolonId: string
+  ): Promise<void> {
+    const current = this.getCalendarPublicity(holonId);
+
+    current.childHolons = current.childHolons.filter(
+      id => id !== childHolonId
+    );
+
+    await this.updateCalendarPublicity(gun, holonId, current);
+  }
+
+  /**
+   * Set default publicity level for new events
+   */
+  async setDefaultPublicity(
+    gun: any,
+    holonId: string,
+    publicity: 'internal' | 'children' | 'network'
+  ): Promise<void> {
+    await this.updateCalendarPublicity(gun, holonId, {
+      defaultPublicity: publicity
+    });
+  }
+
+  /**
+   * Toggle global publicity
+   */
+  async toggleGlobalPublicity(
+    gun: any,
+    holonId: string,
+    enabled: boolean
+  ): Promise<void> {
+    await this.updateCalendarPublicity(gun, holonId, {
+      globalPublic: enabled
+    });
   }
 }

@@ -3,11 +3,14 @@
     import type HoloSphere from 'holosphere';
     import { ID } from '../dashboard/store';
     import { isValidICalUrl } from '$lib/services/icalParser';
+    import CalendarPublicitySettings from './CalendarPublicitySettings.svelte';
 
     const dispatch = createEventDispatcher();
     const holosphere = getContext('holosphere') as HoloSphere;
 
     export let show = false;
+
+    let showPublicitySettings = false;
 
     // State
     let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean }> = [];
@@ -228,6 +231,24 @@
                     </div>
                 {/if}
 
+                <!-- Calendar Publicity Settings Button -->
+                <div class="bg-gradient-to-r from-indigo-900/30 to-purple-900/30 rounded-lg p-4 border border-indigo-700/50">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-semibold text-white mb-1">Calendar Publicity & Subscriptions</h3>
+                            <p class="text-gray-300 text-sm">
+                                Manage who can see your calendar events and subscribe to parent holons
+                            </p>
+                        </div>
+                        <button
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors whitespace-nowrap"
+                            on:click={() => showPublicitySettings = true}
+                        >
+                            Configure
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Export Section -->
                 <div class="space-y-4">
                     <button
@@ -376,6 +397,9 @@
         </div>
     </div>
 {/if}
+
+<!-- Calendar Publicity Settings Modal -->
+<CalendarPublicitySettings bind:isOpen={showPublicitySettings} />
 
 <style>
     /* Ensure smooth transitions */
