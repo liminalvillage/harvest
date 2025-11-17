@@ -1301,6 +1301,239 @@
 	// Add state for import modal
 	let showImportModal = false;
 
+	// Swipe state management
+	interface SwipeState {
+		taskKey: string | null;
+		startX: number;
+		startY: number;
+		currentX: number;
+		currentY: number;
+		isDragging: boolean;
+		direction: 'left' | 'right' | null;
+	}
+
+	let swipeState: SwipeState = {
+		taskKey: null,
+		startX: 0,
+		startY: 0,
+		currentX: 0,
+		currentY: 0,
+		isDragging: false,
+		direction: null
+	};
+
+	const SWIPE_THRESHOLD = 100; // Pixels to swipe before action is triggered
+	const SWIPE_ACTION_THRESHOLD = 150; // Pixels to complete the action
+	const SWIPE_VELOCITY_THRESHOLD = 0.3; // Minimum velocity to trigger action
+
+	// Touch event handlers for swipe detection
+	function handleTouchStart(event: TouchEvent, key: string) {
+		const touch = event.touches[0];
+		swipeState = {
+			taskKey: key,
+			startX: touch.clientX,
+			startY: touch.clientY,
+			currentX: touch.clientX,
+			currentY: touch.clientY,
+			isDragging: true,
+			direction: null
+		};
+	}
+
+	function handleTouchMove(event: TouchEvent) {
+		if (!swipeState.isDragging || !swipeState.taskKey) return;
+
+		const touch = event.touches[0];
+		const deltaX = touch.clientX - swipeState.startX;
+		const deltaY = touch.clientY - swipeState.startY;
+
+		// Only allow horizontal swipe if horizontal movement is greater than vertical
+		if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
+			event.preventDefault(); // Prevent scrolling when swiping horizontally
+
+			swipeState = {
+				...swipeState,
+				currentX: touch.clientX,
+				currentY: touch.clientY,
+				direction: deltaX > 0 ? 'right' : 'left'
+			};
+		}
+	}
+
+	async function handleTouchEnd(event: TouchEvent) {
+		if (!swipeState.isDragging || !swipeState.taskKey) return;
+
+		const deltaX = swipeState.currentX - swipeState.startX;
+		const deltaY = swipeState.currentY - swipeState.startY;
+		const taskKey = swipeState.taskKey;
+
+		// Only process horizontal swipes
+		if (Math.abs(deltaX) > Math.abs(deltaY)) {
+			const absDeltaX = Math.abs(deltaX);
+
+			// Check if swipe exceeds action threshold
+			if (absDeltaX >= SWIPE_ACTION_THRESHOLD) {
+				if (deltaX > 0) {
+					// Swipe right - complete task
+					await completeTask(taskKey);
+				} else {
+					// Swipe left - delete task
+					await deleteTask(taskKey);
+				}
+			}
+		}
+
+		// Reset swipe state
+		swipeState = {
+			taskKey: null,
+			startX: 0,
+			startY: 0,
+			currentX: 0,
+			currentY: 0,
+			isDragging: false,
+			direction: null
+		};
+	}
+
+	// Mouse event handlers for desktop testing
+	function handleMouseDown(event: MouseEvent, key: string) {
+		swipeState = {
+			taskKey: key,
+			startX: event.clientX,
+			startY: event.clientY,
+			currentX: event.clientX,
+			currentY: event.clientY,
+			isDragging: true,
+			direction: null
+		};
+	}
+
+	function handleMouseMove(event: MouseEvent) {
+		if (!swipeState.isDragging || !swipeState.taskKey) return;
+
+		const deltaX = event.clientX - swipeState.startX;
+		const deltaY = event.clientY - swipeState.startY;
+
+		// Only allow horizontal swipe if horizontal movement is greater than vertical
+		if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
+			event.preventDefault();
+
+			swipeState = {
+				...swipeState,
+				currentX: event.clientX,
+				currentY: event.clientY,
+				direction: deltaX > 0 ? 'right' : 'left'
+			};
+		}
+	}
+
+	async function handleMouseUp(event: MouseEvent) {
+		if (!swipeState.isDragging || !swipeState.taskKey) return;
+
+		const deltaX = swipeState.currentX - swipeState.startX;
+		const deltaY = swipeState.currentY - swipeState.startY;
+		const taskKey = swipeState.taskKey;
+
+		// Only process horizontal swipes
+		if (Math.abs(deltaX) > Math.abs(deltaY)) {
+			const absDeltaX = Math.abs(deltaX);
+
+			// Check if swipe exceeds action threshold
+			if (absDeltaX >= SWIPE_ACTION_THRESHOLD) {
+				if (deltaX > 0) {
+					// Swipe right - complete task
+					await completeTask(taskKey);
+				} else {
+					// Swipe left - delete task
+					await deleteTask(taskKey);
+				}
+			}
+		}
+
+		// Reset swipe state
+		swipeState = {
+			taskKey: null,
+			startX: 0,
+			startY: 0,
+			currentX: 0,
+			currentY: 0,
+			isDragging: false,
+			direction: null
+		};
+	}
+
+	// Helper function to get swipe offset for a specific task
+	function getSwipeOffset(key: string): number {
+		if (swipeState.taskKey !== key || !swipeState.isDragging) return 0;
+
+		const deltaX = swipeState.currentX - swipeState.startX;
+		const deltaY = swipeState.currentY - swipeState.startY;
+
+		// Only allow swipe if horizontal movement is greater than vertical
+		if (Math.abs(deltaX) > Math.abs(deltaY)) {
+			// Limit the swipe distance for better UX
+			const maxSwipe = 200;
+			return Math.max(-maxSwipe, Math.min(maxSwipe, deltaX));
+		}
+
+		return 0;
+	}
+
+	// Complete task function
+	async function completeTask(key: string) {
+		if (!holosphere || !holonID) return;
+
+		const quest = store[key];
+		if (!quest) return;
+
+		try {
+			const updatedQuest = {
+				...quest,
+				id: key,
+				status: 'completed' as const
+			};
+
+			await holosphere.put(holonID, 'quests', updatedQuest);
+
+			// Show celebration animations
+			showFireworks = true;
+			showConfetti = true;
+
+			setTimeout(() => {
+				showFireworks = false;
+			}, 2500);
+
+			setTimeout(() => {
+				showConfetti = false;
+			}, 10000);
+
+			console.log('Task completed:', key);
+		} catch (error) {
+			console.error('Error completing task:', error);
+		}
+	}
+
+	// Delete task function
+	async function deleteTask(key: string) {
+		if (!holosphere || !holonID) return;
+
+		const quest = store[key];
+		if (!quest) return;
+
+		try {
+			await holosphere.delete(holonID, 'quests', key);
+
+			// Update local store immediately
+			const { [key]: _, ...rest } = store;
+			store = rest;
+			quests = Object.entries(store);
+
+			console.log('Task deleted:', key);
+		} catch (error) {
+			console.error('Error deleting task:', error);
+		}
+	}
+
 </script>
 
 <div class="space-y-8">
@@ -1641,30 +1874,71 @@
 					{#if quest.status !== "completed" || (showCompleted && quest.status === "completed")}
 						<div
 							id={key}
-							class="w-full task-card relative text-left group cursor-pointer"
-							on:click|stopPropagation={() => handleTaskClick(key, quest)}
-							draggable="true"
-							on:dragstart={(e) => handleDragStart(e, key)}
-							on:dragover={(e) => handleDragOver(e, key)}
-							on:drop={(e) => handleDrop(e, key)}
-							on:dragend={handleDragEnd}
-							role="button"
-							tabindex="0"
-							aria-label={`Open task: ${quest.title}`}
-							class:dragging={$dragState.draggedId === key}
-							class:drag-over={$dragState.dragOverId === key}
-							on:keydown={(e) => {
-								if (e.key === 'Enter' || e.key === ' ') {
-									handleTaskClick(key, quest);
+							class="w-full task-card-wrapper relative overflow-hidden"
+							on:touchstart={(e) => handleTouchStart(e, key)}
+							on:touchmove={(e) => handleTouchMove(e)}
+							on:touchend={(e) => handleTouchEnd(e)}
+							on:mousedown={(e) => handleMouseDown(e, key)}
+							on:mousemove={(e) => handleMouseMove(e)}
+							on:mouseup={(e) => handleMouseUp(e)}
+							on:mouseleave={(e) => {
+								if (swipeState.isDragging && swipeState.taskKey === key) {
+									handleMouseUp(e);
 								}
 							}}
 						>
+							<!-- Delete action background (shown on left swipe) -->
+							<div class="swipe-action-bg delete-action" class:visible={swipeState.taskKey === key && getSwipeOffset(key) < -SWIPE_THRESHOLD}>
+								<div class="action-content">
+									<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+									</svg>
+									<span class="font-medium">Delete</span>
+								</div>
+							</div>
+
+							<!-- Complete action background (shown on right swipe) -->
+							<div class="swipe-action-bg complete-action" class:visible={swipeState.taskKey === key && getSwipeOffset(key) > SWIPE_THRESHOLD}>
+								<div class="action-content">
+									<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+									</svg>
+									<span class="font-medium">Complete</span>
+								</div>
+							</div>
+
+							<!-- Task card content -->
 							<div
-								class="p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
-								style="background-color: {getColorFromCategory(quest.category, quest.type)};
-								   opacity: {quest._meta?.resolvedFromHologram ? '0.75' : '1'};
-								   {quest._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+								class="task-card relative text-left group cursor-pointer"
+								style="transform: translateX({getSwipeOffset(key)}px); transition: {swipeState.taskKey === key ? 'none' : 'transform 0.3s ease-out'};"
+								on:click|stopPropagation={(e) => {
+									// Only open modal if not swiping
+									if (!swipeState.isDragging && Math.abs(getSwipeOffset(key)) < 5) {
+										handleTaskClick(key, quest);
+									}
+								}}
+								draggable="true"
+								on:dragstart={(e) => handleDragStart(e, key)}
+								on:dragover={(e) => handleDragOver(e, key)}
+								on:drop={(e) => handleDrop(e, key)}
+								on:dragend={handleDragEnd}
+								role="button"
+								tabindex="0"
+								aria-label={`Open task: ${quest.title}`}
+								class:dragging={$dragState.draggedId === key}
+								class:drag-over={$dragState.dragOverId === key}
+								on:keydown={(e) => {
+									if (e.key === 'Enter' || e.key === ' ') {
+										handleTaskClick(key, quest);
+									}
+								}}
 							>
+								<div
+									class="p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all duration-300 border border-transparent hover:border-gray-600 hover:shadow-md transform hover:scale-[1.005]"
+									style="background-color: {getColorFromCategory(quest.category, quest.type)};
+									   opacity: {quest._meta?.resolvedFromHologram ? '0.75' : '1'};
+									   {quest._meta?.resolvedFromHologram ? 'border: 2px solid #00BFFF; box-sizing: border-box; box-shadow: 0 0 20px rgba(0, 191, 255, 0.4), inset 0 0 20px rgba(0, 191, 255, 0.1);' : ''}"
+								>
 								<div class="flex items-center justify-between gap-2 sm:gap-3">
 									<div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
 										<!-- Task Icon -->
@@ -1796,6 +2070,8 @@
 											</div>
 										{/if}
 									</div>
+								</div>
+							</div>
 								</div>
 							</div>
 						</div>
@@ -2003,5 +2279,63 @@
 	}
 	.compact-toolbar .dot {
 		transition: transform 0.3s ease-in-out;
+	}
+
+	/* Swipe action styles */
+	.task-card-wrapper {
+		position: relative;
+		touch-action: pan-y; /* Allow vertical scrolling but handle horizontal swipes */
+	}
+
+	.swipe-action-bg {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 100%;
+		display: flex;
+		align-items: center;
+		padding: 0 1.5rem;
+		opacity: 0;
+		transition: opacity 0.2s ease-out;
+		z-index: 0;
+		border-radius: 0.75rem;
+	}
+
+	.swipe-action-bg.visible {
+		opacity: 1;
+	}
+
+	.delete-action {
+		background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+		color: white;
+		justify-content: flex-end;
+	}
+
+	.complete-action {
+		background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+		color: white;
+		justify-content: flex-start;
+	}
+
+	.action-content {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 1rem;
+	}
+
+	.task-card {
+		position: relative;
+		z-index: 1;
+		background: inherit;
+		border-radius: 0.75rem;
+	}
+
+	/* Ensure smooth animations on touch devices */
+	@media (hover: none) {
+		.task-card-wrapper {
+			-webkit-user-select: none;
+			user-select: none;
+		}
 	}
 </style>
