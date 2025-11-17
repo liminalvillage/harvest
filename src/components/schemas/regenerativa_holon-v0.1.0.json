@@ -1,0 +1,320 @@
+{
+  "title": "Regenerativa Holon Schema",
+  "description": "A schema for holons participating in the Regenerativa network - a system aligned with lunar cycles and regenerative principles",
+  "type": "object",
+  "properties": {
+    "linked_schemas": {
+      "title": "Linked Schemas",
+      "description": "A list of schemas this profile validates against",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "name": {
+      "title": "Holon Name",
+      "description": "The name of this holon",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "description": "A description of this holon's purpose and activities",
+      "type": "string"
+    },
+    "geolocation": {
+      "title": "Geolocation",
+      "description": "The geographic location of this holon",
+      "type": "object",
+      "properties": {
+        "lat": {
+          "title": "Latitude",
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "title": "Longitude",
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        }
+      },
+      "required": ["lat", "lon"]
+    },
+    "lunar_alignment": {
+      "title": "Lunar Alignment",
+      "description": "Which lunar phase this holon aligns its work cycles with",
+      "type": "string",
+      "enum": ["new_moon", "full_moon", "flexible"],
+      "enumNames": ["New Moon - Begin cycles at new moon", "Full Moon - Begin cycles at full moon", "Flexible - Can switch between phases"]
+    },
+    "regenerative_impact": {
+      "title": "Regenerative Impact",
+      "description": "Measurable regenerative contributions of this holon",
+      "type": "object",
+      "properties": {
+        "trees_planted": {
+          "title": "Trees Planted",
+          "description": "Total number of trees planted and maintained",
+          "type": "number",
+          "minimum": 0
+        },
+        "carbon_sequestered_kg": {
+          "title": "Carbon Sequestered (kg)",
+          "description": "Estimated carbon sequestered in kilograms",
+          "type": "number",
+          "minimum": 0
+        },
+        "land_regenerated_hectares": {
+          "title": "Land Regenerated (hectares)",
+          "description": "Hectares of land actively being regenerated",
+          "type": "number",
+          "minimum": 0
+        },
+        "wildlife_corridors_m": {
+          "title": "Wildlife Corridors (meters)",
+          "description": "Length of wildlife corridors created/maintained in meters",
+          "type": "number",
+          "minimum": 0
+        },
+        "plastic_removed_kg": {
+          "title": "Plastic Removed (kg)",
+          "description": "Kilograms of plastic removed from environment",
+          "type": "number",
+          "minimum": 0
+        },
+        "soil_regeneration_cubic_m": {
+          "title": "Soil Regeneration (cubic meters)",
+          "description": "Volume of soil actively regenerated",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "resource_needs": {
+      "title": "Resource Needs (Inputs)",
+      "description": "Resources this holon needs to fulfill its purpose",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string",
+            "enum": ["financial", "labor", "expertise", "materials", "land", "tools", "energy", "water", "seeds", "other"],
+            "enumNames": ["Financial Capital", "Labor/Time", "Expertise/Skills", "Physical Materials", "Land Access", "Tools/Equipment", "Energy", "Water", "Seeds/Plants", "Other"]
+          },
+          "description": {
+            "title": "Description",
+            "description": "Specific description of the need",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "description": "How much is needed (with units)",
+            "type": "string"
+          },
+          "optionality_score": {
+            "title": "Optionality Score",
+            "description": "How many other resources can be obtained through this (1-100)",
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "urgency": {
+            "title": "Urgency",
+            "type": "string",
+            "enum": ["immediate", "this_lunar_cycle", "this_quarter", "flexible"],
+            "enumNames": ["Immediate", "This Lunar Cycle", "This Quarter (Equinox/Solstice)", "Flexible"]
+          },
+          "subscribers": {
+            "title": "Subscribers",
+            "description": "Number of people who have subscribed to this need (Theos-style)",
+            "type": "number",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        "required": ["resource_type", "description"]
+      }
+    },
+    "resource_outputs": {
+      "title": "Resource Outputs (Positive Externalities)",
+      "description": "Resources and services this holon provides to the network",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string",
+            "enum": ["food", "shelter", "tools", "education", "healthcare", "technology", "energy", "water_access", "regenerative_work", "artistic_creation", "other"],
+            "enumNames": ["Food Production", "Shelter/Housing", "Tools/Equipment", "Education/Training", "Healthcare Services", "Technology/Software", "Energy Production", "Water Access", "Regenerative Work", "Artistic Creation", "Other"]
+          },
+          "description": {
+            "title": "Description",
+            "description": "Specific description of what is offered",
+            "type": "string"
+          },
+          "capacity": {
+            "title": "Capacity",
+            "description": "How much can be provided (with units)",
+            "type": "string"
+          },
+          "regenerative_license": {
+            "title": "Regenerative License",
+            "description": "License terms (e.g., 'Requires 50% land for regeneration')",
+            "type": "string"
+          },
+          "access_pathways": {
+            "title": "Access Pathways",
+            "description": "How others can access this output",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["purchase_solar", "produce_lunar", "attract_collective"],
+              "enumNames": ["Purchase (Solar License - pay money)", "Produce (Lunar License - become production center)", "Attract (Collective Ownership - pool resources)"]
+            }
+          }
+        },
+        "required": ["resource_type", "description"]
+      }
+    },
+    "flow_token_balance": {
+      "title": "Flow Token Balance",
+      "description": "Current balance of Flow tokens earned through contributions",
+      "type": "number",
+      "minimum": 0,
+      "default": 0
+    },
+    "contribution_history": {
+      "title": "Contribution History",
+      "description": "Recent contributions recognized by the network",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "title": "Date",
+            "description": "Unix timestamp of contribution",
+            "type": "number"
+          },
+          "lunar_cycle": {
+            "title": "Lunar Cycle",
+            "description": "Which lunar cycle this occurred in (e.g., 'New Moon Jan 2025')",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "flow_earned": {
+            "title": "Flow Tokens Earned",
+            "type": "number"
+          },
+          "performance_score": {
+            "title": "Performance Score",
+            "description": "Measurable results achieved (0-100)",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "relationality_score": {
+            "title": "Relationality Score",
+            "description": "Quality of collaboration (0-100)",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    },
+    "negative_externalities": {
+      "title": "Negative Externalities",
+      "description": "Resources consumed and impacts generated (which become needs for other holons to address)",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "title": "Externality Type",
+            "type": "string",
+            "enum": ["waste", "emissions", "water_use", "energy_use", "land_degradation", "other"],
+            "enumNames": ["Waste Generated", "Emissions/Pollution", "Water Consumption", "Energy Consumption", "Land Degradation", "Other"]
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "description": "Amount with units",
+            "type": "string"
+          },
+          "mitigation_efforts": {
+            "title": "Mitigation Efforts",
+            "description": "What is being done to address this",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "seasonal_gatherings": {
+      "title": "Seasonal Gathering Participation",
+      "description": "Which quarterly gatherings this holon participates in",
+      "type": "object",
+      "properties": {
+        "spring_equinox": {
+          "title": "Spring Equinox (Co-creation & Analysis)",
+          "type": "boolean",
+          "default": false
+        },
+        "summer_solstice": {
+          "title": "Summer Solstice (Peak Yang - Celebration & Sharing)",
+          "type": "boolean",
+          "default": false
+        },
+        "fall_equinox": {
+          "title": "Fall Equinox (Integration & Planning)",
+          "type": "boolean",
+          "default": false
+        },
+        "winter_solstice": {
+          "title": "Winter Solstice (Peak Yin - Deep Reflection)",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "bootstrap_network": {
+      "title": "Bootstrap Network Support",
+      "description": "Is this holon available to support those transitioning from conventional systems?",
+      "type": "boolean",
+      "default": false
+    },
+    "journeyman_hosting": {
+      "title": "Journeyman Hosting",
+      "description": "Can this holon host traveling skilled workers/developers?",
+      "type": "boolean",
+      "default": false
+    },
+    "tags": {
+      "title": "Tags",
+      "description": "Keywords describing this holon",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": ["linked_schemas", "name", "geolocation"],
+  "metadata": {
+    "schema": {
+      "name": "regenerativa_holon-v0.1.0",
+      "purpose": "To map holons participating in the Regenerativa network with lunar alignment, resource flows, and regenerative impact tracking"
+    }
+  }
+}

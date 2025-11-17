@@ -1,0 +1,108 @@
+{
+  "title": "Resource Exchange Schema",
+  "description": "A schema for tracking resource exchanges between holons in the Regenerativa network",
+  "type": "object",
+  "properties": {
+    "linked_schemas": {
+      "title": "Linked Schemas",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "exchange_id": {
+      "title": "Exchange ID",
+      "description": "Unique identifier for this exchange",
+      "type": "string"
+    },
+    "from_holon": {
+      "title": "From Holon",
+      "description": "The holon providing the resource (soul/ID reference)",
+      "type": "string"
+    },
+    "to_holon": {
+      "title": "To Holon",
+      "description": "The holon receiving the resource (soul/ID reference)",
+      "type": "string"
+    },
+    "resource_type": {
+      "title": "Resource Type",
+      "type": "string",
+      "enum": ["financial", "labor", "expertise", "materials", "land", "tools", "energy", "water", "food", "seeds", "regenerative_work", "other"],
+      "enumNames": ["Financial", "Labor/Time", "Expertise", "Materials", "Land Access", "Tools", "Energy", "Water", "Food", "Seeds", "Regenerative Work", "Other"]
+    },
+    "description": {
+      "title": "Description",
+      "description": "What is being exchanged",
+      "type": "string"
+    },
+    "quantity": {
+      "title": "Quantity",
+      "description": "Amount with units",
+      "type": "string"
+    },
+    "exchange_mechanism": {
+      "title": "Exchange Mechanism",
+      "type": "string",
+      "enum": ["direct_barter", "multi_hop_barter", "flow_tokens", "conventional_currency", "gift", "reciprocity"],
+      "enumNames": ["Direct Barter", "Multi-Hop Barter", "Flow Tokens", "Conventional Currency", "Gift (No Return Expected)", "Reciprocity (Future Exchange Expected)"]
+    },
+    "flow_value": {
+      "title": "Flow Token Value",
+      "description": "Value in Flow tokens (if applicable)",
+      "type": "number",
+      "minimum": 0
+    },
+    "optionality_increase": {
+      "title": "Optionality Increase",
+      "description": "How much this exchange increases the receiver's optionality (1-100)",
+      "type": "number",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "lunar_cycle": {
+      "title": "Lunar Cycle",
+      "description": "Which lunar cycle this exchange occurs in",
+      "type": "string"
+    },
+    "exchange_date": {
+      "title": "Exchange Date",
+      "description": "Unix timestamp of when exchange occurs/occurred",
+      "type": "number"
+    },
+    "half_moon_exchange": {
+      "title": "Half Moon Exchange",
+      "description": "Is this part of the half-moon exchange (New Mooners ↔ Full Mooners)?",
+      "type": "boolean",
+      "default": false
+    },
+    "status": {
+      "title": "Status",
+      "type": "string",
+      "enum": ["proposed", "agreed", "in_progress", "completed", "cancelled"],
+      "enumNames": ["Proposed", "Agreed", "In Progress", "Completed", "Cancelled"]
+    },
+    "regenerative_impact": {
+      "title": "Regenerative Impact",
+      "description": "Does this exchange contribute to regeneration?",
+      "type": "string",
+      "enum": ["positive", "neutral", "negative_mitigated"],
+      "enumNames": ["Positive (Actively regenerative)", "Neutral (No harm)", "Negative but Mitigated"]
+    },
+    "collective_need_subscribers": {
+      "title": "Collective Need Subscribers",
+      "description": "Number of holons that subscribed to the need this exchange addresses",
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "required": ["linked_schemas", "from_holon", "to_holon", "resource_type", "description", "exchange_mechanism", "status"],
+  "metadata": {
+    "schema": {
+      "name": "resource_exchange-v0.1.0",
+      "purpose": "To track resource exchanges between holons with multi-resource accounting and optionality tracking"
+    }
+  }
+}

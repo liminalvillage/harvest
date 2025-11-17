@@ -2,7 +2,7 @@
  * Type definitions for the map components
  */
 
-export type LensType = 'quests' | 'needs' | 'offers' | 'communities' | 'organizations' | 'projects' | 'currencies' | 'people' | 'holons';
+export type LensType = 'quests' | 'needs' | 'offers' | 'communities' | 'organizations' | 'projects' | 'currencies' | 'people' | 'holons' | 'regenerativa';
 
 export interface LensOption {
   value: LensType;

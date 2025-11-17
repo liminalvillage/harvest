@@ -8,10 +8,10 @@
     const dispatch = createEventDispatcher();
     const holosphere = getContext('holosphere') as HoloSphere;
 
-    type LensType = 'quests' | 'needs' | 'offers' | 'communities' | 'organizations' | 'projects' | 'currencies' | 'people' | 'holons';
-    let selectedLens: LensType = 'quests';
+    type LensType = 'quests' | 'needs' | 'offers' | 'communities' | 'organizations' | 'projects' | 'currencies' | 'people' | 'holons' | 'regenerativa';
+    let selectedLens: LensType = 'regenerativa'; // Default to Regenerativa view
     let hexId: string | undefined;
-    
+
     export let id: string | undefined = undefined;
 
     // Initialize with provided ID if available
@@ -27,6 +27,7 @@
     }
 
     const lensOptions: Array<{value: LensType, label: string}> = [
+        { value: 'regenerativa', label: '🌙 Regenerativa' },
         { value: 'quests', label: 'Tasks' },
         { value: 'needs', label: 'Local Needs' },
         { value: 'offers', label: 'Offers' },

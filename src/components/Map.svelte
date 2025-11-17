@@ -12,6 +12,7 @@
 	import { ID } from "../dashboard/store";
 	import HoloSphere from 'holosphere';
 	import MapSidebar from './MapSidebar.svelte';
+	import RegenerativaMapOverlay from './RegenerativaMapOverlay.svelte';
 	import type { LensType, LensOption } from '../types/Map';
 
 	let holosphere = getContext('holosphere') as HoloSphere;
@@ -41,7 +42,8 @@
 		projects: new Set<string>(),
 		currencies: new Set<string>(),
 		people: new Set<string>(),
-		holons: new Set<string>()
+		holons: new Set<string>(),
+		regenerativa: new Set<string>()
 	};
 
 	const lensOptions: LensOption[] = [
@@ -53,7 +55,8 @@
 		{ value: 'projects', label: 'Projects' },
 		{ value: 'currencies', label: 'Currencies' },
 		{ value: 'people', label: 'People' },
-		{ value: 'holons', label: 'Holons' }
+		{ value: 'holons', label: 'Holons' },
+		{ value: 'regenerativa', label: '🌙 Regenerativa' }
 	];
 
 	const dispatch = createEventDispatcher();
@@ -181,6 +184,10 @@
 			case 'holons':
 				highlightedHexes = lensData.holons;
 				highlightColor = '#ff5722';
+				break;
+			case 'regenerativa':
+				highlightedHexes = lensData.regenerativa;
+				highlightColor = '#10b981'; // Emerald green for regeneration
 				break;
 		}
 
@@ -1302,12 +1309,20 @@
 </script>
 
 <div class="w-full h-full relative" class:hidden={!isVisible}>
-	<div 
-		bind:this={mapContainer} 
+	<div
+		bind:this={mapContainer}
 		class="map w-full h-full"
 	>
 		{#if hexId}
 			<div class="hex-info">Selected Hexagon: {hexId}</div>
+		{/if}
+
+		<!-- Regenerativa Map Overlay (Lunar Calendar) -->
+		{#if selectedLens === 'regenerativa'}
+			<RegenerativaMapOverlay
+				showLunarCalendar={true}
+				showResourceFlows={true}
+			/>
 		{/if}
 	</div>
 
@@ -1446,6 +1461,13 @@
 						<div>
 							<strong>Holons</strong>
 							<span class="lens-desc">Organizational units</span>
+						</div>
+					</div>
+					<div class="lens-option-item">
+						<span class="lens-dot" style="background-color: #10b981;"></span>
+						<div>
+							<strong>🌙 Regenerativa</strong>
+							<span class="lens-desc">Lunar-aligned regenerative network</span>
 						</div>
 					</div>
 				</div>

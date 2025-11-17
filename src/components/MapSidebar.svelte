@@ -15,50 +15,55 @@
 
     // Update schema options to use imported schemas
     const schemaOptions = [
-        { 
-            value: 'quests' as LensType, 
-            label: 'Tasks', 
+        {
+            value: 'quests' as LensType,
+            label: 'Tasks',
             schema: 'quests_schema_v0.0.1' as SchemaName
         },
-        { 
-            value: 'needs' as LensType, 
-            label: 'Local Needs', 
+        {
+            value: 'needs' as LensType,
+            label: 'Local Needs',
             schema: 'offers_wants_prototype-v0.0.2' as SchemaName
         },
-        { 
-            value: 'offers' as LensType, 
-            label: 'Offers', 
+        {
+            value: 'offers' as LensType,
+            label: 'Offers',
             schema: 'offers_wants_prototype-v0.0.2' as SchemaName
         },
-        { 
-            value: 'communities' as LensType, 
-            label: 'Communities', 
+        {
+            value: 'communities' as LensType,
+            label: 'Communities',
             schema: 'communities_schema-v0.1.0' as SchemaName
         },
-        { 
-            value: 'organizations' as LensType, 
-            label: 'Organizations', 
+        {
+            value: 'organizations' as LensType,
+            label: 'Organizations',
             schema: 'organizations_schema-v1.0.0' as SchemaName
         },
-        { 
-            value: 'projects' as LensType, 
-            label: 'Projects', 
+        {
+            value: 'projects' as LensType,
+            label: 'Projects',
             schema: 'projects_schema-v0.1.0' as SchemaName
         },
-        { 
-            value: 'currencies' as LensType, 
-            label: 'Currencies', 
+        {
+            value: 'currencies' as LensType,
+            label: 'Currencies',
             schema: 'complementary_currencies-v2.0.0' as SchemaName
         },
-        { 
-            value: 'people' as LensType, 
-            label: 'People', 
+        {
+            value: 'people' as LensType,
+            label: 'People',
             schema: 'person_schema-v0.2.0' as SchemaName
         },
-        { 
-            value: 'holons' as LensType, 
-            label: 'Holons', 
+        {
+            value: 'holons' as LensType,
+            label: 'Holons',
             schema: 'holons_schema-v0.0.1' as SchemaName
+        },
+        {
+            value: 'regenerativa' as LensType,
+            label: '🌙 Regenerativa',
+            schema: 'regenerativa_holon-v0.1.0' as SchemaName
         }
     ];
  
