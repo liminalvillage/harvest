@@ -36,12 +36,17 @@ export async function fetchAndParseICalFeed(
         // Convert webcal:// to https://
         const fetchUrl = url.replace(/^webcal:\/\//i, 'https://');
 
-        // Use a CORS proxy for external calendar feeds
+        // Check if the URL is same-origin (no need for CORS proxy)
+        const isSameOrigin = fetchUrl.startsWith(window.location.origin) ||
+                             fetchUrl.startsWith('/') ||
+                             fetchUrl.startsWith('./');
+
+        // Use a CORS proxy for external calendar feeds only
         // This is needed because most calendar services block direct browser requests
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(fetchUrl)}`;
+        const finalUrl = isSameOrigin ? fetchUrl : `https://corsproxy.io/?${encodeURIComponent(fetchUrl)}`;
 
         // Fetch the iCal feed
-        const response = await fetch(proxyUrl, {
+        const response = await fetch(finalUrl, {
             headers: {
                 'Accept': 'text/calendar, text/plain, */*'
             }

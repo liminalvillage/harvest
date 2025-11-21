@@ -286,11 +286,13 @@
 						{/if}
 						<span class="text-sm">
 							<span class="text-gray-400">
-								🙋‍♂️ {quest.participants.length}
+								🙋‍♂️ {quest.participants?.length || 0}
 							</span>
+							{#if quest.participants}
 							{#each quest.participants as participant}
 								<span class="block text-gray-300">@{participant.username}</span>
 							{/each}
+						{/if}
 						</span>
 					</button>
 				{/if}

@@ -11,12 +11,15 @@
 
     // State
     let importedCalendars: Array<{ id: string; url: string; name: string; enabled: boolean }> = [];
+    let subscribedHolons: Array<{ id: string; holonId: string; name: string; enabled: boolean; color?: string }> = [];
     let newCalendarUrl = '';
     let newCalendarName = '';
+    let newHolonId = '';
+    let newHolonCalendarName = '';
     let loading = false;
     let error = '';
     let successMessage = '';
-    let showExportSection = false;
+    let showExportSection = true;
 
     // Get the export URL for this holon's calendar
     $: exportUrl = typeof window !== 'undefined'
@@ -129,6 +132,146 @@
         }
     }
 
+    // Add a holon calendar subscription (via HoloSphere)
+    async function addHolonCalendar() {
+        error = '';
+        successMessage = '';
+
+        if (!newHolonId.trim()) {
+            error = 'Please enter a Holon ID';
+            return;
+        }
+
+        loading = true;
+
+        try {
+            const holonId = newHolonId.trim();
+            const holonName = newHolonCalendarName.trim() || `Holon ${holonId.substring(0, 8)}...`;
+
+            // Check if already subscribed
+            if (subscribedHolons.some(h => h.holonId === holonId)) {
+                error = 'Already subscribed to this holon';
+                loading = false;
+                return;
+            }
+
+            // Validate that the holon exists by trying to get its profile
+            try {
+                const holonProfile = await holosphere.get(holonId, 'profile', holonId);
+                const actualName = holonProfile?.name || holonProfile?.title || holonName;
+
+                // Create subscription entry
+                const subscriptionId = `holon_${holonId}`;
+                const newSubscription = {
+                    id: subscriptionId,
+                    holonId: holonId,
+                    name: actualName,
+                    enabled: true,
+                    color: getCalendarColor(subscriptionId)
+                };
+
+                subscribedHolons = [...subscribedHolons, newSubscription];
+                await saveSubscribedHolons();
+
+                // Clear form
+                newHolonId = '';
+                newHolonCalendarName = '';
+                successMessage = `Successfully subscribed to ${actualName}'s calendar!`;
+
+                // Notify parent component to refresh
+                dispatch('calendarsUpdated');
+
+                setTimeout(() => {
+                    successMessage = '';
+                }, 3000);
+            } catch (fetchError) {
+                console.error('Failed to validate holon:', fetchError);
+                error = 'Could not find holon. Please verify the Holon ID is correct.';
+            }
+        } catch (err) {
+            error = 'Failed to subscribe to holon calendar. Please try again.';
+            console.error(err);
+        } finally {
+            loading = false;
+        }
+    }
+
+    // Save subscribed holons to HoloSphere
+    async function saveSubscribedHolons() {
+        if (!$ID) return;
+
+        try {
+            await holosphere.put($ID, 'settings', {
+                id: 'subscribed_holons',
+                holons: subscribedHolons
+            });
+        } catch (err) {
+            console.error('Error saving subscribed holons:', err);
+            throw err;
+        }
+    }
+
+    // Load subscribed holons from HoloSphere
+    async function loadSubscribedHolons() {
+        if (!$ID) return;
+
+        try {
+            const holonData = await holosphere.get($ID, 'settings', 'subscribed_holons');
+            if (holonData && Array.isArray(holonData.holons)) {
+                subscribedHolons = holonData.holons;
+            }
+        } catch (err) {
+            console.error('Error loading subscribed holons:', err);
+        }
+    }
+
+    // Remove a subscribed holon
+    async function removeSubscribedHolon(holonId: string) {
+        if (!confirm('Are you sure you want to unsubscribe from this holon calendar?')) {
+            return;
+        }
+
+        loading = true;
+        error = '';
+
+        try {
+            subscribedHolons = subscribedHolons.filter(h => h.id !== holonId);
+            await saveSubscribedHolons();
+
+            // Notify parent component
+            dispatch('calendarsUpdated');
+
+            successMessage = 'Successfully unsubscribed from holon calendar';
+            setTimeout(() => {
+                successMessage = '';
+            }, 3000);
+        } catch (err) {
+            error = 'Failed to remove holon calendar. Please try again.';
+            console.error(err);
+        } finally {
+            loading = false;
+        }
+    }
+
+    // Toggle a subscribed holon's enabled state
+    async function toggleSubscribedHolon(holonId: string) {
+        const holon = subscribedHolons.find(h => h.id === holonId);
+        if (!holon) return;
+
+        holon.enabled = !holon.enabled;
+        subscribedHolons = subscribedHolons; // Trigger reactivity
+
+        try {
+            await saveSubscribedHolons();
+            dispatch('calendarsUpdated');
+        } catch (err) {
+            console.error('Error toggling holon calendar:', err);
+            // Revert on error
+            holon.enabled = !holon.enabled;
+            subscribedHolons = subscribedHolons;
+        }
+    }
+
     // Remove a calendar
     async function removeCalendar(calendarId: string) {
         if (!confirm('Are you sure you want to remove this calendar?')) {
@@ -194,6 +337,7 @@
     // Load calendars when modal opens
     $: if (show) {
         loadImportedCalendars();
+        loadSubscribedHolons();
     }
 </script>
 
@@ -234,7 +378,7 @@
                         class="flex items-center justify-between w-full text-left"
                         on:click={() => showExportSection = !showExportSection}
                     >
-                        <h3 class="text-xl font-semibold text-white">Subscribe to This Holon's Calendar</h3>
+                        <h3 class="text-lg font-semibold text-white">Subscribe to This Holon's Calendar</h3>
                         <svg
                             class="w-5 h-5 text-gray-400 transition-transform {showExportSection ? 'rotate-180' : ''}"
                             fill="none"
@@ -271,9 +415,111 @@
                     {/if}
                 </div>
 
+                <!-- Subscribe to Another Holon's Calendar Section -->
+                <div class="space-y-4">
+                    <h3 class="text-lg font-semibold text-white">Subscribe to Another Holon's Calendar</h3>
+                    <p class="text-gray-300 text-sm">
+                        Subscribe to events from another holon by entering its Holon ID. Events from that holon will appear in this calendar.
+                    </p>
+
+                    <!-- Add Holon Calendar Form -->
+                    <div class="bg-gray-900 rounded-lg p-4 space-y-4">
+                        <div>
+                            <label for="holon-id" class="text-gray-300 text-sm font-medium block mb-2">
+                                Holon ID
+                            </label>
+                            <input
+                                id="holon-id"
+                                type="text"
+                                bind:value={newHolonId}
+                                placeholder="Enter the Holon ID (e.g., abc123xyz...)"
+                                class="w-full bg-gray-800 text-white px-3 py-2 rounded-lg border border-gray-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                            />
+                            <p class="text-gray-400 text-xs mt-1">
+                                You can find a holon's ID in its URL or by copying it from the holon's page
+                            </p>
+                        </div>
+
+                        <div>
+                            <label for="holon-calendar-name" class="text-gray-300 text-sm font-medium block mb-2">
+                                Calendar Name (optional)
+                            </label>
+                            <input
+                                id="holon-calendar-name"
+                                type="text"
+                                bind:value={newHolonCalendarName}
+                                placeholder="Team Calendar"
+                                class="w-full bg-gray-800 text-white px-3 py-2 rounded-lg border border-gray-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none"
+                            />
+                        </div>
+
+                        <button
+                            class="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            on:click={addHolonCalendar}
+                            disabled={loading}
+                        >
+                            {loading ? 'Subscribing...' : 'Subscribe to Holon Calendar'}
+                        </button>
+                    </div>
+
+                    <!-- Subscribed Holons List -->
+                    {#if subscribedHolons.length > 0}
+                        <div class="space-y-2">
+                            <h4 class="text-sm font-medium text-gray-400">Subscribed Holon Calendars</h4>
+                            {#each subscribedHolons as holon (holon.id)}
+                                <div class="bg-gray-900 rounded-lg p-4 flex items-center justify-between">
+                                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                                        <button
+                                            class="flex-shrink-0"
+                                            on:click={() => toggleSubscribedHolon(holon.id)}
+                                            aria-label={holon.enabled ? 'Disable holon calendar' : 'Enable holon calendar'}
+                                        >
+                                            <div class="w-5 h-5 rounded border-2 {holon.enabled ? 'bg-indigo-600 border-indigo-600' : 'border-gray-600'} flex items-center justify-center">
+                                                {#if holon.enabled}
+                                                    <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+                                                    </svg>
+                                                {/if}
+                                            </div>
+                                        </button>
+                                        {#if holon.color}
+                                            <div
+                                                class="w-4 h-4 rounded flex-shrink-0 border border-gray-700"
+                                                style="background-color: {holon.color};"
+                                                title="Holon calendar color"
+                                            ></div>
+                                        {/if}
+                                        <div class="flex-1 min-w-0">
+                                            <div class="text-white font-medium truncate">{holon.name}</div>
+                                            <div class="text-gray-400 text-xs truncate font-mono">Holon ID: {holon.holonId.substring(0, 16)}...</div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        class="flex-shrink-0 ml-4 p-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded transition-colors"
+                                        on:click={() => removeSubscribedHolon(holon.id)}
+                                        aria-label="Unsubscribe from holon calendar"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            {/each}
+                        </div>
+                    {:else}
+                        <div class="text-center py-6 text-gray-400">
+                            <svg class="w-10 h-10 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                            <p class="text-sm">No holon calendars subscribed yet</p>
+                            <p class="text-xs mt-1 text-gray-500">Add a holon calendar above to see events from other holons</p>
+                        </div>
+                    {/if}
+                </div>
+
                 <!-- Import Section -->
                 <div class="space-y-4">
-                    <h3 class="text-xl font-semibold text-white">Import External Calendars</h3>
+                    <h3 class="text-lg font-semibold text-white">Import External Calendars</h3>
                     <p class="text-gray-300 text-sm">
                         Import events from external calendars (Google Calendar, Apple Calendar, etc.) to display them in this holon's calendar.
                     </p>

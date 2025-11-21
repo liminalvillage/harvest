@@ -210,9 +210,13 @@
 					}
 				}
 			} else {
-				// Show all quest types when filterType is 'all' (default to 'task' if type is missing)
-				const type = quest.type || 'task'; 
-				if (type !== 'task' && type !== 'recurring' && type !== 'quest' && type !== 'event') {
+				// Show all quest types except events when filterType is 'all' (default to 'task' if type is missing)
+				// Events should only be visible in the Calendar view, not in Tasks view
+				const type = quest.type || 'task';
+				if (type === 'event') {
+					return false; // Exclude events from Tasks view
+				}
+				if (type !== 'task' && type !== 'recurring' && type !== 'quest') {
 					return false;
 				}
 			}

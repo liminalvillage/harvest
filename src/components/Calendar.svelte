@@ -37,8 +37,9 @@
     let dragOverTime: number | null = null; // Hour of day (0-23)
     
     // Get calendar data for current month
-    $: monthData = getMonthData(currentDate);
-    $: weekData = getWeekData(currentDate);
+    // React to changes in currentDate, externalEvents, tasks, and holonEvents
+    $: monthData = (getMonthData(currentDate), externalEvents, tasks, holonEvents, getMonthData(currentDate));
+    $: weekData = (getWeekData(currentDate), externalEvents, tasks, holonEvents, getWeekData(currentDate));
 
     let currentDayPercentage = 0;
 
@@ -53,6 +54,11 @@
     let externalEvents: ExternalCalendarEvent[] = [];
     let syncInterval: NodeJS.Timeout | number | null = null;
     const SYNC_INTERVAL_MS = 10 * 60 * 1000; // Sync every 10 minutes
+
+    // Subscribed holon calendars (real-time via HoloSphere)
+    let subscribedHolons: Array<{ id: string; holonId: string; name: string; enabled: boolean; color?: string }> = [];
+    let holonEvents: Record<string, any[]> = {}; // holonId -> events array
+    let holonSubscriptions: Record<string, () => void> = {}; // holonId -> unsubscribe function
 
     // Map to store calendar colors by calendar ID for quick lookup
     let calendarColorsMap: Record<string, string> = {};
@@ -159,6 +165,7 @@
         loadProfiles();
         loadTasks();
         loadImportedCalendars();
+        loadSubscribedHolons();
 
         // Set up periodic sync for imported calendars
         syncInterval = setInterval(() => {
@@ -366,7 +373,10 @@
             title: quickEventTitle.trim(),
             when: eventDate.toISOString(),
             ends: endDate.toISOString(),
-            created: new Date().toISOString()
+            created: new Date().toISOString(),
+            type: 'event',
+            participants: [],
+            appreciation: []
         };
 
         try {
@@ -453,12 +463,12 @@
     function getAllEventsForDate(date: Date) {
         const dateStr = date.toDateString();
 
-        // Get holon tasks
+        // Get holon tasks (from current holon)
         const holonTasks = Object.entries(tasks)
             .filter(([_, task]) => task.when && new Date(task.when).toDateString() === dateStr)
             .map(([key, task]) => ({ key, task, isExternal: false }));
 
-        // Get external events
+        // Get external calendar events (iCal feeds)
         const externalEventsForDay = externalEvents
             .filter(event => {
                 const eventStart = new Date(event.start);
@@ -479,7 +489,26 @@
                 isExternal: true
             }));
 
-        return [...holonTasks, ...externalEventsForDay];
+        // Get events from subscribed holons (via HoloSphere)
+        const subscribedHolonEventsForDay: any[] = [];
+        Object.entries(holonEvents).forEach(([holonId, events]) => {
+            events.forEach(event => {
+                if (event.when && new Date(event.when).toDateString() === dateStr) {
+                    const holonInfo = subscribedHolons.find(h => h.holonId === holonId);
+                    subscribedHolonEventsForDay.push({
+                        key: event.id,
+                        task: {
+                            ...event,
+                            color: calendarColorsMap[holonId] || '#6366f1',
+                            calendarName: holonInfo?.name || `Holon ${holonId.substring(0, 8)}...`
+                        },
+                        isExternal: true
+                    });
+                }
+            });
+        });
+
+        return [...holonTasks, ...externalEventsForDay, ...subscribedHolonEventsForDay];
     }
 
     function handleTimelineDateSelect(event: CustomEvent<{date: Date, dayOfYear: number}>) {
@@ -564,9 +593,37 @@
         return style;
     }
 
-    function loadTasks() {
+    async function loadTasks() {
         if (!holosphere || !$ID) return;
 
+        // First, fetch all existing quests
+        try {
+            const initialData = await holosphere.getAll($ID, 'quests');
+
+            // Process initial data
+            if (Array.isArray(initialData)) {
+                initialData.forEach((task: any, index) => {
+                    if (task && task.id && task.when) {
+                        // Use the task ID as the key
+                        const key = task.id || `initial_${index}`;
+                        tasks[key] = task;
+                    }
+                });
+                tasks = tasks; // Trigger reactivity
+            } else if (typeof initialData === 'object' && initialData !== null) {
+                // If it's already a keyed object, use it directly
+                Object.entries(initialData).forEach(([key, task]: [string, any]) => {
+                    if (task && task.when) {
+                        tasks[key] = task;
+                    }
+                });
+                tasks = tasks; // Trigger reactivity
+            }
+        } catch (error) {
+            console.error('Error loading initial calendar tasks:', error);
+        }
+
+        // Then set up subscription for future updates
         holosphere.subscribe($ID, 'quests', (newTask: any, key?: string) => {
             if (!key) return; // Skip if no key
             if (newTask) {
@@ -613,14 +670,20 @@
 
     // Sync all enabled imported calendars
     async function syncAllCalendars() {
-        if (importedCalendars.length === 0) return;
+        if (importedCalendars.length === 0) {
+            console.log('No imported calendars to sync');
+            return;
+        }
 
         const enabledCalendars = importedCalendars.filter(cal => cal.enabled);
+        console.log(`Syncing ${enabledCalendars.length} enabled calendars...`);
         const allEvents: ExternalCalendarEvent[] = [];
 
         for (const calendar of enabledCalendars) {
             try {
+                console.log(`Fetching calendar: ${calendar.name} (${calendar.url})`);
                 const parsed = await fetchAndParseICalFeed(calendar.url, calendar.name);
+                console.log(`Found ${parsed.events.length} events from ${calendar.name}`);
                 // Add calendar info to each event
                 const eventsWithCal = parsed.events.map(event => ({
                     ...event,
@@ -633,11 +696,120 @@
         }
 
         externalEvents = allEvents;
+        console.log(`Total external events loaded: ${externalEvents.length}`);
     }
 
     // Handle calendar settings update
     function handleCalendarsUpdated() {
         loadImportedCalendars();
+        loadSubscribedHolons();
+    }
+
+    // Load subscribed holon calendars configuration
+    async function loadSubscribedHolons() {
+        if (!holosphere || !$ID) return;
+
+        try {
+            const holonData = await holosphere.get($ID, 'settings', 'subscribed_holons');
+            if (holonData && Array.isArray(holonData.holons)) {
+                subscribedHolons = holonData.holons;
+
+                // Build color map for quick lookup
+                subscribedHolons.forEach(holon => {
+                    if (holon.color) {
+                        calendarColorsMap[holon.holonId] = holon.color;
+                    }
+                });
+
+                // Subscribe to each holon's calendar
+                subscribedHolons.forEach(holon => {
+                    if (holon.enabled) {
+                        subscribeToHolonCalendar(holon.holonId);
+                    }
+                });
+            }
+        } catch (err) {
+            console.error('Error loading subscribed holons:', err);
+        }
+    }
+
+    // Subscribe to a holon's calendar via HoloSphere
+    async function subscribeToHolonCalendar(holonId: string) {
+        if (!holosphere) return;
+
+        // Unsubscribe if already subscribed
+        if (holonSubscriptions[holonId]) {
+            holonSubscriptions[holonId]();
+            delete holonSubscriptions[holonId];
+        }
+
+        // Initialize events array for this holon
+        if (!holonEvents[holonId]) {
+            holonEvents[holonId] = [];
+        }
+
+        console.log(`Subscribing to holon calendar: ${holonId}`);
+
+        // First, fetch all existing events from the holon
+        try {
+            const initialData = await holosphere.getAll(holonId, 'quests');
+            console.log(`Initial data for holon ${holonId}:`, initialData);
+
+            // Process initial data - filter for items with 'when' field
+            if (initialData && typeof initialData === 'object') {
+                Object.entries(initialData).forEach(([key, quest]: [string, any]) => {
+                    if (quest && typeof quest === 'object' && quest.when) {
+                        holonEvents[holonId].push(quest);
+                    }
+                });
+            }
+
+            console.log(`Loaded ${holonEvents[holonId].length} initial events from holon ${holonId}`);
+            holonEvents = { ...holonEvents }; // Trigger reactivity
+        } catch (error) {
+            console.error(`Error loading initial events for holon ${holonId}:`, error);
+        }
+
+        // Then set up subscription for future updates
+        holosphere.subscribe(holonId, 'quests', async (quest: any, key?: string) => {
+            if (!key) return;
+
+            // Only include items with a 'when' field (scheduled events)
+            if (quest && quest.when) {
+                // Find existing event or add new one
+                const existingIndex = holonEvents[holonId].findIndex(e => e.id === quest.id);
+                if (existingIndex >= 0) {
+                    holonEvents[holonId][existingIndex] = quest;
+                } else {
+                    holonEvents[holonId].push(quest);
+                }
+            } else if (quest === null && key) {
+                // Event was deleted
+                holonEvents[holonId] = holonEvents[holonId].filter(e => e.id !== key);
+            } else if (quest && !quest.when) {
+                // Event lost its 'when' field, remove it
+                holonEvents[holonId] = holonEvents[holonId].filter(e => e.id !== quest.id);
+            }
+
+            // Trigger reactivity
+            holonEvents = { ...holonEvents };
+        });
+
+        // Store the unsubscribe function
+        // Gun's subscribe doesn't return unsubscribe, but we track it for cleanup
+        holonSubscriptions[holonId] = () => {
+            // HoloSphere/Gun subscriptions are managed internally
+            delete holonEvents[holonId];
+            holonEvents = { ...holonEvents };
+        };
+    }
+
+    // Unsubscribe from a holon's calendar
+    function unsubscribeFromHolonCalendar(holonId: string) {
+        if (holonSubscriptions[holonId]) {
+            holonSubscriptions[holonId]();
+            delete holonSubscriptions[holonId];
+        }
     }
 
     // Make monthTasks reactive to changes in tasks
@@ -869,10 +1041,35 @@
         };
     }
 
+    // Helper function to determine if an event is an all-day event
+    function isAllDayEvent(task: any): boolean {
+        if (!task.when) return false;
+
+        const startTime = new Date(task.when);
+        const endTime = task.ends ? new Date(task.ends) : null;
+
+        // Check if event starts at midnight (00:00)
+        const startsAtMidnight = startTime.getHours() === 0 && startTime.getMinutes() === 0;
+
+        // If no end time and starts at midnight, consider it all-day
+        if (!endTime && startsAtMidnight) return true;
+
+        // If has end time, check if it spans 24 hours or more
+        if (endTime) {
+            const durationHours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+            return durationHours >= 24 || (startsAtMidnight && durationHours >= 23);
+        }
+
+        return false;
+    }
+
     // Function to detect overlapping events and calculate column layout
     function calculateEventColumns(tasksForDay: Array<{key: string, task: any}>) {
+        // Filter out all-day events from column layout calculation
+        const timedEvents = tasksForDay.filter(item => !isAllDayEvent(item.task));
+
         // Sort events by start time, then by duration (longer events first)
-        const sortedTasks = tasksForDay.sort((a, b) => {
+        const sortedTasks = timedEvents.sort((a, b) => {
             const aStart = new Date(a.task.when).getTime();
             const bStart = new Date(b.task.when).getTime();
             if (aStart !== bStart) return aStart - bStart;
@@ -1788,7 +1985,29 @@
                             {/each}
                         </div>
 
-                        <!-- Tasks for this day (including external events) -->
+                        <!-- All-day events section -->
+                        {#if getAllEventsForDate(date).filter(item => isAllDayEvent(item.task)).length > 0}
+                            {@const allEvents = getAllEventsForDate(date)}
+                            {@const allDayEvents = allEvents.filter(item => isAllDayEvent(item.task))}
+                            <div class="absolute top-0 left-0 right-0 z-5 px-1 space-y-1">
+                                {#each allDayEvents as {key, task, isExternal}}
+                                    {@const taskColor = task.color || '#6366f1'}
+                                    <div
+                                        class="text-xs p-1 rounded text-white transition-colors cursor-pointer"
+                                        class:opacity-50={draggedTask?.key === key}
+                                        style="background-color: {taskColor}; opacity: 0.8;"
+                                        on:click|stopPropagation={() => handleTaskClick(key, task)}
+                                        on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
+                                        role="button"
+                                        tabindex="0"
+                                    >
+                                        <div class="font-medium truncate">**{task.title || 'Untitled'}</div>
+                                    </div>
+                                {/each}
+                            </div>
+                        {/if}
+
+                        <!-- Timed events (excluding all-day events) -->
                         {#each calculateEventColumns(getAllEventsForDate(date)) as {key, task, column, totalColumns, isExternal}}
                             {@const position = getTaskPosition(task)}
                             {@const columnWidth = totalColumns > 1 ? `calc((100% - ${totalColumns * 2}px) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
@@ -1920,7 +2139,29 @@
                     {/each}
                 </div>
 
-                <!-- Tasks for this day (including external events) -->
+                <!-- All-day events section for day view -->
+                {#if getAllEventsForDate(currentDate).filter(item => isAllDayEvent(item.task)).length > 0}
+                    {@const allEventsDayView = getAllEventsForDate(currentDate)}
+                    {@const allDayEventsDayView = allEventsDayView.filter(item => isAllDayEvent(item.task))}
+                    <div class="absolute top-0 left-0 right-0 z-5 px-1 space-y-1">
+                        {#each allDayEventsDayView as {key, task, isExternal}}
+                            {@const taskColor = task.color || '#6366f1'}
+                            <div
+                                class="text-xs p-1 rounded text-white transition-colors cursor-pointer"
+                                class:opacity-50={draggedTask?.key === key}
+                                style="background-color: {taskColor}; opacity: 0.8;"
+                                on:click|stopPropagation={() => handleTaskClick(key, task)}
+                                on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
+                                role="button"
+                                tabindex="0"
+                            >
+                                <div class="font-medium truncate">**{task.title || 'Untitled'}</div>
+                            </div>
+                        {/each}
+                    </div>
+                {/if}
+
+                <!-- Timed events (excluding all-day events) for day view -->
                 {#each calculateEventColumns(getAllEventsForDate(currentDate)) as {key, task, column, totalColumns, isExternal}}
                     {@const position = getTaskPosition(task)}
                     {@const columnWidth = totalColumns > 1 ? `calc((100% - 0.5rem) / ${totalColumns})` : 'calc(100% - 0.5rem)'}
