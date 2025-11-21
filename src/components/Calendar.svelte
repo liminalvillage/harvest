@@ -1949,7 +1949,7 @@
                         {/each}
                         
                         {#each dateEvents.slice(0, 3) as event}
-                            {#if event.id && tasks[event.id] && !(event.isExternalEvent || event.calendarName)}
+                            {#if !event.isExternalEvent && !event.calendarName}
                                 <!-- This is a native task, make it draggable -->
                                 <div
                                     class="text-xs p-1 rounded bg-opacity-90 truncate cursor-move"
@@ -1962,12 +1962,12 @@
                                     {event.title}
                                 </div>
                             {:else}
-                                <!-- External event or regular event, not draggable -->
+                                <!-- External event, not draggable -->
                                 <div
                                     class="text-xs p-1 rounded bg-opacity-90 truncate flex items-center gap-1"
                                     style="background-color: {event.color || '#4B5563'}"
                                 >
-                                    {#if event.isExternalEvent || event.calendarName}<span class="opacity-70 text-[10px]">🔒</span>{/if}
+                                    <span class="opacity-70 text-[10px]">🔒</span>
                                     <span class="truncate">{event.title}</span>
                                 </div>
                             {/if}
