@@ -844,14 +844,7 @@
     }
 
     function handleTaskClick(key: string, task: any, isExternal: boolean = false) {
-        // Don't allow editing external events (from iCal feeds or subscribed holons)
-        if (isExternal) {
-            // Show a tooltip or alert that this is read-only
-            alert(`This event is from ${task.calendarName || 'an external calendar'} and cannot be edited.`);
-            return;
-        }
-
-        selectedTask = { id: key, task };
+        selectedTask = { id: key, task, isExternal };
         const date = new Date(task.when);
         const endDate = task.ends ? new Date(task.ends) : new Date(date.getTime() + 60*60*1000);
         tempDate = date.toISOString().split('T')[0];
@@ -907,13 +900,19 @@
     }
 
     // Drag and drop handlers
-    function handleDragStart(event: DragEvent, key: string, task: any) {
+    function handleDragStart(event: DragEvent, key: string, task: any, isExternal: boolean = false) {
         if (!event.dataTransfer) return;
-        
+
+        // Don't allow dragging external events (double-check safety)
+        if (isExternal) {
+            event.preventDefault();
+            return;
+        }
+
         draggedTask = { key, task };
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', ''); // Required for some browsers
-        
+
         // Add visual feedback
         if (event.target instanceof HTMLElement) {
             event.target.style.opacity = '0.5';
@@ -1925,25 +1924,28 @@
                         {/each}
                         
                         {#each dateEvents.slice(0, 3) as event}
-                            {#if event.id && tasks[event.id]}
-                                <!-- This is a task, make it draggable -->
-                                <div 
+                            {@const isNativeEvent = event.id && tasks[event.id]}
+                            {@const isExternalEvent = event.isExternalEvent || event.calendarName}
+                            {#if isNativeEvent && !isExternalEvent}
+                                <!-- This is a native task, make it draggable -->
+                                <div
                                     class="text-xs p-1 rounded bg-opacity-90 truncate cursor-move"
                                     class:opacity-50={draggedTask?.key === event.id}
                                     style="background-color: {event.color || '#4B5563'}"
                                     draggable="true"
-                                    on:dragstart={(e) => handleDragStart(e, event.id, event)}
+                                    on:dragstart={(e) => handleDragStart(e, event.id, event, false)}
                                     on:dragend={handleDragEnd}
                                 >
                                     {event.title}
                                 </div>
                             {:else}
-                                <!-- Regular event, not draggable -->
-                                <div 
-                                    class="text-xs p-1 rounded bg-opacity-90 truncate"
+                                <!-- External event or regular event, not draggable -->
+                                <div
+                                    class="text-xs p-1 rounded bg-opacity-90 truncate flex items-center gap-1"
                                     style="background-color: {event.color || '#4B5563'}"
                                 >
-                                    {event.title}
+                                    {#if isExternalEvent}<span class="opacity-70 text-[10px]">🔒</span>{/if}
+                                    <span class="truncate">{event.title}</span>
                                 </div>
                             {/if}
                         {/each}
@@ -2036,7 +2038,7 @@
                                 class:p-1={isShortEvent}
                                 class:p-2={!isShortEvent}
                                 draggable={!isExternal}
-                                on:dragstart={(e) => !isExternal && handleDragStart(e, key, task)}
+                                on:dragstart={(e) => handleDragStart(e, key, task, isExternal)}
                                 on:dragend={handleDragEnd}
                                 on:click|stopPropagation={() => handleTaskClick(key, task, isExternal)}
                                 on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task, isExternal)}
@@ -2189,7 +2191,7 @@
                         class:cursor-pointer={isExternal}
                         class:opacity-50={draggedTask?.key === key}
                         draggable={!isExternal}
-                        on:dragstart={(e) => !isExternal && handleDragStart(e, key, task)}
+                        on:dragstart={(e) => handleDragStart(e, key, task, isExternal)}
                         on:dragend={handleDragEnd}
                         on:click|stopPropagation={() => handleTaskClick(key, task, isExternal)}
                         on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task, isExternal)}
@@ -2376,10 +2378,18 @@
                 aria-describedby="modal-description"
             >
                 <div class="flex justify-between items-start mb-6">
-                    <div>
-                        <h3 id="modal-title" class="text-white text-lg font-medium">Update Schedule</h3>
+                    <div class="flex-1">
+                        <h3 id="modal-title" class="text-white text-lg font-medium">
+                            {selectedTask?.isExternal ? 'View Event' : 'Update Schedule'}
+                        </h3>
                         {#if selectedTask?.task?.title}
                             <p class="text-indigo-300 text-sm mt-1 font-medium">{selectedTask.task.title}</p>
+                        {/if}
+                        {#if selectedTask?.isExternal && selectedTask?.task?.calendarName}
+                            <p class="text-gray-400 text-xs mt-1 flex items-center gap-1">
+                                <span class="opacity-70">🔒</span>
+                                From: {selectedTask.task.calendarName}
+                            </p>
                         {/if}
                     </div>
                     <span id="modal-description" class="sr-only">Update schedule date and time</span>
@@ -2400,64 +2410,88 @@
                 <div class="space-y-4">
                     <div>
                         <label for="date-input" class="text-gray-300 text-sm font-medium block mb-2">Date</label>
-                        <input 
+                        <input
                             id="date-input"
-                            type="date" 
+                            type="date"
                             bind:value={tempDate}
+                            readonly={selectedTask?.isExternal}
+                            disabled={selectedTask?.isExternal}
                             class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
+                            class:opacity-60={selectedTask?.isExternal}
+                            class:cursor-not-allowed={selectedTask?.isExternal}
                         >
                     </div>
-                    
+
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label for="time-input" class="text-gray-300 text-sm font-medium block mb-2">Start Time</label>
-                            <input 
+                            <input
                                 id="time-input"
-                                type="time" 
+                                type="time"
                                 bind:value={tempTime}
+                                readonly={selectedTask?.isExternal}
+                                disabled={selectedTask?.isExternal}
                                 class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
+                                class:opacity-60={selectedTask?.isExternal}
+                                class:cursor-not-allowed={selectedTask?.isExternal}
                             >
                         </div>
-                        
+
                         <div>
                             <label for="end-time-input" class="text-gray-300 text-sm font-medium block mb-2">End Time</label>
-                            <input 
+                            <input
                                 id="end-time-input"
-                                type="time" 
+                                type="time"
                                 bind:value={tempEndTime}
+                                readonly={selectedTask?.isExternal}
+                                disabled={selectedTask?.isExternal}
                                 class="w-full bg-gray-900 text-white p-2.5 rounded-lg border border-gray-700 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 outline-none transition-colors"
+                                class:opacity-60={selectedTask?.isExternal}
+                                class:cursor-not-allowed={selectedTask?.isExternal}
                             >
                         </div>
                     </div>
-                    
+
+                    {#if selectedTask?.isExternal}
+                        <div class="bg-gray-900/50 border border-gray-700 rounded-lg p-3 mt-4">
+                            <p class="text-gray-400 text-sm text-center">
+                                This is a read-only event from an external calendar.
+                            </p>
+                        </div>
+                    {/if}
+
                     <div class="flex gap-3 justify-end pt-2">
-                        <button 
-                            type="button"
-                            class="px-4 py-2 bg-gray-700 text-red-300 rounded-lg hover:bg-gray-600 border border-red-900/20 transition-colors text-sm font-medium"
-                            on:click={deleteSchedule}
-                            aria-label="Remove schedule"
-                        >
-                            Remove Schedule
-                        </button>
-                        <button 
+                        {#if !selectedTask?.isExternal}
+                            <button
+                                type="button"
+                                class="px-4 py-2 bg-gray-700 text-red-300 rounded-lg hover:bg-gray-600 border border-red-900/20 transition-colors text-sm font-medium"
+                                on:click={deleteSchedule}
+                                aria-label="Remove schedule"
+                            >
+                                Remove Schedule
+                            </button>
+                        {/if}
+                        <button
                             type="button"
                             class="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors text-sm font-medium"
                             on:click={() => {
                                 showModal = false;
                                 selectedTask = null;
                             }}
-                            aria-label="Cancel changes"
+                            aria-label="Close"
                         >
-                            Cancel
+                            {selectedTask?.isExternal ? 'Close' : 'Cancel'}
                         </button>
-                        <button 
-                            type="button"
-                            class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-colors text-sm font-medium"
-                            on:click={updateDateTime}
-                            aria-label="Update schedule"
-                        >
-                            Update
-                        </button>
+                        {#if !selectedTask?.isExternal}
+                            <button
+                                type="button"
+                                class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-colors text-sm font-medium"
+                                on:click={updateDateTime}
+                                aria-label="Update schedule"
+                            >
+                                Update
+                            </button>
+                        {/if}
                     </div>
                 </div>
             </form>
