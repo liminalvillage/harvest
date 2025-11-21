@@ -283,6 +283,21 @@
             completedTaskCount = actualTasks.filter((task: any) => task.status === "completed").length;
             openTaskCount = actualTasks.filter((task: any) => task.status !== "completed").length;
 
+            // Debug logging
+            console.log('Dashboard data fetched:', {
+                holonID,
+                totalQuests: questValues.length,
+                actualTasks: actualTasks.length,
+                completedTaskCount,
+                openTaskCount,
+                roleCount,
+                userCount,
+                offerCount,
+                proposalCount,
+                shoppingItemCount,
+                checklistCount
+            });
+
         } catch (error: any) {
             console.error('Error fetching dashboard data:', error);
             
@@ -298,8 +313,8 @@
         }
     }
 
-    // Define all available dashboard cards
-    const allCards: Record<string, DashboardCard> = {
+    // Define all available dashboard cards (reactive to count changes)
+    $: allCards = {
         users: {
             id: 'users',
             title: 'Users',
