@@ -7,10 +7,19 @@ import { generateICalFeed } from '$lib/services/icalGenerator';
 import HoloSphere from 'holosphere';
 import { VITE_LOCAL_MODE } from '$env/static/private';
 
-// Initialize HoloSphere instance for server-side data access
-// Use the same logic as the client to determine environment
-const environmentName = VITE_LOCAL_MODE === "development" ? "HolonsDebug" : "Holons";
-const holosphere = new HoloSphere(environmentName);
+// Singleton HoloSphere instance for server-side data access
+// Initialize once and reuse across requests
+let holosphere: HoloSphere | null = null;
+
+function getHoloSphere(): HoloSphere {
+    if (!holosphere) {
+        // Use the same logic as the client to determine environment
+        // If VITE_LOCAL_MODE is not set in .env, default to "Holons" (production)
+        const environmentName = VITE_LOCAL_MODE === "development" ? "HolonsDebug" : "Holons";
+        holosphere = new HoloSphere(environmentName);
+    }
+    return holosphere;
+}
 
 export const GET: RequestHandler = async ({ params }) => {
     const holonId = params.id;
@@ -20,6 +29,9 @@ export const GET: RequestHandler = async ({ params }) => {
     }
 
     try {
+        // Get the singleton HoloSphere instance
+        const holosphere = getHoloSphere();
+
         // Fetch holon data to get the name
         const holonData = await holosphere.get(holonId, 'profile', holonId);
         const holonName = holonData?.name || holonData?.title || 'Holon Calendar';
