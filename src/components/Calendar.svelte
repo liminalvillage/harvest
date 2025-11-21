@@ -843,7 +843,14 @@
             }));
     }
 
-    function handleTaskClick(key: string, task: any) {
+    function handleTaskClick(key: string, task: any, isExternal: boolean = false) {
+        // Don't allow editing external events (from iCal feeds or subscribed holons)
+        if (isExternal) {
+            // Show a tooltip or alert that this is read-only
+            alert(`This event is from ${task.calendarName || 'an external calendar'} and cannot be edited.`);
+            return;
+        }
+
         selectedTask = { id: key, task };
         const date = new Date(task.when);
         const endDate = task.ends ? new Date(task.ends) : new Date(date.getTime() + 60*60*1000);
@@ -1996,12 +2003,15 @@
                                         class="text-xs p-1 rounded text-white transition-colors cursor-pointer"
                                         class:opacity-50={draggedTask?.key === key}
                                         style="background-color: {taskColor}; opacity: 0.8;"
-                                        on:click|stopPropagation={() => handleTaskClick(key, task)}
-                                        on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
+                                        on:click|stopPropagation={() => handleTaskClick(key, task, isExternal)}
+                                        on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task, isExternal)}
                                         role="button"
                                         tabindex="0"
                                     >
-                                        <div class="font-medium truncate">**{task.title || 'Untitled'}</div>
+                                        <div class="font-medium truncate flex items-center gap-1">
+                                            {#if isExternal}<span class="opacity-70">🔒</span>{/if}
+                                            **{task.title || 'Untitled'}
+                                        </div>
                                     </div>
                                 {/each}
                             </div>
@@ -2028,13 +2038,16 @@
                                 draggable={!isExternal}
                                 on:dragstart={(e) => !isExternal && handleDragStart(e, key, task)}
                                 on:dragend={handleDragEnd}
-                                on:click|stopPropagation={() => handleTaskClick(key, task)}
-                                on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
+                                on:click|stopPropagation={() => handleTaskClick(key, task, isExternal)}
+                                on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task, isExternal)}
                                 role="button"
                                 tabindex="0"
                                 style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth}; background-color: {taskColor}; opacity: 0.9;"
                             >
-                                <div class="font-bold truncate leading-tight">
+                                <div class="font-bold truncate leading-tight flex items-center gap-1">
+                                    {#if isExternal}
+                                        <span class="text-[10px] opacity-70">🔒</span>
+                                    {/if}
                                     {#if totalColumns > 2 && task.title.length > 15}
                                         {task.title.substring(0, 12)}...
                                     {:else if totalColumns > 1 && task.title.length > 20}
@@ -2150,12 +2163,15 @@
                                 class="text-xs p-1 rounded text-white transition-colors cursor-pointer"
                                 class:opacity-50={draggedTask?.key === key}
                                 style="background-color: {taskColor}; opacity: 0.8;"
-                                on:click|stopPropagation={() => handleTaskClick(key, task)}
-                                on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
+                                on:click|stopPropagation={() => handleTaskClick(key, task, isExternal)}
+                                on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task, isExternal)}
                                 role="button"
                                 tabindex="0"
                             >
-                                <div class="font-medium truncate">**{task.title || 'Untitled'}</div>
+                                <div class="font-medium truncate flex items-center gap-1">
+                                    {#if isExternal}<span class="opacity-70">🔒</span>{/if}
+                                    **{task.title || 'Untitled'}
+                                </div>
                             </div>
                         {/each}
                     </div>
@@ -2175,13 +2191,16 @@
                         draggable={!isExternal}
                         on:dragstart={(e) => !isExternal && handleDragStart(e, key, task)}
                         on:dragend={handleDragEnd}
-                        on:click|stopPropagation={() => handleTaskClick(key, task)}
-                        on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task)}
+                        on:click|stopPropagation={() => handleTaskClick(key, task, isExternal)}
+                        on:keydown={(e) => e.key === 'Enter' && handleTaskClick(key, task, isExternal)}
                         role="button"
                         tabindex="0"
                         style="top: {(position.gridRowStart - 1) * 48}px; height: {(position.gridRowEnd - position.gridRowStart) * 48}px; left: {leftOffset}; width: {columnWidth}; background-color: {taskColor}; opacity: 0.9;"
                     >
-                        <div class="font-bold truncate">{task.title}</div>
+                        <div class="font-bold truncate flex items-center gap-1">
+                            {#if isExternal}<span class="opacity-70">🔒</span>{/if}
+                            {task.title}
+                        </div>
                         <div class="text-xs opacity-75">
                             {position.startTime} - {position.endTime}
                         </div>
