@@ -427,15 +427,18 @@
 
     function getDayEvents(date: Date) {
         const dateStr = date.toDateString();
+
+        // Native holon tasks - these are editable
         const dayTasks = monthTasks
             .filter(task => new Date(task.when).toDateString() === dateStr)
             .map(task => ({
                 ...task,
                 color: '#6366f1',
                 isHolonEvent: true
+                // No isExternalEvent flag = this is native
             }));
 
-        // Get external events for this day
+        // External iCal calendar events - read-only
         const dayExternalEvents = externalEvents
             .filter(event => {
                 const eventStart = new Date(event.start);
@@ -451,12 +454,34 @@
                 location: event.location,
                 when: event.start.toISOString(),
                 ends: event.end.toISOString(),
-                color: calendarColorsMap[event.calendarUrl] || '#10b981', // Use calendar color or default green
+                color: calendarColorsMap[event.calendarUrl] || '#10b981',
                 isExternalEvent: true,
                 calendarName: event.calendarName
             }));
 
-        return [...(events[dateStr] || []), ...dayTasks, ...dayExternalEvents];
+        // Events from subscribed holons - read-only
+        const dayHolonEvents: any[] = [];
+        Object.entries(holonEvents).forEach(([holonId, events]) => {
+            events.forEach(event => {
+                if (event.when && new Date(event.when).toDateString() === dateStr) {
+                    const holonInfo = subscribedHolons.find(h => h.holonId === holonId);
+                    dayHolonEvents.push({
+                        id: event.id,
+                        title: event.title,
+                        description: event.description,
+                        location: event.location,
+                        when: event.when,
+                        ends: event.ends,
+                        color: calendarColorsMap[holonId] || '#6366f1',
+                        isExternalEvent: true,
+                        calendarName: holonInfo?.name || `Holon ${holonId.substring(0, 8)}...`
+                    });
+                }
+            });
+        });
+
+        // Only return native tasks + external events (ignore old events array)
+        return [...dayTasks, ...dayExternalEvents, ...dayHolonEvents];
     }
 
     // Get all events (both holon and external) for a specific date for week/day views
