@@ -1,8 +1,23 @@
 <script lang="ts">
     import { createEventDispatcher } from 'svelte';
     import { phase } from 'lune';
-    
+
     const dispatch = createEventDispatcher();
+
+    // Type definitions
+    interface Profile {
+        arrival: string;
+        departure: string;
+        origin?: string;
+        purpose?: string;
+    }
+
+    interface User {
+        id: string;
+        first_name: string;
+        last_name?: string;
+        username?: string;
+    }
 
     // Add the getUserColor function
     function getUserColor(userId: string): string {
@@ -16,10 +31,27 @@
         return `hsl(${hue}, 70%, 60%)`;
     }
 
+    // Category color scheme (matching the orbital view)
+    const categoryColors: Record<string, string> = {
+        'work': '#6366F1',      // Indigo
+        'personal': '#8B5CF6',  // Violet
+        'health': '#A855F7',    // Purple
+        'learning': '#7C3AED',  // Indigo
+        'finance': '#5B21B6',   // Deep Indigo
+        'social': '#4F46E5',    // Indigo
+        'default': '#6366F1'    // Default Indigo
+    };
+
+    function getCategoryColor(category?: string): string {
+        if (!category) return categoryColors.default;
+        return categoryColors[category.toLowerCase()] || categoryColors.default;
+    }
+
     // Props
     export let currentDate: Date;
     export let profiles: Record<string, Profile> = {};
     export let users: Record<string, User> = {};
+    export let tasks: Record<string, any> = {}; // Scheduled events/quests
     
     // Get all stays for the current year
     $: yearStays = Object.entries(profiles)
@@ -36,6 +68,35 @@
             profile,
             user: users[userId]
         }));
+
+    // Get all scheduled events for the current year
+    $: yearEvents = Object.entries(tasks)
+        .filter(([_, task]) => {
+            if (!task.when) return false;
+            const eventDate = new Date(task.when);
+            const year = currentDate.getFullYear();
+            return eventDate.getFullYear() === year;
+        })
+        .map(([key, task]) => ({
+            id: key,
+            date: new Date(task.when),
+            title: task.title || 'Untitled Event',
+            description: task.description,
+            location: task.location,
+            category: task.category,
+            participants: task.participants,
+            ends: task.ends ? new Date(task.ends) : undefined
+        }));
+
+    // Group events by day to stack them
+    $: eventsByDay = yearEvents.reduce((acc, event) => {
+        const dateKey = event.date.toDateString();
+        if (!acc[dateKey]) {
+            acc[dateKey] = [];
+        }
+        acc[dateKey].push(event);
+        return acc;
+    }, {} as Record<string, typeof yearEvents>);
 
     // Timeline state
     let timelineContainer: HTMLElement;
@@ -236,6 +297,78 @@
                 <!-- Tooltip -->
                 <div class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                     {isNew ? '🌑 New Moon' : '🌕 Full Moon'}: {date.toLocaleDateString()}
+                </div>
+            </div>
+        {/each}
+
+        <!-- Scheduled Events (grouped by day) -->
+        {#each Object.entries(eventsByDay) as [dateKey, dayEvents]}
+            {@const eventDate = new Date(dateKey)}
+            {@const position = getPositionInYear(eventDate)}
+            <div
+                class="absolute group"
+                style="
+                    left: {position}%;
+                    top: 25%;
+                    transform: translateX(-50%);
+                "
+            >
+                <!-- Event dots/boxes stacked vertically -->
+                <div class="flex flex-col gap-0.5">
+                    {#each dayEvents.slice(0, 5) as event, index}
+                        <div
+                            class="w-2 h-2 rounded-sm transition-all hover:scale-125"
+                            style="background-color: {getCategoryColor(event.category)}; box-shadow: 0 0 4px {getCategoryColor(event.category)}80;"
+                        ></div>
+                    {/each}
+                    {#if dayEvents.length > 5}
+                        <div class="text-[8px] text-gray-400 text-center leading-none">
+                            +{dayEvents.length - 5}
+                        </div>
+                    {/if}
+                </div>
+
+                <!-- Tooltip with all events for this day -->
+                <div class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2
+                    bg-gray-900 text-white text-xs px-3 py-2 rounded whitespace-nowrap
+                    opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50
+                    min-w-[200px] max-w-[300px]"
+                    style="white-space: normal;"
+                >
+                    <div class="font-bold mb-1 border-b border-gray-700 pb-1">
+                        {eventDate.toLocaleDateString('default', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </div>
+                    <div class="space-y-2">
+                        {#each dayEvents as event}
+                            <div class="border-l-2 pl-2" style="border-color: {getCategoryColor(event.category)};">
+                                <div class="font-semibold">{event.title}</div>
+                                {#if event.description}
+                                    <div class="text-gray-400 text-[10px] line-clamp-2">{event.description}</div>
+                                {/if}
+                                <div class="flex items-center gap-2 text-[10px] text-gray-400 mt-0.5">
+                                    <span>
+                                        {event.date.toLocaleTimeString('default', { hour: '2-digit', minute: '2-digit' })}
+                                        {#if event.ends}
+                                            - {event.ends.toLocaleTimeString('default', { hour: '2-digit', minute: '2-digit' })}
+                                        {/if}
+                                    </span>
+                                    {#if event.category}
+                                        <span class="px-1 rounded text-[9px]" style="background-color: {getCategoryColor(event.category)}40;">
+                                            {event.category}
+                                        </span>
+                                    {/if}
+                                </div>
+                                {#if event.location}
+                                    <div class="text-[10px] text-gray-500">📍 {event.location}</div>
+                                {/if}
+                                {#if event.participants && event.participants.length > 0}
+                                    <div class="text-[10px] text-gray-500">
+                                        👥 {event.participants.length} participant{event.participants.length > 1 ? 's' : ''}
+                                    </div>
+                                {/if}
+                            </div>
+                        {/each}
+                    </div>
                 </div>
             </div>
         {/each}
